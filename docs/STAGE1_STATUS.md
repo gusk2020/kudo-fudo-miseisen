@@ -2,9 +2,13 @@
 
 最終更新: 2026-10-13 / 作業ブランチ: `claude/stage1-map-generator`（ローカルのみ）
 
-## 0. 重要: GitHubへは未反映
-`gusk2020/kudo-fudo-miseisen` の作成を試みたが **403 (Resource not accessible by integration)**。権限不足のため push / Draft PR / Pages 設定は未実施。
-コードは `/home/user/kudo-fudo-miseisen`（ローカルgit、全コミット済み）にある。リポジトリ作成後に `git remote add origin … && git push -u origin claude/stage1-map-generator`、Draft PR、Settings→Pages→Source=GitHub Actions を行えば `.github/workflows/{ci,pages}.yml` がそのまま動く想定（未検証）。world-viewer には一切変更なし。
+## 0. GitHub 反映状況
+- リポジトリ: https://github.com/gusk2020/kudo-fudo-miseisen
+- `main` = README のみの空の土台コミット（Stage 1 実装は **mainへマージ禁止**）。作業ブランチ `claude/stage1-map-generator` はローカル全コミットを保持し、`main` を merge して共通履歴を持たせてある。
+- Draft PR: https://github.com/gusk2020/kudo-fudo-miseisen/pull/1 （Draftのまま維持）
+- CI: `.github/workflows/ci.yml`（型検査・Vitest・Playwright）。結果は PR のチェック欄を参照。
+- スマホ確認URL: `.github/workflows/pages.yml` が作業ブランチから Pages へ公開する設定（`https://gusk2020.github.io/kudo-fudo-miseisen/`）。公開状況は §8 に記録。
+- world-viewer には一切変更なし。
 
 ## 1. 完了工程（すべて「プロトタイプ水準」）
 | 工程 | 内容 | 主なファイル |
