@@ -5,7 +5,8 @@ import { ISLAND_IDS } from "./types";
 
 export const SCHEMA_VERSION = 1;
 export const LAYER_KEYS = ["coast", "elevation", "rivers", "lakes", "borders", "cities", "ridges"] as const;
-export const LAYER_LABELS: Record<string, string> = { coast: "海岸線", elevation: "標高", rivers: "河川", lakes: "湖", borders: "府県境", cities: "都市", ridges: "山脈" };
+export const ROAD_LAYER_KEYS = ["roads", "plans", "signs"] as const;
+export const LAYER_LABELS: Record<string, string> = { coast: "海岸線", elevation: "標高", rivers: "河川", lakes: "湖", borders: "府県境", cities: "都市", ridges: "山脈", roads: "道路", plans: "建設計画・未成線", signs: "路線番号標識" };
 
 export function defaultBody(id: IslandId): BodyState { return { ops: [], place: { pos: [BODY_DEFS[id].origin[0], BODY_DEFS[id].origin[1]], rot: 0, scale: 1 } }; }
 export function defaultState(seed = 20260101): ProjectState {
@@ -15,7 +16,7 @@ export function defaultState(seed = 20260101): ProjectState {
     schemaVersion: SCHEMA_VERSION, seed, step: 0, bodies,
     features: { biwa: { pos: null, rot: 0 }, fuji: { pos: null, rot: 0 } },
     ridges: { sw: null, ne: null }, finalized: false,
-    layers: { coast: true, elevation: true, rivers: true, lakes: true, borders: true, cities: true, ridges: true },
+    layers: { coast: true, elevation: true, rivers: true, lakes: true, borders: true, cities: true, ridges: true, roads: true, plans: true, signs: true },
   };
 }
 export const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));

@@ -2,8 +2,8 @@ import { worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL } from "../core/data";
 import { dist, pointInPolygon, rot as rotv, simplifyLine } from "../core/geom";
-import { exportJson, listSlots, loadSlot, parseState, saveSlot } from "../core/save";
-import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, defaultState } from "../core/state";
+import { exportGame, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
+import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState } from "../core/state";
 import { suggestRidge } from "../core/suggest";
 import type { TerrainResult } from "../core/terrain";
 import { TerrainClient } from "../core/terrainClient";
@@ -13,8 +13,13 @@ import { clampOp } from "../core/warp";
 import { derive, errorsFor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
+import { CER_LABEL, performCeremony, previewCeremony, type CerKind, type CerPreview } from "../sim/ceremony";
+import { MS_PER_MONTH_X1, advance, createSim, noteSkipped, planCatchUp, prefName, routeLabel, summary } from "../sim/engine";
+import { exportScenery } from "../sim/scenery";
+import { ERA, PROJECT_LABEL, eraLabel, monthToYM, ymLabel, type SimState } from "../sim/types";
+import { buildWorld, type World } from "../sim/world";
 
-type Tool = "view" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit";
+type Tool = "view" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -32,16 +37,26 @@ export class App {
   brushKm = 160; pending: Pending | null = null; sheet: string | null = null;
   client = new TerrainClient(new URL(import.meta.env.BASE_URL + "japan-dem.bin", document.baseURI).href, () => new Worker(new URL("../core/terrain.worker.ts", import.meta.url), { type: "module" }));
   private genTimer: any = 0; private saveTimer: any = 0; private grab: any = null;
+  // ---- Stage 2 ----
+  sim: SimState | null = null; world: World | null = null; private worldRef: TerrainResult | null = null; pendingSim: SimState | null = null;
+  cerDraft: Partial<Record<CerKind, { pts: Vec[]; prev: CerPreview }>> = {}; private cerLive: Vec[] | null = null; pin: Vec | null = null; scenery: any = null;
+  catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
   static async start(host: HTMLElement) {
     const a = new App(); a.r = await Renderer.create(host);
-    const saved = await loadSlot("auto");
-    if (saved) { a.store.replace(saved.state); if (saved.problems.length) a.toast("一部の保存データを修復しました: " + saved.problems.slice(0, 2).join(" / ")); }
+    const saved = await loadGame("auto");
+    if (saved) {
+      a.store.replace(saved.map); a.pendingSim = saved.sim;
+      if (saved.quarantine) { await putRaw("auto:quarantine", { savedAt: Date.now(), quarantine: saved.quarantine }); }
+      if (saved.problems.length) a.toast("保存データについて: " + saved.problems.slice(0, 2).join(" / "));
+    }
     attachGestures(a.r.app.canvas, a.r, a.handler());
-    a.store.subscribe(() => a.onChange());
+    a.store.subscribe(() => a.onChange()); a.store.onBlocked = () => a.toast("地図は最終確定済みでロックされています(保存メニューから解除できます)");
     a.bindStatic(); a.r.fit(a.store.state); a.onChange(true);
     (window as any).__kfm = a;
     window.addEventListener("resize", () => a.r.setView({}, true));
+    a.lastTick = performance.now(); setInterval(() => a.tickClock(), 250);
+    document.addEventListener("visibilitychange", () => a.onVisibility()); window.addEventListener("pagehide", () => a.persist());
     return a;
   }
   get s() { return this.store.state; }
@@ -53,18 +68,34 @@ export class App {
     this.issues = validate(this.s);
     const key = stateKey(this.s);
     if (key !== this.terrainKey) { this.terrain = null; this.terrainKey = ""; if (this.generating) { this.client.cancel(); this.generating = false; } }
-    if (this.s.step >= 4 && !this.terrain && !this.generating) { clearTimeout(this.genTimer); this.genTimer = setTimeout(() => this.generate(), initial ? 0 : 250); }
+    if ((this.s.step >= 4 || this.pendingSim) && !this.terrain && !this.generating) { clearTimeout(this.genTimer); this.genTimer = setTimeout(() => this.generate(), initial ? 0 : 250); }
     this.render(); this.buildUI();
-    clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => saveSlot("auto", this.s), 400);
+    clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.persist(), 400);
   }
-  render() { this.r.update(this.s, this.terrain, this.issues, this.pending); }
+  render() { this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+  persist() { if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now(); /* a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame("auto", makeSave(this.s, this.sim ?? this.pendingSim)); }
+  ensureWorld(): World | null { if (!this.terrain) return null; if (this.worldRef !== this.terrain) { this.world = buildWorld(this.terrain, this.s.seed); this.worldRef = this.terrain; } return this.world; }
+  renderRoads() {
+    const cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok }));
+    if (this.cerLive) cer.push({ pts: this.cerLive, path: undefined as any, ok: true });
+    const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
+    if (onRoads) this.ensureWorld();
+    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, plans: L.plans, signs: L.signs }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null });
+  }
+  /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
+  private attachPendingSim() {
+    if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; this.pendingSim = null; if (!w || !this.terrain) return;
+    const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
+    if (err) { putRaw("auto:quarantine", { savedAt: Date.now(), reason: err, sim }); this.toast(`道路データは読み込まず退避しました: ${err}`); return; }
+    this.sim = sim; const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
+  }
   async generate() {
     if (errorsFor(this.issues, "honshu").length || errorsFor(this.issues, "islands").length || errorsFor(this.issues, "features").length) { this.status(); return; }
     const key = stateKey(this.s); this.generating = true; this.genProgress = 0; this.status();
     try {
       const res = await this.client.generate(JSON.parse(JSON.stringify(this.s)), (p) => { this.genProgress = p; this.status(); });
       if (stateKey(this.s) !== key) return;
-      this.terrain = res; this.terrainKey = key;
+      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.attachPendingSim();
     } catch (e: any) { if (String(e?.message) !== "cancelled") this.toast("地形生成に失敗: " + e?.message); }
     this.generating = false; this.render(); this.buildUI();
   }
@@ -72,10 +103,18 @@ export class App {
     const el = $("status"); el.replaceChildren();
     const add = (t: string, c = "") => el.append(h("span", { class: c }, t));
     const errs = this.issues.filter((i) => i.severity === "error" && STEPS.indexOf(i.step) <= Math.min(this.s.step, 3));
+    if (this.s.step === 6 && this.sim) {
+      const m = summary(this.sim), sp = this.sim.speed;
+      add(`${m.ym}`, "ok"); add(sp ? `速度 ×${sp}` : "停止中"); add(`路線${m.routes}本 総延長${m.km.toLocaleString()}km`); add(`建設中${m.building} 未成${m.unbuilt}`);
+      add(`状態 良${m.good}/可${m.fair}/悪${m.poor}/廃道${m.lost}/廃止${m.closed}`);
+      const last = this.sim.events[this.sim.events.length - 1]; if (last) add(`最近: ${last.text}`);
+      if (this.catching) add(this.catchInfo, "bad");
+      if (this.sim.skippedMonths) add(`省略${Math.floor(this.sim.skippedMonths / 12)}年分`, "bad");
+    }
     if (this.generating) add(`地形生成中 ${Math.round(this.genProgress * 100)}%`);
     if (errs.length) add(`⚠ 不正 ${errs.length}件`, "bad");
     else if (this.s.step > 0) add("✓ 検証OK", "ok");
-    if (this.s.finalized) add("確定済み", "ok");
+    if (this.s.finalized && this.s.step !== 6) add("確定済み🔒", "ok");
     $("dock-issues").classList.toggle("warn", errs.length > 0);
     $("dock-issues").textContent = errs.length ? `検証(${errs.length})` : "検証";
   }
@@ -83,6 +122,7 @@ export class App {
   // ---------- navigation ----------
   canAdvance(): boolean {
     const i = this.s.step; if (i >= STEPS.length - 1) return false;
+    if (i === 5) return this.s.finalized && !!this.terrain;
     for (let k = 1; k <= Math.min(i, 3); k++) if (errorsFor(this.issues, STEPS[k]).length) return false;
     return true;
   }
@@ -90,7 +130,7 @@ export class App {
 
   // ---------- editing tools ----------
   private bodyForTool(): IslandId { return this.s.step === 1 ? "honshu" : this.activeBody; }
-  private editable() { return this.tool !== "view" && !this.generating; }
+  private editable() { return this.tool !== "view" && !this.generating && !this.catching && (this.s.step === 6 || !this.store.locked); }
   handler() {
     return {
       active: () => this.editable(),
@@ -102,6 +142,8 @@ export class App {
   }
   toolBegin(w: Vec, sc: Vec): boolean {
     const t = this.tool, s = this.s;
+    if (t === "cer-kokudo1" || t === "cer-fudo1") { this.grab = { t, kind: t === "cer-kokudo1" ? "kokudo1" : "fudo1", pts: [w] }; this.cerLive = [w]; this.renderRoads(); return true; }
+    if (t === "pick") { this.grab = { t, w }; return true; }
     if (t === "pull" || t === "bulge" || t === "dent" || t === "move") {
       const id = this.bodyForTool(), bs = s.bodies[id];
       const c = worldToPostOps(bs.place, w);
@@ -124,9 +166,12 @@ export class App {
     }
     return false;
   }
+
   private onHonshu(w: Vec) { return pointInPolygon(w, worldParts("honshu", this.s.bodies.honshu)[0]); }
   toolMove(w: Vec, sc: Vec) {
     const g = this.grab; if (!g) return;
+    if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { if (dist(g.pts[g.pts.length - 1], w) >= 8 / this.r.view.zoom) { g.pts.push(w); this.cerLive = g.pts; this.renderRoads(); } return; }
+    if (g.t === "pick") { g.w = w; return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
       const scl = g.place0.scale, r = this.brushKm / scl;
       let op: Op;
@@ -146,7 +191,9 @@ export class App {
   }
   toolEnd() {
     const g = this.grab; this.grab = null; if (!g) return;
-    this.pending = null;
+    this.pending = null; this.cerLive = null;
+    if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { this.finishDraw(g.kind, g.pts); return; }
+    if (g.t === "pick") { this.pickScenery(g.w); return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
       let op: Op | undefined = g.op;
       if (!op && g.t !== "pull") op = clampOp({ t: "bulge", c: g.c, r: this.brushKm / g.place0.scale, k: g.t === "bulge" ? 0.3 : -0.3 });
@@ -166,6 +213,60 @@ export class App {
   suggestRanges() {
     const d = derive(this.s), neRef = rotv([Math.SQRT1_2, Math.SQRT1_2], this.s.bodies.honshu.place.rot), f = axisFrame(d.parts.honshu[0], neRef);
     this.store.commit((s) => { s.ridges.sw = suggestRidge(d.parts.honshu[0], f, "sw"); s.ridges.ne = suggestRidge(d.parts.honshu[0], f, "ne"); });
+  }
+
+  // ---------- Stage 2: ceremony, clock, scenery ----------
+  private finishDraw(kind: CerKind, pts: Vec[]) {
+    const w = this.ensureWorld(); if (!w) return;
+    if (pts.length < 2) { this.renderRoads(); return; }
+    this.cerDraft[kind] = { pts, prev: previewCeremony(w, kind, pts) };
+    if (!this.cerDraft[kind]!.prev.ok) this.toast(this.cerDraft[kind]!.prev.reasons[0]);
+    this.renderRoads(); this.buildUI();
+  }
+  cerReady() { return !!(this.cerDraft.kokudo1?.prev.ok && this.cerDraft.fudo1?.prev.ok); }
+  doCeremony() {
+    const w = this.ensureWorld(), k = this.cerDraft.kokudo1?.prev, f = this.cerDraft.fudo1?.prev;
+    if (!w || !this.terrain || !k?.ok || !f?.ok || !this.s.finalized || this.sim) return;
+    const sim = createSim(w, mapStateHash(this.s), this.terrain.hash, this.s.seed);
+    if (!performCeremony(sim, w, k, f)) { this.toast("開通の儀を行えませんでした"); return; }
+    sim.speed = 1; this.sim = sim; this.cerDraft = {}; this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
+    this.persist(); this.toast("開通の儀を終えました。時間が動き始めます"); this.onChange();
+  }
+  setSpeed(n: 0 | 1 | 5 | 20) { if (!this.sim) return; this.sim.speed = n; this.acc = 0; this.lastTick = performance.now(); this.persist(); this.buildUI(); }
+  /** Real-time clock: only while this page is visible. Tab hidden or app closed = no simulation; return = capped catch-up. */
+  tickClock() {
+    const now = performance.now(), sim = this.sim, w = this.world;
+    if (!sim || !w || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5) { this.lastTick = now; return; }
+    this.acc += (now - this.lastTick) * sim.speed; this.lastTick = now;
+    let n = Math.floor(this.acc / MS_PER_MONTH_X1); if (n <= 0) return;
+    n = Math.min(n, 8); advance(sim, w, n); this.acc -= n * MS_PER_MONTH_X1; if (this.acc > 2 * MS_PER_MONTH_X1) this.acc = 2 * MS_PER_MONTH_X1;
+    this.afterTick(now);
+  }
+  private afterTick(now = performance.now()) {
+    this.renderRoads();
+    if (now - this.lastHud > 400) { this.lastHud = now; this.status(); if (this.sheet === "history" || this.sheet === "roads") this.buildSheet(); }
+    if (now - this.lastPersist > 10000) this.persist();
+  }
+  async catchUp(elapsedMs: number) {
+    const sim = this.sim, w = this.world; if (!sim || !w || !sim.ceremonyDone) return;
+    const plan = planCatchUp(elapsedMs, sim.speed); if (plan.months <= 0 && plan.skipped <= 0) return;
+    this.catching = true; let done = 0;
+    while (done < plan.months) {
+      const n = Math.min(24, plan.months - done); advance(sim, w, n); done += n; this.catchInfo = `放置分を計算中 ${Math.floor(done / 12)}/${Math.floor(plan.months / 12)}年`; this.status();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    noteSkipped(sim, plan.skipped); this.catching = false; this.catchInfo = ""; this.lastTick = performance.now(); this.acc = 0;
+    if (plan.skipped) this.toast(`放置が長いため${Math.floor(plan.skipped / 12)}年分の経過を省略しました`);
+    this.renderRoads(); this.status(); this.persist();
+  }
+  onVisibility() {
+    if (document.hidden) { this.hiddenAt = Date.now(); this.persist(); return; }
+    if (this.sim && this.hiddenAt) { const away = Date.now() - this.hiddenAt; this.hiddenAt = 0; void this.catchUp(away); }
+  }
+  pickScenery(world: Vec) {
+    const w = this.ensureWorld(); if (!w || !this.sim || !this.terrain) return;
+    const g = new GeoMap(this.s, this.terrain).toGeo(world); this.pin = world;
+    this.scenery = exportScenery(this.sim, w, world, g); this.renderRoads(); this.sheet = "scenery"; this.buildSheet();
   }
 
   // ---------- UI ----------
@@ -191,7 +292,12 @@ export class App {
   private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); }
   buildToolbar() {
     const tb = $("toolbar"); tb.replaceChildren(); const st = this.stepId;
-    const TOOL_NAMES: Record<Tool, string> = { view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
+    const TOOL_NAMES: Record<Tool, string> = { "cer-kokudo1": "酷道1号を描く", "cer-fudo1": "腐道1号を描く", pick: "風景JSON: 地点を選ぶ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
+    if (this.store.locked && (st === "honshu" || st === "islands" || st === "features")) {
+      tb.append(h("div", { id: "lock-banner", role: "status" }, "🔒 地図は最終確定済みのためロック中(閲覧のみ)"), h("button", { id: "unlock-map", type: "button", onclick: () => this.unlockMap() }, "ロックを解除して編集"));
+      return;
+    }
+    if (st === "roads") { this.buildRoadToolbar(tb, TOOL_NAMES); return; }
     if (st === "honshu" || st === "islands" || st === "features") {
       const tgt = st === "islands" ? `／対象: ${ISLAND_LABEL[this.activeBody]}` : st === "honshu" ? "／対象: 本州" : "";
       tb.append(h("div", { id: "mode-label", role: "status", "aria-live": "polite", "data-tool": this.tool }, `選択中: ${TOOL_NAMES[this.tool]}${tgt}`));
@@ -214,13 +320,38 @@ export class App {
       tb.append(h("div", { class: "grp" }, h("button", { id: "reseed", onclick: () => this.store.commit((s) => { s.seed = (s.seed * 1664525 + 1013904223) >>> 0; }) }, "地形の乱数を変える"), h("span", {}, `seed ${this.s.seed}`)));
     }
   }
+  unlockMap() {
+    if (this.sim && !confirm("地図の編集を再開すると、作成済みの道路とシミュレーションは消えます。よろしいですか?")) return;
+    this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.pin = null; this.store.unlock(); this.persist(); this.toast("ロックを解除しました");
+  }
+  private buildRoadToolbar(tb: HTMLElement, names: Record<Tool, string>) {
+    const label = (t: string) => tb.append(h("div", { id: "mode-label", role: "status", "aria-live": "polite", "data-tool": this.tool }, t));
+    if (!this.s.finalized || !this.terrain) { label(this.s.finalized ? "地形を生成中…" : "地図を最終確定すると道路を始められます"); return; }
+    if (!this.sim) {
+      label(`選択中: ${names[this.tool]}`);
+      tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));
+      const g = h("div", { class: "grp" });
+      for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k]; g.append(this.tbtn(CER_LABEL[k] + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
+      tb.append(g);
+      for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const d = this.cerDraft[k]; if (d) tb.append(h("div", { id: "cer-status-" + k, class: "note " + (d.prev.ok ? "okc" : "badc") }, d.prev.ok ? `✓ ${CER_LABEL[k]}: 約${d.prev.lengthKm}km／終点: ${d.prev.endName}${d.prev.passes.length ? "／通過: " + d.prev.passes.slice(0, 4).join("・") : ""}` : `✗ ${d.prev.reasons.join(" / ")}`)); }
+      tb.append(h("button", { id: "cer-go", type: "button", disabled: !this.cerReady(), onclick: () => this.doCeremony() }, "開通の儀を行う"));
+      return;
+    }
+    label(`選択中: ${names[this.tool]}`);
+    const sp = h("div", { class: "grp" });
+    for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n, () => this.setSpeed(n), "speed-" + n));
+    tb.append(sp);
+    const g = h("div", { class: "grp" });
+    g.append(h("button", { id: "btn-history", type: "button", onclick: () => this.openSheet("history") }, "年表"), h("button", { id: "btn-roads", type: "button", onclick: () => this.openSheet("roads") }, "路線一覧"), this.tbtn("風景JSON", this.tool === "pick", () => this.setTool("pick"), "tool-pick"));
+    tb.append(g);
+  }
   buildSheet() {
     const sh = $("sheet"), body = $("sheet-body");
     sh.hidden = this.sheet === null; body.replaceChildren(); if (!this.sheet) return;
     if (this.sheet === "layers") {
       body.append(h("h3", {}, "表示レイヤー"));
       const wrap = h("div", { class: "row" });
-      for (const k of LAYER_KEYS) wrap.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-" + k, checked: this.s.layers[k], onchange: (e: Event) => { const v = (e.target as HTMLInputElement).checked; this.store.set((s) => { s.layers[k] = v; }); } }), LAYER_LABELS[k]));
+      for (const k of this.s.step === 6 ? [...LAYER_KEYS, ...ROAD_LAYER_KEYS] : LAYER_KEYS) wrap.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-" + k, checked: this.s.layers[k], onchange: (e: Event) => { const v = (e.target as HTMLInputElement).checked; this.store.set((s) => { s.layers[k] = v; }); } }), LAYER_LABELS[k]));
       body.append(wrap, h("small", {}, "河川・府県境・標高は「1E 地形生成」以降に表示されます。"));
     } else if (this.sheet === "issues") {
       body.append(h("h3", {}, "検証結果"));
@@ -229,32 +360,66 @@ export class App {
       for (const is of this.issues) body.append(h("div", { class: "issue " + is.severity }, `[${STEP_LABELS[is.step]}] ${is.msg}`));
       if (this.terrain?.warnings.length) { body.append(h("h3", {}, "地形生成の記録(簡易近似の限界)")); for (const w of this.terrain.warnings) body.append(h("div", { class: "issue warn" }, w)); }
       if (this.s.step < 3 && this.issues.some((i) => i.step === "features" || i.step === "islands")) body.append(h("small", {}, "後続工程の不整合は、その工程に進んで直してください。"));
-    } else if (this.sheet === "menu") this.buildMenu(body);
+    } else if (this.sheet === "history") this.buildHistory(body);
+    else if (this.sheet === "roads") this.buildRoadList(body);
+    else if (this.sheet === "scenery") this.buildScenery(body);
+    else if (this.sheet === "menu") this.buildMenu(body);
   }
+  private buildHistory(body: HTMLElement) {
+    body.append(h("h3", {}, "年表(新しい順)"));
+    if (!this.sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
+    if (this.sim.skippedMonths) body.append(h("div", { class: "issue warn" }, `放置により合計${Math.floor(this.sim.skippedMonths / 12)}年${this.sim.skippedMonths % 12}か月分の経過を省略しています`));
+    for (const e of [...this.sim.events].reverse().slice(0, 80)) body.append(h("div", { class: "issue" }, `${ymLabel(this.sim.startYear, e.month)} ${e.text}`, h("br"), h("small", {}, `原因: ${e.cause}`)));
+  }
+  private buildRoadList(body: HTMLElement) {
+    body.append(h("h3", {}, "路線一覧")); const sim = this.sim; if (!sim) return;
+    const km = (r: typeof sim.routes[string]) => Math.round(r.edges.reduce((a, x) => a + (sim.edges[x.edgeId]?.lengthKm ?? 0), 0));
+    for (const r of Object.values(sim.routes).filter((x) => x.active).sort((a, b) => (a.grade === b.grade ? a.number - b.number : a.grade === "national" ? -1 : 1))) {
+      const es = r.edges.map((x) => sim.edges[x.edgeId]), q = Math.round(es.reduce((a, e) => a + e.quality, 0) / (es.length || 1));
+      body.append(h("div", { class: "issue" }, `${routeLabel(r)} ${km(r)}km 品質${q} ${es.some((e) => e.lost) ? "(廃道あり)" : ""}`, h("br"), h("small", {}, `路線ID ${r.id} / 指定${ymLabel(sim.startYear, r.since)}`)));
+    }
+    body.append(h("h3", {}, "建設計画・未成線"));
+    for (const p of Object.values(sim.projects).filter((x) => x.status !== "open").slice(-30)) body.append(h("div", { class: "issue warn" }, `[${PROJECT_LABEL[p.status]}] ${sim.nodes[p.from]?.name ?? "地点"}〜${sim.nodes[p.to]?.name ?? "地点"} (${Math.round((p.spentBu / (p.costBu || 1)) * 100)}%)`, h("br"), h("small", {}, p.reason)));
+  }
+  private buildScenery(body: HTMLElement) {
+    body.append(h("h3", {}, "風景用JSON")); if (!this.scenery) { body.append(h("small", {}, "「風景JSON」を選び、地図上の地点をタップしてください")); return; }
+    const txt = JSON.stringify(this.scenery, null, 1);
+    body.append(h("pre", { id: "scenery-json", style: "white-space:pre-wrap;font-size:11px;max-height:34dvh;overflow:auto" }, txt),
+      h("div", { class: "row" }, h("button", { onclick: async () => { try { await navigator.clipboard.writeText(txt); this.toast("コピーしました"); } catch { this.toast("コピーできません"); } } }, "コピー"),
+        h("button", { onclick: () => this.download(txt, "kfm-scenery.json") }, "保存")));
+  }
+  private download(text: string, name: string) { const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "application/json" })), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
   async buildMenu(body: HTMLElement) {
     body.append(h("h3", {}, "セーブ / ロード / 出力"));
     const slots = ["slot1", "slot2", "slot3"], have = new Set(await listSlots());
     for (const n of slots) body.append(h("div", { class: "row" }, `${n.replace("slot", "スロット")}${have.has(n) ? " (使用中)" : ""}`,
-      h("button", { onclick: async () => this.toast((await saveSlot(n, this.s)) ? "セーブしました" : "セーブできません(ブラウザの保存が無効)") }, "セーブ"),
-      h("button", { disabled: !have.has(n), onclick: async () => { const l = await loadSlot(n); if (l) { this.store.replace(l.state); this.r.fit(l.state); this.toast("ロードしました" + (l.problems.length ? "(一部修復)" : "")); } else this.toast("ロードできません"); } }, "ロード")));
+      h("button", { onclick: async () => this.toast((await saveGame(n, makeSave(this.s, this.sim ?? this.pendingSim))) ? "セーブしました" : "セーブできません(ブラウザの保存が無効)") }, "セーブ"),
+      h("button", { disabled: !have.has(n), onclick: async () => { const l = await loadGame(n); if (l) this.adopt(l); else this.toast("ロードできません"); } }, "ロード")));
     body.append(h("div", { class: "row" },
       h("button", { id: "export", onclick: () => this.exportFile() }, "JSONエクスポート"),
-      h("label", {}, "JSON読込 ", h("input", { type: "file", accept: ".json,application/json", id: "import", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; const p = parseState(await f.text()); if (!p.ok) { this.toast("読み込めません: " + p.problems[0]); return; } this.store.replace(p.state); this.r.fit(p.state); this.toast("読み込みました" + (p.problems.length ? ` (修復${p.problems.length}件)` : "")); } }))));
+      h("label", {}, "JSON読込 ", h("input", { type: "file", accept: ".json,application/json", id: "import", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; const p = parseSave(await f.text()); if (!p.ok) { this.toast("読み込めません: " + p.problems[0]); return; } this.adopt(p); } }))));
+    if (this.s.finalized) body.append(h("div", { class: "row" }, h("button", { id: "unlock-menu", onclick: () => this.unlockMap() }, "地図のロックを解除して編集"), this.sim ? h("button", { id: "restart-roads", onclick: () => { if (confirm("道路を消して開通の儀からやり直します(地図は維持)。よろしいですか?")) { this.sim = null; this.cerDraft = {}; this.persist(); this.go(6); this.onChange(); } } }, "道路だけやり直す") : h("small", {}, "")));
     if (this.stepId === "confirm") {
       const errs = this.issues.filter((i) => i.severity === "error").length, ready = errs === 0 && !!this.terrain;
       body.append(h("h3", {}, "最終確定"));
       body.append(h("div", { class: "row" }, h("button", { id: "finalize", disabled: !ready, onclick: () => this.finalize() }, this.s.finalized ? "確定済み(再確定)" : "この地図を最終確定"), h("small", {}, ready ? "確定すると地理IDと座標変換APIが固定されます" : errs ? "不正を直してください" : "地形生成の完了を待ってください")));
       if (this.terrain) { const t = this.terrain.stats; body.append(h("small", {}, `陸地${t.landCells}セル / 河川${t.riverCount}本 / 府県${t.prefCount} / 都市補正${t.citiesMoved} / hash ${this.terrain.hash}`)); }
     }
-    body.append(h("div", { class: "row" }, h("button", { id: "reset", onclick: () => { if (confirm("初期状態に戻します。よろしいですか?")) { this.store.replace(defaultState(this.s.seed)); this.r.fit(this.s); } } }, "最初からやり直す")));
+    body.append(h("div", { class: "row" }, h("button", { id: "reset", onclick: () => { if (confirm("初期状態に戻します。よろしいですか?")) { this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.store.replace(defaultState(this.s.seed)); this.r.fit(this.s); } } }, "最初からやり直す")));
+  }
+  /** Load a parsed save (slot or file): map first, then roads only if they verify against the regenerated terrain. */
+  private adopt(l: { map: any; sim: SimState | null; quarantine: unknown; problems: string[] }) {
+    this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.r.fit(l.map);
+    if (l.quarantine) putRaw("auto:quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
+    this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
   }
   finalize() {
     if (!this.terrain || this.issues.some((i) => i.severity === "error")) return;
-    this.store.set((s) => { s.finalized = true; }); saveSlot("auto", this.s); this.toast("最終確定しました。JSONエクスポートで書き出せます");
+    this.store.set((s) => { s.finalized = true; }); this.persist(); this.toast("最終確定しました。JSONエクスポートで書き出せます");
   }
   exportFile() {
     const geo = this.s.finalized && this.terrain ? new GeoMap(this.s, this.terrain).summary() : undefined;
-    const blob = new Blob([exportJson(this.s, { geo })], { type: "application/json" });
+    const blob = new Blob([exportGame(makeSave(this.s, this.sim), { geo })], { type: "application/json" });
     const a = h("a", { href: URL.createObjectURL(blob), download: this.s.finalized ? "kfm-map-final.json" : "kfm-map-draft.json" });
     document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
