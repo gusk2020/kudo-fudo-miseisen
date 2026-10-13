@@ -35,26 +35,34 @@ export class Store {
   constructor(s: ProjectState = defaultState()) { this.state = s; }
   subscribe(f: () => void) { this.subs.add(f); return () => this.subs.delete(f); }
   private emit() { this.subs.forEach((f) => f()); }
-  /** Apply a mutation as one undoable step. */
-  commit(mut: (s: ProjectState) => void) {
+  /** Called when an edit is refused because the map is finalised (locked). */
+  onBlocked: (() => void) | null = null;
+  get locked() { return this.state.finalized; }
+  /** Apply a mutation as one undoable step. Refused (returns false) while the map is finalised. */
+  commit(mut: (s: ProjectState) => void): boolean {
+    if (this.state.finalized) { this.onBlocked?.(); return false; }
     this.undoStack.push(JSON.stringify(this.state));
     if (this.undoStack.length > 200) this.undoStack.shift();
     this.redoStack = [];
     mut(this.state);
-    this.state.finalized = false;
     this.emit();
+    return true;
   }
+  /** The only way to edit a finalised map again: explicit, not undoable. */
+  unlock() { this.state.finalized = false; this.emit(); }
   /** Non-undoable change (view preferences, step navigation). */
   set(mut: (s: ProjectState) => void) { mut(this.state); this.emit(); }
   get canUndo() { return this.undoStack.length > 0; }
   get canRedo() { return this.redoStack.length > 0; }
   undo() {
+    if (this.state.finalized) { this.onBlocked?.(); return false; }
     const p = this.undoStack.pop(); if (!p) return false;
     this.redoStack.push(JSON.stringify(this.state));
     const keepStep = this.state.step, keepLayers = this.state.layers;
     this.state = JSON.parse(p); this.state.step = keepStep; this.state.layers = keepLayers; this.emit(); return true;
   }
   redo() {
+    if (this.state.finalized) { this.onBlocked?.(); return false; }
     const p = this.redoStack.pop(); if (!p) return false;
     this.undoStack.push(JSON.stringify(this.state));
     const keepStep = this.state.step, keepLayers = this.state.layers;
