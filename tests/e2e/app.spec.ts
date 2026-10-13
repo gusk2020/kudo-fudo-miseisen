@@ -113,3 +113,27 @@ test("ridge drawing by finger and island placement validity", async ({ page }) =
   const drawn = (await app(page, "a => a.s.ridges.sw")) as any[]; expect(drawn.length).toBeGreaterThanOrEqual(2);
   expect(await app(page, "a => a.issues.some(i => i.code.startsWith('ridge.sw'))")).toBe(false);
 });
+
+test("active mode button is visibly distinct, exclusive, labelled and in sync (issue #2)", async ({ page }) => {
+  const errs = watchErrors(page); await boot(page);
+  await page.evaluate(() => (window as any).__kfm.go(1));
+  const st = (id: string) => page.evaluate((i) => { const b = document.getElementById(i)!, c = getComputedStyle(b); return { p: b.getAttribute("aria-pressed"), bg: c.backgroundColor, bw: parseFloat(c.borderTopWidth), t: b.textContent }; }, id);
+  expect(await page.textContent("#mode-label")).toContain("表示");
+  const idle = await st("tool-pull"); expect(idle.p).toBe("false");
+  await page.click("#tool-pull");
+  const on = await st("tool-pull"); expect(on.p).toBe("true"); expect(on.t).toContain("✓"); expect(on.bw).toBeGreaterThanOrEqual(3); expect(on.bg).not.toBe(idle.bg);
+  expect(await page.textContent("#mode-label")).toContain("引っ張る");
+  for (const id of ["tool-bulge", "tool-dent", "tool-move"]) expect((await st(id)).p).toBe("false");
+  await page.click("#tool-dent");   // switching moves the highlight: exactly one pressed
+  expect(await page.locator("#toolbar button[aria-pressed=true]").count()).toBe(1);
+  expect((await st("tool-pull")).p).toBe("false"); expect(await page.textContent("#mode-label")).toContain("凹ます");
+  expect(await app(page, "a => a.tool")).toBe("dent");
+  await page.click("#tool-dent"); expect(await app(page, "a => a.tool")).toBe("view"); expect(await page.textContent("#mode-label")).toContain("表示");
+  // the mode survives a toolbar rebuild (e.g. after an edit) and resets on a step change
+  await page.click("#tool-bulge"); await page.evaluate(() => (window as any).__kfm.store.commit((s: any) => { s.bodies.honshu.ops.push({ t: "bulge", c: [0, 0], r: 80, k: 0.1 }); }));
+  expect((await st("tool-bulge")).p).toBe("true");
+  await page.evaluate(() => (window as any).__kfm.go(2)); expect(await app(page, "a => a.tool")).toBe("view");
+  expect(await page.textContent("#mode-label")).toContain("対象: 北海道");
+  expect(await page.locator("#toolbar button[aria-pressed=true]").count()).toBe(1);   // the target chip only
+  expect(errs).toEqual([]);
+});

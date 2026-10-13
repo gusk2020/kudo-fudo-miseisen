@@ -86,7 +86,7 @@ export class App {
     for (let k = 1; k <= Math.min(i, 3); k++) if (errorsFor(this.issues, STEPS[k]).length) return false;
     return true;
   }
-  go(n: number) { n = Math.max(0, Math.min(STEPS.length - 1, n)); this.tool = "view"; this.store.set((s) => { s.step = n; }); if (n === 2 && this.activeBody === "honshu") this.activeBody = "hokkaido"; if (n === 1) this.activeBody = "honshu"; }
+  go(n: number) { n = Math.max(0, Math.min(STEPS.length - 1, n)); this.tool = "view"; this.pending = null; if (n === 2 && this.activeBody === "honshu") this.activeBody = "hokkaido"; if (n === 1) this.activeBody = "honshu"; this.store.set((s) => { s.step = n; }); }
 
   // ---------- editing tools ----------
   private bodyForTool(): IslandId { return this.s.step === 1 ? "honshu" : this.activeBody; }
@@ -187,10 +187,15 @@ export class App {
     ($("btn-undo") as HTMLButtonElement).disabled = !this.store.canUndo; ($("btn-redo") as HTMLButtonElement).disabled = !this.store.canRedo;
     this.status(); this.buildToolbar(); this.buildSheet();
   }
-  private tbtn(label: string, on: boolean, f: () => void, id?: string) { return h("button", { id, "aria-pressed": on, onclick: f }, label); }
+  private tbtn(label: string, on: boolean, f: () => void, id?: string) { return h("button", { id, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: f }, on ? "✓ " + label : label); }
   private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); }
   buildToolbar() {
     const tb = $("toolbar"); tb.replaceChildren(); const st = this.stepId;
+    const TOOL_NAMES: Record<Tool, string> = { view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
+    if (st === "honshu" || st === "islands" || st === "features") {
+      const tgt = st === "islands" ? `／対象: ${ISLAND_LABEL[this.activeBody]}` : st === "honshu" ? "／対象: 本州" : "";
+      tb.append(h("div", { id: "mode-label", role: "status", "aria-live": "polite", "data-tool": this.tool }, `選択中: ${TOOL_NAMES[this.tool]}${tgt}`));
+    }
     const tools = (list: [Tool, string][]) => { const g = h("div", { class: "grp" }); for (const [t, l] of list) g.append(this.tbtn(l, this.tool === t, () => this.setTool(t), "tool-" + t)); tb.append(g); };
     const brush = () => tb.append(h("label", {}, "範囲", h("input", { type: "range", min: 40, max: 400, step: 10, value: this.brushKm, id: "brush", oninput: (e: Event) => { this.brushKm = +(e.target as HTMLInputElement).value; } })));
     const xform = () => { const g = h("div", { class: "grp" }); g.append(h("button", { id: "rot-l", onclick: () => this.rotateSel(1) }, "⟲5°"), h("button", { id: "rot-r", onclick: () => this.rotateSel(-1) }, "⟳5°"), h("button", { id: "sc-up", onclick: () => this.scaleSel(1) }, "＋大"), h("button", { id: "sc-dn", onclick: () => this.scaleSel(-1) }, "－小")); tb.append(g); };

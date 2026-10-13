@@ -75,3 +75,10 @@ Natural Earth 1:10m（パブリックドメイン: 国境/県/都市/湖）、GE
   公開URL: https://gusk2020.github.io/kudo-fudo-miseisen/
 
 - Pages設定完了後の再実行: 2026-10-13 push(branch)で pages.yml を起動。
+
+## 9. Issue #2（操作ボタンの選択状態表示）
+- 原因: `aria-pressed` が属性値 `""` で出力され、CSS `[aria-pressed="true"]` に一致していなかった（選択中の見た目が出ない）。`"true"/"false"` の文字列で出力するよう修正。
+- 選択中: 青背景＋黄の太枠(3px)＋「✓」＋太字。非選択は通常色、disabled はグレー系。色以外の手がかりとして「選択中: ○○／対象: △△」ラベル(`#mode-label`, `role=status`)を表示。
+- 工程移動時に `activeBody` を先に更新するよう修正（ラベル/ハイライトが対象島とずれる不具合）。
+- 回転(⟲⟳)・拡縮は排他モードではなく1回押しの操作のため、モード表示の対象外。
+- テスト: E2E に1件追加（排他性・aria-pressed・太枠・ラベル同期・工程移動でのリセット）。既存と合わせ Vitest 28 / Playwright 8 全通過。
