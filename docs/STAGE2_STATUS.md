@@ -36,3 +36,5 @@
 - 構成: `src/sim/*`（純ロジック）、`src/render/roads.ts`、`src/core/save2.ts`、UIは `src/ui/app.ts`。E2E用フック `window.__kfm`（`sim`, `world`, `persist`, `catching`）。
 - 実行: `npm test` / `CHROMIUM_PATH=<chrome> npm run test:e2e`。
 - 次の作業: 実機確認→調整（予算曲線・衰退速度）、島間接続、道路図鑑、沿道施設、鉄道/港湾の交通種別。
+
+- Pages: デプロイ許可を claude/* に変更後、再デプロイ実行 (2026-10-13)。
