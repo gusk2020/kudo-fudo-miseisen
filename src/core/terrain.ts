@@ -204,7 +204,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     const i = c % nx, j = (c / nx) | 0;
     for (const [di, dj] of N8) {
       const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue;
-      const n = b * nx + a; if (!land[n] || seen[n]) continue;
+      const n = b * nx + a; if (!land[n] || seen[n] || island[n] !== island[c]) continue;
       seen[n] = 1; recv[n] = c; filled[n] = Math.max(elev[n], filled[c] + 1e-3); heap.push(filled[n], n);
     }
   }
@@ -216,6 +216,8 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     if (acc[c] > bestAcc[r]) { bestAcc[r] = acc[c]; bestChild[r] = c; }
   }
   const T = Math.max(8, Math.round(RIVER_AREA_KM2 / (cell * cell)));
+  // carve: a stream never runs uphill on the final surface (valleys are cut down to the upstream level)
+  for (let t = order.length - 1; t >= 0; t--) { const c = order[t], r = recv[c]; if (r >= 0 && acc[c] >= T && elev[r] > elev[c]) elev[r] = Math.max(1, elev[c]); }
   const streamSeg: number[] = [];
   for (const c of order) if (acc[c] >= T) {
     const r = recv[c];
@@ -232,7 +234,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   const mouths = order.filter((c) => recv[c] === -1 && acc[c] >= T).sort((a, b) => acc[b] - acc[a] || a - b);
   mouths.forEach((m, n) => {
     const path: Vec[] = []; let c = m, length = 0;
-    while (c >= 0) { path.push([cx(c % nx), cy((c / nx) | 0)]); c = bestChild[c]; }
+    while (c >= 0 && acc[c] >= T) { path.push([cx(c % nx), cy((c / nx) | 0)]); c = bestChild[c]; }
     path.reverse();
     for (let q = 1; q < path.length; q++) length += dist(path[q - 1], path[q]);
     rivers.push({ id: `riv.${String(n + 1).padStart(3, "0")}`, mouth: path[path.length - 1], lengthKm: Math.round(length), path, accCells: acc[m] });
@@ -287,7 +289,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     const lab = pref[c], i = c % nx, j = (c / nx) | 0;
     for (const [di, dj] of N8) {
       const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue;
-      const n = b * nx + a; if (!land[n]) continue;
+      const n = b * nx + a; if (!land[n] || island[n] !== island[c]) continue;
       const nd = key + (di && dj ? 1.414 : 1) * cost[n] * mult[lab - 1];
       if (nd < D[n]) { D[n] = nd; pref[n] = lab; dh.push(nd, n); }
     }
