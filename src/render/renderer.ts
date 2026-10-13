@@ -6,6 +6,7 @@ import type { TerrainResult } from "../core/terrain";
 import type { IslandId, Issue, Op, Place, ProjectState, Vec } from "../core/types";
 import { ISLAND_IDS } from "../core/types";
 import { featureWorld } from "../core/validate";
+import { RoadLayer, type RoadArgs } from "./roads";
 
 export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[] }; feature?: { which: "biwa" | "fuji"; pos: Vec } }
 export interface View { cx: number; cy: number; zoom: number } // centre in world km (y up), zoom = px per km
@@ -37,6 +38,7 @@ export class Renderer {
   app!: Application;
   view: View = { cx: 0, cy: 0, zoom: 0.3 };
   private root = new Container(); private base = new Container(); private overlay = new Container(); private labels = new Container();
+  roads = new RoadLayer(); private roadArgs: RoadArgs | null = null;
   private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
   private lastArgs: [ProjectState, TerrainResult | null, Issue[], Pending | null] | null = null;
   private rebuildTimer: any = 0;
@@ -48,7 +50,7 @@ export class Renderer {
     await r.app.init({ resizeTo: host, background: 0x123c69, antialias: true, resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true });
     host.appendChild(r.app.canvas);
     r.app.canvas.style.touchAction = "none";
-    r.root.addChild(r.base, r.overlay, r.labels); r.app.stage.addChild(r.root);
+    r.root.addChild(r.base, r.overlay, r.roads.container, r.labels); r.app.stage.addChild(r.root);
     r.app.renderer.on("resize", () => r.applyView());
     return r;
   }
@@ -58,7 +60,7 @@ export class Renderer {
   setView(v: Partial<View>, quiet = false) {
     Object.assign(this.view, v); this.view.zoom = Math.max(0.05, Math.min(12, this.view.zoom));
     this.applyView();
-    if (!quiet) { this.onViewChange?.(); clearTimeout(this.rebuildTimer); this.rebuildTimer = setTimeout(() => this.rebuild(), 140); }
+    if (!quiet) { this.onViewChange?.(); clearTimeout(this.rebuildTimer); this.rebuildTimer = setTimeout(() => { this.rebuild(); this.roads.redraw(this.view.zoom); }, 140); }
   }
   private applyView() {
     const { w, h } = this.size, z = this.view.zoom;
@@ -71,6 +73,8 @@ export class Renderer {
     this.setView({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, zoom: Math.min(w / (x1 - x0 + 120), h / (y1 - y0 + 120)) }, true);
     this.rebuild();
   }
+  /** Road layer only: cheap enough to call every simulation tick; skips redraw when nothing visible changed. */
+  setRoads(a: RoadArgs) { this.roadArgs = a; return this.roads.set(a, this.view.zoom); }
   update(s: ProjectState, t: TerrainResult | null, issues: Issue[], pending: Pending | null) { this.lastArgs = [s, t, issues, pending]; this.rebuild(); }
   private rebuild() {
     if (!this.lastArgs) return;

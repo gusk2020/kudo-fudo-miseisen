@@ -11,11 +11,11 @@ export interface Place { pos: Vec; rot: number; scale: number }
 export interface BodyState { ops: Op[]; place: Place }
 export interface FeatureState { pos: Vec | null; rot: number } // pos null = follow Honshu's warp of the real position
 
-export const STEPS = ["base", "honshu", "islands", "features", "terrain", "confirm"] as const;
+export const STEPS = ["base", "honshu", "islands", "features", "terrain", "confirm", "roads"] as const;
 export type StepId = (typeof STEPS)[number];
 export const STEP_LABELS: Record<StepId, string> = {
   base: "1A 初期表示", honshu: "1B 本州変形", islands: "1C 島の配置",
-  features: "1D 固有地形", terrain: "1E 地形生成", confirm: "1F 最終確定",
+  features: "1D 固有地形", terrain: "1E 地形生成", confirm: "1F 最終確定", roads: "2 道路・開通の儀",
 };
 
 export interface ProjectState {

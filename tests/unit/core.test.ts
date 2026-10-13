@@ -107,7 +107,7 @@ describe("constraints", () => {
 describe("determinism, save and undo", () => {
   test("parseState survives garbage and keeps schemaVersion", () => {
     for (const bad of [null, 5, "xx{", "{}", { bodies: 4 }, { schemaVersion: "a", bodies: { honshu: { ops: [{ t: "pull" }, 7], place: { pos: [NaN, 1], rot: 0, scale: 1 } } }, ridges: { sw: "bad" }, step: 99 }]) {
-      const r = parseState(bad as any); expect(r.state.schemaVersion).toBe(1); expect(() => validate(r.state)).not.toThrow(); expect(r.state.step).toBeLessThanOrEqual(5);
+      const r = parseState(bad as any); expect(r.state.schemaVersion).toBe(1); expect(() => validate(r.state)).not.toThrow(); expect(r.state.step).toBeLessThanOrEqual(6);
     }
     const r = parseState({ schemaVersion: 1, bodies: { honshu: { ops: [{ t: "pull", c: [0, 0], d: [1, 1], r: 50 }, { t: "pull", c: "x" }], place: { pos: [Infinity, 0], rot: 0, scale: 1 } } } });
     expect(r.state.bodies.honshu.ops).toHaveLength(1); expect(r.problems.length).toBeGreaterThan(0);

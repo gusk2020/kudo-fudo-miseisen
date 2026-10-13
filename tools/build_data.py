@@ -96,22 +96,29 @@ for f in A['features']:
     else: cc = places.get({'Hyōgo':'Kobe'}.get(nm, cityn)) 
     approx = cc is None
     lon, lat = (cc['longitude'], cc['latitude']) if cc else (pr['longitude'], pr['latitude'])
-    prefs.append({'id': pr['iso_3166_2'], 'weight': round(math.sqrt(pr['area_sqkm'] or 2000)), 'name': ja, 'island': island_of[nm], 'capital': capital[nm], 'seed': prj(lon, lat), 'seedApprox': approx})
+    prefs.append({'id': pr['iso_3166_2'], 'weight': round(math.sqrt(pr['area_sqkm'] or 2000)), 'name': ja, 'island': island_of[nm], 'capital': capital[nm], 'seed': prj(lon, lat), 'seedApprox': approx, 'pop': (cc['pop_max'] if cc else None)})
 # Hokkaido: 3 prefectures (札幌・函館・根室), city coordinates are well-known public facts
 for pid, nm, cap, lon, lat in [('HK-SAP','札幌県','札幌市',141.3545,43.0621),('HK-HAK','函館県','函館市',140.7288,41.7688),('HK-NEM','根室県','根室市',145.5828,43.3306)]:
-    prefs.append({'id': pid, 'weight': {'HK-SAP':190,'HK-HAK':120,'HK-NEM':170}[pid], 'name': nm, 'island': 'hokkaido', 'capital': cap, 'seed': prj(lon, lat), 'seedApprox': False})
+    prefs.append({'id': pid, 'weight': {'HK-SAP':190,'HK-HAK':120,'HK-NEM':170}[pid], 'name': nm, 'island': 'hokkaido', 'capital': cap, 'seed': prj(lon, lat), 'seedApprox': False, 'pop': {'HK-SAP':1900000,'HK-HAK':270000,'HK-NEM':25000}[pid]})
 assert len(prefs) == 49, len(prefs)
 out['prefectures'] = prefs
-cities = [{'id': 'C-'+p['id'], 'name': p['capital'], 'pos': p['seed'], 'kind': 'capital', 'pref': p['id'], 'island': p['island']} for p in prefs]
+cities = [{'id': 'C-'+p['id'], 'name': p['capital'], 'pos': p['seed'], 'kind': 'capital', 'pref': p['id'], 'island': p['island'], 'pop': p.get('pop')} for p in prefs]
 have = {c['name'] for c in cities}
+# populated places that are really a prefectural capital already in the list: keep the capital's site, take the real population
+dup = {'Tsu':'津市','Mito':'水戸市','Naha':'那覇市','Nagoya':'名古屋市','Sendai':'仙台市'}
+ja_city = {'Kawasaki':'川崎市','Kawagoe':'川越市','Hachioji':'八王子市','Kitakyushu':'北九州市','Hamamatsu':'浜松市','Iwaki':'いわき市'}
 for nm, pr in places.items():
     pos = prj(pr['longitude'], pr['latitude'])
+    if nm in dup:
+        for c in cities:
+            if c['name'] == dup[nm] and not c.get('pop'): c['pop'] = pr['pop_max']
+        continue
     if pr['pop_max'] < 300000: continue
     if any(math.hypot(pos[0]-c['pos'][0], pos[1]-c['pos'][1]) < 15 for c in cities): continue
     # island by nearest outline vertex
     best = min(((math.hypot(q[0]-pos[0], q[1]-pos[1]), k) for k, v in out['islands'].items() for q in v['outline']))
     if best[0] > 40: continue
-    cities.append({'id': 'C-'+pr['ne_id'].__str__(), 'name': nm, 'pos': pos, 'kind': 'city', 'pref': None, 'island': best[1], 'pop': pr['pop_max']})
+    cities.append({'id': 'C-'+pr['ne_id'].__str__(), 'name': ja_city.get(nm, nm), 'pos': pos, 'kind': 'city', 'pref': None, 'island': best[1], 'pop': pr['pop_max']})
 out['cities'] = cities
 # DEM crop
 im = np.array(Image.open(demp).convert('RGB')).astype(np.int32)

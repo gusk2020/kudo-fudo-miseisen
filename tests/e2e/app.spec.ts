@@ -58,21 +58,23 @@ test("full flow: place islands, features, generate terrain, finalize, export", a
   await page.click("#finalize"); expect(await app(page, "a => a.s.finalized")).toBe(true);
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#export")]);
   const j = JSON.parse(fs.readFileSync((await dl.path())!, "utf8"));
-  expect(j.schemaVersion).toBe(1); expect(j.state.finalized).toBe(true); expect(j.geo.geoIds.prefectures).toHaveLength(49); expect(j.geo.terrainHash).toBeTruthy();
+  expect(j.schemaVersion).toBe(2); expect(j.map.schemaVersion).toBe(1); expect(j.map.finalized).toBe(true); expect(j.sim).toBeNull(); expect(j.mapHash).toBeTruthy(); expect(j.geo.geoIds.prefectures).toHaveLength(49); expect(j.geo.terrainHash).toBeTruthy();
   expect(errs).toEqual([]);
 });
 
-test("editing an earlier step invalidates later work and un-finalizes", async ({ page }) => {
+test("a finalised map is locked: edits are refused until explicitly unlocked", async ({ page }) => {
   await boot(page);
   await page.evaluate(() => { const a = (window as any).__kfm; a.go(3); a.suggestRanges(); a.go(5); });
   await page.waitForFunction(() => (window as any).__kfm.terrain, null, { timeout: 60000 });
-  await page.evaluate(() => { const a = (window as any).__kfm; a.finalize(); });
+  await page.evaluate(() => (window as any).__kfm.finalize());
   expect(await app(page, "a => a.s.finalized")).toBe(true);
-  await page.evaluate(() => { const a = (window as any).__kfm; a.go(2); a.activeBody = "hokkaido"; a.store.commit((s: any) => { s.bodies.hokkaido.place.pos = [-900, -900]; }); });
-  expect(await app(page, "a => a.s.finalized")).toBe(false);
+  expect(await app(page, "a => a.store.commit(s => { s.bodies.hokkaido.place.pos = [-900, -900]; })")).toBe(false);
+  expect(await app(page, "a => a.s.bodies.hokkaido.place.pos[0] !== -900")).toBe(true); expect(await app(page, "a => a.s.finalized")).toBe(true);
+  await page.evaluate(() => (window as any).__kfm.go(2)); expect(await page.isVisible("#lock-banner")).toBe(true); expect(await page.locator("#tool-pull, #tool-move").count()).toBe(0);
+  await page.click("#unlock-map"); expect(await app(page, "a => a.s.finalized")).toBe(false);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.activeBody = "hokkaido"; a.store.commit((s: any) => { s.bodies.hokkaido.place.pos = [-900, -900]; }); });
   expect(await app(page, "a => a.terrain")).toBeNull();
   expect(await app(page, "a => a.issues.some(i => i.code === 'hokkaido.side')")).toBe(true);
-  expect(await page.isDisabled("#btn-next") || true).toBe(true);
   await page.click("#btn-next"); expect(await app(page, "a => a.s.step")).toBe(2);   // refuses to advance with an invalid placement
 });
 
@@ -136,4 +138,113 @@ test("active mode button is visibly distinct, exclusive, labelled and in sync (i
   expect(await page.textContent("#mode-label")).toContain("対象: 北海道");
   expect(await page.locator("#toolbar button[aria-pressed=true]").count()).toBe(1);   // the target chip only
   expect(errs).toEqual([]);
+});
+
+// ---------------- Stage 2 ----------------
+async function toRoads(page: Page) {
+  await boot(page);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.go(3); a.suggestRanges(); a.go(5); });
+  await page.waitForFunction(() => (window as any).__kfm.terrain, null, { timeout: 60000 });
+  await page.evaluate(() => (window as any).__kfm.finalize());
+  await page.click("#btn-next"); expect(await app(page, "a => a.s.step")).toBe(6);
+}
+/** Draw a curve on screen between two world points (straight line of mouse moves). */
+async function draw(page: Page, from: [number, number], to: [number, number]) {
+  const a = await screenOf(page, from), b = await screenOf(page, to);
+  await page.mouse.move(a[0], a[1]); await page.mouse.down(); await page.mouse.move(b[0], b[1], { steps: 14 }); await page.mouse.up();
+}
+const cityPos = (page: Page, name: string) => page.evaluate((n) => (window as any).__kfm.world.cities.find((c: any) => c.name === n).pos, name) as Promise<[number, number]>;
+
+test("開通の儀: invalid line is refused with a reason, valid lines start the clock", async ({ page }) => {
+  const errs = watchErrors(page); await toRoads(page);
+  expect(await page.textContent("#era-note")).toContain("光文"); expect(await page.isDisabled("#cer-go")).toBe(true);
+  const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市"), osaka = await cityPos(page, "大阪市");
+  await page.click("#tool-cer-kokudo1"); expect(await page.getAttribute("#tool-cer-kokudo1", "aria-pressed")).toBe("true"); expect(await page.textContent("#mode-label")).toContain("酷道1号を描く");
+  await draw(page, osaka, nagoya);   // does not start in Tokyo
+  expect(await page.textContent("#cer-status-kokudo1")).toContain("東京府"); expect(await page.isDisabled("#cer-go")).toBe(true);
+  await draw(page, tokyo, nagoya);
+  expect(await page.textContent("#cer-status-kokudo1")).toContain("✓");
+  await page.click("#tool-cer-fudo1");
+  const inTokyo = await page.evaluate(() => { const a = (window as any).__kfm, w = a.world; const t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; });
+  await draw(page, tokyo, inTokyo);
+  expect(await page.textContent("#cer-status-fudo1")).toContain("✓"); expect(await page.isDisabled("#cer-go")).toBe(false);
+  await page.click("#cer-go");
+  expect(await app(page, "a => !!a.sim && a.sim.ceremonyDone && a.sim.speed")).toBe(1);
+  expect(await app(page, "a => Object.values(a.sim.routes).map(r => r.grade + r.number).sort().join()")).toBe("fu1,national1");
+  expect(await page.textContent("#status")).toContain("光文6年(1950)1月");
+  expect(errs).toEqual([]);
+});
+
+test("time controls, road layer updates without rebuilding terrain, status HUD", async ({ page }) => {
+  const errs = watchErrors(page); await toRoads(page);
+  await page.evaluate(() => { const a = (window as any).__kfm, w = a.world, t = w.cities.find((c: any) => c.name === "東京"), n = w.cities.find((c: any) => c.name === "名古屋市"); const pv = (k: string, pts: any) => ({ pts, prev: null }); void pv; a.cerDraft.kokudo1 = null; a.__pts = [t.pos, n.pos]; });
+  const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市");
+  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, nagoya); await page.click("#tool-cer-fudo1");
+  const far = await page.evaluate(() => { const w = (window as any).__kfm.world, t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; });
+  await draw(page, tokyo, far); await page.click("#cer-go");
+  const sprite0 = await app(page, "a => a.r.base.children.length");
+  await page.click("#speed-20"); expect(await page.getAttribute("#speed-20", "aria-pressed")).toBe("true"); expect(await page.getAttribute("#speed-1", "aria-pressed")).toBe("false");
+  await page.waitForFunction(() => (window as any).__kfm.sim.month >= 40, null, { timeout: 30000 });
+  expect(await app(page, "a => a.r.base.children.length")).toBe(sprite0);   // terrain layers untouched by ticks
+  await page.click("#speed-0"); const m = await app(page, "a => a.sim.month") as number; await page.waitForTimeout(800); expect(await app(page, "a => a.sim.month")).toBe(m);
+  const hud = await page.textContent("#status"); expect(hud).toContain("停止中"); expect(hud).toContain("路線"); expect(hud).toContain("建設中"); expect(hud).toContain("状態");
+  await page.click("#btn-history"); expect(await page.locator("#sheet .issue").count()).toBeGreaterThan(0); expect(await page.textContent("#sheet")).toContain("原因"); await page.click("#sheet-close");
+  await page.click("#tool-pick"); const spot = await screenOf(page, tokyo); await page.mouse.click(spot[0], spot[1]);
+  expect(JSON.parse((await page.textContent("#scenery-json"))!).schema).toBe("kfm.scenery.v1");
+  expect(errs).toEqual([]);
+});
+
+test("roads survive reload; mismatching map quarantines roads instead of misplacing them", async ({ page }) => {
+  const errs = watchErrors(page); await toRoads(page);
+  await page.evaluate(() => { const a = (window as any).__kfm, w = a.world, t = w.cities.find((c: any) => c.name === "東京"), n = w.cities.find((c: any) => c.name === "名古屋市"); a.setCer = null; return [t.pos, n.pos]; });
+  const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市");
+  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, nagoya); await page.click("#tool-cer-fudo1");
+  const far = await page.evaluate(() => { const w = (window as any).__kfm.world, t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; });
+  await draw(page, tokyo, far); await page.click("#cer-go");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.persist(); }); const before = await app(page, "a => JSON.stringify(Object.keys(a.sim.edges))");
+  await page.waitForTimeout(500); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 60000 });
+  expect(await app(page, "a => JSON.stringify(Object.keys(a.sim.edges))")).toBe(before); expect(await app(page, "a => a.s.step")).toBe(6);
+  // tamper with the saved map (as if edited elsewhere) and reload: roads must not load onto it
+  await page.evaluate(() => { (window as any).__kfm.persist = () => Promise.resolve(true); });   // stop the page's own pagehide save from overwriting the tampered copy
+  await page.evaluate(() => new Promise<void>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const db = r.result, g = db.transaction("saves").objectStore("saves").get("auto"); g.onsuccess = () => { const j = JSON.parse(g.result); j.save.map.bodies.honshu.place.rot = 0.2; const t = db.transaction("saves", "readwrite"); t.objectStore("saves").put(JSON.stringify(j), "auto"); t.oncomplete = () => res(); }; }; }));
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm); await page.waitForTimeout(1500);
+  expect(await app(page, "a => a.sim")).toBeNull();
+  const q = await page.evaluate(() => new Promise<any>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const g = r.result.transaction("saves").objectStore("saves").get("auto:quarantine"); g.onsuccess = () => res(g.result ? JSON.parse(g.result) : null); }; }));
+  expect(q).not.toBeNull(); expect(Object.keys(q.quarantine.edges).length).toBeGreaterThan(0);
+  expect(errs).toEqual([]);
+});
+
+test("v1 save in IndexedDB still opens (migrated), without losing the map", async ({ page }) => {
+  const errs = watchErrors(page); await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm);
+  await page.evaluate(() => new Promise<void>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const s = { schemaVersion: 1, seed: 99, step: 3, bodies: { honshu: { ops: [{ t: "bulge", c: [0, 0], r: 100, k: 0.2 }], place: { pos: [0, 0], rot: 0, scale: 1 } } }, features: {}, ridges: {}, finalized: false, layers: {} }; const t = r.result.transaction("saves", "readwrite"); t.objectStore("saves").put(JSON.stringify({ savedAt: 1, state: s }), "auto"); t.oncomplete = () => res(); }; }));
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm); await page.waitForTimeout(500);
+  expect(await app(page, "a => a.s.seed")).toBe(99); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(1); expect(await app(page, "a => a.s.step")).toBe(3); expect(await app(page, "a => a.sim")).toBeNull();
+  expect(errs).toEqual([]);
+});
+
+async function startGame(page: Page) {
+  await toRoads(page);
+  const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市");
+  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, nagoya); await page.click("#tool-cer-fudo1");
+  const far = await page.evaluate(() => { const w = (window as any).__kfm.world, t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; });
+  await draw(page, tokyo, far); await page.click("#cer-go");
+}
+test("long absence: catch-up is capped, reported, and never freezes the page", async ({ page }) => {
+  const errs = watchErrors(page); await startGame(page);
+  // persist() stamps 'now' synchronously but the stored copy is serialised later, so backdate right after calling it
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 20; const p = a.persist.bind(a); p(); a.sim.lastWallMs = Date.now() - 7 * 24 * 3600 * 1000; a.persist = () => Promise.resolve(true); });
+  await page.waitForTimeout(400); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 60000 });
+  // the page stays responsive while catching up
+  const t0 = Date.now(); await page.evaluate(() => 1); expect(Date.now() - t0).toBeLessThan(3000);
+  await page.waitForFunction(() => !(window as any).__kfm.catching && (window as any).__kfm.sim.skippedMonths > 0, null, { timeout: 60000 });
+  const r = await page.evaluate(() => { const s = (window as any).__kfm.sim; return { month: s.month, skipped: s.skippedMonths, ev: s.events.some((e: any) => e.kind === "skip") }; });
+  expect(r.month).toBeGreaterThanOrEqual(360); expect(r.month).toBeLessThan(420); expect(r.skipped).toBeGreaterThan(0); expect(r.ev).toBe(true);
+  expect(await page.textContent("#status")).toContain("省略"); expect(errs).toEqual([]);
+});
+
+test("step 6 phone layout: toolbar fits, HUD readable, no page scroll", async ({ page }) => {
+  await startGame(page); await page.waitForTimeout(500);
+  const m = await page.evaluate(() => { const tb = document.getElementById("toolbar")!.getBoundingClientRect(), st = document.getElementById("status")!.getBoundingClientRect(); return { tbTop: tb.top, tbH: tb.height, ih: innerHeight, sw: document.documentElement.scrollWidth, iw: innerWidth, stBottom: st.bottom }; });
+  expect(m.sw).toBeLessThanOrEqual(m.iw); expect(m.tbH).toBeLessThan(m.ih * 0.43); expect(m.stBottom).toBeLessThan(m.tbTop);
+  await page.screenshot({ path: "test-results/stage2-hud.png" });
 });
