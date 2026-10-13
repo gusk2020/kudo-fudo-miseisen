@@ -65,3 +65,11 @@ Natural Earth 1:10m（パブリックドメイン: 国境/県/都市/湖）、GE
 - 開発: `npm ci && npm run dev`。E2E用フック `window.__kfm`（App）。
 - 制約判定(`validate.ts`/`constraints.ts`)は描画に依存しない。地形生成は `generateTerrain(state, dem)` の純関数（同一state→同一hash）。
 - Opus監査推奨: 制約の解釈(§2)、ヤコビアン閾値(`validate.ts`)、府県生成アルゴリズムと重み、地形の現実性、座標逆変換の収束条件。
+
+## 8. CI / Pages 実行結果（2026-10-13）
+- CI（型検査・Vitest 28件・Playwright 7件）: push と PR の両方で **成功**（run 38405640081 / 38405649766）。
+- Pages: `configure-pages` が失敗（GITHUB_TOKEN では Pages を有効化できない）。**未公開**。オーナー側の設定が必要:
+  1. Settings → Pages → Source を **GitHub Actions** にする。
+  2. Settings → Environments → `github-pages` → Deployment branches に `claude/stage1-map-generator` を許可（または制限なし）。
+  3. Actions タブ → Pages → Run workflow（ブランチ `claude/stage1-map-generator`）。
+  公開URL: https://gusk2020.github.io/kudo-fudo-miseisen/
