@@ -73,3 +73,5 @@ Natural Earth 1:10m（パブリックドメイン: 国境/県/都市/湖）、GE
   2. Settings → Environments → `github-pages` → Deployment branches に `claude/stage1-map-generator` を許可（または制限なし）。
   3. Actions タブ → Pages → Run workflow（ブランチ `claude/stage1-map-generator`）。
   公開URL: https://gusk2020.github.io/kudo-fudo-miseisen/
+
+- Pages設定完了後の再実行: 2026-10-13 push(branch)で pages.yml を起動。
