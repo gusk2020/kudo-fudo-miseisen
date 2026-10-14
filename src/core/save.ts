@@ -51,6 +51,7 @@ export function parseState(input: unknown): { state: ProjectState; problems: str
     features: { biwa: cleanFeature(raw.features?.biwa), fuji: cleanFeature(raw.features?.fuji) },
     ridges: { sw: cleanLine(raw.ridges?.sw, problems, "南西山脈"), ne: cleanLine(raw.ridges?.ne, problems, "北東山脈") },
     finalized: raw.finalized === true,
+    ...(raw.real === true ? { real: true } : {}),
     layers: { ...d.layers },
   };
   if (raw.layers && typeof raw.layers === "object") for (const k of Object.keys(d.layers)) if (typeof raw.layers[k] === "boolean") s.layers[k] = raw.layers[k];

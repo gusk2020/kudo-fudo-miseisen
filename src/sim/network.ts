@@ -1,7 +1,7 @@
 /** Road graph operations: nodes, edges, splitting, and laying a grid path onto the network. */
 import { dist } from "../core/geom";
 import type { Vec } from "../core/types";
-import type { EdgeState, RouteEdgeRef, SimEdge, SimNode, SimState, Standard, Surface } from "./types";
+import { modeOf, type EdgeState, type Mode, type RouteEdgeRef, type SimEdge, type SimNode, type SimState, type Standard, type Surface } from "./types";
 import { cellDistKm, type World } from "./world";
 
 export const pad = (n: number, w = 6) => String(n).padStart(w, "0");
@@ -9,7 +9,7 @@ export function newId(sim: SimState, kind: "node" | "edge" | "route" | "project"
   const n = ++sim.next[kind]; return `${{ node: "n", edge: "e", route: "r", project: "p" }[kind]}.${pad(n)}`;
 }
 export function newEdgeDefaults(): Omit<SimEdge, "id" | "a" | "b" | "cells" | "surface" | "quality" | "built" | "open" | "maxGradePct" | "builtMonth" | "region" | "standard" | "state"> {
-  return { lengthKm: 0, weathering: 0, lost: false, traffic: 0, lowYears: 0, through: 0, local: 0, peakThrough: 0, zeroYears: 0, reviveYears: 0, congYears: 0, nick: false, hist: [], bypassOf: [], bypassedBy: [], throughDropYears: 0 };
+  return { lengthKm: 0, weathering: 0, lost: false, traffic: 0, lowYears: 0, through: 0, local: 0, peakThrough: 0, zeroYears: 0, reviveYears: 0, congYears: 0, nick: false, hist: [], bypassOf: [], bypassedBy: [], throughDropYears: 0, freight: 0 };
 }
 /** The prefecture most of an edge's cells lie in (its budget region). */
 export function regionOfCells(w: World, cells: number[]): string {
@@ -20,17 +20,28 @@ export function regionOfCells(w: World, cells: number[]): string {
 export function setEdgeState(sim: SimState, e: SimEdge, st: EdgeState, why: string) {
   if (e.state === st) return; e.state = st; e.open = st === "open"; e.lost = st === "lost";
   if (st === "open") { e.zeroYears = 0; e.reviveYears = 0; }
-  pushHist(sim, e, `${{ open: "供用(再開)", dormant: "休止", closed: "閉鎖", lost: "廃道化" }[st]}: ${why}`);
+  pushHist(sim, e, `${(modeOf(e) === "rail" ? { open: "運行再開", dormant: "運休", closed: "廃止", lost: "廃線跡化" } : { open: "供用(再開)", dormant: "休止", closed: "閉鎖", lost: "廃道化" })[st]}: ${why}`);
 }
 export function pushHist(sim: SimState, e: SimEdge, t: string) { e.hist.push({ m: sim.month, t }); if (e.hist.length > 40) e.hist.splice(1, e.hist.length - 40); }
-export interface NetIndex { nodeByCell: Map<number, string>; cellEdge: Map<number, string>; step: Map<string, { edge: string; i: number }>; roadCells: Set<number> }
-export function buildIndex(sim: SimState): NetIndex {
-  const nodeByCell = new Map<number, string>(), cellEdge = new Map<number, string>(), step = new Map<string, { edge: string; i: number }>(), roadCells = new Set<number>();
-  for (const n of Object.values(sim.nodes)) nodeByCell.set(n.cell, n.id);
+/**
+ * `nodeByCell` and the edge maps are per mode (a rail line is not broken by a road junction it merely crosses); `anyNode` is every node
+ * on the map, so a cell never gets two nodes. A city is a node for both modes. `mode` omitted = roads (every pre-Stage-3 caller).
+ */
+export interface NetIndex { nodeByCell: Map<number, string>; anyNode: Map<number, string>; cellEdge: Map<number, string>; step: Map<string, { edge: string; i: number }>; roadCells: Set<number> }
+export function buildIndex(sim: SimState, mode: Mode = "road"): NetIndex {
+  const nodeByCell = new Map<number, string>(), anyNode = new Map<number, string>(), cellEdge = new Map<number, string>(), step = new Map<string, { edge: string; i: number }>(), roadCells = new Set<number>();
+  const used = new Set<string>(), other = new Set<string>();
+  for (const e of Object.values(sim.edges)) { const s = modeOf(e) === mode ? used : other; s.add(e.a); s.add(e.b); }
+  for (const n of Object.values(sim.nodes)) {
+    anyNode.set(n.cell, n.id);
+    // roads see every node except stations no road uses (the old behaviour: villages and junctions break a road path); rail sees cities and its own stations
+    if (n.kind === "city" || used.has(n.id) || (mode === "road" && !other.has(n.id))) nodeByCell.set(n.cell, n.id);
+  }
   for (const e of Object.values(sim.edges)) {
+    if (modeOf(e) !== mode) continue;
     for (let i = 0; i < e.cells.length; i++) { roadCells.add(e.cells[i]); if (i > 0 && i < e.cells.length - 1) cellEdge.set(e.cells[i], e.id); if (i + 1 < e.cells.length) { step.set(`${e.cells[i]}:${e.cells[i + 1]}`, { edge: e.id, i }); step.set(`${e.cells[i + 1]}:${e.cells[i]}`, { edge: e.id, i }); } }
   }
-  return { nodeByCell, cellEdge, step, roadCells };
+  return { nodeByCell, anyNode, cellEdge, step, roadCells };
 }
 export function edgeLengthKm(w: World, sim: SimState, e: Pick<SimEdge, "a" | "b" | "cells">): number {
   const pts = edgePoints(w, sim, e); let s = 0; for (let i = 1; i < pts.length; i++) s += dist(pts[i - 1], pts[i]); return s;
@@ -54,10 +65,12 @@ export function maxGradePct(w: World, cells: number[]): number {
   return Math.round(m * 10) / 10;
 }
 export function nodeAtCell(sim: SimState, w: World, idx: NetIndex, cell: number, kind: SimNode["kind"] = "junction"): string {
-  const have = idx.nodeByCell.get(cell); if (have) return have;
+  let have = idx.anyNode.get(cell);
+  if (!have) for (const n of Object.values(sim.nodes)) if (n.cell === cell) { have = n.id; break; }   // the caller's index can be stale: one node per cell, always
+  if (have) { idx.nodeByCell.set(cell, have); idx.anyNode.set(cell, have); return have; }
   const city = w.cityByCell.get(cell), id = newId(sim, "node");
   sim.nodes[id] = city ? { id, kind: "city", cell, pos: city.pos, cityId: city.id, name: city.name } : { id, kind, cell, pos: w.cellPos(cell) };
-  idx.nodeByCell.set(cell, id); return id;
+  idx.nodeByCell.set(cell, id); idx.anyNode.set(cell, id); return id;
 }
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
@@ -74,10 +87,10 @@ export function splitEdge(sim: SimState, w: World, edgeId: string, at: number, n
   if (e.bypassedBy.length) e2.bypassedBy = [...e.bypassedBy]; if (e.bypassOf.length) e2.bypassOf = [...e.bypassOf];
   const rewrite = (list: RouteEdgeRef[]) => { for (let i = 0; i < list.length; i++) if (list[i].edgeId === edgeId) { const d = list[i].dir; list.splice(i, 1, ...(d === 1 ? [{ edgeId, dir: 1 as const }, { edgeId: id2, dir: 1 as const }] : [{ edgeId: id2, dir: -1 as const }, { edgeId, dir: -1 as const }])); i++; } };
   for (const r of Object.values(sim.routes)) rewrite(r.edges);
-  for (const p of Object.values(sim.projects)) { rewrite(p.chain); const k = p.edgeIds.indexOf(edgeId); if (k >= 0) p.edgeIds.splice(k + 1, 0, id2); }
+  for (const p of Object.values(sim.projects)) { rewrite(p.chain); const k = p.edgeIds.indexOf(edgeId); if (k >= 0) p.edgeIds.splice(k + 1, 0, id2); const q = p.replaces.indexOf(edgeId); if (q >= 0) p.replaces.splice(q + 1, 0, id2); }
   return id2;
 }
-export interface LayOpts { open: boolean; surface: Surface; quality: number; built: number; month: number; standard?: Standard }
+export interface LayOpts { open: boolean; surface: Surface; quality: number; built: number; month: number; standard?: Standard; mode?: Mode; op?: string }
 /**
  * Lay a grid path onto the network. Steps that already run along an existing edge are shared (designation overlap);
  * everything else becomes new edges. Crossings/touches of existing roads become junctions. Returns the ordered chain.
@@ -86,7 +99,7 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
   const cells = pathCells.filter((c, i) => i === 0 || c !== pathCells[i - 1]);
   const chain: RouteEdgeRef[] = [], created: string[] = [];
   if (cells.length < 2 || cells[0] === cells[cells.length - 1]) return { chain, created };
-  let idx = buildIndex(sim); const n = cells.length;
+  const mode = o.mode ?? "road"; let idx = buildIndex(sim, mode); const n = cells.length;
   const shared = (i: number) => idx.step.has(`${cells[i]}:${cells[i + 1]}`);       // step i -> i+1
   // 1) make sure every breakpoint cell is a node (splitting existing edges where a path touches their interior)
   const bp: number[] = [];
@@ -99,7 +112,7 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     const eid = idx.cellEdge.get(c);
     if (eid) { const e = sim.edges[eid], at = e.cells.indexOf(c); const nid = nodeAtCell(sim, w, idx, c, "junction"); splitEdge(sim, w, eid, at, nid); }
     else nodeAtCell(sim, w, idx, c, i === 0 || i === n - 1 ? "end" : "junction");
-    idx = buildIndex(sim);
+    idx = buildIndex(sim, mode);
   }
   // 2) walk breakpoint to breakpoint
   const addNew = (seg: number[]) => {
@@ -109,20 +122,20 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     let hi = -1, he = -1e9;
     for (let k = 2; k < seg.length - 2; k++) if (w.elevM(seg[k]) > he) { he = w.elevM(seg[k]); hi = k; }
     const base = Math.max(w.elevM(seg[0]), w.elevM(seg[seg.length - 1]));
-    const parts: number[][] = hi > 0 && he - base >= 250 && !idx.nodeByCell.has(seg[hi]) ? [seg.slice(0, hi + 1), seg.slice(hi)] : [seg];
+    const parts: number[][] = mode === "road" && hi > 0 && he - base >= 250 && !idx.nodeByCell.has(seg[hi]) ? [seg.slice(0, hi + 1), seg.slice(hi)] : [seg];
     if (parts.length === 2) nodeAtCell(sim, w, idx, seg[hi], "pass");
     for (const part of parts) {
       const pa = idx.nodeByCell.get(part[0])!, pb = idx.nodeByCell.get(part[part.length - 1])!, id = newId(sim, "edge");
-      const e: SimEdge = { ...newEdgeDefaults(), id, a: pa, b: pb, cells: part, surface: o.surface, quality: o.quality, built: o.built, open: o.open, state: o.open ? "open" : "closed", standard: o.standard ?? "rural", maxGradePct: maxGradePct(w, part), builtMonth: o.open ? o.month : null, region: regionOfCells(w, part) };
+      const e: SimEdge = { ...newEdgeDefaults(), id, a: pa, b: pb, cells: part, surface: o.surface, quality: o.quality, built: o.built, open: o.open, state: o.open ? "open" : "closed", standard: o.standard ?? "rural", maxGradePct: maxGradePct(w, part), builtMonth: o.open ? o.month : null, region: regionOfCells(w, part), ...(mode === "rail" ? { mode: "rail" as const, op: o.op ?? "jnr" } : {}) };
       e.lengthKm = edgeLengthKm(w, sim, e); sim.edges[id] = e; created.push(id); chain.push({ edgeId: id, dir: 1 });
     }
     void a; void b;
   };
-  idx = buildIndex(sim);
+  idx = buildIndex(sim, mode);
   for (let q = 0; q + 1 < bp.length; q++) {
     const s = bp[q], t = bp[q + 1], seg = cells.slice(s, t + 1);
     if (shared(s)) { const hit = idx.step.get(`${cells[s]}:${cells[s + 1]}`)!, e = sim.edges[hit.edge]; chain.push({ edgeId: e.id, dir: idx.nodeByCell.get(cells[s]) === e.a ? 1 : -1 }); }
-    else { addNew(seg); idx = buildIndex(sim); }
+    else { addNew(seg); idx = buildIndex(sim, mode); }
   }
   return { chain, created };
 }

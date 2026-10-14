@@ -26,6 +26,8 @@ export interface ProjectState {
   features: { biwa: FeatureState; fuji: FeatureState };
   ridges: { sw: Vec[] | null; ne: Vec[] | null };
   finalized: boolean;
+  /** Stage 3: the real Japan (no deformation, no drawn ridges). Set only by realState(); the hand-edited map flow never sets it. */
+  real?: boolean;
   layers: Record<string, boolean>;
 }
 

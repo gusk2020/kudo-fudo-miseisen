@@ -5,19 +5,28 @@
  * All figures are synthetic "vehicles/day"; they are not statistics.
  */
 import { MinHeap } from "../core/heap";
-import { Standard, Surface, type SimEdge, type SimState } from "./types";
+import { modeOf, type Mode, type Standard, type Surface, type SimEdge, type SimState } from "./types";
 import type { World } from "./world";
 
 export const KFLOW = 1.5e-3, KVIL = 0.04, KLOC = 0.02;
+/** Rail units are passengers/day; road units are vehicles/day. One flow unit of trip demand is a vehicle on a road or RAIL_PAX passengers on a train. */
+export const RAIL_PAX = 2, KFREIGHT = 6e-4, KRAIL_LOC = 0.06, RAIL_ACCESS_H = 0.4, BIAS_K = 0.75, LOGIT_S = 1.5;
 export const ZERO_DEMAND = 4;                       // below this many vehicles/day a road counts as unused (explicit, not float noise)
+export const ZERO_DEMAND_RAIL = 25;                 // ... and this many passengers/day for a railway
+export const zeroDemand = (e: SimEdge) => (modeOf(e) === "rail" ? ZERO_DEMAND_RAIL : ZERO_DEMAND);
 export const CAPACITY: Record<Standard, number> = { rural: 3000, standard: 12000, highgrade: 40000 };
+export const RAIL_CAPACITY: Record<Standard, number> = { rural: 6000, standard: 30000, highgrade: 100000 };
+export const capacityOf = (e: SimEdge) => (modeOf(e) === "rail" ? RAIL_CAPACITY : CAPACITY)[e.standard];
 const BASE_SPEED: Record<Standard, number> = { rural: 25, standard: 45, highgrade: 80 };
+const RAIL_SPEED: Record<Standard, number> = { rural: 38, standard: 75, highgrade: 190 };
 const SURF: Record<Surface, number> = { unpaved: 0.6, gravel: 0.8, paved: 1 };
-export const edgeSpeed = (e: SimEdge) => BASE_SPEED[e.standard] * SURF[e.surface] * (0.5 + 0.5 * e.quality / 100) * (1 - Math.min(0.4, e.maxGradePct / 50));
+export const edgeSpeed = (e: SimEdge) => modeOf(e) === "rail"
+  ? RAIL_SPEED[e.standard] * (0.6 + 0.4 * e.quality / 100) * (1 - Math.min(0.3, e.maxGradePct / 40))
+  : BASE_SPEED[e.standard] * SURF[e.surface] * (0.5 + 0.5 * e.quality / 100) * (1 - Math.min(0.4, e.maxGradePct / 50));
 export const passable = (e: SimEdge) => (e.state === "open" || e.state === "dormant") && e.built >= 1 && !e.lost;
 
 export interface Analysis {
-  T: Float64Array; acc: number[]; cityNodes: (string | null)[];
+  T: Float64Array; TT: Float64Array; acc: number[]; cityNodes: (string | null)[];
   reach: Map<string, boolean>;               // settlement id -> can still reach its parent city
   potential: Map<string, number>;            // edge id -> local demand the settlements around it would generate (also for unused edges)
 }
@@ -26,29 +35,60 @@ export function placeCellsNear(w: World, cell: number, r: number): number[] {
   for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const a = i + di, b = j + dj; if (a >= 0 && b >= 0 && a < w.nx && b < w.ny) out.push(b * w.nx + a); }
   return out;
 }
+interface Adj { to: number; edge: SimEdge; t: number }
+interface Tree { d: Float64Array; pn: Int32Array; pe: (SimEdge | null)[] }
+function dijkstra(adj: Adj[][], n: number, s0: number): Tree {
+  const d = new Float64Array(n).fill(Infinity), pn = new Int32Array(n).fill(-1), pe: (SimEdge | null)[] = new Array(n).fill(null), h = new MinHeap(64);
+  d[s0] = 0; h.push(0, s0);
+  while (h.size) { const { key, val } = h.pop(); if (key > d[val]) continue; for (const a of adj[val]) { const nd = key + a.t; if (nd < d[a.to]) { d[a.to] = nd; pn[a.to] = val; pe[a.to] = a.edge; h.push(nd, a.to); } } }
+  return { d, pn, pe };
+}
+/** Share of a trip that takes the train, from the two travel times and the era's biases. 0 when there is no railway, 1 when there is no road. */
+export function railShare(tRoad: number, tRail: number, carBias: number, railBias: number): number {
+  const road = isFinite(tRoad), rail = isFinite(tRail); if (!rail) return 0; if (!road) return 1;
+  const x = Math.log(((tRail + RAIL_ACCESS_H) * Math.exp(-BIAS_K * railBias)) / (tRoad * Math.exp(-BIAS_K * carBias)));   // >0: rail is the slower choice
+  return 1 / (1 + Math.exp(LOGIT_S * x));
+}
 export function analyze(sim: SimState, w: World): Analysis {
-  const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, string>();
+  const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, string>(), N = nodeIds.length;
   for (const n of Object.values(sim.nodes)) nodeByCell.set(n.cell, n.id);
-  const adj: { to: number; edge: SimEdge; t: number }[][] = nodeIds.map(() => []), edges = Object.values(sim.edges);
-  for (const e of edges) { e.through = 0; e.local = 0; }
-  for (const e of edges) if (passable(e)) { const a = pos.get(e.a)!, b = pos.get(e.b)!, t = e.lengthKm / Math.max(3, edgeSpeed(e)); adj[a].push({ to: b, edge: e, t }); adj[b].push({ to: a, edge: e, t }); }
-  const nc = w.cities.length, cityNodes = w.cities.map((c) => nodeByCell.get(c.cell) ?? null), T = new Float64Array(nc * nc).fill(Infinity), reach = new Map<string, boolean>();
+  const multi = sim.stage3 === true, dl = sim.dials;
+  const adjRoad: Adj[][] = nodeIds.map(() => []), adjRail: Adj[][] = nodeIds.map(() => []), edges = Object.values(sim.edges);
+  for (const e of edges) { e.through = 0; e.local = 0; e.freight = 0; }
+  let anyRail = false;
+  for (const e of edges) if (passable(e)) {
+    const a = pos.get(e.a)!, b = pos.get(e.b)!, t = e.lengthKm / Math.max(3, edgeSpeed(e)), g = modeOf(e) === "rail" ? adjRail : adjRoad; if (g === adjRail) anyRail = true;
+    g[a].push({ to: b, edge: e, t }); g[b].push({ to: a, edge: e, t });
+  }
+  const nc = w.cities.length, cityNodes = w.cities.map((c) => nodeByCell.get(c.cell) ?? null), T = new Float64Array(nc * nc).fill(Infinity), TT = new Float64Array(nc * nc).fill(Infinity), reach = new Map<string, boolean>();
   const villagesOf = new Map<string, string[]>(); for (const s of Object.values(sim.settlements)) (villagesOf.get(s.city) ?? villagesOf.set(s.city, []).get(s.city)!).push(s.id);
+  const railDeg = new Int32Array(N); if (anyRail) for (let i = 0; i < N; i++) railDeg[i] = adjRail[i].length;
   for (let i = 0; i < nc; i++) {
     const src = cityNodes[i]; if (!src) { for (const vid of villagesOf.get(w.cities[i].id) ?? []) reach.set(vid, false); continue; }
-    const d = new Float64Array(nodeIds.length).fill(Infinity), pn = new Int32Array(nodeIds.length).fill(-1), pe: (SimEdge | null)[] = new Array(nodeIds.length).fill(null), h = new MinHeap(64), s0 = pos.get(src)!;
-    d[s0] = 0; h.push(0, s0);
-    while (h.size) { const { key, val } = h.pop(); if (key > d[val]) continue; for (const a of adj[val]) { const nd = key + a.t; if (nd < d[a.to]) { d[a.to] = nd; pn[a.to] = val; pe[a.to] = a.edge; h.push(nd, a.to); } } }
-    for (let j = 0; j < nc; j++) if (j !== i && cityNodes[j]) T[i * nc + j] = d[pos.get(cityNodes[j]!)!];
+    const s0 = pos.get(src)!, R = dijkstra(adjRoad, N, s0), Q = anyRail && railDeg[s0] > 0 ? dijkstra(adjRail, N, s0) : null;
+    for (let j = 0; j < nc; j++) if (j !== i && cityNodes[j]) { const k = pos.get(cityNodes[j]!)!; T[i * nc + j] = R.d[k]; if (Q) TT[i * nc + j] = Q.d[k]; }
     for (let j = i + 1; j < nc; j++) {
-      const cn = cityNodes[j]; if (!cn) continue; const k0 = pos.get(cn)!; if (!isFinite(d[k0])) continue;
-      const flow = KFLOW * Math.pow(sim.cities[w.cities[i].id].pop * sim.cities[w.cities[j].id].pop, 0.6) / (1 + Math.pow(d[k0], 1.2));
-      for (let k = k0; pn[k] >= 0; k = pn[k]) pe[k]!.through += flow;
+      const cn = cityNodes[j]; if (!cn) continue; const k0 = pos.get(cn)!, tr = R.d[k0], tt = Q ? Q.d[k0] : Infinity;
+      if (!isFinite(tr) && !isFinite(tt)) continue;
+      const pi = sim.cities[w.cities[i].id], pj = sim.cities[w.cities[j].id];
+      if (!multi) {   // Stage 2 (roads only): the original formula, untouched
+        const flow = KFLOW * Math.pow(pi.pop * pj.pop, 0.6) / (1 + Math.pow(tr, 1.2));
+        for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.through += flow;
+        continue;
+      }
+      const s = railShare(tr, tt, dl.carBias, dl.railBias), tmin = Math.min(tr, isFinite(tt) ? tt + RAIL_ACCESS_H : Infinity);
+      const flow = KFLOW * Math.pow(pi.pop * pj.pop, 0.6) / (1 + Math.pow(tmin, 1.2));
+      if (s < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.through += flow * (1 - s);
+      if (s > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.through += flow * s * RAIL_PAX;
+      // freight: industry-to-industry; trucks take it unless the railway is competitive and the era favours it
+      const f0 = KFREIGHT * Math.pow(pi.pop * pi.industry * pj.pop * pj.industry, 0.6) / (1 + Math.pow(tmin, 1.2)), sf = railShare(tr, tt, dl.carBias * 0.4 - dl.freightRail, dl.railBias * 0.4 + dl.freightRail);
+      if (sf < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.freight += f0 * (1 - sf);
+      if (sf > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.freight += f0 * sf * RAIL_PAX;
     }
     for (const vid of villagesOf.get(w.cities[i].id) ?? []) {
       const v = sim.settlements[vid], vn = nodeByCell.get(v.cell); if (!vn || v.gone) { reach.set(vid, !v.gone && false); if (v.gone) reach.set(vid, true); continue; }
-      const k0 = pos.get(vn)!, ok = isFinite(d[k0]); reach.set(vid, ok); if (!ok) continue;
-      for (let k = k0; pn[k] >= 0; k = pn[k]) pe[k]!.local += KVIL * v.pop;
+      const k0 = pos.get(vn)!, ok = isFinite(R.d[k0]); reach.set(vid, ok); if (!ok) continue;
+      for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.local += KVIL * v.pop;
     }
   }
   // settlements along a road generate local trips on it, whether or not the road is currently used
@@ -56,18 +96,26 @@ export function analyze(sim: SimState, w: World): Analysis {
   const potential = new Map<string, number>();
   for (const v of Object.values(sim.settlements)) {
     if (v.gone) continue; const hit = new Set<SimEdge>(); for (const c of placeCellsNear(w, v.cell, 2)) for (const e of cellEdges.get(c) ?? []) hit.add(e);
-    if (!hit.size) continue; const share = (KLOC * v.pop) / hit.size; for (const e of hit) { potential.set(e.id, (potential.get(e.id) ?? 0) + share); if (passable(e)) e.local += share; }
+    if (!hit.size) continue;
+    const road = [...hit].filter((e) => modeOf(e) === "road"), rail = [...hit].filter((e) => modeOf(e) === "rail");
+    if (road.length) { const share = (KLOC * v.pop) / road.length; for (const e of road) { potential.set(e.id, (potential.get(e.id) ?? 0) + share); if (passable(e)) e.local += share; } }
+    if (rail.length) { const share = (KRAIL_LOC * v.pop) / rail.length; for (const e of rail) { potential.set(e.id, (potential.get(e.id) ?? 0) + share); if (passable(e)) e.local += share; } }
   }
-  for (const e of edges) { if (!passable(e)) { e.through = 0; e.local = 0; } e.traffic = Math.round((e.through + e.local) * 100) / 100; e.through = Math.round(e.through * 100) / 100; e.local = Math.round(e.local * 100) / 100; }
+  for (const e of edges) {
+    if (!passable(e)) { e.through = 0; e.local = 0; e.freight = 0; }
+    e.traffic = Math.round((e.through + e.local + (multi ? e.freight * 0.4 : 0)) * 100) / 100;
+    e.through = Math.round(e.through * 100) / 100; e.local = Math.round(e.local * 100) / 100; e.freight = Math.round(e.freight * 100) / 100;
+  }
   const popTot = w.cities.reduce((s, c) => s + sim.cities[c.id].pop, 0), acc: number[] = [];
-  for (let i = 0; i < nc; i++) { let s = 0; for (let j = 0; j < nc; j++) if (j !== i) { const t = T[i * nc + j]; if (isFinite(t)) s += sim.cities[w.cities[j].id].pop * Math.exp(-t / 3); } acc.push(popTot ? s / popTot : 0); }
-  return { T, acc, cityNodes, reach, potential };
+  for (let i = 0; i < nc; i++) { let s = 0; for (let j = 0; j < nc; j++) if (j !== i) { const t = Math.min(T[i * nc + j], TT[i * nc + j] + RAIL_ACCESS_H); if (isFinite(t)) s += sim.cities[w.cities[j].id].pop * Math.exp(-t / 3); } acc.push(popTot ? s / popTot : 0); }
+  return { T, TT, acc, cityNodes, reach, potential };
 }
 /** Settlements (and city links) that would be cut off *because of* removing `skip` (already-cut-off ones are not counted). */
 export function strandedWithout(sim: SimState, w: World, skip: SimEdge | null): { villages: number; cities: number } {
+  if (skip && modeOf(skip) === "rail") return { villages: 0, cities: 0 };   // settlements reach their city by road; a railway closing strands no one in this model
   const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, number>(); for (const n of Object.values(sim.nodes)) nodeByCell.set(n.cell, pos.get(n.id)!);
   const comps = (omit: SimEdge | null) => {
-    const adj: number[][] = nodeIds.map(() => []); for (const e of Object.values(sim.edges)) if (passable(e) && e !== omit) { const a = pos.get(e.a)!, b = pos.get(e.b)!; adj[a].push(b); adj[b].push(a); }
+    const adj: number[][] = nodeIds.map(() => []); for (const e of Object.values(sim.edges)) if (passable(e) && modeOf(e) === "road" && e !== omit) { const a = pos.get(e.a)!, b = pos.get(e.b)!; adj[a].push(b); adj[b].push(a); }
     const comp = new Int32Array(nodeIds.length).fill(-1); let c = 0;
     for (let s = 0; s < nodeIds.length; s++) if (comp[s] < 0) { const st = [s]; comp[s] = c; while (st.length) { const x = st.pop()!; for (const y of adj[x]) if (comp[y] < 0) { comp[y] = c; st.push(y); } } c++; }
     return comp;

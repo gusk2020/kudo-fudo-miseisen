@@ -4,6 +4,8 @@ import { FU_PREFS, type Grade, type SimState } from "./types";
 import { layPath, newId, nodeAtCell, buildIndex, pad } from "./network";
 import { designate, ev, rand } from "./engine";
 import { pathfind, type World, type WCity } from "./world";
+import { refBias, referenceGrids } from "./reference";
+import { seedRailGen } from "./seedRail";
 
 export const RESERVED = { national: 1, fuTokyo: 1 };   // numbers kept for the 開通の儀 roads
 export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<number> {
@@ -38,7 +40,7 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
   }
   let nRoutes = 0;
   for (const [a, b] of links) {
-    const path = pathfind(w, a.cell, b.cell, { margin: 16 }); if (!path) continue;
+    const path = pathfind(w, a.cell, b.cell, sim.stage3 ? { margin: 16, bias: refBias(referenceGrids(w).road) } : { margin: 16 }); if (!path) continue;
     const l = layPath(sim, w, path, { open: true, surface: a.pop0 + b.pop0 > 400000 ? "gravel" : "unpaved", quality: 38 + rand(sim) * 27, built: 1, month: 0, standard: "rural" });
     if (!l.chain.length) continue;
     const national = a.pref !== b.pref || (a.pop0 > 150000 && b.pop0 > 150000), pf = a.pref ?? "JP-13";
@@ -57,4 +59,5 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
   }
   ev(sim, "seed", `1950年の既存道路網: 都市間${links.length}線・集落${Object.keys(sim.settlements).length}か所(合成)・路線${nRoutes}本`, "初期条件(実在の道路網ではない)", {});
   void newId;
+  if (sim.stage3) yield* seedRailGen(sim, w);
 }

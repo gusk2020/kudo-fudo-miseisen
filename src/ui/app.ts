@@ -3,7 +3,7 @@ import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL } from "../core/data";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
-import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState } from "../core/state";
+import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
 import { suggestRidge } from "../core/suggest";
 import type { TerrainResult } from "../core/terrain";
 import { TerrainClient } from "../core/terrainClient";
@@ -48,15 +48,18 @@ export class App {
   runner: SimRunner | null = null; building = 0; safeMode = false; behind = false; private lastRoads = 0;
   catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
-  static async start(host: HTMLElement) {
-    const a = new App(); a.r = await Renderer.create(host);
+  /** Stage 3 plays on the real Japan; the old hand-edited-map flow stays reachable with ?legacy=1 and keeps its own save key. */
+  real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
+  static async start(host: HTMLElement, real = false) {
+    const a = new App(); a.real = real; a.r = await Renderer.create(host);
+    if (real) { a.store.replace(realState()); document.body.classList.add("real"); }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
     try { a.safeMode = !!localStorage.getItem("kfm.run"); localStorage.setItem("kfm.run", String(Date.now())); } catch { /* storage may be blocked */ }
     a.r.onContextLost = () => a.toast("画面の描画が一時的に失われました。復帰を待っています…"); a.r.onContextRestored = () => { a.render(); a.toast("描画が復帰しました"); };
-    const saved = await loadGame("auto");
+    const saved = await loadGame(a.saveKey);
     if (saved) {
       a.store.replace(saved.map); a.pendingSim = saved.sim;
-      if (saved.quarantine) { await putRaw("auto:quarantine", { savedAt: Date.now(), quarantine: saved.quarantine }); }
+      if (saved.quarantine) { await putRaw(a.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: saved.quarantine }); }
       if (saved.problems.length) a.toast("保存データについて: " + saved.problems.slice(0, 2).join(" / "));
     }
     attachGestures(a.r.app.canvas, a.r, a.handler());
@@ -87,7 +90,7 @@ export class App {
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
     if (this.runner && !this.runner.idle) { if (!force) { setTimeout(() => this.persist(), 80); return Promise.resolve(false); } this.runner.settle(); }
-    if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now(); /* a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame("auto", makeSave(this.s, this.sim ?? this.pendingSim)); }
+    if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now(); /* a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
   ensureWorld(): World | null { if (!this.terrain) return null; if (this.worldRef !== this.terrain) { this.world = buildWorld(this.terrain, this.s.seed); this.worldRef = this.terrain; } return this.world; }
   renderRoads() {
     const cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok }));
@@ -100,7 +103,7 @@ export class App {
   private attachPendingSim() {
     if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; this.pendingSim = null; if (!w || !this.terrain) return;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
-    if (err) { putRaw("auto:quarantine", { savedAt: Date.now(), reason: err, sim }); this.toast(`道路データは読み込まず退避しました: ${err}`); return; }
+    if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.toast(`道路データは読み込まず退避しました: ${err}`); return; }
     finishMigration(sim, w); this.sim = sim; this.runner = new SimRunner(sim, w);
     if (this.safeMode) { sim.speed = 0; this.status(); return; }
     const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
@@ -494,12 +497,12 @@ export class App {
       body.append(h("div", { class: "row" }, h("button", { id: "finalize", disabled: !ready, onclick: () => this.finalize() }, this.s.finalized ? "確定済み(再確定)" : "この地図を最終確定"), h("small", {}, ready ? "確定すると地理IDと座標変換APIが固定されます" : errs ? "不正を直してください" : "地形生成の完了を待ってください")));
       if (this.terrain) { const t = this.terrain.stats; body.append(h("small", {}, `陸地${t.landCells}セル / 河川${t.riverCount}本 / 府県${t.prefCount} / 都市補正${t.citiesMoved} / hash ${this.terrain.hash}`)); }
     }
-    body.append(h("div", { class: "row" }, h("button", { id: "reset", onclick: () => { if (confirm("初期状態に戻します。よろしいですか?")) { this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.store.replace(defaultState(this.s.seed)); this.r.fit(this.s); } } }, "最初からやり直す")));
+    body.append(h("div", { class: "row" }, h("button", { id: "reset", onclick: () => { if (confirm("初期状態に戻します。よろしいですか?")) { this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.store.replace(this.real ? realState(this.s.seed) : defaultState(this.s.seed)); this.r.fit(this.s); } } }, "最初からやり直す")));
   }
   /** Load a parsed save (slot or file): map first, then roads only if they verify against the regenerated terrain. */
   private adopt(l: { map: any; sim: SimState | null; quarantine: unknown; problems: string[] }) {
     this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.r.fit(l.map);
-    if (l.quarantine) putRaw("auto:quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
+    if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
     this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
   }
   finalize() {

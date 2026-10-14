@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 
-const boot = async (page: Page) => { await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm); await page.waitForTimeout(400); };
+const boot = async (page: Page) => { await page.goto("/?legacy=1"); await page.waitForFunction(() => (window as any).__kfm); await page.waitForTimeout(400); };
 const app = (page: Page, f: string) => page.evaluate(`(() => { const a = window.__kfm; return (${f})(a); })()`);
 function watchErrors(page: Page) { const errs: string[] = []; page.on("pageerror", (e) => errs.push(String(e))); return errs; }
 const screenOf = (page: Page, p: [number, number]) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p) as Promise<[number, number]>;
@@ -216,7 +216,7 @@ test("roads survive reload; mismatching map quarantines roads instead of misplac
 });
 
 test("v1 save in IndexedDB still opens (migrated), without losing the map", async ({ page }) => {
-  const errs = watchErrors(page); await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm);
+  const errs = watchErrors(page); await page.goto("/?legacy=1"); await page.waitForFunction(() => (window as any).__kfm);
   await page.evaluate(() => new Promise<void>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const s = { schemaVersion: 1, seed: 99, step: 3, bodies: { honshu: { ops: [{ t: "bulge", c: [0, 0], r: 100, k: 0.2 }], place: { pos: [0, 0], rot: 0, scale: 1 } } }, features: {}, ridges: {}, finalized: false, layers: {} }; const t = r.result.transaction("saves", "readwrite"); t.objectStore("saves").put(JSON.stringify({ savedAt: 1, state: s }), "auto"); t.oncomplete = () => res(); }; }));
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm); await page.waitForTimeout(500);
   expect(await app(page, "a => a.s.seed")).toBe(99); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(1); expect(await app(page, "a => a.s.step")).toBe(3); expect(await app(page, "a => a.sim")).toBeNull();

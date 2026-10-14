@@ -8,11 +8,11 @@ import type { Vec } from "../core/types";
 
 export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean }
 export interface RoadArgs { sim: SimState | null; w: World | null; layers: { roads: boolean; plans: boolean; signs: boolean }; cer: CerOverlay[]; pin: Vec | null; compare?: Snapshot | null; sel?: string | null }
-const GRADE_RANK: Record<Grade, number> = { national: 3, fu: 2, ken: 1 };
+const GRADE_RANK: Record<Grade, number> = { jnr: 4, national: 3, fu: 2, ken: 1, priv: 3 };
 /** Fill colour = physical condition. (Legend text repeats every class: colour is never the only cue.) */
 export const COND = [{ min: 70, col: 0x5bd66b, label: "良" }, { min: 40, col: 0xffe14a, label: "可" }, { min: 15, col: 0xff9a3c, label: "悪" }, { min: 0, col: 0xe8483c, label: "荒廃" }];
 export const condColour = (q: number) => COND.find((c) => q >= c.min)!.col;
-export const CASING: Record<Grade | "none", number> = { national: 0x8e1b1b, ken: 0x1b6b3a, fu: 0x5a2a8a, none: 0x3a3a3a };
+export const CASING: Record<Grade | "none", number> = { national: 0x8e1b1b, ken: 0x1b6b3a, fu: 0x5a2a8a, jnr: 0x0b2a55, priv: 0x2a2a6a, none: 0x3a3a3a };
 export const WIDTH = { rural: 1.6, standard: 2.8, highgrade: 4.6 } as const;
 export function snapCode(e: SimEdge): number { return (e.built < 1 ? 4 : { open: 0, dormant: 1, closed: 2, lost: 3 }[e.state]) * 16 + Math.min(15, Math.floor(e.quality / 6.5)); }
 

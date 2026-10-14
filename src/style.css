@@ -44,3 +44,5 @@ button:disabled { opacity:1; background:#3a4450; color:#8a95a0; border-color:#4a
 #status span { max-width:92vw; }
 #toolbar { max-height:42dvh; overflow:auto; }
 .legend-row { display:flex; align-items:center; gap:10px; padding:3px 0; font-size:13px; }
+
+body.real #btn-prev, body.real #btn-next, body.real #btn-undo, body.real #btn-redo { display:none; }

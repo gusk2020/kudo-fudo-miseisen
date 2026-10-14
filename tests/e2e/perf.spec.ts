@@ -14,7 +14,7 @@ test("perf: boot -> ceremony -> x20 -> save -> tap", async ({ page }) => {
   const stage = (s: string) => page.evaluate((x) => ((window as any).__stage = x), s);
   const metrics = async (tag: string) => { const m = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((x: any) => [x.name, x.value])); const heap = await page.evaluate(() => Math.round(((performance as any).memory?.usedJSHeapSize ?? 0) / 1e6)); return { tag, heapMB: heap, jsHeapUsedMB: Math.round(m.JSHeapUsedSize / 1e6), nodes: m.Nodes, listeners: m.JSEventListeners, layoutMs: Math.round(m.LayoutDuration * 1000), scriptMs: Math.round(m.ScriptDuration * 1000) }; };
   const out: any = { cpuThrottle: CPU, stages: [] as any[], metrics: [] as any[] };
-  const t0 = Date.now(); await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm, null, { timeout: 120000 }); out.stages.push({ name: "boot", ms: Date.now() - t0 }); out.metrics.push(await metrics("boot"));
+  const t0 = Date.now(); await page.goto("/?legacy=1"); await page.waitForFunction(() => (window as any).__kfm, null, { timeout: 120000 }); out.stages.push({ name: "boot", ms: Date.now() - t0 }); out.metrics.push(await metrics("boot"));
   await stage("terrain"); let t = Date.now();
   await page.evaluate(() => { const a = (window as any).__kfm; a.go(3); a.suggestRanges(); a.go(5); }); await page.waitForFunction(() => (window as any).__kfm.terrain, null, { timeout: 180000 }); out.stages.push({ name: "terrain", ms: Date.now() - t }); out.metrics.push(await metrics("terrain"));
   await page.evaluate(() => (window as any).__kfm.finalize()); await page.click("#btn-next");

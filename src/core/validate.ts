@@ -79,7 +79,7 @@ export function validate(s: ProjectState): Issue[] {
     if (!inKHRange(kc, hc, centroid(d[which]))) add("features", "error", `${which}.range`, `${nm}が北海道〜九州の軸範囲外です`);
   }
   if (featuresOverlap(d.biwa, d.fuji)) add("features", "error", "features.overlap", "琵琶湖と富士山が重なっています");
-  for (const k of ["sw", "ne"] as const) {
+  if (!s.real) for (const k of ["sw", "ne"] as const) {
     const r = s.ridges[k], nm = k === "sw" ? "南西側の山脈" : "北東側の山脈";
     if (!r || r.length < 2) { add("features", "error", `ridge.${k}.missing`, `${nm}が未描画です`); continue; }
     if (r.some((p) => !pointInPolygon(p, d.parts.honshu[0]))) add("features", "error", `ridge.${k}.outside`, `${nm}が本州の外に出ています`);

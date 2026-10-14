@@ -6,10 +6,14 @@
 import { dist } from "../core/geom";
 import { JAPAN } from "../core/data";
 import { buildIndex, checkIntegrity, edgePoints, newId, pushHist, setEdgeState } from "./network";
-import { ZERO_DEMAND, analyze, passable, strandedWithout, type Analysis } from "./demand";
+import { analyze, capacityOf, passable, strandedWithout, zeroDemand, type Analysis } from "./demand";
+import { ERAS, composeDials, eraKeyOf, type EraKey } from "./eras";
+import { applyYearEvents } from "./events";
+import { PRIVATIZE_YEAR, reformJnr } from "./reform";
+import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
 import { planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
-import { ERA, FU_PREFS, GRADE_LABEL, KIND_LABEL, NICK_LABEL, SIM_VERSION, monthToYM, ymLabel, type Grade, type RouteEdgeRef, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
+import { ERA, FU_PREFS, GRADE_LABEL, GRADE_MODE, KIND_LABEL, NICK_LABEL, SIM_VERSION, modeOf, monthToYM, setActiveEra, ymLabel, type Grade, type RouteEdgeRef, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
 import { cellDistKm, type World } from "./world";
 
 export const MONTHS_PER_YEAR_X1_MS = 60000;       // x1: one real minute is one game year
@@ -17,6 +21,8 @@ export const MS_PER_MONTH_X1 = MONTHS_PER_YEAR_X1_MS / 12;
 export const CATCHUP_CAP_MONTHS = 360;            // at most 30 years are simulated on return; the rest is reported as skipped
 export const EVENT_CAP = 600;
 export const BUDGET_K = 2.6e-6, NATIONAL_POOL = 0.2, EQUAL_SHARE = 0.45;
+/** Railways add this much on top of the road budget (Stage 3 only); the dials then decide the split. */
+export const RAIL_BUDGET_SCALE = 0.9, RAIL_FARE = 2.2e-6, RAIL_MAINT = { rural: 0.0065, standard: 0.011, highgrade: 0.03 } as const, RAIL_DECAY = 0.11;
 export const DORMANT_YEARS = 5, CLOSE_YEARS = 12, DROP_YEARS = 8, LOCAL_KEEP = 25, REVIVE_DEMAND = 30, REVIVE_YEARS = 3;
 const MAINT = { unpaved: 0.003, gravel: 0.0045, paved: 0.007 } as const, STD_MAINT = { rural: 1, standard: 1.5, highgrade: 3 } as const;
 const DECAY = { unpaved: 0.2, gravel: 0.14, paved: 0.07 } as const;
@@ -28,7 +34,7 @@ export function rand(sim: SimState): number {
 }
 export function hashString(s: string): string { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(16); }
 export function simHash(sim: SimState): string {
-  return hashString(JSON.stringify([sim.month, sim.rngState, sim.nodes, sim.edges, sim.routes, sim.projects, sim.cities, sim.settlements, sim.links, sim.macro, sim.routeCounters, sim.events.length, sim.skippedMonths]));
+  return hashString(JSON.stringify([sim.month, sim.rngState, sim.nodes, sim.edges, sim.routes, sim.projects, sim.cities, sim.settlements, sim.links, sim.macro, sim.routeCounters, sim.events.length, sim.skippedMonths, sim.operators, sim.dials, sim.mods]));
 }
 export function ev(sim: SimState, kind: string, text: string, cause: string, refs: Record<string, string> = {}) {
   sim.events.push({ id: ++sim.next.event, month: sim.month, kind, text, cause, refs });
@@ -36,30 +42,35 @@ export function ev(sim: SimState, kind: string, text: string, cause: string, ref
 }
 export const prefName = (id: string) => JAPAN.prefectures.find((p) => p.id === id)?.name ?? id;
 /** Official name only (国道N号). */
-export const routeOfficial = (r: SimRoute) => `${r.scope === "JP" ? "" : prefName(r.scope) + " "}${GRADE_LABEL[r.grade]}${r.number}号`;
+export const routeOfficial = (r: SimRoute) => GRADE_MODE[r.grade] === "rail" ? `${r.opName ?? GRADE_LABEL[r.grade]}${r.number}号線` : `${r.scope === "JP" ? "" : prefName(r.scope) + " "}${GRADE_LABEL[r.grade]}${r.number}号`;
 /** Official name plus the earned nickname, if any: 国道N号(通称:酷道). */
 export const routeLabel = (r: SimRoute) => routeOfficial(r) + (r.nick ? `(通称:${NICK_LABEL[r.grade]})` : "");
 export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).year;
 
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
-export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number): Generator<number, SimState> {
+export interface SimOpts { era?: EraKey; stage3?: boolean }
+export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
+  const eraKey = opts.era ?? "kobun";
   const sim: SimState = {
-    schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: ERA.key, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
+    schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
     next: { node: 0, edge: 0, route: 0, project: 0, event: 0 }, nodes: {}, edges: {}, routes: {}, projects: {}, cities: {}, settlements: {}, links: [], snaps: [], regionShare: {},
     macro: { mood: 0, budgetBu: 0, maintCoverage: 1 }, routeCounters: {}, events: [], stats: [], skippedMonths: 0, lastWallMs: 0, ceremonyDone: false,
+    operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}),
   };
+  sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey));
   for (const c of w.cities) sim.cities[c.id] = { pop: c.pop0, popSource: c.popSource, lowAccessYears: 0, industry: Math.round((0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim)) * 1000) / 1000 };
   yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); yield 1;
   return sim;
 }
-export function createSim(w: World, mapHash: string, terrainHash: string, seed: number): SimState {
-  const g = createSimGen(w, mapHash, terrainHash, seed); for (;;) { const r = g.next(); if (r.done) return r.value; }
+export function createSim(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): SimState {
+  const g = createSimGen(w, mapHash, terrainHash, seed, opts); for (;;) { const r = g.next(); if (r.done) return r.value; }
 }
 export function issueNumber(sim: SimState, grade: Grade, scope: string): number { const k = `${grade}:${scope}`; return (sim.routeCounters[k] = (sim.routeCounters[k] ?? 0) + 1); }
 export function designate(sim: SimState, chain: RouteEdgeRef[], grade: Grade, scope: string, text: string, cause: string, quiet = false, forceNumber?: number): SimRoute | null {
   if (!chain.length) return null;
   const id = newId(sim, "route"), number = forceNumber ?? issueNumber(sim, grade, scope);
-  const r: SimRoute = { id, scope, grade, number, name: `${GRADE_LABEL[grade]}${number}号`, edges: chain.map((c) => ({ ...c })), since: sim.month, active: true, lowYears: 0, highYears: 0, history: [{ month: sim.month, grade, number, text }], nick: false, oldEdges: [] };
+  const rail = GRADE_MODE[grade] === "rail", opId = rail ? (grade === "jnr" ? "jnr" : scope) : undefined, opName = rail ? (sim.operators[opId!]?.name ?? GRADE_LABEL[grade]) : undefined;
+  const r: SimRoute = { id, scope, grade, number, name: rail ? `${opName}${number}号線` : `${GRADE_LABEL[grade]}${number}号`, ...(rail ? { mode: "rail" as const, op: opId, opName } : {}), edges: chain.map((c) => ({ ...c })), since: sim.month, active: true, lowYears: 0, highYears: 0, history: [{ month: sim.month, grade, number, text }], nick: false, oldEdges: [] };
   sim.routes[id] = r; if (!quiet) ev(sim, "route", `${routeOfficial(r)}を指定: ${text}`, cause, { route: id }); return r;
 }
 const routesOfEdge = (sim: SimState, id: string) => Object.values(sim.routes).filter((r) => r.active && (r.edges.some((x) => x.edgeId === id) || r.oldEdges.includes(id)));
@@ -69,10 +80,11 @@ export const bestGradeOf = (sim: SimState, id: string): Grade | null => { let b:
 export function refreshNick(sim: SimState) {
   const grade = new Map<string, Grade>(); for (const r of Object.values(sim.routes)) if (r.active) for (const id of [...r.edges.map((x) => x.edgeId), ...r.oldEdges]) { const g = grade.get(id); if (!g || r.grade === "national") grade.set(id, r.grade); }
   for (const e of Object.values(sim.edges)) {
-    const g = grade.get(e.id), live = e.state === "open" || e.state === "dormant", rough = e.standard === "rural" && (e.quality < 35 || e.weathering > 40 || e.maxGradePct >= 9);
+    const g = grade.get(e.id), live = e.state === "open" || e.state === "dormant", rail = modeOf(e) === "rail";
+    const rough = rail ? e.quality < 38 || e.weathering > 35 : e.standard === "rural" && (e.quality < 35 || e.weathering > 40 || e.maxGradePct >= 9);
     // never at the start: the nickname is earned over time
-    if (!e.nick && g && live && rough && sim.month >= 36) { e.nick = true; pushHist(sim, e, `通称「${NICK_LABEL[g]}」と呼ばれる状態に(品質${Math.round(e.quality)}・風化${Math.round(e.weathering)}・勾配${e.maxGradePct}%)`); }
-    else if (e.nick && (!g || !live || !(e.standard === "rural" && (e.quality < 55 || e.weathering > 30 || e.maxGradePct >= 9)))) { e.nick = false; pushHist(sim, e, "通称が外れた(整備・格上げ・指定解除)"); }
+    if (!e.nick && g && live && rough && sim.month >= 36) { e.nick = true; pushHist(sim, e, `通称「${NICK_LABEL[g]}」と呼ばれる状態に${rail ? "(利用が少なく保守が行き届かない。" : "("}品質${Math.round(e.quality)}・風化${Math.round(e.weathering)}・勾配${e.maxGradePct}%)`); }
+    else if (e.nick && (!g || !live || !(rail ? e.quality < 55 || e.weathering > 30 : e.standard === "rural" && (e.quality < 55 || e.weathering > 30 || e.maxGradePct >= 9)))) { e.nick = false; pushHist(sim, e, "通称が外れた(整備・格上げ・指定解除)"); }
   }
   for (const r of Object.values(sim.routes)) { if (!r.active) { r.nick = false; continue; } const es = r.edges.map((x) => sim.edges[x.edgeId]).filter(Boolean), km = es.reduce((s, e) => s + e.lengthKm, 0) || 1; r.nick = es.filter((e) => e.nick).reduce((s, e) => s + e.lengthKm, 0) / km >= 0.5; }
 }
@@ -92,7 +104,10 @@ const edgeName = (sim: SimState, e: SimEdge) => `${sim.nodes[e.a]?.name ?? "地�
 
 // ---- yearly decisions ----
 function* yearlyGen(sim: SimState, w: World): Generator<void> {
-  const y = yearOf(sim), an = analyze(sim, w); yield;
+  const y = yearOf(sim);
+  if (sim.stage3) { applyYearEvents(sim, y); sim.dials = composeDials(sim, y); }
+  const an = analyze(sim, w); yield;
+  if (sim.stage3 && PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y) { reformJnr(sim, w, y); yield; }
   updatePopulation(sim, w, an, y); updateRegionShares(sim, w); yield;
   evaluateEdges(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); yield;
@@ -107,6 +122,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
     pop: Math.round(Object.values(sim.cities).reduce((s, c) => s + c.pop, 0)), villagePop: Math.round(Object.values(sim.settlements).reduce((s, v) => s + v.pop, 0)),
     dormant: edges.filter((e) => e.state === "dormant").length, closed: edges.filter((e) => e.state === "closed" && e.built >= 1).length, bypass: sim.links.length,
     regionsBuilding: new Set(pr.filter((p) => p.status === "building").map((p) => p.region)).size, prefsWithRoad: prefs.size,
+    ...(sim.stage3 ? { railKm: Math.round(live.filter((e) => modeOf(e) === "rail").reduce((s, e) => s + e.lengthKm, 0)), roadKm: Math.round(live.filter((e) => modeOf(e) === "road").reduce((s, e) => s + e.lengthKm, 0)) } : {}),
   });
   if (sim.stats.length > 160) sim.stats.shift();
 }
@@ -156,14 +172,14 @@ export function updateRegionShares(sim: SimState, w: World) {
 }
 function evaluateEdges(sim: SimState, w: World, an: Analysis, y: number) {
   for (const e of Object.values(sim.edges)) {
-    if (e.built < 1) continue; const d = e.through + e.local;
+    if (e.built < 1) continue; const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
     if (e.state === "open" || e.state === "dormant") {
       if (e.through > e.peakThrough) e.peakThrough = e.through;
-      e.zeroYears = d < ZERO_DEMAND ? e.zeroYears + 1 : 0;
-      e.congYears = e.through > 0.9 * (e.standard === "rural" ? 3000 : e.standard === "standard" ? 12000 : 40000) ? e.congYears + 1 : 0;
+      e.zeroYears = d < Z ? e.zeroYears + 1 : 0;
+      e.congYears = e.through > 0.9 * capacityOf(e) ? e.congYears + 1 : 0;
       e.throughDropYears = e.peakThrough > 50 && e.bypassedBy.length && e.through < 0.25 * e.peakThrough ? e.throughDropYears + 1 : e.bypassedBy.length ? e.throughDropYears : 0;
-      if (e.state === "dormant" && d >= ZERO_DEMAND * 2) { setEdgeState(sim, e, "open", `需要が回復(${Math.round(d)}台/日)`); ev(sim, "reopen", `${edgeName(sim, e)}が休止から再開`, `需要が${Math.round(d)}台/日に回復`, { edge: e.id }); }
-      else if (e.state === "open" && e.zeroYears >= DORMANT_YEARS) { setEdgeState(sim, e, "dormant", `需要が${e.zeroYears}年連続でほぼゼロ(閾値${ZERO_DEMAND}台/日未満)`); ev(sim, "dormant", `${edgeName(sim, e)}を休止`, `需要が${e.zeroYears}年連続で${ZERO_DEMAND}台/日未満`, { edge: e.id }); }
+      if (e.state === "dormant" && d >= Z * 2) { setEdgeState(sim, e, "open", `需要が回復(${Math.round(d)}${unit})`); ev(sim, "reopen", `${edgeName(sim, e)}が休止から再開`, `需要が${Math.round(d)}${unit}に回復`, { edge: e.id }); }
+      else if (e.state === "open" && e.zeroYears >= DORMANT_YEARS) { setEdgeState(sim, e, "dormant", `需要が${e.zeroYears}年連続でほぼゼロ(閾値${Z}${unit}未満)`); ev(sim, "dormant", `${edgeName(sim, e)}を休止`, `需要が${e.zeroYears}年連続で${Z}${unit}未満`, { edge: e.id }); }
       else if (e.state === "dormant" && e.zeroYears >= CLOSE_YEARS) {
         const s = strandedWithout(sim, w, e);
         if (s.villages === 0 && s.cities === 0 && an.potential.get(e.id)! < REVIVE_DEMAND) { setEdgeState(sim, e, "closed", `需要ゼロが${e.zeroYears}年継続・代替路あり`); ev(sim, "close", `${edgeName(sim, e)}を閉鎖`, `需要ゼロが${e.zeroYears}年継続し、代替路があり孤立する集落もない`, { edge: e.id }); }
@@ -178,6 +194,7 @@ function evaluateEdges(sim: SimState, w: World, an: Analysis, y: number) {
 function evaluateRoutes(sim: SimState, w: World, y: number) {
   for (const r of Object.values(sim.routes)) {
     if (!r.active) continue;
+    if (modeOf(r) === "rail") { evaluateRailRoute(sim, r); continue; }
     const es = r.edges.map((x) => sim.edges[x.edgeId]).filter(Boolean), km = es.reduce((s, e) => s + e.lengthKm, 0) || 1, mean = es.reduce((s, e) => s + (e.through + e.local) * e.lengthKm, 0) / km;
     // 旧道 branches: judged on how much of the *local* role is left, never on the fall in through traffic alone
     for (const id of [...r.oldEdges]) {
@@ -205,16 +222,30 @@ function evaluateRoutes(sim: SimState, w: World, y: number) {
   void y;
 }
 
+/** A railway line has no promotion or demotion between grades: it either keeps running, runs thin (and earns 酷鉄/死鉄), or is abolished. */
+function evaluateRailRoute(sim: SimState, r: SimRoute) {
+  const es = r.edges.map((x) => sim.edges[x.edgeId]).filter(Boolean), km = es.reduce((s, e) => s + e.lengthKm, 0) || 1;
+  const mean = es.reduce((s, e) => s + (e.through + e.local + e.freight * 0.4) * e.lengthKm, 0) / km;
+  r.lowYears = mean < 400 ? r.lowYears + 1 : 0;
+  if (!es.some((e) => e.state === "open" || e.state === "dormant")) {
+    r.active = false; r.history.push({ month: sim.month, grade: r.grade, number: r.number, text: "路線廃止" });
+    ev(sim, "abolish", `${routeOfficial(r)}を廃止`, "全区間が休止を経て閉鎖または廃線になった", { route: r.id });
+  }
+}
+
 // ---- monthly ----
 function monthly(sim: SimState, w: World) {
   const y = yearOf(sim);
   if (sim.month % 12 === 0) sim.macro.mood = Math.max(-1, Math.min(1, sim.macro.mood * 0.6 + (rand(sim) - 0.5) * 0.8));
   let econ = 0; for (const c of Object.values(sim.cities)) econ += c.pop * c.industry; for (const v of Object.values(sim.settlements)) econ += v.pop * 0.15;
-  const B = BUDGET_K * econ * macroBudget(y) * (1 + 0.15 * sim.macro.mood + 0.02); sim.macro.budgetBu = Math.round(B * 1e4) / 1e4;
+  const Bfull = BUDGET_K * econ * macroBudget(y) * (1 + 0.15 * sim.macro.mood + 0.02);
+  // Stage 3: one transport budget, split between roads and railways by the era's dials; roads keep the Stage 2 amount at roadShare = 1 / 1+RAIL_BUDGET_SCALE
+  const total = sim.stage3 ? Bfull * (1 + RAIL_BUDGET_SCALE) * sim.dials.growth : Bfull, B = sim.stage3 ? total * sim.dials.roadShare * sim.dials.austerity : Bfull;
+  sim.macro.budgetBu = Math.round(total * 1e4) / 1e4;
   const regional = B * (1 - NATIONAL_POOL); let pool = B * NATIONAL_POOL, need = 0, funded = 0;
   // maintenance region by region, busiest roads first; each region has its own purse
   const byRegion = new Map<string, SimEdge[]>();
-  for (const e of Object.values(sim.edges)) if ((e.state === "open" || e.state === "dormant") && e.built >= 1) (byRegion.get(e.region) ?? byRegion.set(e.region, []).get(e.region)!).push(e);
+  for (const e of Object.values(sim.edges)) if ((e.state === "open" || e.state === "dormant") && e.built >= 1 && modeOf(e) === "road") (byRegion.get(e.region) ?? byRegion.set(e.region, []).get(e.region)!).push(e);
   const left: Record<string, number> = {};
   for (const r of w.t.prefOrder) left[r] = regional * (sim.regionShare[r] ?? 1 / w.t.prefOrder.length);
   for (const [r, es] of [...byRegion.entries()].sort()) {
@@ -232,7 +263,7 @@ function monthly(sim: SimState, w: World) {
   sim.macro.maintCoverage = need > 0 ? funded / need : 1;
   for (const e of Object.values(sim.edges)) if (e.state === "closed" && e.built >= 1) { e.weathering = Math.min(100, e.weathering + 0.3); if (e.weathering >= 100) { setEdgeState(sim, e, "lost", "閉鎖後に放置され風化"); ev(sim, "lost", `${edgeName(sim, e)}が廃道化`, "閉鎖後に維持されず風化(復旧には再整備が必要)", { edge: e.id }); } }
   // construction: each region funds its own queue; leftovers and the national pool fund the rest
-  const projs = Object.values(sim.projects).filter((p) => p.status === "planned" || p.status === "building").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
+  const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "road").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
   const pass = (p: SimProject, purse: () => number, take: (n: number) => void) => {
     const totLen = p.edgeIds.reduce((s, id) => s + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, req = Math.max(0.0001, p.costBu / Math.max(24, totLen * 0.8)), f = Math.min(req, Math.max(0, purse())); take(f);
     if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen);
@@ -241,9 +272,36 @@ function monthly(sim: SimState, w: World) {
   for (const p of projs) if (p.region !== "JP") { const r = p.region; pass(p, () => left[r] ?? 0, (n) => (left[r] = (left[r] ?? 0) - n)); done.add(p.id); }
   for (const p of projs) if (p.region === "JP") { pass(p, () => pool, (n) => (pool -= n)); done.add(p.id); }
   for (const r of Object.keys(left)) pool += Math.max(0, left[r] ?? 0) * 0;      // regional leftovers are not pooled: each region's purse is its own
+  if (sim.stage3) railMonthly(sim, w, total * (1 - sim.dials.roadShare));
   for (const p of Object.values(sim.projects)) {
     if (p.status === "suspended" && sim.month - p.statusSince >= 96) { p.status = "unbuilt"; p.statusSince = sim.month; ev(sim, "project", `未成線化: ${projLabel(sim, p)}`, "中断から8年経過しても再開されない", { project: p.id }); }
     if (p.status === "suspended" || p.status === "unbuilt") for (const id of p.edgeIds) { const e = sim.edges[id]; if (e && e.built < 1) e.weathering = Math.min(100, e.weathering + 0.03); }
+  }
+}
+/** Railways: each operator pays for its own upkeep out of fares plus a share of the subsidy pool; building is funded from a national construction pool. */
+function railMonthly(sim: SimState, w: World, railB: number) {
+  const dl = sim.dials, M = railB * 0.6 * dl.austerity, byOp = new Map<string, SimEdge[]>();
+  for (const e of Object.values(sim.edges)) if (modeOf(e) === "rail" && (e.state === "open" || e.state === "dormant") && e.built >= 1) (byOp.get(e.op ?? "jnr") ?? byOp.set(e.op ?? "jnr", []).get(e.op ?? "jnr")!).push(e);
+  const ops = [...byOp.keys()].sort(), rev = new Map<string, number>();
+  for (const op of ops) rev.set(op, byOp.get(op)!.reduce((t, e) => t + e.traffic * e.lengthKm * RAIL_FARE * (e.state === "open" ? 1 : 0.3), 0));
+  const others = ops.filter((o) => o !== "jnr"), othersRev = others.reduce((t, o) => t + rev.get(o)!, 0) || 1;
+  for (const op of ops) {
+    let pool = rev.get(op)! + (op === "jnr" ? M * dl.jnrSubsidy : M * (1 - dl.jnrSubsidy) * (rev.get(op)! / othersRev));
+    const es = byOp.get(op)!.sort((a, b) => b.traffic - a.traffic || (a.id < b.id ? -1 : 1));
+    for (const e of es) {
+      const cost = e.lengthKm * RAIL_MAINT[e.standard] * (e.quality < 50 ? 1.5 : 1) * (e.state === "dormant" ? 0.15 : 1), ok = pool >= cost;
+      if (ok) pool -= cost;
+      const decay = RAIL_DECAY * (1 + e.maxGradePct / 12) * (e.standard === "highgrade" ? 0.6 : 1);
+      if (ok) { e.quality = Math.min(100, e.quality + 0.3 - 0.3 * decay); e.weathering = Math.max(0, e.weathering - 0.08); }
+      else { e.quality = Math.max(0, e.quality - decay * 2); e.weathering = Math.min(100, e.weathering + 0.04 + (e.quality < 40 ? 0.08 : 0) + (e.zeroYears > 0 ? 0.05 : 0)); }
+      if (e.weathering >= 100) { setEdgeState(sim, e, "lost", `保守費が賄えず荒廃(品質${Math.round(e.quality)})`); ev(sim, "lost", `${edgeName(sim, e)}の線路が荒廃し廃線跡に`, `保守費が賄えず荒廃${e.zeroYears ? `・需要ゼロ${e.zeroYears}年` : ""}`, { edge: e.id }); }
+    }
+  }
+  let pot = railB * 0.4 * dl.railBuild * 2;
+  const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "rail").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
+  for (const p of projs) {
+    const totLen = p.edgeIds.reduce((t, id) => t + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, req = Math.max(0.0001, p.costBu / Math.max(36, totLen * 0.6)), f = Math.min(req, Math.max(0, pot)); pot -= f;
+    if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen);
   }
 }
 function progressProject(sim: SimState, w: World, p: SimProject, f: number, req: number, totLen: number) {
@@ -251,33 +309,48 @@ function progressProject(sim: SimState, w: World, p: SimProject, f: number, req:
   if (p.status === "planned" && f > 0) { p.status = "building"; p.statusSince = sim.month; ev(sim, "project", `着工: ${projLabel(sim, p)}(${prefName(p.region)})`, "地域の予算が確保された", { project: p.id }); }
   if (p.status !== "building") return;
   p.spentBu += f; p.stallMonths = f < 0.25 * req ? p.stallMonths + 1 : 0;
-  if (p.kind === "upgrade" || p.kind === "improve" || p.kind === "restore") {
+  if (p.kind === "upgrade" || p.kind === "improve" || p.kind === "restore" || p.kind === "electrify") {
     if (p.spentBu >= p.costBu - 1e-9) { p.status = "open"; p.statusSince = sim.month; completeProject(sim, w, p); }
     else if (p.stallMonths >= 36) { p.status = "abolished"; p.statusSince = sim.month; ev(sim, "project", `${KIND_LABEL[p.kind]}計画を取りやめ: ${projLabel(sim, p)}`, "予算不足が36か月続き、見送り(未成線にはならない)", { project: p.id }); }
     return;
   }
   let amt = f;
-  for (const id of p.edgeIds) { const e = sim.edges[id]; if (!e || e.built >= 1) continue; const ec = p.costBu * e.lengthKm / totLen, add = Math.min(amt / ec, 1 - e.built); e.built = Math.min(1, e.built + add); amt -= add * ec; if (e.built >= 1) { e.built = 1; e.state = "open"; e.open = true; e.builtMonth = sim.month; pushHist(sim, e, `${p.kind === "bypass" ? "バイパス" : "新設"}として供用開始`); if (y >= 1965 && e.standard === "rural") e.standard = "standard"; if (y >= 1965) { e.surface = "paved"; e.quality = 90; } } if (amt <= 1e-9) break; }
+  for (const id of p.edgeIds) { const e = sim.edges[id]; if (!e || e.built >= 1) continue; const ec = p.costBu * e.lengthKm / totLen, add = Math.min(amt / ec, 1 - e.built); e.built = Math.min(1, e.built + add); amt -= add * ec; if (e.built >= 1) { e.built = 1; e.state = "open"; e.open = true; e.builtMonth = sim.month; pushHist(sim, e, `${modeOf(p) === "rail" ? "新線として開業" : p.kind === "bypass" ? "バイパスとして供用開始" : "新設として供用開始"}`); if (modeOf(p) === "rail") { e.quality = 88; e.surface = "paved"; } else { if (y >= 1965 && e.standard === "rural") e.standard = "standard"; if (y >= 1965) { e.surface = "paved"; e.quality = 90; } } } if (amt <= 1e-9) break; }
   if (p.edgeIds.every((id) => (sim.edges[id]?.built ?? 1) >= 1)) { p.status = "open"; p.statusSince = sim.month; completeProject(sim, w, p); }
   else if (p.stallMonths >= 36) { p.status = "suspended"; p.statusSince = sim.month; ev(sim, "project", `工事中断: ${projLabel(sim, p)}`, `予算不足が36か月続いた(地域の予算${Math.round((sim.regionShare[p.region] ?? 0) * 1000) / 10}%)`, { project: p.id }); }
 }
+function completeRailProject(sim: SimState, w: World, p: SimProject, es: SimEdge[]) {
+  const label = projLabel(sim, p);
+  if (p.kind === "electrify") { const e = es[0]; if (e) { const was = e.standard; e.standard = e.standard === "rural" ? "standard" : "highgrade"; e.quality = 95; e.weathering = 0; pushHist(sim, e, `改良(${was === "rural" ? "電化・複線化" : "高速化"})`); } ev(sim, "project", `${p.reason.includes("高速") ? "高速化" : "電化・複線化"}が完了: ${label}`, p.reason, { project: p.id }); return; }
+  if (p.kind === "restore") { const e = es[0]; if (e) { e.state = "closed"; setEdgeState(sim, e, "open", `沿線需要の回復で復旧(${p.reason})`); e.quality = 55; e.weathering = 0; e.lost = false; e.zeroYears = 0; } ev(sim, "reopen", `復活開業: ${label}`, p.reason, { project: p.id }); return; }
+  const op = p.op ?? "jnr", grade: Grade = op === "jnr" ? "jnr" : "priv", r = designate(sim, p.chain, grade, op === "jnr" ? "JP" : op, label, "新線の開業");
+  p.routeId = r?.id ?? null; ev(sim, "open", `開業: ${r ? routeOfficial(r) : label}(${label}、${Math.round(es.reduce((t, e) => t + e.lengthKm, 0))}km)`, `工事費${p.costBu.toFixed(1)}を投入。${p.reason}`, { project: p.id });
+}
 function completeProject(sim: SimState, w: World, p: SimProject) {
   const es = p.edgeIds.map((id) => sim.edges[id]).filter(Boolean);
+  if (modeOf(p) === "rail") return completeRailProject(sim, w, p, es);
   if (p.kind === "upgrade") { for (const e of es) if (e.state === "open") { e.surface = "paved"; e.quality = Math.max(e.quality, 95); pushHist(sim, e, "舗装化"); } ev(sim, "project", `舗装化が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
   if (p.kind === "improve") { const e = es[0]; if (e) { e.standard = e.standard === "rural" ? "standard" : "highgrade"; e.surface = "paved"; e.quality = 95; e.weathering = 0; pushHist(sim, e, `改良(規格を${e.standard === "standard" ? "一般2車線" : "高規格"}に)`); } ev(sim, "project", `改良が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
   if (p.kind === "restore") { const e = es[0]; if (e) { e.state = "closed"; setEdgeState(sim, e, "open", `沿線需要の回復で復旧(${p.reason})`); e.quality = 55; e.weathering = 0; e.lost = false; e.zeroYears = 0; } ev(sim, "reopen", `復旧・再開通: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
   if (p.kind === "bypass") {
-    const old = sim.edges[p.replaces[0]], id = newId(sim, "route").replace("r.", "l.");
-    if (old) {
-      for (const e of es) { e.bypassOf = [old.id]; pushHist(sim, e, `${edgeName(sim, old)}のバイパスとして開通`); } old.bypassedBy = es.map((e) => e.id); old.peakThrough = Math.max(old.peakThrough, old.through); old.throughDropYears = 0;
+    // The old road may have been split by other projects after this one was planned: every piece of it is replaced, not just the first.
+    const olds = p.replaces.map((id) => sim.edges[id]).filter(Boolean), oldIds = new Set(olds.map((e) => e.id)), id = newId(sim, "route").replace("r.", "l.");
+    if (olds.length) {
+      const old = olds[0], oldName = `${sim.nodes[olds[0].a]?.name ?? "地点"}〜${sim.nodes[olds[olds.length - 1].b]?.name ?? "地点"}`;
+      for (const e of es) { e.bypassOf = olds.map((o) => o.id); pushHist(sim, e, `${oldName}のバイパスとして開通`); }
+      for (const o of olds) { o.bypassedBy = es.map((e) => e.id); o.peakThrough = Math.max(o.peakThrough, o.through); o.throughDropYears = 0; pushHist(sim, o, "バイパス開通。通過交通の移行を待って管理方針を決める(旧道)"); }
       let rid: string | null = null;
       for (const r of Object.values(sim.routes)) if (r.active) {
-        const at = r.edges.findIndex((x) => x.edgeId === old.id); if (at < 0) continue;
-        const dir = r.edges[at].dir, chain = p.chain.map((c) => ({ edgeId: c.edgeId, dir: (dir === 1 ? c.dir : -c.dir) as 1 | -1 })); if (dir === -1) chain.reverse();
-        r.edges.splice(at, 1, ...chain); r.oldEdges.push(old.id); rid = rid ?? r.id; r.history.push({ month: sim.month, grade: r.grade, number: r.number, text: "バイパス開通(旧道を管理)" });
+        const hits = r.edges.map((x, i) => (oldIds.has(x.edgeId) ? i : -1)).filter((i) => i >= 0); if (!hits.length) continue;
+        const at = hits[0]; let end = at; while (hits.includes(end + 1)) end++;
+        // only a route that runs the whole old road can be re-pointed at the new one; a route that merely shares a piece of it keeps the old road
+        const fe = sim.edges[r.edges[at].edgeId], le = sim.edges[r.edges[end].edgeId], sNode = r.edges[at].dir === 1 ? fe.a : fe.b, eNode = r.edges[end].dir === 1 ? le.b : le.a;
+        if (!((sNode === p.from && eNode === p.to) || (sNode === p.to && eNode === p.from))) continue;
+        const fwd = sNode === p.from, chain = fwd ? p.chain.map((c) => ({ ...c })) : [...p.chain].reverse().map((c) => ({ edgeId: c.edgeId, dir: (-c.dir) as 1 | -1 }));
+        r.edges.splice(at, end - at + 1, ...chain); for (const o of olds) if (!r.oldEdges.includes(o.id)) r.oldEdges.push(o.id); rid = rid ?? r.id; r.history.push({ month: sim.month, grade: r.grade, number: r.number, text: "バイパス開通(旧道を管理)" });
       }
-      sim.links.push({ id, kind: "bypass", newEdges: es.map((e) => e.id), oldEdges: [old.id], month: sim.month, routeId: rid });
-      pushHist(sim, old, "バイパス開通。通過交通の移行を待って管理方針を決める(旧道)");
+      sim.links.push({ id, kind: "bypass", newEdges: es.map((e) => e.id), oldEdges: olds.map((o) => o.id), month: sim.month, routeId: rid });
+      void old;
     }
     ev(sim, "bypass", `バイパス開通: ${projLabel(sim, p)}`, `${p.reason}。経路配分を再計算し通過交通は新道へ、旧道は沿線需要で存廃を判断`, { project: p.id }); return;
   }
@@ -291,11 +364,16 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
 
 /** One simulated month as a series of short atoms (yield between them). */
 export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
-  if (sim.month % 12 === 0) yield* yearlyGen(sim, w);
+  if (sim.policy?.pending) return;   // waiting for the player at a policy window: time does not move
+  if (sim.month % 12 === 0) {
+    if (windowDue(sim, yearOf(sim))) { openWindow(sim, w, yearOf(sim)); if (sim.policy!.pending) return; }
+    yield* yearlyGen(sim, w);
+  }
   monthly(sim, w); yield; sim.month++;
 }
 export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
-export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) stepMonth(sim, w); }
+/** Fast-forward with no player (tests, tools): a policy window that opens is resolved by the world's own scores. */
+export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };
