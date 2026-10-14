@@ -95,6 +95,7 @@ async function tx<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequ
   return new Promise((res, rej) => { const q = f(db.transaction(STORE, mode).objectStore(STORE)); q.onsuccess = () => { res(q.result); db.close(); }; q.onerror = () => { rej(q.error); db.close(); }; });
 }
 export async function putRaw(key: string, value: unknown): Promise<boolean> { try { await tx("readwrite", (s) => s.put(JSON.stringify(value), key)); return true; } catch { return false; } }
+export async function getRaw(key: string): Promise<string | undefined> { try { return await tx<string | undefined>("readonly", (s) => s.get(key) as IDBRequest<string | undefined>); } catch { return undefined; } }
 export async function saveGame(name: string, save: GameSave): Promise<boolean> { return putRaw(name, { savedAt: save.savedAt, save }); }
 export interface LoadedGame extends ParsedSave { savedAt: number }
 /** Reads v2 slots and legacy v1 slots ({savedAt,state}); a v1 slot is migrated in memory and rewritten as v2 on the next save. */

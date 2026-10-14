@@ -22,7 +22,7 @@ export function setEdgeState(sim: SimState, e: SimEdge, st: EdgeState, why: stri
   if (st === "open") { e.zeroYears = 0; e.reviveYears = 0; }
   pushHist(sim, e, `${(modeOf(e) === "rail" ? { open: "運行再開", dormant: "運休", closed: "廃止", lost: "廃線跡化" } : { open: "供用(再開)", dormant: "休止", closed: "閉鎖", lost: "廃道化" })[st]}: ${why}`);
 }
-export function pushHist(sim: SimState, e: SimEdge, t: string) { e.hist.push({ m: sim.month, t }); if (e.hist.length > 40) e.hist.splice(1, e.hist.length - 40); }
+export function pushHist(sim: SimState, e: SimEdge, t: string) { e.hist.push({ m: sim.month, t }); const cap = sim.stage3 ? 20 : 40; if (e.hist.length > cap) e.hist.splice(1, e.hist.length - cap); }
 /**
  * `nodeByCell` and the edge maps are per mode (a rail line is not broken by a road junction it merely crosses); `anyNode` is every node
  * on the map, so a cell never gets two nodes. A city is a node for both modes. `mode` omitted = roads (every pre-Stage-3 caller).
@@ -99,7 +99,9 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
   const cells = pathCells.filter((c, i) => i === 0 || c !== pathCells[i - 1]);
   const chain: RouteEdgeRef[] = [], created: string[] = [];
   if (cells.length < 2 || cells[0] === cells[cells.length - 1]) return { chain, created };
-  const mode = o.mode ?? "road"; let idx = buildIndex(sim, mode); const n = cells.length;
+  const mode = o.mode ?? "road", forced = new Map<number, string>();   // nodes chosen as breakpoints stay visible to this mode even when only the other mode used them so far
+  const reindex = () => { const x = buildIndex(sim, mode); for (const [c, id] of forced) x.nodeByCell.set(c, id); return x; };
+  let idx = reindex(); const n = cells.length;
   const shared = (i: number) => idx.step.has(`${cells[i]}:${cells[i + 1]}`);       // step i -> i+1
   // 1) make sure every breakpoint cell is a node (splitting existing edges where a path touches their interior)
   const bp: number[] = [];
@@ -112,7 +114,7 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     const eid = idx.cellEdge.get(c);
     if (eid) { const e = sim.edges[eid], at = e.cells.indexOf(c); const nid = nodeAtCell(sim, w, idx, c, "junction"); splitEdge(sim, w, eid, at, nid); }
     else nodeAtCell(sim, w, idx, c, i === 0 || i === n - 1 ? "end" : "junction");
-    idx = buildIndex(sim, mode);
+    forced.set(c, idx.nodeByCell.get(c)!); idx = reindex();
   }
   // 2) walk breakpoint to breakpoint
   const addNew = (seg: number[]) => {
@@ -131,11 +133,11 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     }
     void a; void b;
   };
-  idx = buildIndex(sim, mode);
+  idx = reindex();
   for (let q = 0; q + 1 < bp.length; q++) {
     const s = bp[q], t = bp[q + 1], seg = cells.slice(s, t + 1);
     if (shared(s)) { const hit = idx.step.get(`${cells[s]}:${cells[s + 1]}`)!, e = sim.edges[hit.edge]; chain.push({ edgeId: e.id, dir: idx.nodeByCell.get(cells[s]) === e.a ? 1 : -1 }); }
-    else { addNew(seg); idx = buildIndex(sim, mode); }
+    else { addNew(seg); idx = reindex(); }
   }
   return { chain, created };
 }

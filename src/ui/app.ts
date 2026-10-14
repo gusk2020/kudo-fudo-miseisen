@@ -2,7 +2,7 @@ import { worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL } from "../core/data";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
-import { exportGame, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
+import { exportGame, getRaw, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
 import { suggestRidge } from "../core/suggest";
 import type { TerrainResult } from "../core/terrain";
@@ -16,16 +16,19 @@ import { attachGestures } from "./gestures";
 import { CER_LABEL, performCeremony, previewCeremony, type CerKind, type CerPreview } from "../sim/ceremony";
 import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
+import { codesAt } from "../sim/ledger";
 import { finishMigration } from "../sim/migrate";
 import { SimRunner } from "../sim/runner";
-import { ERA, GRADE_LABEL, KIND_LABEL, NICK_LABEL, PROJECT_LABEL, STANDARD_LABEL, STATE_LABEL, SURFACE_LABEL, eraLabel, monthToYM, ymLabel, type SimState } from "../sim/types";
+import { ERA, GRADE_LABEL, KIND_LABEL, NICK_LABEL, PROJECT_LABEL, STANDARD_LABEL, STATE_LABEL, SURFACE_LABEL, eraLabel, monthToYM, setActiveEra, ymLabel, type SimState } from "../sim/types";
 import { COND, CASING } from "../render/roads";
 import { edgePoints } from "../sim/network";
 import { buildWorld, type World } from "../sim/world";
+import { eraKeyOf, type EraKey } from "../sim/eras";
+import { buildAtlas, buildLedger, buildPolicy, buildTimeline, eraPicker } from "./stage3";
 
 type Tool = "view" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
+export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) { if (k.startsWith("on") && typeof v === "function") (e as any)[k] = v; else if (k === "class") e.className = v; else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : String(v)); }
   for (const k of kids) e.append(k);
@@ -45,18 +48,26 @@ export class App {
   sim: SimState | null = null; world: World | null = null; private worldRef: TerrainResult | null = null; pendingSim: SimState | null = null;
   cerDraft: Partial<Record<CerKind, { pts: Vec[]; prev: CerPreview }>> = {}; private cerLive: Vec[] | null = null; pin: Vec | null = null; scenery: any = null;
   compareYear: number | null = null; selEdge: string | null = null;
+  /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
+  eraChoice: EraKey = "heisei"; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain";
   runner: SimRunner | null = null; building = 0; safeMode = false; behind = false; private lastRoads = 0;
-  catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
+  private lastBackup = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
   /** Stage 3 plays on the real Japan; the old hand-edited-map flow stays reachable with ?legacy=1 and keeps its own save key. */
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
     const a = new App(); a.real = real; a.r = await Renderer.create(host);
-    if (real) { a.store.replace(realState()); document.body.classList.add("real"); }
+    if (real) { a.store.replace(realState()); document.body.classList.add("real"); try { if (localStorage.getItem("kfm.bg") === "roadmap") { a.bg = "roadmap"; a.r.setBg("roadmap"); } } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
     try { a.safeMode = !!localStorage.getItem("kfm.run"); localStorage.setItem("kfm.run", String(Date.now())); } catch { /* storage may be blocked */ }
     a.r.onContextLost = () => a.toast("画面の描画が一時的に失われました。復帰を待っています…"); a.r.onContextRestored = () => { a.render(); a.toast("描画が復帰しました"); };
-    const saved = await loadGame(a.saveKey);
+    let saved = await loadGame(a.saveKey), restoredFromBackup = false;
+    if (!saved && real) {
+      // The latest save exists but cannot be read (storage cut off mid-write, a crash): keep the broken copy aside and fall back to the backup.
+      const raw = await getRaw(a.saveKey);
+      if (raw) { await putRaw(a.saveKey + ":broken", { savedAt: Date.now(), raw }); saved = await loadGame(a.saveKey + ":backup"); restoredFromBackup = !!saved; }
+    }
+    if (restoredFromBackup) setTimeout(() => a.toast("最新のセーブが壊れていたため、バックアップから復元しました(壊れたデータは別に保管しています)"), 800);
     if (saved) {
       a.store.replace(saved.map); a.pendingSim = saved.sim;
       if (saved.quarantine) { await putRaw(a.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: saved.quarantine }); }
@@ -90,21 +101,22 @@ export class App {
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
     if (this.runner && !this.runner.idle) { if (!force) { setTimeout(() => this.persist(), 80); return Promise.resolve(false); } this.runner.settle(); }
-    if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now(); /* a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
+    if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now();
+    if (this.real && this.sim && performance.now() - this.lastBackup > 120000) { this.lastBackup = performance.now(); void saveGame(this.saveKey + ":backup", makeSave(this.s, this.sim)); }   /* a second copy every two minutes; a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
   ensureWorld(): World | null { if (!this.terrain) return null; if (this.worldRef !== this.terrain) { this.world = buildWorld(this.terrain, this.s.seed); this.worldRef = this.terrain; } return this.world; }
   renderRoads() {
     const cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok }));
     if (this.cerLive) cer.push({ pts: this.cerLive, path: undefined as any, ok: true });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
     if (onRoads) this.ensureWorld();
-    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, plans: L.plans, signs: L.signs }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? this.sim.snaps.find((x) => x.year === this.compareYear) ?? null : null, sel: this.selEdge });
+    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge });
   }
   /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
   private attachPendingSim() {
     if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; this.pendingSim = null; if (!w || !this.terrain) return;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.toast(`道路データは読み込まず退避しました: ${err}`); return; }
-    finishMigration(sim, w); this.sim = sim; this.runner = new SimRunner(sim, w);
+    finishMigration(sim, w); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); this.runner = new SimRunner(sim, w);
     if (this.safeMode) { sim.speed = 0; this.status(); return; }
     const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
   }
@@ -125,7 +137,7 @@ export class App {
     if (this.building > 0) add(`1950年の道路網を生成中 ${Math.round(this.building * 100)}%`, "bad");
     if (this.s.step === 6 && this.sim) {
       const m = summary(this.sim), sp = this.sim.speed;
-      add(`${m.ym}`, "ok"); add(sp ? `速度 ×${sp}` : "停止中"); add(`路線${m.routes}本 総延長${m.km.toLocaleString()}km`); add(`建設中${m.building} 未成${m.unbuilt}`);
+      add(`${m.ym}`, "ok"); add(sp ? `速度 ×${sp}` : "停止中"); add(this.sim.stage3 ? `路線${m.routes}本 道路${m.roadKm.toLocaleString()}km・鉄道${m.railKm.toLocaleString()}km` : `路線${m.routes}本 総延長${m.km.toLocaleString()}km`); if (this.viewYear !== null) add(`${this.viewYear}年を閲覧中(読み取り専用)`, "bad"); if (this.sim.policy?.pending) add("政策介入の待機中", "bad"); add(`建設中${m.building} 未成${m.unbuilt}`);
       add(`状態 良${m.good}/可${m.fair}/悪${m.poor}`); add(`休止${m.dormant} 閉鎖${m.closed} 廃道${m.lost}`);
       const last = this.sim.events[this.sim.events.length - 1]; if (last) add(`最近: ${last.text}`);
       if (this.catching) add(this.catchInfo, "bad");
@@ -252,7 +264,7 @@ export class App {
     if (!w || !this.terrain || !k?.ok || !f?.ok || !this.s.finalized || this.sim || this.building) return;
     this.building = 0.01; this.status(); this.buildUI();
     // the 1950 network is generated in slices (a single long task froze phones); the UI shows progress and stays responsive
-    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed); let sim: SimState | null = null;
+    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { era: this.eraChoice, stage3: true } : {}); let sim: SimState | null = null;
     while (!sim) {
       const t0 = performance.now();
       while (performance.now() - t0 < 10) { const r = gen.next(); if (r.done) { sim = r.value; break; } this.building = Math.max(this.building, r.value); }
@@ -263,13 +275,20 @@ export class App {
     sim.speed = 1; this.sim = sim; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
     this.persist(); this.toast("開通の儀を終えました。時間が動き始めます"); this.onChange();
   }
+  /** Look at a past year (read-only, time stopped) or return to now. Never changes the simulation. */
+  setViewYear(y: number | null) {
+    this.viewYear = y; if (y !== null) this.selEdge = null;
+    this.renderRoads(); this.status(); this.buildSheet(); this.toast(y === null ? "現在に戻りました(時間が再び進みます)" : `${y}年を表示中(読み取り専用・時間は停止)`);
+  }
+  afterPolicy() { this.lastTick = performance.now(); this.acc = 0; this.persist(true); this.renderRoads(); this.status(); this.buildSheet(); }
   /** Test/debug hook: advance synchronously (the normal clock is slower than a test can wait). */
   ffYears(n: number) { if (!this.sim || !this.world) return; this.runner?.settle(); advance(this.sim, this.world, 12 * n); this.renderRoads(); this.status(); this.buildUI(); }
   setSpeed(n: 0 | 1 | 5 | 20) { if (!this.sim) return; this.sim.speed = n; this.acc = 0; this.lastTick = performance.now(); this.persist(); this.buildUI(); }
   /** Real-time clock: only while this page is visible. Tab hidden or app closed = no simulation; return = capped catch-up. */
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
-    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5) { this.lastTick = now; return; }
+    if (sim?.policy?.pending && this.sheet !== "policy") { this.sheet = "policy"; this.buildSheet(); this.toast("10年ごとの政策介入の機会です(時間は止まっています)"); }
+    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || this.viewYear !== null || sim.policy?.pending) { this.lastTick = now; return; }
     const dt = Math.min(250, Math.max(0, now - this.lastTick)); this.lastTick = now;
     this.acc += dt * sim.speed; const n = Math.floor(this.acc / MS_PER_MONTH_X1);
     if (n > 0) { this.acc -= n * MS_PER_MONTH_X1; run.request(n); }
@@ -285,13 +304,14 @@ export class App {
   async catchUp(elapsedMs: number) {
     const sim = this.sim, run = this.runner; if (!sim || !run || !sim.ceremonyDone) return;
     const plan = planCatchUp(elapsedMs, sim.speed); if (plan.months <= 0 && plan.skipped <= 0) return;
-    this.catching = true; const target = sim.month + plan.months;
+    this.catching = true; const target = sim.month + plan.months; if (sim.policy) sim.policy.away = true;
     while (sim.month < target) {
+      if (sim.policy?.pending) break;
       run.request(Math.min(24, target - sim.month - run.pending)); run.pump(12);
       this.catchInfo = `放置分を計算中 ${Math.floor((plan.months - (target - sim.month)) / 12)}/${Math.floor(plan.months / 12)}年`; this.status();
       await new Promise((r) => setTimeout(r, 0));
     }
-    run.settle(); noteSkipped(sim, plan.skipped); this.catching = false; this.catchInfo = ""; this.lastTick = performance.now(); this.acc = 0;
+    run.settle(); if (sim.policy) sim.policy.away = false; noteSkipped(sim, plan.skipped); this.catching = false; this.catchInfo = ""; this.lastTick = performance.now(); this.acc = 0;
     if (plan.skipped) this.toast(`放置が長いため${Math.floor(plan.skipped / 12)}年分の経過を省略しました`);
     this.renderRoads(); this.status(); this.persist();
   }
@@ -321,13 +341,20 @@ export class App {
     $("btn-undo").onclick = () => { if (!this.store.undo()) this.toast("取り消せる操作がありません"); };
     $("btn-redo").onclick = () => this.store.redo();
     $("btn-fit").onclick = () => { this.r.fit(this.s); };
-    document.querySelectorAll<HTMLButtonElement>("#dock [data-sheet]").forEach((b) => (b.onclick = () => this.openSheet(b.dataset.sheet!)));
+    if (this.real) this.buildRealDock(); else document.querySelectorAll<HTMLButtonElement>("#dock [data-sheet]").forEach((b) => (b.onclick = () => this.openSheet(b.dataset.sheet!)));
     $("sheet-close").onclick = () => this.openSheet(null);
+  }
+  setBg(bg: "terrain" | "roadmap") { this.bg = bg; try { localStorage.setItem("kfm.bg", bg); } catch { /* ignore */ } this.r.setBg(bg); this.buildToolbar(); }
+  /** Stage 3 dock: the observation tools get their own buttons (the old dock's 検証/取消/やり直し make no sense on a fixed real map). */
+  private buildRealDock() {
+    const dock = $("dock"), fit = $("btn-fit");   // the old buttons stay in the DOM (other code reads them) but are hidden
+    for (const b of Array.from(dock.children)) if (b !== fit) (b as HTMLElement).hidden = true;
+    for (const [id, label] of [["layers", "レイヤー"], ["timeline", "年表"], ["ledger", "台帳"], ["atlas", "地図帳"], ["policy", "介入"], ["menu", "保存"]] as [string, string][]) dock.insertBefore(h("button", { id: "dock-" + id, onclick: () => this.openSheet(id) }, label), fit);
   }
   openSheet(name: string | null) { this.sheet = this.sheet === name ? null : name; this.buildSheet(); }
   buildUI() {
     const i = this.s.step;
-    $("step-title").textContent = `${STEP_LABELS[this.stepId]}  (${i + 1}/${STEPS.length})`;
+    $("step-title").textContent = this.real ? (this.sim ? "酷道・腐道・未成線" : "酷道・腐道・未成線 — 開通の儀") : `${STEP_LABELS[this.stepId]}  (${i + 1}/${STEPS.length})`;
     ($("btn-prev") as HTMLButtonElement).disabled = i === 0;
     ($("btn-next") as HTMLButtonElement).disabled = i >= STEPS.length - 1;
     ($("btn-undo") as HTMLButtonElement).disabled = !this.store.canUndo; ($("btn-redo") as HTMLButtonElement).disabled = !this.store.canRedo;
@@ -374,7 +401,8 @@ export class App {
     if (!this.s.finalized || !this.terrain) { label(this.s.finalized ? "地形を生成中…" : "地図を最終確定すると道路を始められます"); return; }
     if (!this.sim) {
       label(`選択中: ${names[this.tool]}`);
-      tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));
+      if (this.real) eraPicker(this, tb, this.eraChoice, (k) => { this.eraChoice = k; this.buildToolbar(); });
+      else tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));
       const g = h("div", { class: "grp" });
       for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k]; g.append(this.tbtn(CER_LABEL[k] + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
       tb.append(g);
@@ -387,6 +415,11 @@ export class App {
     for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n, () => this.setSpeed(n), "speed-" + n));
     tb.append(sp);
     const g = h("div", { class: "grp" });
+    if (this.real) {
+      g.append(h("button", { id: "btn-legend", type: "button", onclick: () => this.openSheet("legend") }, "凡例"),
+        h("button", { id: "btn-bg", type: "button", "aria-pressed": this.bg === "roadmap" ? "true" : "false", class: this.bg === "roadmap" ? "mode on" : "mode", onclick: () => this.setBg(this.bg === "roadmap" ? "terrain" : "roadmap") }, this.bg === "roadmap" ? "✓ 道路地図" : "背景:地形"));
+      tb.append(g); const gw = h("div", { class: "grp" }); gw.append(this.tbtn("なぜ?(線路・道路をタップ)", this.tool === "why", () => this.setTool("why"), "tool-why")); tb.append(gw); return;
+    }
     g.append(h("button", { id: "btn-history", type: "button", onclick: () => this.openSheet("history") }, "年表"), h("button", { id: "btn-roads", type: "button", onclick: () => this.openSheet("roads") }, "路線一覧"), h("button", { id: "btn-legend", type: "button", onclick: () => this.openSheet("legend") }, "凡例"), h("button", { id: "btn-compare", type: "button", "aria-pressed": this.compareYear ? "true" : "false", class: this.compareYear ? "mode on" : "mode", onclick: () => this.openSheet("compare") }, this.compareYear ? `✓ 比較:${this.compareYear}年` : "比較"));
     tb.append(g);
     const g2 = h("div", { class: "grp" }); g2.append(this.tbtn("なぜ?(道路をタップ)", this.tool === "why", () => this.setTool("why"), "tool-why"), this.tbtn("風景JSON", this.tool === "pick", () => this.setTool("pick"), "tool-pick")); tb.append(g2);
@@ -413,6 +446,10 @@ export class App {
     else if (this.sheet === "compare") this.buildCompare(body);
     else if (this.sheet === "why") this.buildWhy(body);
     else if (this.sheet === "menu") this.buildMenu(body);
+    else if (this.sheet === "timeline") buildTimeline(this, body);
+    else if (this.sheet === "ledger") buildLedger(this, body);
+    else if (this.sheet === "atlas") buildAtlas(this, body);
+    else if (this.sheet === "policy") buildPolicy(this, body);
   }
   private buildHistory(body: HTMLElement) {
     body.append(h("h3", {}, "年表(新しい順)"));
@@ -450,6 +487,15 @@ export class App {
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#39d6c8" stroke-width="3" stroke-dasharray="2 4"/>`, "水色の点線: 計画"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#3aa0ff" stroke-width="3" stroke-dasharray="7 4"/>`, "青の破線: 工事中"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#ff8f1f" stroke-width="3" stroke-dasharray="7 4"/>`, "橙の破線: 中断"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#b04bff" stroke-width="3" stroke-dasharray="7 4"/>`, "紫の破線: 未成線");
     body.append(h("h3", {}, "比較表示の縁取り"));
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#ff3b3b" stroke-width="8" stroke-opacity=".6"/>`, "赤: 品質が大きく低下"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#111" stroke-width="8" stroke-opacity=".6"/>`, "黒: 休止・閉鎖・廃道に悪化"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#39a0ff" stroke-width="8" stroke-opacity=".6"/>`, "青: 基準年にはなかった道路"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#39e08a" stroke-width="8" stroke-opacity=".6"/>`, "緑: 改善・復旧");
+    if (this.real) {
+      body.append(h("h3", {}, "鉄道(紺の線＋白い点線)"));
+      row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#12284d" stroke-width="3.5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="2.5" stroke-dasharray="4 5"/>`, "紺: 供用中(状態が悪いほど灰色に近づく)");
+      row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#12284d" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffd23a" stroke-width="1.5"/>`, "太い紺＋黄の中心線: 高速新線・高規格化");
+      row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#3a4f78" stroke-width="3.5" stroke-dasharray="10 6"/>`, "紺の長い破線: 運休(利用がほぼゼロ)");
+      row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#9aa4ad" stroke-width="2" stroke-dasharray="5 4"/>`, "灰色の破線: 廃止 ／ 極細の点線: 廃線跡");
+      body.append(h("small", {}, "鉄道の標識: 紺の四角=国鉄「鉄N」、白地に枠=私鉄(事業者名の頭文字＋番号)。通称「酷鉄」(国鉄)・「死鉄」(私鉄)は、利用が少なく保守が行き届かない線に後から付く呼び名で、正式名称ではありません。"));
+      body.append(h("small", {}, "青い四角=港(沿岸の都市)、白い十字=空港(開港後)。港と空港は補助的な役割で、貨物と長距離旅客の一部を引き受けます。"));
+    }
     body.append(h("small", {}, "標識: 国=丸(赤)・県=角丸(緑)・府=五角形(紫)。通称(酷・険・腐)は荒れた細い道に後から付く呼び名で、行政指定ではありません。"));
   }
   private buildCompare(body: HTMLElement) {
@@ -483,14 +529,14 @@ export class App {
   private download(text: string, name: string) { const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "application/json" })), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
   async buildMenu(body: HTMLElement) {
     body.append(h("h3", {}, "セーブ / ロード / 出力"));
-    const slots = ["slot1", "slot2", "slot3"], have = new Set(await listSlots());
-    for (const n of slots) body.append(h("div", { class: "row" }, `${n.replace("slot", "スロット")}${have.has(n) ? " (使用中)" : ""}`,
+    const pfx = this.real ? "s3:" : "", slots = [1, 2, 3, 4, 5].map((i) => `${pfx}slot${i}`), have = new Set(await listSlots());
+    for (const n of slots) body.append(h("div", { class: "row" }, `${n.replace(/^s3:/, "").replace("slot", "スロット")}${have.has(n) ? " (使用中)" : ""}`,
       h("button", { onclick: async () => this.toast((await saveGame(n, makeSave(this.s, this.sim ?? this.pendingSim))) ? "セーブしました" : "セーブできません(ブラウザの保存が無効)") }, "セーブ"),
       h("button", { disabled: !have.has(n), onclick: async () => { const l = await loadGame(n); if (l) this.adopt(l); else this.toast("ロードできません"); } }, "ロード")));
     body.append(h("div", { class: "row" },
       h("button", { id: "export", onclick: () => this.exportFile() }, "JSONエクスポート"),
       h("label", {}, "JSON読込 ", h("input", { type: "file", accept: ".json,application/json", id: "import", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; const p = parseSave(await f.text()); if (!p.ok) { this.toast("読み込めません: " + p.problems[0]); return; } this.adopt(p); } }))));
-    if (this.s.finalized) body.append(h("div", { class: "row" }, h("button", { id: "unlock-menu", onclick: () => this.unlockMap() }, "地図のロックを解除して編集"), this.sim ? h("button", { id: "restart-roads", onclick: () => { if (confirm("道路を消して開通の儀からやり直します(地図は維持)。よろしいですか?")) { this.sim = null; this.cerDraft = {}; this.persist(); this.go(6); this.onChange(); } } }, "道路だけやり直す") : h("small", {}, "")));
+    if (this.s.finalized) body.append(h("div", { class: "row" }, this.real ? "" : h("button", { id: "unlock-menu", onclick: () => this.unlockMap() }, "地図のロックを解除して編集"), this.sim ? h("button", { id: "restart-roads", onclick: () => { if (confirm("道路を消して開通の儀からやり直します(地図は維持)。よろしいですか?")) { this.sim = null; this.cerDraft = {}; this.persist(); this.viewYear = null; this.go(6); this.onChange(); } } }, "道路だけやり直す") : h("small", {}, "")));
     if (this.stepId === "confirm") {
       const errs = this.issues.filter((i) => i.severity === "error").length, ready = errs === 0 && !!this.terrain;
       body.append(h("h3", {}, "最終確定"));

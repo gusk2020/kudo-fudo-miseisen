@@ -51,7 +51,8 @@ export interface RouteEdgeRef { edgeId: string; dir: 1 | -1 }
 export interface SimRoute {
   id: string; scope: string; grade: Grade; number: number; name: string; edges: RouteEdgeRef[];
   since: number; active: boolean; lowYears: number; highYears: number;
-  history: { month: number; grade: Grade; number: number; text: string }[];
+  history: { month: number; grade: Grade; number: number; text: string; scope?: string; opName?: string }[];
+  endMonth?: number;        // month the designation ended (abolished); the line stays in the ledger
   mode?: Mode; op?: string; opName?: string;   // rail: operator id and the name printed on the line (国鉄 / a private operator) (key of SimState.operators)
   nick: boolean;          // 通称(酷道/険道/腐道)が付くほど荒れた区間が多い
   oldEdges: string[];     // 旧道区間: バイパス開通後も当面この路線の管理下に残る区間
@@ -67,12 +68,13 @@ export interface SimProject {
   routeId: string | null; reason: string; priority: number; mode?: Mode; op?: string;
 }
 export interface SimEvent { id: number; month: number; kind: string; text: string; cause: string; refs: Record<string, string> }
-export interface CityState { pop: number; industry: number; popSource: "ne" | "synthetic"; lowAccessYears: number }
+export interface CityState { pop: number; industry: number; popSource: "ne" | "synthetic"; lowAccessYears: number; airport?: number /* year the airport opened (Stage 3) */ }
 /** 集落: 合成の小さな居住地(実在の集落ではない)。旧道の「地域内需要」と孤立判定の根拠。 */
 export interface Settlement { id: string; name: string; cell: number; city: string; pop: number; pop0: number; isolatedYears: number; gone: boolean }
 export interface SimLink { id: string; kind: "bypass"; newEdges: string[]; oldEdges: string[]; month: number; routeId: string | null }
-export interface Snapshot { year: number; edges: Record<string, number> }
-export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number }
+/** Edge codes (state*16 + quality bucket). `delta`: only edges that changed since the previous snapshot (Stage 3; fold with codesAt). */
+export interface Snapshot { year: number; edges: Record<string, number>; delta?: true }
+export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number }
 
 export interface SimState {
   schemaVersion: 1 | 2 | 3; mapHash: string; terrainHash: string; seed: number; era: string; startYear: number;

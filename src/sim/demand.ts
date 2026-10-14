@@ -10,6 +10,8 @@ import type { World } from "./world";
 
 export const KFLOW = 1.5e-3, KVIL = 0.04, KLOC = 0.02;
 /** Rail units are passengers/day; road units are vehicles/day. One flow unit of trip demand is a vehicle on a road or RAIL_PAX passengers on a train. */
+/** Ports and airports are supporting players: a port moves a share of coastal freight by sea, an airport a share of long passenger trips by air. */
+export const SEA_FREIGHT = 0.22, AIR_MIN_KM = 300;
 export const RAIL_PAX = 2, KFREIGHT = 6e-4, KRAIL_LOC = 0.06, RAIL_ACCESS_H = 0.4, BIAS_K = 0.75, LOGIT_S = 1.5;
 export const ZERO_DEMAND = 4;                       // below this many vehicles/day a road counts as unused (explicit, not float noise)
 export const ZERO_DEMAND_RAIL = 25;                 // ... and this many passengers/day for a railway
@@ -26,6 +28,7 @@ export const edgeSpeed = (e: SimEdge) => modeOf(e) === "rail"
 export const passable = (e: SimEdge) => (e.state === "open" || e.state === "dormant") && e.built >= 1 && !e.lost;
 
 export interface Analysis {
+  airShare: number; seaShare: number;   // share of long passenger trips by air / of coastal freight by sea (Stage 3 supporting modes)
   T: Float64Array; TT: Float64Array; acc: number[]; cityNodes: (string | null)[];
   reach: Map<string, boolean>;               // settlement id -> can still reach its parent city
   potential: Map<string, number>;            // edge id -> local demand the settlements around it would generate (also for unused edges)
@@ -49,13 +52,19 @@ export function railShare(tRoad: number, tRail: number, carBias: number, railBia
   const x = Math.log(((tRail + RAIL_ACCESS_H) * Math.exp(-BIAS_K * railBias)) / (tRoad * Math.exp(-BIAS_K * carBias)));   // >0: rail is the slower choice
   return 1 / (1 + Math.exp(LOGIT_S * x));
 }
+/** Share of a long trip taken by air: both ends need an airport, it grows with distance, and a good railway takes some of it back. */
+export function airShare(sim: SimState, w: World, i: number, j: number, railS: number): number {
+  const a = sim.cities[w.cities[i].id], b = sim.cities[w.cities[j].id]; if (a.airport === undefined || b.airport === undefined) return 0;
+  const d = Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); if (d < AIR_MIN_KM) return 0;
+  return Math.min(0.55, (0.08 + 0.5 * (1 - Math.exp(-(d - AIR_MIN_KM) / 450))) * (1 - 0.45 * railS));
+}
 export function analyze(sim: SimState, w: World): Analysis {
   const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, string>(), N = nodeIds.length;
   for (const n of Object.values(sim.nodes)) nodeByCell.set(n.cell, n.id);
   const multi = sim.stage3 === true, dl = sim.dials;
   const adjRoad: Adj[][] = nodeIds.map(() => []), adjRail: Adj[][] = nodeIds.map(() => []), edges = Object.values(sim.edges);
   for (const e of edges) { e.through = 0; e.local = 0; e.freight = 0; }
-  let anyRail = false;
+  let anyRail = false, airFlow = 0, landFlow = 0, seaFr = 0, landFr = 0;
   for (const e of edges) if (passable(e)) {
     const a = pos.get(e.a)!, b = pos.get(e.b)!, t = e.lengthKm / Math.max(3, edgeSpeed(e)), g = modeOf(e) === "rail" ? adjRail : adjRoad; if (g === adjRail) anyRail = true;
     g[a].push({ to: b, edge: e, t }); g[b].push({ to: a, edge: e, t });
@@ -78,12 +87,14 @@ export function analyze(sim: SimState, w: World): Analysis {
       }
       const s = railShare(tr, tt, dl.carBias, dl.railBias), tmin = Math.min(tr, isFinite(tt) ? tt + RAIL_ACCESS_H : Infinity);
       const flow = KFLOW * Math.pow(pi.pop * pj.pop, 0.6) / (1 + Math.pow(tmin, 1.2));
-      if (s < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.through += flow * (1 - s);
-      if (s > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.through += flow * s * RAIL_PAX;
+      const air = airShare(sim, w, i, j, s), land = flow * (1 - air); airFlow += flow * air; landFlow += land;
+      if (s < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.through += land * (1 - s);
+      if (s > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.through += land * s * RAIL_PAX;
       // freight: industry-to-industry; trucks take it unless the railway is competitive and the era favours it
       const f0 = KFREIGHT * Math.pow(pi.pop * pi.industry * pj.pop * pj.industry, 0.6) / (1 + Math.pow(tmin, 1.2)), sf = railShare(tr, tt, dl.carBias * 0.4 - dl.freightRail, dl.railBias * 0.4 + dl.freightRail);
-      if (sf < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.freight += f0 * (1 - sf);
-      if (sf > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.freight += f0 * sf * RAIL_PAX;
+      const sea = w.cities[i].coastal && w.cities[j].coastal ? SEA_FREIGHT : 0, fl = f0 * (1 - sea); seaFr += f0 * sea; landFr += fl;
+      if (sf < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.freight += fl * (1 - sf);
+      if (sf > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.freight += fl * sf * RAIL_PAX;
     }
     for (const vid of villagesOf.get(w.cities[i].id) ?? []) {
       const v = sim.settlements[vid], vn = nodeByCell.get(v.cell); if (!vn || v.gone) { reach.set(vid, !v.gone && false); if (v.gone) reach.set(vid, true); continue; }
@@ -108,7 +119,7 @@ export function analyze(sim: SimState, w: World): Analysis {
   }
   const popTot = w.cities.reduce((s, c) => s + sim.cities[c.id].pop, 0), acc: number[] = [];
   for (let i = 0; i < nc; i++) { let s = 0; for (let j = 0; j < nc; j++) if (j !== i) { const t = Math.min(T[i * nc + j], TT[i * nc + j] + RAIL_ACCESS_H); if (isFinite(t)) s += sim.cities[w.cities[j].id].pop * Math.exp(-t / 3); } acc.push(popTot ? s / popTot : 0); }
-  return { T, TT, acc, cityNodes, reach, potential };
+  return { T, TT, acc, cityNodes, reach, potential, airShare: airFlow + landFlow > 0 ? airFlow / (airFlow + landFlow) : 0, seaShare: seaFr + landFr > 0 ? seaFr / (seaFr + landFr) : 0 };
 }
 /** Settlements (and city links) that would be cut off *because of* removing `skip` (already-cut-off ones are not counted). */
 export function strandedWithout(sim: SimState, w: World, skip: SimEdge | null): { villages: number; cities: number } {

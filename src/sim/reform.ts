@@ -11,11 +11,17 @@ import type { World } from "./world";
 
 export const PRIVATIZE_YEAR: Partial<Record<EraKey, number>> = { heisei: 1987, shubun: 1973 };
 /** Island ids follow ISLAND_IDS (1 honshu, 2 hokkaido, 3 kyushu, 4 shikoku); Honshu is cut into three by longitude (east of Tokyo / Nagoya side / Kansai and west). */
-const areaOf = (w: World, e: SimEdge): string => {
+export const areaOf = (w: World, e: SimEdge): string => {
   const k = e.cells[Math.floor(e.cells.length / 2)], isl = w.t.island[k], x = w.cellPos(k)[0];
   if (isl === 2) return "北海道"; if (isl === 3) return "九州"; if (isl === 4) return "四国";
   return x >= 140 ? "東日本" : x >= -90 ? "中日本" : "西日本";
 };
+/** After the break-up, lines that were still being built for the national railway open under the successor company of their area. */
+export function successorOperator(sim: SimState, w: World, e: SimEdge, y: number): string {
+  const area = areaOf(w, e), id = `jr.${area}`;
+  if (!sim.operators[id]) sim.operators[id] = { id, name: `${area}旅客鉄道`, kind: "private", since: y, note: "国鉄の承継会社(架空の名称)" };
+  return id;
+}
 export function reformJnr(sim: SimState, w: World, y: number): void {
   const jnr = Object.values(sim.routes).filter((r) => r.active && r.op === "jnr" && r.mode === "rail"); if (!jnr.length) return;
   const successors = new Map<string, Operator>(), tertiary = new Map<string, Operator>();
@@ -29,13 +35,13 @@ export function reformJnr(sim: SimState, w: World, y: number): void {
     const before = routeOfficial(r), small = km < 110;
     if (small && mean < 300 && closed < limit) {
       for (const e of es) if (e.state === "open" || e.state === "dormant") setEdgeState(sim, e, "closed", "国鉄改革で廃止対象に");
-      r.active = false; r.history.push({ month: sim.month, grade: r.grade, number: r.number, text: "国鉄改革で廃止" }); closed++; continue;
+      r.active = false; r.endMonth = sim.month; r.history.push({ month: sim.month, grade: r.grade, number: r.number, text: "国鉄改革で廃止" }); closed++; continue;
     }
     const op = small && mean < 1500 ? third(es[0].region === "JP" ? "JP-13" : es[0].region) : succ(areaOf(w, es[Math.floor(es.length / 2)]));
     const g: Grade = "priv", num = issueNumber(sim, g, op.id);
     r.grade = g; r.scope = op.id; r.op = op.id; r.opName = op.name; r.number = num; r.name = `${op.name}${num}号線`;
     for (const e of es) { e.op = op.id; pushHist(sim, e, `管理主体が国鉄から${op.name}に変更`); }
-    r.history.push({ month: sim.month, grade: g, number: num, text: `国鉄から${op.name}へ。旧番号「${before}」は欠番として再利用しない` });
+    r.history.push({ month: sim.month, grade: g, number: num, scope: op.id, opName: op.name, text: `国鉄から${op.name}へ。旧番号「${before}」は欠番として再利用しない` });
     if (op.kind === "tertiary") toThird++; else toSucc++;
   }
   if (sim.operators.jnr) sim.operators.jnr.until = y;

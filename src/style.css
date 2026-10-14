@@ -46,3 +46,7 @@ button:disabled { opacity:1; background:#3a4450; color:#8a95a0; border-color:#4a
 .legend-row { display:flex; align-items:center; gap:10px; padding:3px 0; font-size:13px; }
 
 body.real #btn-prev, body.real #btn-next, body.real #btn-undo, body.real #btn-redo { display:none; }
+body.real #dock { z-index: 9; }   /* the observation sheets sit above the map, but the dock stays reachable so you can switch between them */
+body.real #sheet { max-height: 62dvh; }
+#sheet .hist { font-size: 12px; color: #b8cde0; padding: 2px 0 0 10px; }
+#sheet .issue { cursor: default; }
