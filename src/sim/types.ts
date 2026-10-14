@@ -44,6 +44,7 @@ export interface SimEdge {
   nick: boolean; region: string; hist: { m: number; t: string }[]; bypassOf: string[]; bypassedBy: string[]; throughDropYears: number;
   // ---- v3 (Stage 3). Absent on older saves: sanitizeSim fills mode "road", freight 0 ----
   mode?: Mode; op?: string; freight: number; deficitYears?: number;
+  facility?: "tunnel" | "bridge"; facilityName?: string; convertedTo?: string;   // long tunnels/bridges are edges of their own; a closed railway can be converted into a road
 }
 export const modeOf = (x: { mode?: Mode }): Mode => x.mode ?? "road";
 export interface RouteEdgeRef { edgeId: string; dir: 1 | -1 }
@@ -59,8 +60,8 @@ export interface SimRoute {
 }
 export type ProjectKind = "new" | "upgrade" | "access" | "improve" | "bypass" | "restore" | "electrify" | "convert";
 export const KIND_LABEL: Record<ProjectKind, string> = { new: "新規", upgrade: "舗装化", access: "集落アクセス", improve: "改良", bypass: "バイパス", restore: "復旧", electrify: "電化・複線化", convert: "廃線転用" };
-export type ProjectStatus = "planned" | "building" | "suspended" | "unbuilt" | "open" | "abolished";
-export const PROJECT_LABEL: Record<ProjectStatus, string> = { planned: "計画", building: "工事中", suspended: "中断", unbuilt: "未成線", open: "供用", abolished: "廃止" };
+export type ProjectStatus = "concept" | "planned" | "building" | "suspended" | "unbuilt" | "open" | "abolished";
+export const PROJECT_LABEL: Record<ProjectStatus, string> = { concept: "構想", planned: "計画", building: "工事中", suspended: "中断", unbuilt: "未成線", open: "供用", abolished: "廃止" };
 /** Construction plan: lifecycle of building (or upgrading) edges. Independent of the edge's physical state. */
 export interface SimProject {
   id: string; kind: ProjectKind; region: string; replaces: string[]; from: string; to: string; edgeIds: string[]; chain: RouteEdgeRef[];

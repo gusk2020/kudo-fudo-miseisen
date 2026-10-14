@@ -85,7 +85,7 @@ export class Renderer {
     if (!this.lastArgs) return;
     const [s, t, issues, pending] = this.lastArgs, z = this.view.zoom, px = (n: number) => n / z;
     if (this.terrainSprite?.parent) this.terrainSprite.parent.removeChild(this.terrainSprite); // reused across rebuilds, destroyed only with its terrain
-    this.base.removeChildren().forEach((c) => c.destroy({ children: true })); this.overlay.removeChildren().forEach((c) => c.destroy({ children: true })); this.labels.removeChildren().forEach((c) => c.destroy());
+    this.base.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.overlay.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.labels.removeChildren().forEach((c) => c.destroy());
     const P = (v: Vec): [number, number] => [v[0], -v[1]];
     const flat = (poly: Vec[]) => poly.flatMap((q) => P(q));
     const bad = new Set<string>();

@@ -77,3 +77,32 @@ test("policy window: time stops at 1960 in 介入優先, points are spent with d
   await page.waitForFunction(() => (window as any).__kfm.sim.month > 12 * 10, null, { timeout: 30000 });   // time moves again
   expect(errs).toEqual([]);
 });
+
+test("the real-Japan game survives a reload; if the latest save is corrupt the backup is restored and the broken copy is kept", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "shubun");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.ffYears(6); });
+  const month = await app(page, "a => a.sim.month") as number; expect(month).toBeGreaterThanOrEqual(72);
+  await page.evaluate(async () => { const a = (window as any).__kfm; a.lastBackup = -1e9; await a.persist(true); });
+  await page.waitForTimeout(300); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.sim.month")).toBe(month); expect(await app(page, "a => a.sim.era")).toBe("shubun");
+  // corrupt the latest save (as if the phone lost power mid-write) and reload
+  await page.evaluate(() => { (window as any).__kfm.persist = () => Promise.resolve(true); });
+  await page.evaluate(() => new Promise<void>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const tx = r.result.transaction("saves", "readwrite"); tx.objectStore("saves").put("{ this is not json", "s3:auto"); tx.oncomplete = () => res(); }; }));
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.sim.month")).toBe(month);
+  const broken = await page.evaluate(() => new Promise<any>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const g = r.result.transaction("saves").objectStore("saves").get("s3:auto:broken"); g.onsuccess = () => res(g.result ?? null); }; }));
+  expect(broken).not.toBeNull(); expect(String(broken)).toContain("not json");
+  expect(errs).toEqual([]);
+});
+
+test("ledger rows open the number history and focus the map; the timeline filters and shows reasons", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "heisei");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.ffYears(40); });
+  await page.click("#dock-timeline"); expect(await page.isVisible("#tl-world")).toBe(true); await page.click("#tl-world");
+  expect(await page.locator("#sheet-body .issue").count()).toBeGreaterThan(5); expect(await page.textContent("#sheet-body")).toContain("【史実】");
+  await page.click("#tl-policy"); await page.click("#dock-ledger"); await page.click("#led-rail");
+  const first = page.locator("#sheet-body .issue").first(); await first.click(); expect(await page.locator("#sheet-body .hist").count()).toBeGreaterThan(0);
+  await page.locator("#sheet-body button.mini").first().click(); expect(await app(page, "a => a.selEdge")).not.toBeNull();
+  await page.click("#led-fac"); expect(await page.textContent("#sheet-body")).toContain("トンネル・橋");
+  expect(errs).toEqual([]);
+});

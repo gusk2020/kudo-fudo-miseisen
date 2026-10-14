@@ -8,7 +8,7 @@ import { codesAt, numberHistory } from "../sim/ledger";
 import { DOMAIN_LABEL, POLICIES, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
 
-export const ui3 = { tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "gone", ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null };
+export const ui3 = { tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null };
 const ym = (sim: SimState, m: number) => { const { year, month } = monthToYM(sim.startYear, m); return `${year}年${month}月`; };
 const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) * 10)) + "□".repeat(10 - Math.round(Math.max(0, Math.min(1, v)) * 10));
 
@@ -40,7 +40,7 @@ function routeKm(sim: SimState, r: SimRoute) { return Math.round(r.edges.reduce(
 export function buildLedger(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "路線台帳")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
   const tabs = h("div", { class: "row" });
-  for (const [k, l] of [["road", "道路"], ["rail", "鉄道"], ["gone", "廃止・未成・廃墟跡"]] as const) tabs.append(h("button", { id: "led-" + k, class: ui3.ledger === k ? "mode on" : "mode", "aria-pressed": ui3.ledger === k ? "true" : "false", onclick: () => { ui3.ledger = k; ui3.ledgerN = 40; app.buildSheet(); } }, l));
+  for (const [k, l] of [["road", "道路"], ["rail", "鉄道"], ["fac", "トンネル・橋"], ["gone", "計画・廃止・廃墟跡"]] as const) tabs.append(h("button", { id: "led-" + k, class: ui3.ledger === k ? "mode on" : "mode", "aria-pressed": ui3.ledger === k ? "true" : "false", onclick: () => { ui3.ledger = k; ui3.ledgerN = 40; app.buildSheet(); } }, l));
   body.append(tabs, h("small", {}, "番号は一度使われたら再利用されません(同じ路線の復活を除く)。行をタップすると番号・管理主体・区間の履歴が開きます。"));
   const item = (r: SimRoute) => {
     const es = r.edges.map((x) => sim.edges[x.edgeId]).filter(Boolean), q = Math.round(es.reduce((a, e) => a + e.quality, 0) / (es.length || 1)), open = ui3.open.has(r.id);
@@ -48,6 +48,7 @@ export function buildLedger(app: App, body: HTMLElement) {
       `${routeLabel(r)} ${routeKm(sim, r)}km 品質${q} [${st}]`, h("br"), h("small", {}, r.history[0]?.text ?? ""));
     if (open) for (const x of numberHistory(sim, r)) d.append(h("div", { class: "hist" }, `${x.year}年 ${x.label} — ${x.text}`));
     if (open && r.oldEdges.length) d.append(h("div", { class: "hist" }, `旧道区間${r.oldEdges.length}`));
+    if (open) d.append(h("button", { class: "mini", id: "focus-" + r.id, onclick: (ev: Event) => { ev.stopPropagation(); app.focusRoute(r.id); } }, "地図で見る"));
     return d;
   };
   if (ui3.ledger === "road") {
@@ -63,9 +64,16 @@ export function buildLedger(app: App, body: HTMLElement) {
       for (const r of rs) { if (shown++ >= ui3.ledgerN) break; body.append(item(r)); }
     }
     if (shown > ui3.ledgerN) body.append(h("button", { onclick: () => { ui3.ledgerN += 40; app.buildSheet(); } }, "さらに表示"));
+  } else if (ui3.ledger === "fac") {
+    const fs = Object.values(sim.edges).filter((e) => e.facility).sort((a, b) => b.lengthKm - a.lengthKm);
+    body.append(h("h3", {}, `長大なトンネル・橋 ${fs.length}(新しく造った区間のうち、長いものを個別の施設として管理)`));
+    for (const e of fs.slice(0, ui3.ledgerN)) body.append(h("div", { class: "issue" + (e.state === "open" || e.built < 1 ? "" : " warn"), id: "fac-" + e.id }, `${e.facilityName} ${Math.round(e.lengthKm * 10) / 10}km [${modeOf(e) === "rail" ? "鉄道" : "道路"}・${e.built < 1 ? "工事中" : STATE_LABEL[e.state]}]`, h("br"), h("small", {}, e.hist[e.hist.length - 1]?.t ?? `${prefName(e.region)}`)));
+    if (!fs.length) body.append(h("small", {}, "まだありません。新しい路線が山地や広い河川を越えると現れます。"));
   } else {
+    const act = Object.values(sim.projects).filter((p) => p.status === "concept" || p.status === "planned" || p.status === "building" || p.status === "suspended"); body.append(h("h3", {}, `構想・計画・工事中 ${act.length}`));
+    for (const p of act.slice(-25).reverse()) { const part = p.status === "building" && p.edgeIds.some((id) => (sim.edges[id]?.built ?? 0) >= 1) && p.edgeIds.some((id) => (sim.edges[id]?.built ?? 1) < 1); body.append(h("div", { class: "issue" }, `[${part ? "部分開通" : PROJECT_LABEL[p.status]}/${modeOf(p) === "rail" ? "鉄道" : "道路"}${KIND_LABEL[p.kind]}] ${sim.nodes[p.from]?.name ?? "地点"}〜${sim.nodes[p.to]?.name ?? "地点"} (${Math.round((p.spentBu / (p.costBu || 1)) * 100)}%)`, h("br"), h("small", {}, `${ym(sim, p.startMonth)}〜 ${p.reason}`))); }
     const gone = Object.values(sim.routes).filter((r) => !r.active); body.append(h("h3", {}, `廃止された路線 ${gone.length}`)); for (const r of gone.slice(0, ui3.ledgerN)) body.append(item(r));
-    const proj = Object.values(sim.projects).filter((p) => p.status !== "open" && p.status !== "building" && p.status !== "planned"); body.append(h("h3", {}, `未成・中断・取りやめ ${proj.length}`));
+    const proj = Object.values(sim.projects).filter((p) => p.status !== "open" && p.status !== "building" && p.status !== "planned" && p.status !== "concept"); body.append(h("h3", {}, `未成・中断・取りやめ ${proj.length}`));
     for (const p of proj.slice(-30).reverse()) body.append(h("div", { class: "issue warn" }, `[${PROJECT_LABEL[p.status]}/${modeOf(p) === "rail" ? "鉄道" : "道路"}${KIND_LABEL[p.kind]}] ${sim.nodes[p.from]?.name ?? "地点"}〜${sim.nodes[p.to]?.name ?? "地点"} (${Math.round((p.spentBu / (p.costBu || 1)) * 100)}%)`, h("br"), h("small", {}, `${ym(sim, p.startMonth)}〜 ${p.reason}`)));
     const ruins = Object.values(sim.edges).filter((e) => e.state === "lost" && e.built >= 1); body.append(h("h3", {}, `廃道・廃線跡 ${ruins.length}`));
     for (const e of ruins.slice(0, 30)) body.append(h("div", { class: "issue" }, `${modeOf(e) === "rail" ? "廃線跡" : "廃道"} ${sim.nodes[e.a]?.name ?? "地点"}〜${sim.nodes[e.b]?.name ?? "地点"} ${Math.round(e.lengthKm)}km (${prefName(e.region)})`, h("br"), h("small", {}, e.hist[e.hist.length - 1]?.t ?? "")));

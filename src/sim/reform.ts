@@ -22,6 +22,13 @@ export function successorOperator(sim: SimState, w: World, e: SimEdge, y: number
   if (!sim.operators[id]) sim.operators[id] = { id, name: `${area}旅客鉄道`, kind: "private", since: y, note: "国鉄の承継会社(架空の名称)" };
   return id;
 }
+/** Hand a line to another operator: it gets a new number under that operator, and the old number is retired for good. */
+export function reassignRoute(sim: SimState, r: SimRoute, op: Operator, before = routeOfficial(r)) {
+  const g: Grade = "priv", num = issueNumber(sim, g, op.id), es = r.edges.map((x) => sim.edges[x.edgeId]).filter(Boolean);
+  r.grade = g; r.scope = op.id; r.op = op.id; r.opName = op.name; r.number = num; r.name = `${op.name}${num}号線`;
+  for (const e of es) { e.op = op.id; pushHist(sim, e, `管理主体が${before.replace(/\d+号線$/, "")}から${op.name}に変更`); }
+  r.history.push({ month: sim.month, grade: g, number: num, scope: op.id, opName: op.name, text: `${before.replace(/\d+号線$/, "") || "旧事業者"}から${op.name}へ。旧番号「${before}」は欠番として再利用しない` });
+}
 export function reformJnr(sim: SimState, w: World, y: number): void {
   const jnr = Object.values(sim.routes).filter((r) => r.active && r.op === "jnr" && r.mode === "rail"); if (!jnr.length) return;
   const successors = new Map<string, Operator>(), tertiary = new Map<string, Operator>();
@@ -38,10 +45,7 @@ export function reformJnr(sim: SimState, w: World, y: number): void {
       r.active = false; r.endMonth = sim.month; r.history.push({ month: sim.month, grade: r.grade, number: r.number, text: "国鉄改革で廃止" }); closed++; continue;
     }
     const op = small && mean < 1500 ? third(es[0].region === "JP" ? "JP-13" : es[0].region) : succ(areaOf(w, es[Math.floor(es.length / 2)]));
-    const g: Grade = "priv", num = issueNumber(sim, g, op.id);
-    r.grade = g; r.scope = op.id; r.op = op.id; r.opName = op.name; r.number = num; r.name = `${op.name}${num}号線`;
-    for (const e of es) { e.op = op.id; pushHist(sim, e, `管理主体が国鉄から${op.name}に変更`); }
-    r.history.push({ month: sim.month, grade: g, number: num, scope: op.id, opName: op.name, text: `国鉄から${op.name}へ。旧番号「${before}」は欠番として再利用しない` });
+    reassignRoute(sim, r, op, before);
     if (op.kind === "tertiary") toThird++; else toSucc++;
   }
   if (sim.operators.jnr) sim.operators.jnr.until = y;

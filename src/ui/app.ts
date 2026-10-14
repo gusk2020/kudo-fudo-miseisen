@@ -19,7 +19,7 @@ import { exportScenery } from "../sim/scenery";
 import { codesAt } from "../sim/ledger";
 import { finishMigration } from "../sim/migrate";
 import { SimRunner } from "../sim/runner";
-import { ERA, GRADE_LABEL, KIND_LABEL, NICK_LABEL, PROJECT_LABEL, STANDARD_LABEL, STATE_LABEL, SURFACE_LABEL, eraLabel, monthToYM, setActiveEra, ymLabel, type SimState } from "../sim/types";
+import { ERA, GRADE_LABEL, KIND_LABEL, NICK_LABEL, PROJECT_LABEL, STANDARD_LABEL, STANDARD_LABEL_RAIL, STATE_LABEL, SURFACE_LABEL, eraLabel, monthToYM, setActiveEra, ymLabel, type SimState } from "../sim/types";
 import { COND, CASING } from "../render/roads";
 import { edgePoints } from "../sim/network";
 import { buildWorld, type World } from "../sim/world";
@@ -51,7 +51,7 @@ export class App {
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
   eraChoice: EraKey = "heisei"; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain";
   runner: SimRunner | null = null; building = 0; safeMode = false; behind = false; private lastRoads = 0;
-  private lastBackup = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
+  private lastBackup = 0; private lastSaved = 0; private persistRetry = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
   /** Stage 3 plays on the real Japan; the old hand-edited-map flow stays reachable with ?legacy=1 and keeps its own save key. */
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
@@ -100,7 +100,13 @@ export class App {
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
-    if (this.runner && !this.runner.idle) { if (!force) { setTimeout(() => this.persist(), 80); return Promise.resolve(false); } this.runner.settle(); }
+    // Saves only between months. While the clock is busy, wait for a gap (one retry timer at a time, never a growing pile of them);
+    // if none comes for 30 s (×20 never goes idle), finish the month in progress and save anyway so progress is never lost.
+    if (this.runner && !this.runner.idle) {
+      if (!force && performance.now() - this.lastSaved < 30000) { if (!this.persistRetry) this.persistRetry = window.setTimeout(() => { this.persistRetry = 0; void this.persist(); }, 120); return Promise.resolve(false); }
+      this.runner.settle();
+    }
+    this.lastSaved = performance.now();
     if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now();
     if (this.real && this.sim && performance.now() - this.lastBackup > 120000) { this.lastBackup = performance.now(); void saveGame(this.saveKey + ":backup", makeSave(this.s, this.sim)); }   /* a second copy every two minutes; a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
   ensureWorld(): World | null { if (!this.terrain) return null; if (this.worldRef !== this.terrain) { this.world = buildWorld(this.terrain, this.s.seed); this.worldRef = this.terrain; } return this.world; }
@@ -278,7 +284,16 @@ export class App {
   /** Look at a past year (read-only, time stopped) or return to now. Never changes the simulation. */
   setViewYear(y: number | null) {
     this.viewYear = y; if (y !== null) this.selEdge = null;
-    this.renderRoads(); this.status(); this.buildSheet(); this.toast(y === null ? "現在に戻りました(時間が再び進みます)" : `${y}年を表示中(読み取り専用・時間は停止)`);
+    this.renderRoads(); this.status(); this.buildToolbar(); this.buildSheet(); this.toast(y === null ? "現在に戻りました(時間が再び進みます)" : `${y}年を表示中(読み取り専用・時間は停止)`);
+  }
+  /** Centre the map on a route (from the ledger) and highlight its longest section. */
+  focusRoute(routeId: string) {
+    const sim = this.sim, w = this.world, r = sim?.routes[routeId]; if (!sim || !w || !r) return;
+    const es = r.edges.map((x) => sim.edges[x.edgeId]).filter(Boolean); if (!es.length) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const e of es) for (const p of edgePoints(w, sim, e)) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+    const { w: sw, h: sh } = this.r.size, zoom = Math.min(2.5, Math.max(0.3, 0.8 * Math.min(sw / (x1 - x0 + 40), (sh * 0.45) / (y1 - y0 + 40))));
+    this.selEdge = es.sort((p, q) => q.lengthKm - p.lengthKm)[0].id; this.r.setView({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 - (sh * 0.2) / zoom, zoom }); this.renderRoads();
   }
   afterPolicy() { this.lastTick = performance.now(); this.acc = 0; this.persist(true); this.renderRoads(); this.status(); this.buildSheet(); }
   /** Test/debug hook: advance synchronously (the normal clock is slower than a test can wait). */
@@ -411,6 +426,7 @@ export class App {
       return;
     }
     label(`選択中: ${names[this.tool]}`);
+    if (this.real && this.viewYear !== null) tb.append(h("button", { id: "btn-now", type: "button", class: "mode on", onclick: () => this.setViewYear(null) }, `${this.viewYear}年を閲覧中(読み取り専用) → 現在に戻る`));
     const sp = h("div", { class: "grp" });
     for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n, () => this.setSpeed(n), "speed-" + n));
     tb.append(sp);
@@ -510,9 +526,11 @@ export class App {
     const line = (t: string, id?: string) => body.append(h("div", { class: "issue", id }, t));
     line(`${nm(e.a)}〜${nm(e.b)}(${Math.round(e.lengthKm)}km・${prefName(e.region)})`, "why-title");
     line(`行政指定: ${routes.length ? routes.map((r) => routeOfficial(r) + (r.oldEdges.includes(e.id) ? "の旧道" : "")).join("・") : "市町村道(指定なし)"}${e.nick && routes[0] ? ` ／ 通称: ${NICK_LABEL[routes[0].grade]}(細く荒れた道に後から付いた呼び名)` : ""}`, "why-designation");
-    line(`規格: ${STANDARD_LABEL[e.standard]} ／ 路面: ${SURFACE_LABEL[e.surface]} ／ 品質${Math.round(e.quality)}・風化${Math.round(e.weathering)}・最大勾配${e.maxGradePct}%`);
+    const rail = e.mode === "rail", unit = rail ? "人/日" : "台/日";
+    if (rail) line(`事業者: ${sim.operators[e.op ?? "jnr"]?.name ?? "国鉄"}${e.nick ? " ／ 通称: " + (e.op === "jnr" ? "酷鉄" : "死鉄") + "(利用が少なく保守が行き届かない線に後から付く呼び名)" : ""}`, "why-operator");
+    line(`規格: ${rail ? STANDARD_LABEL_RAIL[e.standard] : STANDARD_LABEL[e.standard]}${rail ? "" : ` ／ 路面: ${SURFACE_LABEL[e.surface]}`} ／ 品質${Math.round(e.quality)}・${rail ? "荒廃" : "風化"}${Math.round(e.weathering)}・最大勾配${e.maxGradePct}%${e.facility ? ` ／ 施設: ${e.facility === "tunnel" ? "トンネル" : "橋"}` : ""}`);
     line(`状態: ${e.built < 1 ? `工事中(${Math.round(e.built * 100)}%)` : STATE_LABEL[e.state]}${e.builtMonth !== null ? ` ／ 供用${monthToYM(sim.startYear, e.builtMonth).year}年〜` : ""}`, "why-state");
-    line(`需要(台/日): 通過${Math.round(e.through)}・沿線${Math.round(e.local)} ／ 通過のピーク${Math.round(e.peakThrough)} ／ 需要ゼロ${e.zeroYears}年`, "why-demand");
+    line(`需要(${unit}): 旅客の通過${Math.round(e.through)}・沿線${Math.round(e.local)}${sim.stage3 ? ` ／ 貨物${Math.round(e.freight)}` : ""} ／ 通過のピーク${Math.round(e.peakThrough)} ／ 需要ゼロ${e.zeroYears}年`, "why-demand");
     if (e.bypassedBy.length) line(`旧道: ${e.bypassedBy.map((id) => `${nm(sim.edges[id]?.a)}〜${nm(sim.edges[id]?.b)}`).join("、")}のバイパス開通で通過交通が移った。沿線需要${Math.round(e.local)}台/日${e.local >= 40 ? "が残るため管理継続" : "は小さい"}`, "why-old");
     if (e.bypassOf.length) line("バイパス・新道: 旧道の通過交通を引き受けている", "why-new");
     body.append(h("h3", {}, "この道路の履歴(永続記録)"));
@@ -528,6 +546,13 @@ export class App {
   }
   private download(text: string, name: string) { const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "application/json" })), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
   async buildMenu(body: HTMLElement) {
+    if (this.real) {
+      body.append(h("h3", {}, "このゲームについて(史実と架空の区別)"));
+      body.append(h("div", { class: "issue", id: "about-data" }, h("b", {}, "実在: "), "海岸線・標高・河川・府県・都市の位置(東京府、北海道は3県の設定)。鉄道・道路の通り道(Natural Earth)は初期網の参考。", h("br"),
+        h("b", {}, "再構成: "), "1950年の道路網・鉄道網。実在の路線台帳ではありません。", h("br"),
+        h("b", {}, "史実: "), "平成の世界線の国内の出来事(2026年まで)と、全世界線共通の国際事件。年表に【史実】と付きます。", h("br"),
+        h("b", {}, "架空: "), "修文・正化の国内の出来事、人口・需要・予算・事業者名・路線番号。【架空】と付きます。2027年以降は【予測モデル】です。"));
+    }
     body.append(h("h3", {}, "セーブ / ロード / 出力"));
     const pfx = this.real ? "s3:" : "", slots = [1, 2, 3, 4, 5].map((i) => `${pfx}slot${i}`), have = new Set(await listSlots());
     for (const n of slots) body.append(h("div", { class: "row" }, `${n.replace(/^s3:/, "").replace("slot", "スロット")}${have.has(n) ? " (使用中)" : ""}`,

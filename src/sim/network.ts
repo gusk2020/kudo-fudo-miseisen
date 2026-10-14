@@ -90,7 +90,24 @@ export function splitEdge(sim: SimState, w: World, edgeId: string, at: number, n
   for (const p of Object.values(sim.projects)) { rewrite(p.chain); const k = p.edgeIds.indexOf(edgeId); if (k >= 0) p.edgeIds.splice(k + 1, 0, id2); const q = p.replaces.indexOf(edgeId); if (q >= 0) p.replaces.splice(q + 1, 0, id2); }
   return id2;
 }
-export interface LayOpts { open: boolean; surface: Surface; quality: number; built: number; month: number; standard?: Standard; mode?: Mode; op?: string }
+/** Splits a stretch into [before, tunnel|bridge, after]: a tunnel where the line runs far above its own ends, a bridge across a wide river floodplain. */
+export function facilitySplit(w: World, mode: Mode, part: number[]): { cells: number[]; fac?: "tunnel" | "bridge" }[] {
+  if (part.length < 5) return [{ cells: part }];
+  const last = part.length - 1, ends = Math.max(w.elevM(part[0]), w.elevM(part[last])), thr = ends + (mode === "rail" ? 500 : 800), minLen = mode === "rail" ? 2 : 3;
+  const longest = (pred: (k: number) => boolean, min: number): [number, number] | null => {
+    let best: [number, number] | null = null, s = -1;
+    for (let k = 1; k < last; k++) { if (pred(k)) { if (s < 0) s = k; } else if (s >= 0) { if (k - s >= min && (!best || k - s > best[1] - best[0])) best = [s, k]; s = -1; } }
+    if (s >= 0 && last - s >= min && (!best || last - s > best[1] - best[0])) best = [s, last];
+    return best;
+  };
+  let tun = longest((k) => w.elevM(part[k]) >= thr, minLen);
+  if (tun && tun[1] - tun[0] > 6) { const c = Math.floor((tun[0] + tun[1]) / 2); tun = [c - 3, c + 3]; }   // a tunnel is at most about 30 km on this grid: the rest of a high stretch is open line
+  const bri = tun ? null : longest((k) => !!w.river[part[k]], 2), hit = tun ?? bri; if (!hit) return [{ cells: part }];
+  const fac: "tunnel" | "bridge" = tun ? "tunnel" : "bridge", out: { cells: number[]; fac?: "tunnel" | "bridge" }[] = [], pre = part.slice(0, hit[0]), mid = part.slice(hit[0] - 1, hit[1] + 1), post = part.slice(hit[1]);
+  if (pre.length >= 2) out.push({ cells: pre }); out.push({ cells: mid, fac }); if (post.length >= 2) out.push({ cells: post });
+  return out;
+}
+export interface LayOpts { open: boolean; surface: Surface; quality: number; built: number; month: number; standard?: Standard; mode?: Mode; op?: string; facilities?: boolean }
 /**
  * Lay a grid path onto the network. Steps that already run along an existing edge are shared (designation overlap);
  * everything else becomes new edges. Crossings/touches of existing roads become junctions. Returns the ordered chain.
@@ -110,7 +127,7 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     if (i === 0 || i === n - 1 || idx.nodeByCell.has(c) || w.cityByCell.has(c) || (inNet && !(sp && sn)) || sp !== sn) bp.push(i);
   }
   for (const i of bp) {
-    const c = cells[i]; if (idx.nodeByCell.has(c)) continue;
+    const c = cells[i]; if (idx.nodeByCell.has(c) && !idx.cellEdge.has(c)) continue;   // a node that another mode put on this cell does not break an edge that merely passes through it: split it
     const eid = idx.cellEdge.get(c);
     if (eid) { const e = sim.edges[eid], at = e.cells.indexOf(c); const nid = nodeAtCell(sim, w, idx, c, "junction"); splitEdge(sim, w, eid, at, nid); }
     else nodeAtCell(sim, w, idx, c, i === 0 || i === n - 1 ? "end" : "junction");
@@ -126,10 +143,15 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     const base = Math.max(w.elevM(seg[0]), w.elevM(seg[seg.length - 1]));
     const parts: number[][] = mode === "road" && hi > 0 && he - base >= 250 && !idx.nodeByCell.has(seg[hi]) ? [seg.slice(0, hi + 1), seg.slice(hi)] : [seg];
     if (parts.length === 2) nodeAtCell(sim, w, idx, seg[hi], "pass");
-    for (const part of parts) {
-      const pa = idx.nodeByCell.get(part[0])!, pb = idx.nodeByCell.get(part[part.length - 1])!, id = newId(sim, "edge");
+    // Stage 3: a long tunnel or a long bridge is a facility in its own right, an edge of its own that is built (and costs) separately
+    const pieces: { cells: number[]; fac?: "tunnel" | "bridge" }[] = [];
+    for (const part of parts) for (const pc of o.facilities ? facilitySplit(w, mode, part) : [{ cells: part }]) pieces.push(pc);
+    for (const pc of pieces) { if (pc.fac) { nodeAtCell(sim, w, idx, pc.cells[0], "junction"); nodeAtCell(sim, w, idx, pc.cells[pc.cells.length - 1], "junction"); } }
+    for (const { cells: part, fac } of pieces) {
+      const pa = idx.nodeByCell.get(part[0]) ?? nodeAtCell(sim, w, idx, part[0], "junction"), pb = idx.nodeByCell.get(part[part.length - 1]) ?? nodeAtCell(sim, w, idx, part[part.length - 1], "junction"), id = newId(sim, "edge");
       const e: SimEdge = { ...newEdgeDefaults(), id, a: pa, b: pb, cells: part, surface: o.surface, quality: o.quality, built: o.built, open: o.open, state: o.open ? "open" : "closed", standard: o.standard ?? "rural", maxGradePct: maxGradePct(w, part), builtMonth: o.open ? o.month : null, region: regionOfCells(w, part), ...(mode === "rail" ? { mode: "rail" as const, op: o.op ?? "jnr" } : {}) };
       e.lengthKm = edgeLengthKm(w, sim, e); sim.edges[id] = e; created.push(id); chain.push({ edgeId: id, dir: 1 });
+      if (fac) { e.facility = fac; const mid = part[Math.floor(part.length / 2)], near = [...w.cities].sort((p, q) => cellDistKm(w, p.cell, mid) - cellDistKm(w, q.cell, mid))[0], key = `fac:${near.id}:${fac}`, k = (sim.routeCounters[key] = (sim.routeCounters[key] ?? 0) + 1); e.facilityName = `${near.name.replace(/市$/, "")}${k}号${fac === "tunnel" ? "トンネル" : "橋"}`; }
     }
     void a; void b;
   };

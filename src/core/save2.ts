@@ -1,6 +1,6 @@
 /** Save format v2: { map, sim } with integrity checks. v1 (map only) is migrated, never rejected. Nothing here throws. */
 import { checkIntegrity } from "../sim/network";
-import { composeDials } from "../sim/eras";
+import { DIAL_KEYS, composeDials } from "../sim/eras";
 import { defaultPolicy } from "../sim/policy";
 import { hashString } from "../sim/engine";
 import type { SimState } from "../sim/types";
@@ -53,7 +53,9 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (!Array.isArray(raw.mods)) raw.mods = [];
   raw.era = typeof raw.era === "string" ? raw.era : "kobun";
   if (!isRec(raw.dials)) raw.dials = composeDials({ era: raw.era, mods: raw.mods }, monthYear(raw));
-  if (raw.stage3 === true && !isRec(raw.policy)) raw.policy = defaultPolicy(); if (raw.stage3 !== true) { delete raw.stage3; delete raw.policy; }
+  raw.mods = (raw.mods as unknown[]).filter((m: any) => isRec(m) && typeof m.id === "string" && fin(m.from) && fin(m.until) && isRec(m.d) && Object.values(m.d).every(fin));
+  if (!DIAL_KEYS.every((k) => fin(raw.dials[k]))) raw.dials = composeDials({ era: raw.era, mods: raw.mods }, monthYear(raw));
+  if (raw.stage3 === true && !(isRec(raw.policy) && fin(raw.policy.points) && Array.isArray(raw.policy.history) && ["priority", "idleAuto", "auto"].includes(raw.policy.mode) && (raw.policy.pending === null || (isRec(raw.policy.pending) && Number.isInteger(raw.policy.pending.year))))) raw.policy = defaultPolicy(); if (raw.stage3 !== true) { delete raw.stage3; delete raw.policy; }
   raw.schemaVersion = 3;
   const sim = { ...raw, events: Array.isArray(raw.events) ? raw.events : [], stats: Array.isArray(raw.stats) ? raw.stats : [], skippedMonths: fin(raw.skippedMonths) ? raw.skippedMonths : 0, lastWallMs: fin(raw.lastWallMs) ? raw.lastWallMs : 0, speed: [0, 1, 5, 20].includes(raw.speed) ? raw.speed : 0, ceremonyDone: raw.ceremonyDone === true } as unknown as SimState;
   const bad = checkIntegrity(sim); if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);

@@ -38,7 +38,7 @@ function pattern(g: Graphics, pts: Vec[], dash: number[]) {
     while (seg > 1e-6) { const step = Math.min(left, seg); if (draw) { g.moveTo(x, -y); g.lineTo(x + ux * step, -(y + uy * step)); } x += ux * step; y += uy * step; seg -= step; left -= step; if (left <= 1e-9) { i = (i + 1) % dash.length; draw = i % 2 === 0; left = dash[i]; } }
   }
 }
-const KEYS = ["halo", "ghost", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "nodes", "sel", "ov"];
+const KEYS = ["halo", "facb", "ghost", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "sel", "ov"];
 const line = (g: Graphics, pts: Vec[]) => { g.moveTo(pts[0][0], -pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], -pts[i][1]); };
 const opColour = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return [0x7a1f3d, 0x1f5f7a, 0x6b4a14, 0x3b6b1f, 0x5a2a8a, 0x8a3a1a, 0x1f3f8a][h % 7]; };
 
@@ -80,7 +80,7 @@ export class RoadLayer {
         for (const id of past ? r.edges.map((x) => x.edgeId) : [...r.edges.map((x) => x.edgeId), ...r.oldEdges]) { const b = best.get(id); if (!b || GRADE_RANK[grade] > GRADE_RANK[b]) best.set(id, grade); }
       }
       const planned = new Map<string, string>(); for (const p of Object.values(sim.projects)) if (p.status !== "open" && p.status !== "abolished") for (const id of p.edgeIds) planned.set(id, p.status);
-      const { ghost, plan, halo, cas, fill, mid, fillDash, old, rcas, rfill, rtie, rdash } = this.g, shapes = new Map<string, Vec[]>(), nickGrade = new Map<string, Grade>();
+      const { ghost, plan, halo, cas, fill, mid, fillDash, old, rcas, rfill, rtie, rdash, fac, facb } = this.g, shapes = new Map<string, Vec[]>(), nickGrade = new Map<string, Grade>();
       // level of detail: the whole country shows only the trunk network; regional and local lines appear as you zoom in
       const minRank = zoom < 0.35 ? 3 : zoom < 0.8 ? 2 : 0;
       for (const e of Object.values(sim.edges)) {
@@ -92,7 +92,7 @@ export class RoadLayer {
         if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
         if (isAband && !showAband) continue;
         const pts = edgeShape(w, sim, e); shapes.set(e.id, pts);
-        const wd = rail ? RAIL_WIDTH[e.standard] : g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8, col = rail ? railColour(eff.q) : condColour(eff.q), isOld = e.bypassedBy.length > 0 && !past;
+        const thin = zoom < 0.35 ? 0.6 : 1, wd = (rail ? RAIL_WIDTH[e.standard] : g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8) * thin, col = rail ? railColour(eff.q) : condColour(eff.q), isOld = e.bypassedBy.length > 0 && !past;
         if (g && e.nick && !past) nickGrade.set(e.id, g);
         if (a.compare) { // halo = what changed since the chosen year
           const base = a.compare[e.id], now = past ? past.codes[e.id] : (e.built < 1 ? 4 : { open: 0, dormant: 1, closed: 2, lost: 3 }[e.state]) * 16 + Math.min(15, Math.floor(e.quality / 6.5)); let c = 0;
@@ -100,10 +100,12 @@ export class RoadLayer {
           if (c) { line(halo, pts); halo.stroke({ width: px(wd + 7), color: c, alpha: 0.6, cap: "round", join: "round" }); }
         }
         if (eff.built >= 1 && eff.state === "open") {
+          if (e.facility === "bridge") { line(facb, pts); facb.stroke({ width: px(wd + 4), color: 0xffffff, alpha: 0.85, cap: "butt" }); }
+          else if (e.facility === "tunnel" && zoom >= 0.5) { pattern(fac, pts, [px(3), px(3)]); fac.stroke({ width: px(wd * 1.3), color: 0x2a1f14, alpha: 0.9 }); }
           if (rail) {
-            line(rcas, pts); rcas.stroke({ width: px(wd + 2.2), color: 0xffffff, alpha: 0.92, cap: "round", join: "round" });
+            line(rcas, pts); rcas.stroke({ width: px(wd + (thin < 1 ? 1.2 : 2.2)), color: 0xffffff, alpha: thin < 1 ? 0.7 : 0.92, cap: "round", join: "round" });
             line(rfill, pts); rfill.stroke({ width: px(wd), color: col, cap: "round", join: "round" });
-            if (e.standard !== "highgrade") { pattern(rtie, pts, [px(4), px(5)]); rtie.stroke({ width: px(wd * 0.7), color: 0xffffff, alpha: 0.95 }); } else { line(mid, pts); mid.stroke({ width: px(1.2), color: 0xffd23a, alpha: 0.95 }); }
+            if (e.standard !== "highgrade") { if (zoom >= 0.8) { pattern(rtie, pts, [px(4), px(5)]); rtie.stroke({ width: px(wd * 0.7), color: 0xffffff, alpha: 0.95 }); } } else { line(mid, pts); mid.stroke({ width: px(1.2), color: 0xffd23a, alpha: 0.95 }); }
           } else {
             line(cas, pts); cas.stroke({ width: px(wd + 2.4), color: CASING[g ?? "none"], alpha: 0.95, cap: "round", join: "round" });
             if (isOld) { pattern(old, pts, [px(9), px(3), px(2), px(3)]); old.stroke({ width: px(wd), color: col, cap: "butt" }); }
@@ -115,8 +117,8 @@ export class RoadLayer {
         } else if (eff.state === "lost" && eff.built >= 1) { pattern(ghost, pts, [px(2), px(5)]); ghost.stroke({ width: px(1.2), color: 0x2b2b2b, alpha: 0.95 }); }
         else if (eff.built >= 1) { pattern(ghost, pts, [px(5), px(4)]); ghost.stroke({ width: px(1.6), color: 0x9aa4ad, alpha: 0.95 }); }
         else if (a.layers.plans) {
-          const st = past ? "planned" : planned.get(e.id) ?? "planned", c2 = st === "building" ? 0x3aa0ff : st === "suspended" ? 0xff8f1f : st === "unbuilt" ? 0xb04bff : 0x39d6c8;
-          pattern(plan, pts, st === "planned" ? [px(2), px(4)] : [px(7), px(4)]); plan.stroke({ width: px(2.2), color: rail ? 0x1f4fbf : c2, alpha: 0.95 });
+          const st = past ? "planned" : planned.get(e.id) ?? "planned", c2 = st === "concept" ? 0xa7b4bf : st === "building" ? 0x3aa0ff : st === "suspended" ? 0xff8f1f : st === "unbuilt" ? 0xb04bff : 0x39d6c8;
+          pattern(plan, pts, st === "concept" ? [px(1), px(7)] : st === "planned" ? [px(2), px(4)] : [px(7), px(4)]); plan.stroke({ width: px(2.2), color: rail ? 0x1f4fbf : c2, alpha: 0.95 });
           if (!past && st === "building" && e.built > 0) { const n = Math.max(1, Math.floor(pts.length * e.built)); line(plan, pts.slice(0, n + 1)); plan.stroke({ width: px(3), color: 0x3aa0ff }); }
         }
       }

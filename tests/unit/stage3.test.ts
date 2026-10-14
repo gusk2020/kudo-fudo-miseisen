@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { sanitizeSim } from "../../src/core/save2";
-import { advance, checkIntegrity, simHash, stepMonthGen } from "../../src/sim/engine";
+import { advance, checkIntegrity, reviveRoutes, routeOfficial, simHash, stepMonthGen } from "../../src/sim/engine";
 import { HIST_EVENTS, REAL_HISTORY_UNTIL } from "../../src/sim/events";
 import { baseDials, composeDials } from "../../src/sim/eras";
 import { codesAt, routeAtYear, snapCode } from "../../src/sim/ledger";
@@ -153,6 +153,25 @@ describe("the ten-yearly policy window", () => {
     expect(sim.policy!.pending).toBeNull(); expect(sim.policy!.history.length).toBeGreaterThanOrEqual(3); expect(sim.policy!.points).toBe(POINTS_PER_WINDOW * 3);
     expect(sim.policy!.history.every((r) => r.auto && r.adopted.every((a) => a.reason.length > 5))).toBe(true);
     void autoResolve; void composeDials;
+  });
+});
+
+describe("how things get built and unbuilt", () => {
+  test("long tunnels and bridges are edges of their own, built (and opened) separately; lines are conceived before they are planned, and some ideas fade", () => {
+    let fac = 0, concepts = 0, faded = 0, converted = 0;
+    for (const era of ["heisei", "shubun", "shoka"] as const) {
+      const { sim } = century(era); expect(checkIntegrity(sim)).toEqual([]);
+      for (const e of Object.values(sim.edges)) if (e.facility) { fac++; expect(e.facilityName).toMatch(/(トンネル|橋)$/); expect(e.lengthKm).toBeGreaterThanOrEqual(5); }
+      concepts += sim.events.filter((x) => /構想:/.test(x.text)).length; faded += sim.events.filter((x) => /構想のまま立ち消え/.test(x.text)).length; converted += sim.events.filter((x) => /廃線跡を道路に転用:/.test(x.text)).length;
+    }
+    expect(fac).toBeGreaterThan(3); expect(concepts).toBeGreaterThan(10); expect(faded).toBeGreaterThan(3); expect(converted).toBeGreaterThan(3);
+  });
+  test("an abolished line that comes back keeps its number (the only case where a number is used again); a gone national railway's line is handed to a successor", () => {
+    const { sim, w } = stage3Sim("heisei", 11), r = Object.values(sim.routes).find((x) => modeOf(x) === "rail" && x.active)!, num = r.number, before = routeOfficial(r);
+    const es = r.edges.map((x) => sim.edges[x.edgeId]); for (const e of es) { e.state = "closed"; e.open = false; } r.active = false; r.endMonth = 5;
+    for (const e of es) { e.state = "open"; e.open = true; } reviveRoutes(sim, w, es[0].id);
+    expect(r.active).toBe(true); expect(r.number).toBe(num); expect(routeOfficial(r)).toBe(before); expect(r.history[r.history.length - 1].text).toMatch(/復活/); expect(r.endMonth).toBeUndefined();
+    const keys = Object.values(sim.routes).map((x) => `${x.grade}:${x.scope}:${x.number}`); expect(new Set(keys).size).toBe(keys.length);
   });
 });
 
