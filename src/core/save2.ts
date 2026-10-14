@@ -23,7 +23,7 @@ const isRec = (x: unknown): x is Record<string, any> => !!x && typeof x === "obj
 export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: string[] } {
   const no = (m: string) => ({ sim: null, problems: [m] });
   if (!isRec(raw)) return no("道路データの形式が不正です");
-  if (raw.schemaVersion !== 1) return no(`道路データのバージョン(${String(raw.schemaVersion)})に対応していません`);
+  if (raw.schemaVersion !== 1 && raw.schemaVersion !== 2) return no(`道路データのバージョン(${String(raw.schemaVersion)})に対応していません`);
   if (typeof raw.mapHash !== "string" || typeof raw.terrainHash !== "string") return no("道路データに地図の照合情報がありません");
   if (!Number.isInteger(raw.month) || raw.month < 0 || raw.month > 12 * 1000 || !Number.isInteger(raw.rngState) || !Number.isInteger(raw.startYear)) return no("道路データの時刻が不正です");
   for (const k of ["nodes", "edges", "routes", "projects", "cities", "next", "macro", "routeCounters"]) if (!isRec(raw[k])) return no(`道路データの${k}が不正です`);
@@ -35,6 +35,17 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   }
   for (const r of Object.values<any>(raw.routes)) if (!isRec(r) || !Array.isArray(r.edges) || !["national", "ken", "fu"].includes(r.grade) || !Number.isInteger(r.number)) return no("路線が不正です");
   for (const p of Object.values<any>(raw.projects)) if (!isRec(p) || !Array.isArray(p.edgeIds) || !Array.isArray(p.chain) || !fin(p.costBu)) return no("建設計画が不正です");
+  // v1 -> v2: fill the fields added by the road-evolution rework with neutral defaults (the network itself is kept as saved)
+  for (const e of Object.values<any>(raw.edges)) {
+    e.standard = ["rural", "standard", "highgrade"].includes(e.standard) ? e.standard : "rural"; e.state = ["open", "dormant", "closed", "lost"].includes(e.state) ? e.state : e.lost ? "lost" : e.open ? "open" : "closed";
+    for (const f of ["through", "local", "peakThrough", "zeroYears", "reviveYears", "congYears", "throughDropYears"]) if (!fin(e[f])) e[f] = 0;
+    if (typeof e.nick !== "boolean") e.nick = false; if (typeof e.region !== "string") e.region = ""; if (!Array.isArray(e.hist)) e.hist = []; if (!Array.isArray(e.bypassOf)) e.bypassOf = []; if (!Array.isArray(e.bypassedBy)) e.bypassedBy = [];
+  }
+  for (const r of Object.values<any>(raw.routes)) { if (!Array.isArray(r.oldEdges)) r.oldEdges = []; if (typeof r.nick !== "boolean") r.nick = false; r.name = `${{ national: "国道", ken: "県道", fu: "府道" }[r.grade as "national"]}${r.number}号`; }
+  for (const p of Object.values<any>(raw.projects)) { if (typeof p.region !== "string") p.region = ""; if (!Array.isArray(p.replaces)) p.replaces = []; if (typeof p.kind !== "string") p.kind = "new"; }
+  for (const n of Object.values<any>(raw.nodes)) void n;
+  if (!isRec(raw.settlements)) raw.settlements = {}; if (!Array.isArray(raw.links)) raw.links = []; if (!Array.isArray(raw.snaps)) raw.snaps = []; if (!isRec(raw.regionShare)) raw.regionShare = {};
+  raw.schemaVersion = 2;
   const sim = { ...raw, events: Array.isArray(raw.events) ? raw.events : [], stats: Array.isArray(raw.stats) ? raw.stats : [], skippedMonths: fin(raw.skippedMonths) ? raw.skippedMonths : 0, lastWallMs: fin(raw.lastWallMs) ? raw.lastWallMs : 0, speed: [0, 1, 5, 20].includes(raw.speed) ? raw.speed : 0, ceremonyDone: raw.ceremonyDone === true } as unknown as SimState;
   const bad = checkIntegrity(sim); if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
   return { sim, problems: [] };

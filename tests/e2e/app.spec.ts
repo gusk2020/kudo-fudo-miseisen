@@ -159,7 +159,7 @@ test("開通の儀: invalid line is refused with a reason, valid lines start the
   const errs = watchErrors(page); await toRoads(page);
   expect(await page.textContent("#era-note")).toContain("光文"); expect(await page.isDisabled("#cer-go")).toBe(true);
   const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市"), osaka = await cityPos(page, "大阪市");
-  await page.click("#tool-cer-kokudo1"); expect(await page.getAttribute("#tool-cer-kokudo1", "aria-pressed")).toBe("true"); expect(await page.textContent("#mode-label")).toContain("酷道1号を描く");
+  await page.click("#tool-cer-kokudo1"); expect(await page.getAttribute("#tool-cer-kokudo1", "aria-pressed")).toBe("true"); expect(await page.textContent("#mode-label")).toContain("国道1号を描く");
   await draw(page, osaka, nagoya);   // does not start in Tokyo
   expect(await page.textContent("#cer-status-kokudo1")).toContain("東京府"); expect(await page.isDisabled("#cer-go")).toBe(true);
   await draw(page, tokyo, nagoya);
@@ -170,7 +170,8 @@ test("開通の儀: invalid line is refused with a reason, valid lines start the
   expect(await page.textContent("#cer-status-fudo1")).toContain("✓"); expect(await page.isDisabled("#cer-go")).toBe(false);
   await page.click("#cer-go");
   expect(await app(page, "a => !!a.sim && a.sim.ceremonyDone && a.sim.speed")).toBe(1);
-  expect(await app(page, "a => Object.values(a.sim.routes).map(r => r.grade + r.number).sort().join()")).toBe("fu1,national1");
+  expect(await app(page, "a => Object.values(a.sim.routes).filter(r => (r.grade === 'national' && r.number === 1 && r.scope === 'JP') || (r.grade === 'fu' && r.number === 1 && r.scope === 'JP-13')).length")).toBe(2);
+  expect(await app(page, "a => Object.values(a.sim.routes).some(r => /酷道|腐道|険道/.test(r.name))")).toBe(false);
   expect(await page.textContent("#status")).toContain("光文6年(1950)1月");
   expect(errs).toEqual([]);
 });
@@ -247,4 +248,24 @@ test("step 6 phone layout: toolbar fits, HUD readable, no page scroll", async ({
   const m = await page.evaluate(() => { const tb = document.getElementById("toolbar")!.getBoundingClientRect(), st = document.getElementById("status")!.getBoundingClientRect(); return { tbTop: tb.top, tbH: tb.height, ih: innerHeight, sw: document.documentElement.scrollWidth, iw: innerWidth, stBottom: st.bottom }; });
   expect(m.sw).toBeLessThanOrEqual(m.iw); expect(m.tbH).toBeLessThan(m.ih * 0.43); expect(m.stBottom).toBeLessThan(m.tbTop);
   await page.screenshot({ path: "test-results/stage2-hud.png" });
+});
+
+test("decline you can see: legend, comparison with 1950, and tap-for-why", async ({ page }) => {
+  const errs = watchErrors(page); await startGame(page);
+  await page.click("#speed-0"); await page.evaluate(() => (window as any).__kfm.ffYears(60));
+  expect(await app(page, "a => a.sim.month")).toBeGreaterThanOrEqual(720);
+  // legend: every class is spelled out in words, not colour alone
+  await page.click("#btn-legend"); const legend = await page.textContent("#sheet");
+  for (const w of ["良", "荒廃", "休止", "閉鎖", "廃道", "旧道", "バイパス", "国道", "県道", "府道", "市町村道", "工事中", "未成線", "通称"]) expect(legend, w).toContain(w);
+  await page.click("#sheet-close");
+  // comparison with 1950 switches on and is announced in the button itself
+  await page.click("#btn-compare"); await page.click("#cmp-1950");
+  expect(await app(page, "a => a.compareYear")).toBe(1950); await page.click("#sheet-close"); expect(await page.getAttribute("#btn-compare", "aria-pressed")).toBe("true"); expect(await page.textContent("#btn-compare")).toContain("1950");
+  // tap a road that has a history: the sheet explains designation, state, demand and the history
+  const spot = await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim, w = a.world; const e = Object.values<any>(s.edges).filter((x) => x.hist.length >= 2 && x.state !== "lost").sort((p: any, q: any) => q.hist.length - p.hist.length)[0]; const k = e.cells[Math.floor(e.cells.length / 2)]; return { id: e.id, pos: w.cellPos(k) }; });
+  await page.click("#tool-why"); expect(await page.getAttribute("#tool-why", "aria-pressed")).toBe("true");
+  const sp = await screenOf(page, spot.pos); await page.mouse.click(sp[0], sp[1]);
+  expect(await page.isVisible("#why-designation")).toBe(true); const why = await page.textContent("#sheet"); expect(why).toContain("行政指定"); expect(why).toContain("需要"); expect(why).toContain("履歴");
+  expect(await app(page, "a => a.selEdge")).not.toBeNull();
+  await page.screenshot({ path: "test-results/stage2-why.png" }); expect(errs).toEqual([]);
 });

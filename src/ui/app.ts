@@ -1,7 +1,7 @@
 import { worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL } from "../core/data";
-import { dist, pointInPolygon, rot as rotv, simplifyLine } from "../core/geom";
+import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState } from "../core/state";
 import { suggestRidge } from "../core/suggest";
@@ -14,12 +14,15 @@ import { derive, errorsFor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
 import { CER_LABEL, performCeremony, previewCeremony, type CerKind, type CerPreview } from "../sim/ceremony";
-import { MS_PER_MONTH_X1, advance, createSim, noteSkipped, planCatchUp, prefName, routeLabel, summary } from "../sim/engine";
+import { MS_PER_MONTH_X1, advance, createSim, noteSkipped, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
-import { ERA, PROJECT_LABEL, eraLabel, monthToYM, ymLabel, type SimState } from "../sim/types";
+import { finishMigration } from "../sim/migrate";
+import { ERA, GRADE_LABEL, KIND_LABEL, NICK_LABEL, PROJECT_LABEL, STANDARD_LABEL, STATE_LABEL, SURFACE_LABEL, eraLabel, monthToYM, ymLabel, type SimState } from "../sim/types";
+import { COND, CASING } from "../render/roads";
+import { edgePoints } from "../sim/network";
 import { buildWorld, type World } from "../sim/world";
 
-type Tool = "view" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick";
+type Tool = "view" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -40,6 +43,7 @@ export class App {
   // ---- Stage 2 ----
   sim: SimState | null = null; world: World | null = null; private worldRef: TerrainResult | null = null; pendingSim: SimState | null = null;
   cerDraft: Partial<Record<CerKind, { pts: Vec[]; prev: CerPreview }>> = {}; private cerLive: Vec[] | null = null; pin: Vec | null = null; scenery: any = null;
+  compareYear: number | null = null; selEdge: string | null = null;
   catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
   static async start(host: HTMLElement) {
@@ -80,14 +84,14 @@ export class App {
     if (this.cerLive) cer.push({ pts: this.cerLive, path: undefined as any, ok: true });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
     if (onRoads) this.ensureWorld();
-    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, plans: L.plans, signs: L.signs }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null });
+    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, plans: L.plans, signs: L.signs }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? this.sim.snaps.find((x) => x.year === this.compareYear) ?? null : null, sel: this.selEdge });
   }
   /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
   private attachPendingSim() {
     if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; this.pendingSim = null; if (!w || !this.terrain) return;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw("auto:quarantine", { savedAt: Date.now(), reason: err, sim }); this.toast(`道路データは読み込まず退避しました: ${err}`); return; }
-    this.sim = sim; const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
+    finishMigration(sim, w); this.sim = sim; const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
   }
   async generate() {
     if (errorsFor(this.issues, "honshu").length || errorsFor(this.issues, "islands").length || errorsFor(this.issues, "features").length) { this.status(); return; }
@@ -106,7 +110,7 @@ export class App {
     if (this.s.step === 6 && this.sim) {
       const m = summary(this.sim), sp = this.sim.speed;
       add(`${m.ym}`, "ok"); add(sp ? `速度 ×${sp}` : "停止中"); add(`路線${m.routes}本 総延長${m.km.toLocaleString()}km`); add(`建設中${m.building} 未成${m.unbuilt}`);
-      add(`状態 良${m.good}/可${m.fair}/悪${m.poor}/廃道${m.lost}/廃止${m.closed}`);
+      add(`状態 良${m.good}/可${m.fair}/悪${m.poor}`); add(`休止${m.dormant} 閉鎖${m.closed} 廃道${m.lost}`);
       const last = this.sim.events[this.sim.events.length - 1]; if (last) add(`最近: ${last.text}`);
       if (this.catching) add(this.catchInfo, "bad");
       if (this.sim.skippedMonths) add(`省略${Math.floor(this.sim.skippedMonths / 12)}年分`, "bad");
@@ -143,7 +147,7 @@ export class App {
   toolBegin(w: Vec, sc: Vec): boolean {
     const t = this.tool, s = this.s;
     if (t === "cer-kokudo1" || t === "cer-fudo1") { this.grab = { t, kind: t === "cer-kokudo1" ? "kokudo1" : "fudo1", pts: [w] }; this.cerLive = [w]; this.renderRoads(); return true; }
-    if (t === "pick") { this.grab = { t, w }; return true; }
+    if (t === "pick" || t === "why") { this.grab = { t, w }; return true; }
     if (t === "pull" || t === "bulge" || t === "dent" || t === "move") {
       const id = this.bodyForTool(), bs = s.bodies[id];
       const c = worldToPostOps(bs.place, w);
@@ -171,7 +175,7 @@ export class App {
   toolMove(w: Vec, sc: Vec) {
     const g = this.grab; if (!g) return;
     if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { if (dist(g.pts[g.pts.length - 1], w) >= 8 / this.r.view.zoom) { g.pts.push(w); this.cerLive = g.pts; this.renderRoads(); } return; }
-    if (g.t === "pick") { g.w = w; return; }
+    if (g.t === "pick" || g.t === "why") { g.w = w; return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
       const scl = g.place0.scale, r = this.brushKm / scl;
       let op: Op;
@@ -194,6 +198,7 @@ export class App {
     this.pending = null; this.cerLive = null;
     if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { this.finishDraw(g.kind, g.pts); return; }
     if (g.t === "pick") { this.pickScenery(g.w); return; }
+    if (g.t === "why") { this.whyAt(g.w); return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
       let op: Op | undefined = g.op;
       if (!op && g.t !== "pull") op = clampOp({ t: "bulge", c: g.c, r: this.brushKm / g.place0.scale, k: g.t === "bulge" ? 0.3 : -0.3 });
@@ -232,6 +237,8 @@ export class App {
     sim.speed = 1; this.sim = sim; this.cerDraft = {}; this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
     this.persist(); this.toast("開通の儀を終えました。時間が動き始めます"); this.onChange();
   }
+  /** Test/debug hook: advance synchronously (the normal clock is slower than a test can wait). */
+  ffYears(n: number) { if (!this.sim || !this.world) return; advance(this.sim, this.world, 12 * n); this.renderRoads(); this.status(); this.buildUI(); }
   setSpeed(n: 0 | 1 | 5 | 20) { if (!this.sim) return; this.sim.speed = n; this.acc = 0; this.lastTick = performance.now(); this.persist(); this.buildUI(); }
   /** Real-time clock: only while this page is visible. Tab hidden or app closed = no simulation; return = capped catch-up. */
   tickClock() {
@@ -263,6 +270,14 @@ export class App {
     if (document.hidden) { this.hiddenAt = Date.now(); this.persist(); return; }
     if (this.sim && this.hiddenAt) { const away = Date.now() - this.hiddenAt; this.hiddenAt = 0; void this.catchUp(away); }
   }
+  /** Tap a road: show what it is and why it changed (designation, nickname, standard, demand split, old/new road, history). */
+  whyAt(world: Vec) {
+    const w = this.ensureWorld(), sim = this.sim; if (!w || !sim) return;
+    let best: { id: string; d: number } | null = null;
+    for (const e of Object.values(sim.edges)) { const pts = edgePoints(w, sim, e); for (let i = 0; i + 1 < pts.length; i++) { const d = pointSegDist(world, pts[i], pts[i + 1]); if (!best || d < best.d) best = { id: e.id, d }; } }
+    if (!best || best.d > 16 / this.r.view.zoom) { this.selEdge = null; this.renderRoads(); this.toast("近くに道路がありません"); return; }
+    this.selEdge = best.id; this.renderRoads(); this.sheet = "why"; this.buildSheet();
+  }
   pickScenery(world: Vec) {
     const w = this.ensureWorld(); if (!w || !this.sim || !this.terrain) return;
     const g = new GeoMap(this.s, this.terrain).toGeo(world); this.pin = world;
@@ -292,7 +307,7 @@ export class App {
   private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); }
   buildToolbar() {
     const tb = $("toolbar"); tb.replaceChildren(); const st = this.stepId;
-    const TOOL_NAMES: Record<Tool, string> = { "cer-kokudo1": "酷道1号を描く", "cer-fudo1": "腐道1号を描く", pick: "風景JSON: 地点を選ぶ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
+    const TOOL_NAMES: Record<Tool, string> = { "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
     if (this.store.locked && (st === "honshu" || st === "islands" || st === "features")) {
       tb.append(h("div", { id: "lock-banner", role: "status" }, "🔒 地図は最終確定済みのためロック中(閲覧のみ)"), h("button", { id: "unlock-map", type: "button", onclick: () => this.unlockMap() }, "ロックを解除して編集"));
       return;
@@ -342,8 +357,9 @@ export class App {
     for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n, () => this.setSpeed(n), "speed-" + n));
     tb.append(sp);
     const g = h("div", { class: "grp" });
-    g.append(h("button", { id: "btn-history", type: "button", onclick: () => this.openSheet("history") }, "年表"), h("button", { id: "btn-roads", type: "button", onclick: () => this.openSheet("roads") }, "路線一覧"), this.tbtn("風景JSON", this.tool === "pick", () => this.setTool("pick"), "tool-pick"));
+    g.append(h("button", { id: "btn-history", type: "button", onclick: () => this.openSheet("history") }, "年表"), h("button", { id: "btn-roads", type: "button", onclick: () => this.openSheet("roads") }, "路線一覧"), h("button", { id: "btn-legend", type: "button", onclick: () => this.openSheet("legend") }, "凡例"), h("button", { id: "btn-compare", type: "button", "aria-pressed": this.compareYear ? "true" : "false", class: this.compareYear ? "mode on" : "mode", onclick: () => this.openSheet("compare") }, this.compareYear ? `✓ 比較:${this.compareYear}年` : "比較"));
     tb.append(g);
+    const g2 = h("div", { class: "grp" }); g2.append(this.tbtn("なぜ?(道路をタップ)", this.tool === "why", () => this.setTool("why"), "tool-why"), this.tbtn("風景JSON", this.tool === "pick", () => this.setTool("pick"), "tool-pick")); tb.append(g2);
   }
   buildSheet() {
     const sh = $("sheet"), body = $("sheet-body");
@@ -363,6 +379,9 @@ export class App {
     } else if (this.sheet === "history") this.buildHistory(body);
     else if (this.sheet === "roads") this.buildRoadList(body);
     else if (this.sheet === "scenery") this.buildScenery(body);
+    else if (this.sheet === "legend") this.buildLegend(body);
+    else if (this.sheet === "compare") this.buildCompare(body);
+    else if (this.sheet === "why") this.buildWhy(body);
     else if (this.sheet === "menu") this.buildMenu(body);
   }
   private buildHistory(body: HTMLElement) {
@@ -376,10 +395,53 @@ export class App {
     const km = (r: typeof sim.routes[string]) => Math.round(r.edges.reduce((a, x) => a + (sim.edges[x.edgeId]?.lengthKm ?? 0), 0));
     for (const r of Object.values(sim.routes).filter((x) => x.active).sort((a, b) => (a.grade === b.grade ? a.number - b.number : a.grade === "national" ? -1 : 1))) {
       const es = r.edges.map((x) => sim.edges[x.edgeId]), q = Math.round(es.reduce((a, e) => a + e.quality, 0) / (es.length || 1));
-      body.append(h("div", { class: "issue" }, `${routeLabel(r)} ${km(r)}km 品質${q} ${es.some((e) => e.lost) ? "(廃道あり)" : ""}`, h("br"), h("small", {}, `路線ID ${r.id} / 指定${ymLabel(sim.startYear, r.since)}`)));
+      body.append(h("div", { class: "issue" }, `${routeLabel(r)} ${km(r)}km 品質${q}${r.oldEdges.length ? ` 旧道${r.oldEdges.length}` : ""} ${es.some((e) => e.lost) ? "(廃道あり)" : ""}`, h("br"), h("small", {}, `路線ID ${r.id} / 指定${ymLabel(sim.startYear, r.since)}`)));
     }
     body.append(h("h3", {}, "建設計画・未成線"));
-    for (const p of Object.values(sim.projects).filter((x) => x.status !== "open").slice(-30)) body.append(h("div", { class: "issue warn" }, `[${PROJECT_LABEL[p.status]}] ${sim.nodes[p.from]?.name ?? "地点"}〜${sim.nodes[p.to]?.name ?? "地点"} (${Math.round((p.spentBu / (p.costBu || 1)) * 100)}%)`, h("br"), h("small", {}, p.reason)));
+    for (const p of Object.values(sim.projects).filter((x) => x.status !== "open").slice(-30)) body.append(h("div", { class: "issue warn" }, `[${PROJECT_LABEL[p.status]}/${KIND_LABEL[p.kind]}/${prefName(p.region)}] ${sim.nodes[p.from]?.name ?? "地点"}〜${sim.nodes[p.to]?.name ?? "地点"} (${Math.round((p.spentBu / (p.costBu || 1)) * 100)}%)`, h("br"), h("small", {}, p.reason)));
+  }
+  private buildLegend(body: HTMLElement) {
+    body.append(h("h3", {}, "凡例(色だけに頼らず、線の種類と文字で区別します)"));
+    const row = (svg: string, text: string) => { const d = h("div", { class: "legend-row" }); d.innerHTML = `<svg width="64" height="14" viewBox="0 0 64 14" aria-hidden="true">${svg}</svg><span>${text}</span>`; body.append(d); };
+    const hex = (n: number) => "#" + n.toString(16).padStart(6, "0");
+    body.append(h("h3", {}, "色=現在の状態(品質)"));
+    for (const c of COND) row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(c.col)}" stroke-width="5" stroke-linecap="round"/>`, `${c.label}(品質${c.min}以上${c.label === "荒廃" ? "〜" : ""})`);
+    body.append(h("h3", {}, "線の種類=供用状態"));
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="5" stroke-linecap="round"/>`, "実線: 供用中");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4" stroke-dasharray="10 6"/>`, "長い破線: 休止(需要がほぼゼロ)");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#9aa4ad" stroke-width="2" stroke-dasharray="5 4"/>`, "灰色の破線: 閉鎖");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#2b2b2b" stroke-width="2" stroke-dasharray="2 5"/>`, "極細の点線: 廃道");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4" stroke-dasharray="9 3 2 3"/>`, "一点鎖線: 旧道(バイパスができた区間)");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#5bd66b" stroke-width="5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="1"/>`, "白い中心線: バイパス・新道");
+    body.append(h("h3", {}, "太さ=規格 / 縁の色=行政指定"));
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#bbb" stroke-width="2"/>`, `細い: ${STANDARD_LABEL.rural}`); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#bbb" stroke-width="4"/>`, `中: ${STANDARD_LABEL.standard}`); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#bbb" stroke-width="7"/>`, `太い: ${STANDARD_LABEL.highgrade}`);
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.national)}" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4"/>`, "赤茶の縁: 国道"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.ken)}" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4"/>`, "緑の縁: 県道"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.fu)}" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4"/>`, "紫の縁: 府道"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.none)}" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="3"/>`, "灰の縁・細め: 市町村道(指定なし)");
+    body.append(h("h3", {}, "建設計画"));
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#39d6c8" stroke-width="3" stroke-dasharray="2 4"/>`, "水色の点線: 計画"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#3aa0ff" stroke-width="3" stroke-dasharray="7 4"/>`, "青の破線: 工事中"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#ff8f1f" stroke-width="3" stroke-dasharray="7 4"/>`, "橙の破線: 中断"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#b04bff" stroke-width="3" stroke-dasharray="7 4"/>`, "紫の破線: 未成線");
+    body.append(h("h3", {}, "比較表示の縁取り"));
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#ff3b3b" stroke-width="8" stroke-opacity=".6"/>`, "赤: 品質が大きく低下"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#111" stroke-width="8" stroke-opacity=".6"/>`, "黒: 休止・閉鎖・廃道に悪化"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#39a0ff" stroke-width="8" stroke-opacity=".6"/>`, "青: 基準年にはなかった道路"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#39e08a" stroke-width="8" stroke-opacity=".6"/>`, "緑: 改善・復旧");
+    body.append(h("small", {}, "標識: 国=丸(赤)・県=角丸(緑)・府=五角形(紫)。通称(酷・険・腐)は荒れた細い道に後から付く呼び名で、行政指定ではありません。"));
+  }
+  private buildCompare(body: HTMLElement) {
+    body.append(h("h3", {}, "時系列比較(基準年と今の差を縁取り)")); const sim = this.sim; if (!sim) return;
+    const row = h("div", { class: "row" }); row.append(h("button", { id: "cmp-none", "aria-pressed": this.compareYear ? "false" : "true", class: this.compareYear ? "mode" : "mode on", onclick: () => { this.compareYear = null; this.renderRoads(); this.buildUI(); } }, this.compareYear ? "比較しない" : "✓ 比較しない"));
+    for (const sn of sim.snaps) row.append(h("button", { id: `cmp-${sn.year}`, "aria-pressed": this.compareYear === sn.year ? "true" : "false", class: this.compareYear === sn.year ? "mode on" : "mode", onclick: () => { this.compareYear = sn.year; this.renderRoads(); this.buildUI(); } }, `${this.compareYear === sn.year ? "✓ " : ""}${sn.year}年と比べる`));
+    body.append(row, h("small", {}, "基準年は10年ごとに自動保存されます。色の意味は「凡例」を見てください。"));
+  }
+  private buildWhy(body: HTMLElement) {
+    const sim = this.sim, w = this.world; body.append(h("h3", {}, "この道路は、なぜ今こうなのか")); if (!sim || !w || !this.selEdge || !sim.edges[this.selEdge]) { body.append(h("small", {}, "「なぜ?」を選び、道路をタップしてください")); return; }
+    const e = sim.edges[this.selEdge], nm = (id: string) => sim.nodes[id]?.name ?? "地点", routes = Object.values(sim.routes).filter((r) => r.active && (r.edges.some((x) => x.edgeId === e.id) || r.oldEdges.includes(e.id)));
+    const line = (t: string, id?: string) => body.append(h("div", { class: "issue", id }, t));
+    line(`${nm(e.a)}〜${nm(e.b)}(${Math.round(e.lengthKm)}km・${prefName(e.region)})`, "why-title");
+    line(`行政指定: ${routes.length ? routes.map((r) => routeOfficial(r) + (r.oldEdges.includes(e.id) ? "の旧道" : "")).join("・") : "市町村道(指定なし)"}${e.nick && routes[0] ? ` ／ 通称: ${NICK_LABEL[routes[0].grade]}(細く荒れた道に後から付いた呼び名)` : ""}`, "why-designation");
+    line(`規格: ${STANDARD_LABEL[e.standard]} ／ 路面: ${SURFACE_LABEL[e.surface]} ／ 品質${Math.round(e.quality)}・風化${Math.round(e.weathering)}・最大勾配${e.maxGradePct}%`);
+    line(`状態: ${e.built < 1 ? `工事中(${Math.round(e.built * 100)}%)` : STATE_LABEL[e.state]}${e.builtMonth !== null ? ` ／ 供用${monthToYM(sim.startYear, e.builtMonth).year}年〜` : ""}`, "why-state");
+    line(`需要(台/日): 通過${Math.round(e.through)}・沿線${Math.round(e.local)} ／ 通過のピーク${Math.round(e.peakThrough)} ／ 需要ゼロ${e.zeroYears}年`, "why-demand");
+    if (e.bypassedBy.length) line(`旧道: ${e.bypassedBy.map((id) => `${nm(sim.edges[id]?.a)}〜${nm(sim.edges[id]?.b)}`).join("、")}のバイパス開通で通過交通が移った。沿線需要${Math.round(e.local)}台/日${e.local >= 40 ? "が残るため管理継続" : "は小さい"}`, "why-old");
+    if (e.bypassOf.length) line("バイパス・新道: 旧道の通過交通を引き受けている", "why-new");
+    body.append(h("h3", {}, "この道路の履歴(永続記録)"));
+    for (const hh of [...e.hist].reverse()) body.append(h("div", { class: "issue" }, `${ymLabel(sim.startYear, hh.m)} ${hh.t}`));
+    const evs = sim.events.filter((x) => x.refs.edge === e.id).slice(-6).reverse(); if (evs.length) { body.append(h("h3", {}, "関連する年表の出来事")); for (const x of evs) body.append(h("div", { class: "issue" }, `${ymLabel(sim.startYear, x.month)} ${x.text}`, h("br"), h("small", {}, `原因: ${x.cause}`))); }
   }
   private buildScenery(body: HTMLElement) {
     body.append(h("h3", {}, "風景用JSON")); if (!this.scenery) { body.append(h("small", {}, "「風景JSON」を選び、地図上の地点をタップしてください")); return; }

@@ -1,13 +1,28 @@
 /** Road graph operations: nodes, edges, splitting, and laying a grid path onto the network. */
 import { dist } from "../core/geom";
 import type { Vec } from "../core/types";
-import type { RouteEdgeRef, SimEdge, SimNode, SimState, Surface } from "./types";
+import type { EdgeState, RouteEdgeRef, SimEdge, SimNode, SimState, Standard, Surface } from "./types";
 import { cellDistKm, type World } from "./world";
 
 export const pad = (n: number, w = 6) => String(n).padStart(w, "0");
 export function newId(sim: SimState, kind: "node" | "edge" | "route" | "project"): string {
   const n = ++sim.next[kind]; return `${{ node: "n", edge: "e", route: "r", project: "p" }[kind]}.${pad(n)}`;
 }
+export function newEdgeDefaults(): Omit<SimEdge, "id" | "a" | "b" | "cells" | "surface" | "quality" | "built" | "open" | "maxGradePct" | "builtMonth" | "region" | "standard" | "state"> {
+  return { lengthKm: 0, weathering: 0, lost: false, traffic: 0, lowYears: 0, through: 0, local: 0, peakThrough: 0, zeroYears: 0, reviveYears: 0, congYears: 0, nick: false, hist: [], bypassOf: [], bypassedBy: [], throughDropYears: 0 };
+}
+/** The prefecture most of an edge's cells lie in (its budget region). */
+export function regionOfCells(w: World, cells: number[]): string {
+  const c = new Map<string, number>(); for (const k of cells) { const p = w.prefOf(k); if (p) c.set(p, (c.get(p) ?? 0) + 1); }
+  let best = "JP", n = 0; for (const [p, v] of [...c.entries()].sort()) if (v > n) { n = v; best = p; } return best;
+}
+/** Change service state; keeps the legacy open/lost flags consistent and records the change in the edge's own history. */
+export function setEdgeState(sim: SimState, e: SimEdge, st: EdgeState, why: string) {
+  if (e.state === st) return; e.state = st; e.open = st === "open"; e.lost = st === "lost";
+  if (st === "open") { e.zeroYears = 0; e.reviveYears = 0; }
+  pushHist(sim, e, `${{ open: "供用(再開)", dormant: "休止", closed: "閉鎖", lost: "廃道化" }[st]}: ${why}`);
+}
+export function pushHist(sim: SimState, e: SimEdge, t: string) { e.hist.push({ m: sim.month, t }); if (e.hist.length > 40) e.hist.splice(1, e.hist.length - 40); }
 export interface NetIndex { nodeByCell: Map<number, string>; cellEdge: Map<number, string>; step: Map<string, { edge: string; i: number }>; roadCells: Set<number> }
 export function buildIndex(sim: SimState): NetIndex {
   const nodeByCell = new Map<number, string>(), cellEdge = new Map<number, string>(), step = new Map<string, { edge: string; i: number }>(), roadCells = new Set<number>();
@@ -55,12 +70,14 @@ export function splitEdge(sim: SimState, w: World, edgeId: string, at: number, n
   const f1 = origLen > 0 ? e.lengthKm / (e.lengthKm + e2.lengthKm) : 0.5; e2.traffic = e.traffic * (1 - f1); e.traffic *= f1;
   e.maxGradePct = maxGradePct(w, e.cells); e2.maxGradePct = maxGradePct(w, e2.cells);
   sim.edges[id2] = e2;
+  for (const l of sim.links) { if (l.oldEdges.includes(edgeId)) l.oldEdges.push(id2); if (l.newEdges.includes(edgeId)) l.newEdges.push(id2); }
+  if (e.bypassedBy.length) e2.bypassedBy = [...e.bypassedBy]; if (e.bypassOf.length) e2.bypassOf = [...e.bypassOf];
   const rewrite = (list: RouteEdgeRef[]) => { for (let i = 0; i < list.length; i++) if (list[i].edgeId === edgeId) { const d = list[i].dir; list.splice(i, 1, ...(d === 1 ? [{ edgeId, dir: 1 as const }, { edgeId: id2, dir: 1 as const }] : [{ edgeId: id2, dir: -1 as const }, { edgeId, dir: -1 as const }])); i++; } };
   for (const r of Object.values(sim.routes)) rewrite(r.edges);
   for (const p of Object.values(sim.projects)) { rewrite(p.chain); const k = p.edgeIds.indexOf(edgeId); if (k >= 0) p.edgeIds.splice(k + 1, 0, id2); }
   return id2;
 }
-export interface LayOpts { open: boolean; surface: Surface; quality: number; built: number; month: number }
+export interface LayOpts { open: boolean; surface: Surface; quality: number; built: number; month: number; standard?: Standard }
 /**
  * Lay a grid path onto the network. Steps that already run along an existing edge are shared (designation overlap);
  * everything else becomes new edges. Crossings/touches of existing roads become junctions. Returns the ordered chain.
@@ -96,7 +113,7 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     if (parts.length === 2) nodeAtCell(sim, w, idx, seg[hi], "pass");
     for (const part of parts) {
       const pa = idx.nodeByCell.get(part[0])!, pb = idx.nodeByCell.get(part[part.length - 1])!, id = newId(sim, "edge");
-      const e: SimEdge = { id, a: pa, b: pb, cells: part, lengthKm: 0, surface: o.surface, quality: o.quality, weathering: 0, built: o.built, open: o.open, lost: false, maxGradePct: maxGradePct(w, part), traffic: 0, lowYears: 0, builtMonth: o.open ? o.month : null };
+      const e: SimEdge = { ...newEdgeDefaults(), id, a: pa, b: pb, cells: part, surface: o.surface, quality: o.quality, built: o.built, open: o.open, state: o.open ? "open" : "closed", standard: o.standard ?? "rural", maxGradePct: maxGradePct(w, part), builtMonth: o.open ? o.month : null, region: regionOfCells(w, part) };
       e.lengthKm = edgeLengthKm(w, sim, e); sim.edges[id] = e; created.push(id); chain.push({ edgeId: id, dir: 1 });
     }
     void a; void b;
@@ -132,6 +149,7 @@ export function checkIntegrity(sim: SimState): string[] {
       prev = to;
     }
   }
+  for (const r of Object.values(sim.routes)) for (const id of r.oldEdges ?? []) if (!sim.edges[id]) bad.push(`route ${r.id}: missing old edge ${id}`);
   for (const p of Object.values(sim.projects)) for (const id of p.edgeIds) if (!sim.edges[id]) bad.push(`project ${p.id}: missing edge ${id}`);
   return bad;
 }

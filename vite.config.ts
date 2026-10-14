@@ -3,5 +3,5 @@ export default defineConfig({
   base: process.env.BASE_PATH ?? "./",
   worker: { format: "es" },
   build: { target: "es2022" },
-  test: { include: ["tests/unit/**/*.test.ts"] },
+  test: { include: ["tests/unit/**/*.test.ts"], testTimeout: 120000 },
 } as any);

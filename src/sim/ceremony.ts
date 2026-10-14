@@ -1,13 +1,13 @@
 /** 開通の儀: turn two hand-drawn curves into snapped, previewable routes. Pure; no DOM. */
 import { dist, pointSegDist } from "../core/geom";
 import type { Vec } from "../core/types";
-import { designate, ev, routeLabel } from "./engine";
+import { designate, ev, routeOfficial } from "./engine";
 import { layPath } from "./network";
 import { ERA, type SimState } from "./types";
 import { cellDistKm, pathfind, type World } from "./world";
 
 export type CerKind = "kokudo1" | "fudo1";
-export const CER_LABEL: Record<CerKind, string> = { kokudo1: "酷道1号(東京府起点)", fudo1: "腐道1号(東京府内)" };
+export const CER_LABEL: Record<CerKind, string> = { kokudo1: "国道1号(東京府起点)", fudo1: "府道1号(東京府内)" };
 export const TOKYO = "JP-13";
 export interface CerPreview { ok: boolean; reasons: string[]; cells: number[]; path: Vec[]; lengthKm: number; passes: string[]; maxGradePct: number; endName: string }
 
@@ -73,10 +73,10 @@ export function performCeremony(sim: SimState, w: World, kokudo: CerPreview, fud
   if (sim.ceremonyDone || !kokudo.ok || !fudo.ok) return false;
   ev(sim, "ceremony", `開通の儀。${ERA.name}6年(1950)、${ERA.note}`, "プレイヤーが二本の道を描いた", {});
   const a = layPath(sim, w, kokudo.cells, { open: true, surface: "gravel", quality: 55, built: 1, month: 0 });
-  const r1 = designate(sim, a.chain, "national", "JP", `東京〜${kokudo.endName}`, "開通の儀");
+  const r1 = designate(sim, a.chain, "national", "JP", `東京〜${kokudo.endName}`, "開通の儀", false, 1);
   const b = layPath(sim, w, fudo.cells, { open: true, surface: "gravel", quality: 55, built: 1, month: 0 });
-  const r2 = designate(sim, b.chain, "fu", TOKYO, "東京府内", "開通の儀");
+  const r2 = designate(sim, b.chain, "fu", TOKYO, "東京府内", "開通の儀", false, 1);
   if (!r1 || !r2) return false;
-  ev(sim, "ceremony", `${routeLabel(r1)}・${routeLabel(r2)}が開通`, "開通の儀", { route: r1.id });
+  ev(sim, "ceremony", `${routeOfficial(r1)}・${routeOfficial(r2)}が象徴の道として開通`, "開通の儀", { route: r1.id });
   sim.ceremonyDone = true; return true;
 }
