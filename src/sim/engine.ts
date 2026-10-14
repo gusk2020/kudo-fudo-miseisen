@@ -7,8 +7,8 @@ import { dist } from "../core/geom";
 import { JAPAN } from "../core/data";
 import { buildIndex, checkIntegrity, edgePoints, newId, pushHist, setEdgeState } from "./network";
 import { ZERO_DEMAND, analyze, passable, strandedWithout, type Analysis } from "./demand";
-import { planYear } from "./planning";
-import { seedInitialNetwork } from "./seed";
+import { planYearGen } from "./planning";
+import { seedInitialNetworkGen } from "./seed";
 import { ERA, FU_PREFS, GRADE_LABEL, KIND_LABEL, NICK_LABEL, SIM_VERSION, monthToYM, ymLabel, type Grade, type RouteEdgeRef, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
 import { cellDistKm, type World } from "./world";
 
@@ -41,15 +41,19 @@ export const routeOfficial = (r: SimRoute) => `${r.scope === "JP" ? "" : prefNam
 export const routeLabel = (r: SimRoute) => routeOfficial(r) + (r.nick ? `(通称:${NICK_LABEL[r.grade]})` : "");
 export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).year;
 
-export function createSim(w: World, mapHash: string, terrainHash: string, seed: number): SimState {
+/** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
+export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number): Generator<number, SimState> {
   const sim: SimState = {
     schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: ERA.key, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
     next: { node: 0, edge: 0, route: 0, project: 0, event: 0 }, nodes: {}, edges: {}, routes: {}, projects: {}, cities: {}, settlements: {}, links: [], snaps: [], regionShare: {},
     macro: { mood: 0, budgetBu: 0, maintCoverage: 1 }, routeCounters: {}, events: [], stats: [], skippedMonths: 0, lastWallMs: 0, ceremonyDone: false,
   };
   for (const c of w.cities) sim.cities[c.id] = { pop: c.pop0, popSource: c.popSource, lowAccessYears: 0, industry: Math.round((0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim)) * 1000) / 1000 };
-  seedInitialNetwork(sim, w); refreshNick(sim); takeSnapshot(sim);
+  yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); yield 1;
   return sim;
+}
+export function createSim(w: World, mapHash: string, terrainHash: string, seed: number): SimState {
+  const g = createSimGen(w, mapHash, terrainHash, seed); for (;;) { const r = g.next(); if (r.done) return r.value; }
 }
 export function issueNumber(sim: SimState, grade: Grade, scope: string): number { const k = `${grade}:${scope}`; return (sim.routeCounters[k] = (sim.routeCounters[k] ?? 0) + 1); }
 export function designate(sim: SimState, chain: RouteEdgeRef[], grade: Grade, scope: string, text: string, cause: string, quiet = false, forceNumber?: number): SimRoute | null {
@@ -87,13 +91,12 @@ export const projLabel = (sim: SimState, p: SimProject) => `${sim.nodes[p.from]?
 const edgeName = (sim: SimState, e: SimEdge) => `${sim.nodes[e.a]?.name ?? "地点"}〜${sim.nodes[e.b]?.name ?? "地点"}`;
 
 // ---- yearly decisions ----
-function yearly(sim: SimState, w: World) {
-  const y = yearOf(sim), an = analyze(sim, w);
-  updatePopulation(sim, w, an, y);
-  updateRegionShares(sim, w);
-  evaluateEdges(sim, w, an, y);
-  evaluateRoutes(sim, w, y);
-  planYear(sim, w, an, y);
+function* yearlyGen(sim: SimState, w: World): Generator<void> {
+  const y = yearOf(sim), an = analyze(sim, w); yield;
+  updatePopulation(sim, w, an, y); updateRegionShares(sim, w); yield;
+  evaluateEdges(sim, w, an, y); yield;
+  evaluateRoutes(sim, w, y); yield;
+  yield* planYearGen(sim, w, an, y);
   refreshNick(sim);
   if (y % 10 === 0 && y !== sim.startYear) takeSnapshot(sim);
   const edges = Object.values(sim.edges), routes = Object.values(sim.routes).filter((r) => r.active), live = edges.filter((e) => e.state === "open" && e.built >= 1);
@@ -286,10 +289,12 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
   p.routeId = r?.id ?? null; ev(sim, "open", `供用開始: ${projLabel(sim, p)}`, `工事費${p.costBu.toFixed(1)}を投入`, { project: p.id });
 }
 
-export function stepMonth(sim: SimState, w: World) {
-  if (sim.month % 12 === 0) yearly(sim, w);
-  monthly(sim, w); sim.month++;
+/** One simulated month as a series of short atoms (yield between them). */
+export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
+  if (sim.month % 12 === 0) yield* yearlyGen(sim, w);
+  monthly(sim, w); yield; sim.month++;
 }
+export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
 export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) stepMonth(sim, w); }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {

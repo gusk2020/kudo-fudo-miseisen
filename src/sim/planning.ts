@@ -21,7 +21,7 @@ export function createProject(sim: SimState, kind: ProjectKind, region: string, 
 }
 const nodeName = (sim: SimState, id: string) => sim.nodes[id]?.name ?? "地点";
 
-export function planYear(sim: SimState, w: World, an: Analysis, y: number) {
+export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
   const regions = w.t.prefOrder, n = regions.length, B = sim.macro.budgetBu; let pf = MAX_PATHFINDS;
   const start = ((y - sim.startYear) * REGIONS_PER_YEAR) % n, slice = Array.from({ length: REGIONS_PER_YEAR }, (_, i) => regions[(start + i) % n]);
   const live = activeProjects(sim), busy = new Set(live.flatMap((p) => p.edgeIds)), perRegion = new Map<string, number>();
@@ -48,6 +48,7 @@ export function planYear(sim: SimState, w: World, an: Analysis, y: number) {
     }
     cands.sort((p, q) => q.score - p.score || (p.kind < q.kind ? -1 : 1)); let made = false;
     for (const c of cands.slice(0, 6)) { if (made) break; made = tryPlan(sim, w, c, r, purse, () => pf-- > 0, () => pf > 0, y); }
+    yield;   // one region per slice: keeps every main-thread task short
     if (pf <= 0) break;
   }
 }

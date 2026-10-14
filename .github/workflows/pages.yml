@@ -1,7 +1,7 @@
 name: Pages
 on:
   push:
-    branches: [main, claude/stage1-map-generator, claude/stage2-roads, claude/stage2-road-evolution]
+    branches: [main, claude/stage1-map-generator, claude/stage2-roads, claude/stage2-road-evolution, claude/stage3-foundation]
   workflow_dispatch:
 permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: true }

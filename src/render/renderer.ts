@@ -42,14 +42,16 @@ export class Renderer {
   private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
   private lastArgs: [ProjectState, TerrainResult | null, Issue[], Pending | null] | null = null;
   private rebuildTimer: any = 0;
-  onViewChange: (() => void) | null = null;
+  onViewChange: (() => void) | null = null; onContextLost: (() => void) | null = null; onContextRestored: (() => void) | null = null;
 
   static async create(host: HTMLElement): Promise<Renderer> {
     const r = new Renderer();
     r.app = new Application();
-    await r.app.init({ resizeTo: host, background: 0x123c69, antialias: true, resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true });
+    await r.app.init({ resizeTo: host, background: 0x123c69, antialias: false, resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true });
     host.appendChild(r.app.canvas);
     r.app.canvas.style.touchAction = "none";
+    r.app.canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); r.onContextLost?.(); });
+    r.app.canvas.addEventListener("webglcontextrestored", () => { r.roads.redraw(r.view.zoom); r.onContextRestored?.(); });
     r.root.addChild(r.base, r.overlay, r.roads.container, r.labels); r.app.stage.addChild(r.root);
     r.app.renderer.on("resize", () => r.applyView());
     return r;

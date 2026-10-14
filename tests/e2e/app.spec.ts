@@ -168,7 +168,7 @@ test("開通の儀: invalid line is refused with a reason, valid lines start the
   const inTokyo = await page.evaluate(() => { const a = (window as any).__kfm, w = a.world; const t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; });
   await draw(page, tokyo, inTokyo);
   expect(await page.textContent("#cer-status-fudo1")).toContain("✓"); expect(await page.isDisabled("#cer-go")).toBe(false);
-  await page.click("#cer-go");
+  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 60000 });
   expect(await app(page, "a => !!a.sim && a.sim.ceremonyDone && a.sim.speed")).toBe(1);
   expect(await app(page, "a => Object.values(a.sim.routes).filter(r => (r.grade === 'national' && r.number === 1 && r.scope === 'JP') || (r.grade === 'fu' && r.number === 1 && r.scope === 'JP-13')).length")).toBe(2);
   expect(await app(page, "a => Object.values(a.sim.routes).some(r => /酷道|腐道|険道/.test(r.name))")).toBe(false);
@@ -182,7 +182,7 @@ test("time controls, road layer updates without rebuilding terrain, status HUD",
   const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市");
   await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, nagoya); await page.click("#tool-cer-fudo1");
   const far = await page.evaluate(() => { const w = (window as any).__kfm.world, t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; });
-  await draw(page, tokyo, far); await page.click("#cer-go");
+  await draw(page, tokyo, far); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 60000 });
   const sprite0 = await app(page, "a => a.r.base.children.length");
   await page.click("#speed-20"); expect(await page.getAttribute("#speed-20", "aria-pressed")).toBe("true"); expect(await page.getAttribute("#speed-1", "aria-pressed")).toBe("false");
   await page.waitForFunction(() => (window as any).__kfm.sim.month >= 40, null, { timeout: 30000 });
@@ -201,7 +201,7 @@ test("roads survive reload; mismatching map quarantines roads instead of misplac
   const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市");
   await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, nagoya); await page.click("#tool-cer-fudo1");
   const far = await page.evaluate(() => { const w = (window as any).__kfm.world, t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; });
-  await draw(page, tokyo, far); await page.click("#cer-go");
+  await draw(page, tokyo, far); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 60000 });
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.persist(); }); const before = await app(page, "a => JSON.stringify(Object.keys(a.sim.edges))");
   await page.waitForTimeout(500); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 60000 });
   expect(await app(page, "a => JSON.stringify(Object.keys(a.sim.edges))")).toBe(before); expect(await app(page, "a => a.s.step")).toBe(6);
@@ -228,7 +228,7 @@ async function startGame(page: Page) {
   const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市");
   await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, nagoya); await page.click("#tool-cer-fudo1");
   const far = await page.evaluate(() => { const w = (window as any).__kfm.world, t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; });
-  await draw(page, tokyo, far); await page.click("#cer-go");
+  await draw(page, tokyo, far); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 60000 });
 }
 test("long absence: catch-up is capped, reported, and never freezes the page", async ({ page }) => {
   const errs = watchErrors(page); await startGame(page);
@@ -268,4 +268,28 @@ test("decline you can see: legend, comparison with 1950, and tap-for-why", async
   expect(await page.isVisible("#why-designation")).toBe(true); const why = await page.textContent("#sheet"); expect(why).toContain("行政指定"); expect(why).toContain("需要"); expect(why).toContain("履歴");
   expect(await app(page, "a => a.selEdge")).not.toBeNull();
   await page.screenshot({ path: "test-results/stage2-why.png" }); expect(errs).toEqual([]);
+});
+
+// ---------------- Issue #7: stability ----------------
+test("a tab that was killed last time restarts in safe mode (stopped, no catch-up) and keeps the save", async ({ page }) => {
+  const errs = watchErrors(page); await startGame(page);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 20; a.persist(true); });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { localStorage.setItem("kfm.run", String(Date.now())); (window as any).__kfm.persist = () => Promise.resolve(true); (window as any).__kfm.markClean = () => {}; });   // simulate a kill: marker left behind, no clean-up
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 60000 });
+  expect(await app(page, "a => a.safeMode")).toBe(true); expect(await app(page, "a => a.sim.speed")).toBe(0); expect(await app(page, "a => a.catching")).toBe(false);
+  expect(await page.textContent("#status")).toContain("安全モード");
+  await page.click("#speed-1"); await page.waitForFunction(() => (window as any).__kfm.sim.month > 0, null, { timeout: 20000 });   // the player can resume
+  expect(errs).toEqual([]);
+});
+test("losing and regaining the WebGL context does not kill the page", async ({ page }) => {
+  const errs = watchErrors(page); await boot(page);
+  const ok = await page.evaluate(async () => { const c = document.querySelector("canvas")!, gl: any = c.getContext("webgl2") ?? c.getContext("webgl"); const ext = gl?.getExtension("WEBGL_lose_context"); if (!ext) return "no-ext"; ext.loseContext(); await new Promise((r) => setTimeout(r, 200)); ext.restoreContext(); await new Promise((r) => setTimeout(r, 600)); return "ok"; });
+  expect(["ok", "no-ext"]).toContain(ok); expect(await app(page, "a => !!a.r.app.canvas.isConnected")).toBe(true);
+  await page.evaluate(() => (window as any).__kfm.go(1)); expect(await app(page, "a => a.s.step")).toBe(1); expect(errs).toEqual([]);
+});
+test("the road layer reuses its drawing objects: repeated redraws do not grow the scene", async ({ page }) => {
+  await startGame(page); await page.click("#speed-0");
+  const counts = await page.evaluate(() => { const a = (window as any).__kfm, layer = a.r.roads.container; const count = (c: any): number => 1 + (c.children ?? []).reduce((s: number, k: any) => s + count(k), 0); const before = count(layer); for (let i = 0; i < 60; i++) { a.compareYear = i % 2 ? 1950 : null; a.renderRoads(); a.r.roads.redraw(a.r.view.zoom); } return { before, after: count(layer) }; });
+  expect(counts.after).toBeLessThanOrEqual(counts.before + 70);   // signs are pooled (<= 60); nothing is added per redraw
 });

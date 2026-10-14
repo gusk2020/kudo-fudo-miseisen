@@ -25,6 +25,15 @@ function pattern(g: Graphics, pts: Vec[], dash: number[]) {
 }
 export class RoadLayer {
   container = new Container(); private last: RoadArgs | null = null; private sig = "";
+  // Everything below is created once and reused: creating and destroying Graphics/Text on every redraw leaked ~130 KB each time (Issue #7).
+  private g = Object.fromEntries(["halo", "ghost", "plan", "cas", "old", "fillDash", "fill", "mid", "nodes", "sel", "ov"].map((k) => [k, new Graphics()])) as Record<string, Graphics>;
+  private signLayer = new Container(); private signs: { c: Container; bg: Graphics; t: Text; nk: Text }[] = [];
+  constructor() { for (const k of ["halo", "ghost", "plan", "cas", "old", "fillDash", "fill", "mid", "nodes", "sel"]) this.container.addChild(this.g[k]); this.container.addChild(this.signLayer, this.g.ov); }
+  private sign(i: number) {
+    let s = this.signs[i];
+    if (!s) { const c = new Container(), bg = new Graphics(), t = new Text({ text: "", style: { fontSize: 10, fontWeight: "700", fill: 0xffffff } }), nk = new Text({ text: "", style: { fontSize: 9, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } } }); t.anchor.set(0.5); nk.anchor.set(0.5); nk.position.set(0, 16); c.addChild(bg, t, nk); this.signLayer.addChild(c); s = this.signs[i] = { c, bg, t, nk }; }
+    return s;
+  }
   /** Cheap change detector so a monthly tick that changed nothing visible costs nothing. */
   static signature(a: RoadArgs, zoom: number): string {
     let h = 0; const s = a.sim;
@@ -34,13 +43,14 @@ export class RoadLayer {
   set(a: RoadArgs, zoom: number) { this.last = a; const sg = RoadLayer.signature(a, zoom); if (sg === this.sig) return false; this.sig = sg; this.draw(a, zoom); return true; }
   redraw(zoom: number) { if (this.last) { this.sig = ""; this.set(this.last, zoom); } }
   private draw(a: RoadArgs, zoom: number) {
-    this.container.removeChildren().forEach((c) => c.destroy({ children: true }));
+    for (const k of Object.keys(this.g)) this.g[k].clear();
+    let count = 0;
     const px = (n: number) => n / zoom, { sim, w } = a;
     if (sim && w) {
       const best = new Map<string, Grade>(), nickGrade = new Map<string, Grade>();
       for (const r of Object.values(sim.routes)) if (r.active) for (const id of [...r.edges.map((x) => x.edgeId), ...r.oldEdges]) { const b = best.get(id); if (!b || GRADE_RANK[r.grade] > GRADE_RANK[b]) best.set(id, r.grade); }
       const planned = new Map<string, string>(); for (const p of Object.values(sim.projects)) if (p.status !== "open" && p.status !== "abolished") for (const id of p.edgeIds) planned.set(id, p.status);
-      const ghost = new Graphics(), plan = new Graphics(), halo = new Graphics(), shapes = new Map<string, Vec[]>(), cas = new Graphics(), fill = new Graphics(), mid = new Graphics(), fillDash = new Graphics(), old = new Graphics();
+      const { ghost, plan, halo, cas, fill, mid, fillDash, old } = this.g, shapes = new Map<string, Vec[]>();
       const hasRoadLayer = a.layers.roads;
       for (const e of Object.values(sim.edges)) {
         const pts = edgeShape(w, sim, e); shapes.set(e.id, pts); const g = best.get(e.id), wd = (g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8), col = condColour(e.quality), isOld = e.bypassedBy.length > 0;
@@ -65,34 +75,31 @@ export class RoadLayer {
           if (st === "building" && e.built > 0) { const n = Math.max(1, Math.floor(pts.length * e.built)); plan.moveTo(pts[0][0], -pts[0][1]); for (const q of pts.slice(0, n + 1)) plan.lineTo(q[0], -q[1]); plan.stroke({ width: px(3), color: 0x3aa0ff }); }
         }
       }
-      if (a.sel && shapes.has(a.sel)) { const pts = shapes.get(a.sel)!, s2 = new Graphics(); s2.moveTo(pts[0][0], -pts[0][1]); for (const q of pts.slice(1)) s2.lineTo(q[0], -q[1]); s2.stroke({ width: px(9), color: 0xffffff, alpha: 0.55, cap: "round", join: "round" }); this.container.addChild(s2); }
-      this.container.addChild(halo, ghost, plan, cas, old, fillDash, fill, mid);
-      const nodes = new Graphics();
+      if (a.sel && shapes.has(a.sel)) { const pts = shapes.get(a.sel)!, s2 = this.g.sel; s2.moveTo(pts[0][0], -pts[0][1]); for (const q of pts.slice(1)) s2.lineTo(q[0], -q[1]); s2.stroke({ width: px(9), color: 0xffffff, alpha: 0.55, cap: "round", join: "round" }); }
+      const nodes = this.g.nodes;
       if (hasRoadLayer) for (const n of Object.values(sim.nodes)) { if (n.kind === "pass") nodes.poly([n.pos[0], -n.pos[1] - px(6), n.pos[0] - px(5), -n.pos[1] + px(3), n.pos[0] + px(5), -n.pos[1] + px(3)]).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x222222 }); else if (n.kind === "village" && zoom >= 0.5) nodes.circle(n.pos[0], -n.pos[1], px(2.4)).fill({ color: 0xe8e0c8 }).stroke({ width: px(0.8), color: 0x333333 }); }
-      this.container.addChild(nodes);
       if (a.layers.signs && zoom >= 0.28) {
-        let count = 0;
         for (const r of Object.values(sim.routes).sort((p, q) => GRADE_RANK[q.grade] - GRADE_RANK[p.grade] || p.number - q.number)) {
           if (!r.active || count >= 60 || (zoom < 0.55 && r.grade !== "national") || (zoom < 1.1 && r.grade === "fu" && r.number !== 1)) continue;
           const es = r.edges.map((x) => sim.edges[x.edgeId]).filter((e) => e && e.state === "open" && e.built >= 1).sort((p, q) => q.lengthKm - p.lengthKm || (p.id < q.id ? -1 : 1)); if (!es.length) continue;
-          const pts = shapes.get(es[0].id)!, m = pts[Math.floor(pts.length / 2)], c = new Container(); c.position.set(m[0], -m[1]); c.scale.set(1 / zoom);
-          const sg = new Graphics(), col = r.grade === "national" ? 0xb02020 : r.grade === "fu" ? 0x7b3fa0 : 0x1f7a4d;
+          const pts = shapes.get(es[0].id)!, m = pts[Math.floor(pts.length / 2)], sp = this.sign(count), c = sp.c; c.visible = true; c.position.set(m[0], -m[1]); c.scale.set(1 / zoom);
+          const sg = sp.bg, col = r.grade === "national" ? 0xb02020 : r.grade === "fu" ? 0x7b3fa0 : 0x1f7a4d; sg.clear();
           if (r.grade === "national") sg.circle(0, 0, 11).fill({ color: col }).stroke({ width: 2, color: 0xffffff });
           else if (r.grade === "ken") sg.roundRect(-12, -9, 24, 18, 4).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
           else sg.poly([0, -12, 12, -2, 7, 11, -7, 11, -12, -2]).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
-          const t = new Text({ text: `${GRADE_SHORT[r.grade]}${r.number}`, style: { fontSize: r.grade === "national" ? 10 : 9, fontWeight: "700", fill: r.grade === "national" ? 0xffffff : col } }); t.anchor.set(0.5); c.addChild(sg, t);
-          if (r.nick) { const nk = new Text({ text: NICK_SHORT[r.grade], style: { fontSize: 9, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } } }); nk.anchor.set(0.5); nk.position.set(0, 16); c.addChild(nk); }
-          c.label = routeLabel(r); this.container.addChild(c); count++;
+          sp.t.text = `${GRADE_SHORT[r.grade]}${r.number}`; sp.t.style.fontSize = r.grade === "national" ? 10 : 9; sp.t.style.fill = r.grade === "national" ? 0xffffff : col;
+          sp.nk.visible = r.nick; if (r.nick) sp.nk.text = NICK_SHORT[r.grade];
+          c.label = routeLabel(r); count++;
         }
       }
     }
-    const ov = new Graphics();
+    for (let i = count; i < this.signs.length; i++) this.signs[i].c.visible = false;
+    const ov = this.g.ov;
     for (const c of a.cer) {
       if (c.path && c.path.length > 1) { ov.moveTo(c.path[0][0], -c.path[0][1]); for (const q of c.path.slice(1)) ov.lineTo(q[0], -q[1]); ov.stroke({ width: px(5), color: c.ok ? 0x45e06f : 0xff5252, alpha: 0.8, cap: "round", join: "round" }); }
       if (c.pts.length > 1) { ov.moveTo(c.pts[0][0], -c.pts[0][1]); for (const q of c.pts.slice(1)) ov.lineTo(q[0], -q[1]); ov.stroke({ width: px(2), color: 0xffffff, alpha: 0.95 }); }
     }
     if (a.pin) { ov.circle(a.pin[0], -a.pin[1], px(7)).fill({ color: 0xff3b6b }).stroke({ width: px(2), color: 0xffffff }); }
-    this.container.addChild(ov);
   }
-  clear() { this.last = null; this.sig = ""; this.container.removeChildren().forEach((c) => c.destroy({ children: true })); }
+  clear() { this.last = null; this.sig = ""; for (const k of Object.keys(this.g)) this.g[k].clear(); for (const sg of this.signs) sg.c.visible = false; }
 }
