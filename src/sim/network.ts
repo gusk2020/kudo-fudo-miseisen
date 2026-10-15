@@ -100,9 +100,9 @@ export function splitEdge(sim: SimState, w: World, edgeId: string, at: number, n
   return id2;
 }
 /** Splits a stretch into [before, tunnel|bridge, after]: a tunnel where the line runs far above its own ends, a bridge across a wide river floodplain. */
-export function facilitySplit(w: World, mode: Mode, part: number[]): { cells: number[]; fac?: "tunnel" | "bridge" }[] {
+export function facilitySplit(w: World, mode: Mode, part: number[], fine = false): { cells: number[]; fac?: "tunnel" | "bridge" }[] {
   if (part.length < 5) return [{ cells: part }];
-  const last = part.length - 1, ends = Math.max(w.elevM(part[0]), w.elevM(part[last])), thr = ends + (mode === "rail" ? 500 : 800), minLen = mode === "rail" ? 2 : 3;
+  const last = part.length - 1, ends = Math.max(w.elevM(part[0]), w.elevM(part[last])), thr = ends + (fine ? (mode === "rail" ? 400 : 600) : (mode === "rail" ? 500 : 800)), minLen = fine ? 2 : mode === "rail" ? 2 : 3;
   const longest = (pred: (k: number) => boolean, min: number): [number, number] | null => {
     let best: [number, number] | null = null, s = -1;
     for (let k = 1; k < last; k++) { if (pred(k)) { if (s < 0) s = k; } else if (s >= 0) { if (k - s >= min && (!best || k - s > best[1] - best[0])) best = [s, k]; s = -1; } }
@@ -111,7 +111,7 @@ export function facilitySplit(w: World, mode: Mode, part: number[]): { cells: nu
   };
   let tun = longest((k) => w.elevM(part[k]) >= thr, minLen);
   if (tun && tun[1] - tun[0] > 6) { const c = Math.floor((tun[0] + tun[1]) / 2); tun = [c - 3, c + 3]; }   // a tunnel is at most about 30 km on this grid: the rest of a high stretch is open line
-  const bri = tun ? null : longest((k) => !!w.river[part[k]], 2), hit = tun ?? bri; if (!hit) return [{ cells: part }];
+  const bri = tun ? null : longest((k) => !!w.river[part[k]], fine ? 1 : 2), hit = tun ?? bri; if (!hit) return [{ cells: part }];
   const fac: "tunnel" | "bridge" = tun ? "tunnel" : "bridge", out: { cells: number[]; fac?: "tunnel" | "bridge" }[] = [], pre = part.slice(0, hit[0]), mid = part.slice(hit[0] - 1, hit[1] + 1), post = part.slice(hit[1]);
   if (pre.length >= 2) out.push({ cells: pre }); out.push({ cells: mid, fac }); if (post.length >= 2) out.push({ cells: post });
   return out;
@@ -154,7 +154,7 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     if (parts.length === 2) nodeAtCell(sim, w, idx, seg[hi], "pass");
     // Stage 3: a long tunnel or a long bridge is a facility in its own right, an edge of its own that is built (and costs) separately
     const pieces: { cells: number[]; fac?: "tunnel" | "bridge" }[] = [];
-    for (const part of parts) for (const pc of o.facilities ? facilitySplit(w, mode, part) : [{ cells: part }]) pieces.push(pc);
+    for (const part of parts) for (const pc of o.facilities ? facilitySplit(w, mode, part, !!sim.tech) : [{ cells: part }]) pieces.push(pc);
     for (const pc of pieces) { if (pc.fac) { nodeAtCell(sim, w, idx, pc.cells[0], "junction"); nodeAtCell(sim, w, idx, pc.cells[pc.cells.length - 1], "junction"); } }
     for (const { cells: part, fac } of pieces) {
       const pa = idx.nodeByCell.get(part[0]) ?? nodeAtCell(sim, w, idx, part[0], "junction"), pb = idx.nodeByCell.get(part[part.length - 1]) ?? nodeAtCell(sim, w, idx, part[part.length - 1], "junction"), id = newId(sim, "edge");

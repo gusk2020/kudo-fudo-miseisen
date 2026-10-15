@@ -43,7 +43,7 @@ export function buildWorld(t: TerrainResult, seed: number): World {
   return { t, nx, ny, cell, N, cities, cityById, cityByCell, river, cellPos, cellOf, elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
 }
 
-export interface PathOpts { bias?: (k: number) => number; allow?: (k: number) => boolean; roadCells?: { has(k: number): boolean }; margin?: number; rail?: boolean }
+export interface PathOpts { bias?: (k: number) => number; allow?: (k: number) => boolean; roadCells?: { has(k: number): boolean }; margin?: number; rail?: boolean; ease?: number }   // ease 0..1: how much better tunnelling and bridging make mountains and rivers to cross (tech.ts); 0 = the older cost
 const D8: [number, number, number][] = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.4142], [-1, 1, 1.4142], [1, -1, 1.4142], [-1, -1, 1.4142]];
 
 /** Least-cost path on the 5 km grid. Land only, never through lakes, never between islands. */
@@ -64,9 +64,10 @@ export function pathfind(w: World, from: number, to: number, o: PathOpts = {}): 
       const a = ci + di, b = cj + dj; if (a < i0 || a > i1 || b < j0 || b > j1) continue;
       const n = b * nx + a; if (t.land[n] !== 1 || t.island[n] !== isl) continue; if (o.allow && !o.allow(n) && n !== to) continue;
       const dkm = sd * cell, slope = Math.abs(t.elev[n] - t.elev[c]) / (dkm * 1000) * 100;
+      const ez = 1 - (o.ease ?? 0);   // what a tunnel or a bridge takes off the cost of rough ground
       let f = o.rail
-        ? 1 + 0.18 * slope + 0.06 * slope * slope + (w.river[n] ? 0.3 : 0) + (t.elev[n] > 1200 ? 0.6 : 0)     // a railway climbs far less than a road
-        : 1 + 0.07 * slope + 0.012 * slope * slope + (w.river[n] ? 0.5 : 0) + (t.ridge[n] > 0.5 ? 0.35 : 0) + (t.elev[n] > 1500 ? 0.5 : 0);
+        ? 1 + ez * (0.18 * slope + 0.06 * slope * slope + (w.river[n] ? 0.3 : 0) + (t.elev[n] > 1200 ? 0.6 : 0))     // a railway climbs far less than a road
+        : 1 + ez * (0.07 * slope + 0.012 * slope * slope + (w.river[n] ? 0.5 : 0) + (t.ridge[n] > 0.5 ? 0.35 : 0) + (t.elev[n] > 1500 ? 0.5 : 0));
       if (o.roadCells?.has(n) && o.roadCells.has(c)) f *= 0.3;
       if (o.bias) f *= o.bias(n);
       const nd = dist[lc] + dkm * f, ln = loc(n);

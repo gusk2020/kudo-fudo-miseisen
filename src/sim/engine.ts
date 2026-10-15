@@ -13,6 +13,7 @@ import { openStraits } from "./straits";
 import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./reform";
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
+import { techAt, TECH_K } from "./tech";
 import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
@@ -58,14 +59,14 @@ export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).yea
 
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
-export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number }
+export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number }
 export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
   const firstCand = opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
   const sim: SimState = {
     schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
     next: { node: 0, edge: 0, route: 0, project: 0, event: 0 }, nodes: {}, edges: {}, routes: {}, projects: {}, cities: {}, settlements: {}, links: [], snaps: [], regionShare: {},
     macro: { mood: 0, budgetBu: 0, maintCoverage: 1 }, routeCounters: {}, events: [], stats: [], skippedMonths: 0, lastWallMs: 0, ceremonyDone: false,
-    operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0) } : {}),
+    operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0) } : {}), ...(opts.stage3 && (firstCand || opts.techK !== undefined) ? { tech: { k: opts.techK ?? TECH_K } } : {}),
   };
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   for (const c of w.cities) sim.cities[c.id] = { pop: c.pop0, popSource: c.popSource, lowAccessYears: 0, industry: Math.round((0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim)) * 1000) / 1000 };
@@ -301,7 +302,7 @@ function monthly(sim: SimState, w: World) {
   // construction: each region funds its own queue; leftovers and the national pool fund the rest
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "road").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
   const pass = (p: SimProject, purse: () => number, take: (n: number) => void) => {
-    const totLen = p.edgeIds.reduce((s, id) => s + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, req = Math.max(0.0001, p.costBu / Math.max(24, totLen * 0.8)), f = Math.min(req, Math.max(0, purse())); take(f);
+    const totLen = p.edgeIds.reduce((s, id) => s + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, tm = sim.tech && p.edgeIds.some((id) => sim.edges[id]?.facility) ? techAt(sim.tech.k, yearOf(sim)).timeMult : 1, req = Math.max(0.0001, p.costBu / Math.max(24 * tm, totLen * 0.8 * tm)), f = Math.min(req, Math.max(0, purse())); take(f);
     if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen);
   };
   const done = new Set<string>();
@@ -365,8 +366,8 @@ function progressProject(sim: SimState, w: World, p: SimProject, f: number, req:
     return;
   }
   let amt = f;
-  const totW = p.edgeIds.reduce((s, id) => s + (sim.edges[id] ? sim.edges[id].lengthKm * facCost(sim.edges[id]) : 0), 0) || 1;
-  for (const id of p.edgeIds) { const e = sim.edges[id]; if (!e || e.built >= 1) continue; const ec = p.costBu * e.lengthKm * facCost(e) / totW, add = Math.min(amt / ec, 1 - e.built); e.built = Math.min(1, e.built + add); amt -= add * ec; if (e.built >= 1) { e.built = 1; e.state = "open"; e.open = true; e.builtMonth = sim.month; if (e.facility) ev(sim, "facility", `${e.facilityName}が開通(${e.facility === "tunnel" ? "トンネル" : "橋"}・${Math.round(e.lengthKm)}km)`, `${projLabel(sim, p)}の一部として`, { edge: e.id, project: p.id }); pushHist(sim, e, `${modeOf(p) === "rail" ? "新線として開業" : p.kind === "bypass" ? "バイパスとして供用開始" : "新設として供用開始"}`); if (modeOf(p) === "rail") { e.quality = 88; e.surface = "paved"; } else { if (y >= 1965 && e.standard === "rural") e.standard = "standard"; if (y >= 1965) { e.surface = "paved"; e.quality = 90; } } } if (amt <= 1e-9) break; }
+  const totW = p.edgeIds.reduce((s, id) => s + (sim.edges[id] ? sim.edges[id].lengthKm * facCost(sim.edges[id], sim) : 0), 0) || 1;
+  for (const id of p.edgeIds) { const e = sim.edges[id]; if (!e || e.built >= 1) continue; const ec = p.costBu * e.lengthKm * facCost(e, sim) / totW, add = Math.min(amt / ec, 1 - e.built); e.built = Math.min(1, e.built + add); amt -= add * ec; if (e.built >= 1) { e.built = 1; e.state = "open"; e.open = true; e.builtMonth = sim.month; if (e.facility) ev(sim, "facility", `${e.facilityName}が開通(${e.facility === "tunnel" ? "トンネル" : "橋"}・${Math.round(e.lengthKm)}km)`, `${projLabel(sim, p)}の一部として`, { edge: e.id, project: p.id }); pushHist(sim, e, `${modeOf(p) === "rail" ? "新線として開業" : p.kind === "bypass" ? "バイパスとして供用開始" : "新設として供用開始"}`); if (modeOf(p) === "rail") { e.quality = 88; e.surface = "paved"; } else { if (y >= 1965 && e.standard === "rural") e.standard = "standard"; if (y >= 1965) { e.surface = "paved"; e.quality = 90; } } } if (amt <= 1e-9) break; }
   if (p.edgeIds.every((id) => (sim.edges[id]?.built ?? 1) >= 1)) { p.status = "open"; p.statusSince = sim.month; completeProject(sim, w, p); }
   else if (p.stallMonths >= 36) { p.status = "suspended"; p.statusSince = sim.month; ev(sim, "project", `工事中断: ${projLabel(sim, p)}`, `予算不足が36か月続いた(地域の予算${Math.round((sim.regionShare[p.region] ?? 0) * 1000) / 10}%)`, { project: p.id }); }
 }
