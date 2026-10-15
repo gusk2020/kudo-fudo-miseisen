@@ -47,3 +47,6 @@
 
 ## Issue #13（Stage 4 再改修）
 `docs/STAGE4_ISSUE13.md` に記録。ブランチ `claude/stage4-issue13`（Draft PR #14）。
+
+## Issue #15（Stage 5 追加改修）
+`docs/STAGE5_ISSUE15.md` に記録。ブランチ `claude/stage5-issue15`。

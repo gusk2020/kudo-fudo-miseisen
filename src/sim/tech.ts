@@ -21,13 +21,15 @@ type Key = [number, number][];
 const at = (k: Key, y: number) => { if (y <= k[0][0]) return k[0][1]; for (let i = 1; i < k.length; i++) if (y <= k[i][0]) { const [a, va] = k[i - 1], [b, vb] = k[i]; return va + ((vb - va) * (y - a)) / (b - a); } return k[k.length - 1][1]; };
 /** Longest tunnel (km) that can be driven, by technology year. */
 export const TUNNEL_KM: Key = [[1950, 8], [1960, 13], [1975, 22], [1990, 40], [2010, 55], [2050, 70], [2150, 85]];
+/** Longest sea crossing (km of open water) a bridge can span, by technology year. Model values: the real record runs from a few hundred metres (1950) to the Akashi Kaikyo bridge's 4 km main span and 9 km Seto-Ohashi line (1998). */
+export const BRIDGE_KM: Key = [[1950, 1.5], [1960, 3], [1975, 6], [1990, 12], [2010, 20], [2050, 30], [2150, 40]];
 /** Chance a tunnel through hard rock goes ahead without trouble, by technology year (capped at 1). */
 export const ROCK_P: Key = [[1950, 0.4], [1975, 0.6], [2000, 0.8], [2025, 0.92], [2060, 1]];
 export const techYear = (k: number, year: number) => 1950 + k * (year - 1950);
-export interface TechNow { yEff: number; tunnelKm: number; rockP: number; costMult: number; timeMult: number }
+export interface TechNow { yEff: number; tunnelKm: number; bridgeKm: number; rockP: number; costMult: number; timeMult: number }
 export function techAt(k: number, year: number): TechNow {
   const yEff = techYear(k, year);
-  return { yEff, tunnelKm: at(TUNNEL_KM, yEff), rockP: Math.min(1, Math.max(0, at(ROCK_P, yEff))), costMult: 1 / k, timeMult: 1 / k };
+  return { yEff, tunnelKm: at(TUNNEL_KM, yEff), bridgeKm: at(BRIDGE_KM, yEff), rockP: Math.min(1, Math.max(0, at(ROCK_P, yEff))), costMult: 1 / k, timeMult: 1 / k };
 }
 /** A cell stretch is "hard rock" when it stays high: the rock-success roll applies to tunnels that run above this elevation. */
 export const HARD_ROCK_M = 1200;

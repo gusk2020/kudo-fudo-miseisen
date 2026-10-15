@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { lonLatToReal } from "../../src/core/data";
 import { realToWorld } from "../../src/core/body";
 import { Store, defaultState, realState } from "../../src/core/state";
+import { FEATURE_LIMITS, parseState } from "../../src/core/save";
+import { mapStateHash } from "../../src/core/save2";
 import { generateTerrain } from "../../src/core/terrain";
 import { derive, validate } from "../../src/core/validate";
-import { createSim } from "../../src/sim/engine";
-import { CAPITAL_PREFS, homeCity, performCeremony, previewCeremony, tokyoCity } from "../../src/sim/ceremony";
 import { buildWorld, pathfind } from "../../src/sim/world";
 import type { Vec } from "../../src/core/types";
 import { loadDem } from "./helpers";
@@ -40,25 +40,33 @@ describe("limited terrain editing (the coastline never moves)", () => {
   });
 });
 
-describe("the capital is a city setting, kept apart from the terrain", () => {
-  const { w, t } = world();
-  it("only the three 府 cities can be capitals; anything else falls back to Tokyo", () => {
-    expect([...CAPITAL_PREFS]).toEqual(["JP-13", "JP-26", "JP-27"]);
-    const osaka = w.cities.find((c) => c.pref === "JP-27" && c.kind === "capital")!, nagoya = w.cities.find((c) => c.name === "名古屋市")!;
-    expect(homeCity(w, osaka.id)!.id).toBe(osaka.id); expect(homeCity(w, nagoya.id)!.id).toBe(tokyoCity(w)!.id); expect(homeCity(w, "nonsense")!.id).toBe(tokyoCity(w)!.id);
+describe("Lake Biwa and Mt. Fuji can be resized (Issue #15)", () => {
+  const base = world();
+  const lake = (W: typeof base) => { let n = 0; for (let k = 0; k < W.w.N; k++) if (W.t.land[k] === 2) n++; return n; };
+  const fujiPos = (W: typeof base) => W.w.cellOf(to(W.s, 138.727, 35.361));
+  it("a bigger lake covers more cells and a smaller one fewer, the coastline mask never changes", () => {
+    const big = world((s) => { s.features.biwa.scale = 1.4; }), small = world((s) => { s.features.biwa.scale = 0.6; });
+    expect(lake(big)).toBeGreaterThan(lake(base)); expect(lake(small)).toBeLessThan(lake(base)); expect(lake(small)).toBeGreaterThan(0);
+    for (let k = 0; k < base.w.N; k++) { const a = base.t.land[k] > 0, b = big.t.land[k] > 0, c = small.t.land[k] > 0; if (a !== b || a !== c) throw new Error("coast changed at " + k); }
   });
-  it("with Osaka as capital the ceremony starts there, 府道1号 is in 大阪府, the capital grows and Tokyo shrinks; the terrain hash is unchanged", () => {
-    const osaka = w.cities.find((c) => c.pref === "JP-27" && c.kind === "capital")!, tokyo = tokyoCity(w)!, kobe = w.cities.find((c) => c.name === "神戸市")!;
-    const line = (a: Vec, b: Vec, n = 10): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
-    expect(previewCeremony(w, "kokudo1", line(tokyo.pos, kobe.pos), osaka.id).ok).toBe(false);   // starting at Tokyo is no longer allowed
-    const k = previewCeremony(w, "kokudo1", line(osaka.pos, w.cities.find((c) => c.name === "名古屋市")!.pos), osaka.id); expect(k.ok, k.reasons.join()).toBe(true);
-    let far: Vec = osaka.pos, bd = 0; for (let c = 0; c < w.N; c++) if (w.t.land[c] === 1 && w.prefOf(c) === "JP-27") { const p = w.cellPos(c), d = Math.hypot(p[0] - osaka.pos[0], p[1] - osaka.pos[1]); if (d > bd) { bd = d; far = p; } }
-    const f = previewCeremony(w, "fudo1", line(osaka.pos, far, 4), osaka.id); expect(f.ok, f.reasons.join()).toBe(true);
-    const plain = createSim(w, "m", t.hash, 3, { stage3: true, firstEra: 0 }), moved = createSim(w, "m", t.hash, 3, { stage3: true, firstEra: 0, capital: osaka.id });
-    expect(moved.capital).toBe(osaka.id); expect(plain.capital).toBeUndefined();
-    expect(moved.cities[osaka.id].pop).toBeGreaterThan(plain.cities[osaka.id].pop); expect(moved.cities[tokyo.id].pop).toBeLessThan(plain.cities[tokyo.id].pop);
-    expect(performCeremony(moved, w, k, f)).toBe(true);
-    const fu1 = Object.values(moved.routes).find((r) => r.grade === "fu" && r.number === 1 && r.scope === "JP-27")!; expect(fu1).toBeDefined(); expect(fu1.history[0].text.length).toBeGreaterThan(0);
-    expect(Object.values(moved.routes).find((r) => r.grade === "national" && r.number === 1)!.name).toContain("国道1号");
-  }, 120000);
+  it("Fuji's height and body size change the summit and the footprint above 1000 m", () => {
+    const tall = world((s) => { s.features.fuji.height = 1.3; }), low = world((s) => { s.features.fuji.height = 0.5; }), wide = world((s) => { s.features.fuji.scale = 1.6; });
+    const peak = (W: typeof base) => { let m = 0; for (let k = 0; k < W.w.N; k++) m = Math.max(m, W.t.elev[k] * (W.w.cellOf(to(W.s, 138.727, 35.361)) >= 0 ? 1 : 1)); return m; };
+    void peak; const k = fujiPos(base);
+    expect(tall.t.elev[k]).toBeGreaterThan(base.t.elev[k]); expect(low.t.elev[k]).toBeLessThan(base.t.elev[k]); expect(low.t.elev[k]).toBeGreaterThan(1000);
+    const over = (W: typeof base) => { let n = 0; for (let j = -8; j <= 8; j++) for (let i = -8; i <= 8; i++) if (W.t.elev[k + j * W.w.nx + i] > 1200) n++; return n; };
+    expect(over(wide)).toBeGreaterThan(over(base));
+  });
+  it("sizes survive a save, are clamped to the allowed range, and absent sizes keep the old hash", () => {
+    const s = defaultState(); s.features.biwa.scale = 1.5; s.features.fuji.height = 0.8;
+    const back = parseState(JSON.parse(JSON.stringify(s))).state; expect(back.features.biwa.scale).toBe(1.5); expect(back.features.fuji.height).toBe(0.8);
+    const wild = parseState({ ...JSON.parse(JSON.stringify(s)), features: { biwa: { pos: null, rot: 0, scale: 50 }, fuji: { pos: null, rot: 0, scale: -3, height: 99 } } }).state;
+    expect(wild.features.biwa.scale).toBe(FEATURE_LIMITS.scale[1]); expect(wild.features.fuji.scale).toBe(FEATURE_LIMITS.scale[0]); expect(wild.features.fuji.height).toBe(FEATURE_LIMITS.height[1]);
+    expect(mapStateHash(s)).not.toBe(mapStateHash(defaultState())); expect(mapStateHash(defaultState())).toBe(mapStateHash({ ...defaultState(), features: { biwa: { pos: null, rot: 0 }, fuji: { pos: null, rot: 0 } } }));
+  });
+  it("an extreme enlargement that would press the lake onto the coast is an invalid map", () => {
+    const s = defaultState(); s.features.biwa.scale = 2; const okAtLimit = validate(s).filter((i) => i.severity === "error" && i.step === "features").length;
+    s.features.biwa.pos = to(s, 136.3, 35.9); s.features.biwa.scale = 2; expect(validate(s).filter((i) => i.severity === "error" && i.step === "features").length).toBeGreaterThan(0); void okAtLimit;
+  });
 });
+

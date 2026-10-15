@@ -113,7 +113,10 @@ export function applyYearEvents(sim: SimState, y: number): void {
   const era = stanceAt(sim, y); if (era === "kobun") return;
   for (const h of HIST_EVENTS) {
     if (h.year !== y || y > REAL_HISTORY_UNTIL) continue;
-    const v: Variant | undefined = h[era as "heisei"] ?? h.all; if (!v) continue;
+    let v: Variant | undefined = h[era as "heisei"] ?? h.all;
+    // the air and sea stances have no scripted domestic history of their own: they read the 均衡 line, marked as the game's invention, with a small push toward their own mode
+    if (!v && (era === "kuuro" || era === "kairo") && h.heisei) { const b = h.heisei, push = era === "kuuro" ? { airBias: 0.08 } : { seaBias: 0.08 }; v = { ...b, real: false, text: `${b.text}(${era === "kuuro" ? "空路重視" : "海路重視"}の世界線では別の経緯・架空)`, d: { ...b.d, ...push } }; }
+    if (!v) continue;
     push(sim, y, h.id, v.text, v.real, v.d, v.years, v.cause ?? "", h.scope);
   }
   if (y > REAL_HISTORY_UNTIL && (y - REAL_HISTORY_UNTIL) % 1 === 0) {
@@ -131,6 +134,6 @@ function push(sim: SimState, y: number, id: string, text: string, real: boolean,
   ev(sim, scope === "intl" ? "world" : "domestic", `${tag}${text}`, `${cause || "世界の動き"}${eff}`, {});
   if (sim.mods.length > 160) sim.mods.splice(0, sim.mods.length - 160);
 }
-export const DIAL_SHORT: Record<keyof Dials, string> = { roadShare: "道路配分", carBias: "自動車選好", railBias: "鉄道選好", freightRail: "貨物鉄道選好", jnrSubsidy: "国鉄補助", jnrFare: "国鉄運賃収入", railBuild: "鉄道建設", hwyBuild: "道路建設", hsr: "高速交通", growth: "成長", austerity: "維持費余裕", privatize: "民営化" };
+export const DIAL_SHORT: Record<keyof Dials, string> = { roadShare: "道路配分", carBias: "自動車選好", railBias: "鉄道選好", freightRail: "貨物鉄道選好", jnrSubsidy: "国鉄補助", jnrFare: "国鉄運賃収入", railBuild: "鉄道建設", hwyBuild: "道路建設", hsr: "高速交通", growth: "成長", austerity: "維持費余裕", privatize: "民営化", airBias: "空路選好", seaBias: "海路選好" };
 export const effectText = (d: Delta) => Object.entries(d).map(([k, v]) => `${DIAL_SHORT[k as keyof Dials]}${(v as number) > 0 ? "+" : ""}${Math.round((v as number) * 100)}%`).join("・");
 export type { EraKey };

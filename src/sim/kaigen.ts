@@ -27,9 +27,16 @@ export interface EraCand { name: string; stance: EraKey; real: boolean; note: st
 export interface EraEntry { name: string; start: number; stance: EraKey; real: boolean; picked: number; of: number; auto: boolean }
 export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number }
 
-const CYCLE: EraKey[] = ["heisei", "shubun", "shoka"];
-export const STANCE_LABEL: Record<EraKey, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kobun: "旧版" };
-const cyc = (names: string[], note: (n: string) => string): EraCand[] => names.map((name, i) => ({ name, stance: CYCLE[i % 3], real: true, note: note(name) }));
+/** The policy stances a candidate can carry, in the order they are handed out. Issue #15 added 空路重視 and 海路重視 to the original three. */
+export const STANCES: EraKey[] = ["heisei", "shubun", "shoka", "kuuro", "kairo"];
+const CYCLE = STANCES;
+export const STANCE_LABEL: Record<EraKey, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kuuro: "空路重視", kairo: "海路重視", kobun: "旧版" };
+/**
+ * ERA -> STANCE TABLE (the one place that says which candidate leans which way). PROVISIONAL, and not historical: the real candidates keep their real names, and the
+ * lean is handed out by position in the list the sources give, cycling 均衡 -> 道路 -> 鉄道 -> 空路 -> 海路. 1989 has only three real candidates, so it keeps the three it has always had
+ * (no air / sea candidate exists there; the real names are not stretched to fill a gap). `eraTable()` prints it for the docs and a test pins it.
+ */
+const cyc = (names: string[], note: (n: string) => string): EraCand[] => names.map((name, i) => ({ name, stance: CYCLE[i % CYCLE.length], real: true, note: note(name) }));
 
 /** 1945: the candidates passed over in 1926 (昭和 itself excluded). Order: 宮内省案, then 内閣案. */
 export const CAND_1945: EraCand[] = cyc(["神化", "元化", "神和", "同和", "継明", "順明", "明保", "寛安", "元安", "立成", "定業", "光文", "章明", "協中"], (n) => `1926年の${["神化", "元化", "神和", "同和", "継明", "順明", "明保", "寛安", "元安"].includes(n) ? "宮内省案" : "内閣案"}`);
@@ -37,6 +44,7 @@ export const CAND_1945: EraCand[] = cyc(["神化", "元化", "神和", "同和",
 export const CAND_1989: EraCand[] = [
   { name: "平成", stance: "heisei", real: true, note: "1989年の実際の新元号" }, { name: "修文", stance: "shubun", real: true, note: "1989年の候補(落選)" }, { name: "正化", stance: "shoka", real: true, note: "1989年の候補(落選)" }];
 export const CAND_2019: EraCand[] = cyc(["令和", "英弘", "久化", "広至", "万保"], (n) => (n === "令和" ? "2019年の実際の新元号" : "2019年の候補(落選)"));
+export const eraTable = () => [["1945(1926年の落選案)", CAND_1945], ["1989", CAND_1989], ["2019", CAND_2019]].map(([y, l]) => `${y}: ` + (l as EraCand[]).map((c) => `${c.name}=${STANCE_LABEL[c.stance]}`).join(" / ")).join("\n");
 export const FIRST_YEAR = 1945, KAIGEN_YEARS = { second: 1989, third: 2019 } as const;
 
 // ---------------------------------------------------------------- future eras (PROVISIONAL, prototype rules) ----------
@@ -96,7 +104,7 @@ export function futureCandidates(year: number, taken: Set<string> = new Set()): 
   const seen = new Set<string>(), out: EraCand[] = [];
   for (const r of rows.sort((a, b) => a.strokes - b.strokes || a.key - b.key)) {
     if (seen.has(r.name) || USED_NAMES.has(r.name) || taken.has(r.name) || FORBIDDEN_WORDS.has(r.name) || [...r.name].some((ch) => FORBIDDEN_CHARS.has(ch))) continue;
-    seen.add(r.name); out.push({ name: r.name, stance: CYCLE[out.length % 3], real: false, note: `暫定規則で生成(${r.strokes}画・${e.label}年)` });
+    seen.add(r.name); out.push({ name: r.name, stance: CYCLE[out.length % CYCLE.length], real: false, note: `暫定規則で生成(${r.strokes}画・${e.label}年)` });
     if (out.length >= FUTURE_CANDIDATES) break;
   }
   return out;

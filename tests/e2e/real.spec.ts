@@ -16,10 +16,10 @@ async function pickEra(page: Page, stance: string) { await page.selectOption("#e
 async function startReal(page: Page, era = "heisei") {
   await bootReal(page);
   await pickEra(page, era);
-  const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市");
-  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, nagoya); await page.click("#tool-cer-fudo1");
-  const far = await page.evaluate(() => { const w = (window as any).__kfm.world, t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; }) as [number, number];
-  await draw(page, tokyo, far); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  // Issue #15: the player draws one road only, from the capital (Tokyo by default) to the sub-capital (Osaka by default)
+  const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市");
+  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, osaka);
+  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
 }
 
 test("real Japan opens by default: finalised, step 6, no map-editing controls, era choice before the ceremony", async ({ page }) => {
@@ -161,7 +161,7 @@ test("defaults to the road map with route-name text hidden; legend toggles filte
 test("開通の儀 takes several strokes, undo/redo/restart work per kind, and a half-drawn ceremony survives a reload", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
   await pickEra(page, "heisei");
-  const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市"), mid: [number, number] = [(tokyo[0] + nagoya[0]) / 2, (tokyo[1] + nagoya[1]) / 2];
+  const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "大阪市"), mid: [number, number] = [(tokyo[0] + nagoya[0]) / 2, (tokyo[1] + nagoya[1]) / 2];
   await page.click("#tool-cer-kokudo1");
   await draw(page, tokyo, mid); await draw(page, mid, nagoya);
   expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
@@ -208,14 +208,102 @@ test("限定の地形編集: capital, Alps and Fuji can be set before the first 
   await page.click("#alps-real"); expect(await app(page, "a => !!a.s.ridges.ne && !!a.s.ridges.sw")).toBe(true);
   await page.waitForFunction((h) => (window as any).__kfm.terrain?.hash && (window as any).__kfm.terrain.hash !== h, hash0, { timeout: 60000 });
   await page.click("#edit-undo"); expect(await app(page, "a => a.s.ridges.ne === null")).toBe(true); await page.click("#edit-redo"); expect(await app(page, "a => !!a.s.ridges.ne")).toBe(true);
-  const osaka = await app(page, "a => a.world.cities.find((c) => c.pref === 'JP-27' && c.kind === 'capital').id") as string;
-  await page.click("#capital-" + osaka); expect(await app(page, "a => a.s.capital")).toBe(osaka);
-  expect(await page.textContent("#tool-cer-kokudo1")).toContain("大阪府");
+  await page.selectOption("#seat-capital", "JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47");   // Okinawa
+  await page.selectOption("#seat-sub", "HK-SAP"); expect(await app(page, "a => a.s.subCapital")).toBe("HK-SAP");   // Sapporo
+  await page.selectOption("#seat-palace", "JP-26"); expect(await app(page, "a => a.s.palace")).toBe("JP-26");
+  expect(await page.locator("#seat-capital option").count()).toBe(49); expect(await page.locator("#seat-sub option[value='JP-47']").evaluate((o: HTMLOptionElement) => o.disabled)).toBe(true);   // the capital cannot be chosen again as the sub-capital
+  expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇");
   expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(0);   // the outline is never touched
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
-  expect(await app(page, "a => a.s.capital && !!a.s.ridges.ne")).toBeTruthy(); expect(await app(page, "a => a.s.islands")).toBe(true);
+  expect(await app(page, "a => a.s.capital === 'JP-47' && a.s.subCapital === 'HK-SAP' && a.s.palace === 'JP-26' && !!a.s.ridges.ne")).toBe(true); expect(await app(page, "a => a.s.islands")).toBe(true);
   // first road laid -> locked
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim = { fake: true }; });
   expect(await app(page, "a => a.commitEdit((s) => { s.capital = 'x'; })")).toBe(false); await page.evaluate(() => { (window as any).__kfm.sim = null; });
+  expect(errs).toEqual([]);
+});
+
+test("政策介入: 「選択しない」が最初から並び、「この選択にする」は分野の直下、持ち点は繰り越される", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "heisei");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "priority"; a.sim.speed = 20; });
+  await page.waitForFunction(() => (window as any).__kfm.sim.policy.pending, null, { timeout: 60000 });
+  await page.evaluate(() => { (window as any).__kfm.tickClock(); });
+  await expect(page.locator("#pol-window")).toBeVisible(); await expect(page.locator("#pol-none")).toBeVisible();      // visible before any domain is chosen
+  const rowTop = (await page.locator("#dom-politics").boundingBox())!, noneBox = (await page.locator("#pol-none").boundingBox())!; expect(Math.abs(noneBox.y - rowTop.y)).toBeLessThan(80);   // beside the three domains (same row, or wrapped one line below)
+  expect(await page.locator("#pol-go").count()).toBe(0);
+  await page.click("#dom-economy");
+  const dom = (await page.locator("#dom-economy").boundingBox())!, go = (await page.locator("#pol-go").boundingBox())!, firstPolicy = (await page.locator("[id^='pol-p-'], [id^='pol-e-'], [id^='pol-o-']").first().boundingBox())!;
+  expect(go.y).toBeGreaterThan(dom.y); expect(go.y).toBeLessThan(firstPolicy.y); expect(go.y - dom.y).toBeLessThan(140);   // right under the domain row, above the lists
+  expect(await page.textContent("#pol-go")).toBe("この選択にする");
+  const pointsBefore = await app(page, "a => a.sim.policy.points") as number, histBefore = await app(page, "a => a.sim.policy.history.length") as number;
+  await page.click("#pol-none");
+  expect(await app(page, "a => a.sim.policy.pending")).toBeNull(); expect(await app(page, "a => a.sim.policy.points")).toBe(pointsBefore);   // the points stay in the pool
+  expect(await app(page, "a => a.sim.policy.history.length")).toBe(histBefore + 1); expect(await app(page, "a => a.sim.policy.history[a.sim.policy.history.length - 1].none")).toBe(true);
+  expect(await app(page, "a => a.sim.mods.filter((m) => m.kind === 'policy' && m.from === a.sim.policy.lastWindow).length")).toBe(0);   // nothing was adopted
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((n) => (window as any).__kfm.sim.policy.pending || (window as any).__kfm.sim.policy.points > n, pointsBefore, { timeout: 90000 });   // time runs again
+  expect(errs).toEqual([]);
+});
+
+test("沖縄を首都、札幌を副首都にしても国道1号が成立し、海は船でつながり、保存・再読み込みで残る", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#terrain-edit-toggle");
+  await page.selectOption("#seat-capital", "JP-47"); await page.selectOption("#seat-sub", "HK-SAP");
+  await page.click("#terrain-edit-toggle");   // fold the panel so it does not cover the map
+  expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇"); expect(await page.locator("#tool-cer-fudo1").count()).toBe(0);   // no 府道1号 to draw any more
+  // fit the seven cities into the part of the screen above the toolbar
+  const pts = await page.evaluate(() => {
+    const a = (window as any).__kfm, w = a.world, c = (n: string) => w.cities.find((x: any) => x.name === n).pos, names = ["那覇市", "鹿児島市", "福岡市", "大阪市", "東京", "青森市", "札幌市"], P = names.map(c) as [number, number][];
+    const x0 = Math.min(...P.map((p) => p[0])), x1 = Math.max(...P.map((p) => p[0])), y0 = Math.min(...P.map((p) => p[1])), y1 = Math.max(...P.map((p) => p[1])), W = window.innerWidth, H = window.innerHeight;
+    const zoom = Math.min((W - 80) / (x1 - x0), (H * 0.5) / (y1 - y0)), cx = (x0 + x1) / 2, wyc = (y0 + y1) / 2; a.r.setView({ cx, cy: wyc + (Math.min(300, H * 0.37) - H / 2) / zoom, zoom }, true);
+    return P.map((p) => a.r.worldToScreen(p)) as [number, number][];
+  });
+  for (const [x, y] of pts) { const hit = await page.evaluate(([px, py]) => (document.elementFromPoint(px, py) as HTMLElement)?.tagName ?? "", [x, y]); expect(hit, `(${x},${y}) is on the map`).toBe("CANVAS"); }
+  await page.click("#tool-cer-kokudo1");
+  for (let i = 0; i + 1 < pts.length; i++) { await page.mouse.move(pts[i][0], pts[i][1]); await page.mouse.down(); await page.mouse.move(pts[i + 1][0], pts[i + 1][1], { steps: 8 }); await page.mouse.up(); }
+  expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo1.prev.ferries.length")).toBeGreaterThanOrEqual(3);
+  expect(await app(page, "a => a.cerDraft.kokudo1.prev.segments.filter((s) => s.ferry).every((s) => s.cells.length === 2)")).toBe(true);
+  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
+  expect(await app(page, "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.filter((e) => a.sim.edges[e.edgeId].facility === 'ferry').length; }")).toBeGreaterThanOrEqual(3);
+  expect(await app(page, "a => a.sim.capital === 'JP-47' && a.sim.subCapital === 'HK-SAP'")).toBe(true);
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.s.capital === 'JP-47' && a.s.subCapital === 'HK-SAP' && a.sim.capital === 'JP-47'")).toBe(true);
+  expect(await app(page, "a => Object.values(a.sim.edges).filter((e) => e.facility === 'ferry').length")).toBeGreaterThanOrEqual(10);
+  expect(errs).toEqual([]);
+});
+
+test("皇居: 49府県から選べ、首都と同じ府県でもよく、地図の点で位置を決めて保存される。琵琶湖・富士山の拡大縮小はUndo/Redoできる", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#terrain-edit-toggle");
+  expect(await app(page, "a => a.s.palace")).toBeUndefined();   // the default (Tokyo) is not stored until chosen
+  await page.selectOption("#seat-palace", "JP-13"); expect(await app(page, "a => a.s.palace")).toBe("JP-13");   // same prefecture as the capital is fine
+  await page.selectOption("#seat-palace", "JP-26"); await page.click("#tool-palace");
+  const k = await app(page, "a => a.world.cellPos(a.world.cities.find((c) => c.pref === 'JP-26' && c.kind === 'capital').cell)") as [number, number];
+  await page.evaluate((p) => { (window as any).__kfm.placePalace([p[0] + 5, p[1] + 5]); }, k);
+  const pp = await app(page, "a => a.s.palacePos") as [number, number]; expect(pp).toBeTruthy();
+  expect(await app(page, "a => a.placePalace([0, -9999])")).toBe(false);   // outside its prefecture / on the sea is refused
+  await page.click("#biwa-bigger"); await page.click("#biwa-bigger"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeGreaterThan(1.2);
+  await page.click("#fuji-higher"); expect(await app(page, "a => a.s.features.fuji.height")).toBeGreaterThan(1); await page.click("#fuji-narrower"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeLessThan(1);
+  await page.click("#edit-undo"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeUndefined(); await page.click("#edit-redo"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeLessThan(1);
+  for (let i = 0; i < 12; i++) await page.click("#fuji-wider");   // widening is refused once the mountain would touch the coast: the map stays valid
+  expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error' && i.step === 'features').length")).toBe(0); expect(await app(page, "a => a.s.features.fuji.scale ?? 1")).toBeLessThanOrEqual(2);
+  await page.click("#biwa-smaller"); await page.click("#biwa-smaller"); await page.click("#biwa-smaller"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeLessThan(1);
+  await page.waitForFunction(() => !(window as any).__kfm.generating && (window as any).__kfm.terrain, null, { timeout: 60000 });
+  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(await app(page, "a => a.s.palace === 'JP-26' && !!a.s.palacePos && !!a.s.features.fuji.height && !!a.s.features.biwa.scale")).toBe(true);
+  expect(errs).toEqual([]);
+});
+
+test("凡例の「路線名」は国道だけでなく、鉄道と途中で自動生成された路線にも効き、番号標識とは別に保たれる", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "heisei");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.ffYears(40); a.r.setView({ zoom: 1.4 }, true); a.renderRoads(); });
+  const stat = () => page.evaluate(() => { const L = (window as any).__kfm.r.roads, vis = L.signs.filter((s: any) => s.c.visible); return { signs: vis.length, names: vis.filter((s: any) => s.nk.visible).length, texts: vis.map((s: any) => s.t.text), nameTexts: vis.filter((s: any) => s.nk.visible).map((s: any) => s.nk.text) }; });
+  const off = await stat(); expect(off.signs).toBeGreaterThan(3); expect(off.names).toBe(0); expect(off.texts.every((x: string) => /^\d+$/.test(x))).toBe(true);   // number-only signs, no name text anywhere
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = "legend"; a.buildSheet(); }); await page.locator("#lg-names").check();
+  const on = await stat(); expect(on.names).toBe(on.signs); expect(on.nameTexts.some((x: string) => x.includes("鉄道") || x.includes("線"))).toBe(true); expect(on.nameTexts.some((x: string) => x.includes("道"))).toBe(true);
+  // zoom, the year slider and a reload keep the setting
+  await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ zoom: 2.2 }, true); a.renderRoads(); }); const z = await stat(); expect(z.names).toBe(z.signs);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.setViewYear(1975); }); const y = await stat(); expect(y.names).toBe(y.signs); await page.evaluate(() => { (window as any).__kfm.setViewYear(null); });
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ zoom: 1.4 }, true); a.renderRoads(); }); const back = await stat(); expect(back.names).toBe(back.signs);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = "legend"; a.buildSheet(); }); await page.locator("#lg-names").uncheck(); const off2 = await stat(); expect(off2.names).toBe(0);
   expect(errs).toEqual([]);
 });

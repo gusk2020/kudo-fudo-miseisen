@@ -1,3 +1,4 @@
+import { prefOfSeat } from "./seat";
 import { defaultBody, defaultState, SCHEMA_VERSION } from "./state";
 import type { BodyState, FeatureState, Op, ProjectState, Vec } from "./types";
 import { ISLAND_IDS, STEPS } from "./types";
@@ -22,8 +23,10 @@ function cleanBody(b: any, id: (typeof ISLAND_IDS)[number], problems: string[]):
   const place = p && okVec(p.pos) && fin(p.rot) && fin(p.scale) && p.scale > 0.05 && p.scale < 20 ? { pos: p.pos, rot: p.rot, scale: p.scale } : (problems.push(`${id}: 配置が不正のため初期値`), d.place);
   return { ops, place };
 }
+/** Allowed range of the size controls (Lake Biwa / Mt. Fuji): wide enough to see, narrow enough to keep the lake off the coast and the summit above sea level. */
+export const FEATURE_LIMITS = { scale: [0.5, 2] as [number, number], height: [0.5, 1.3] as [number, number] };
 function cleanFeature(f: any): FeatureState {
-  return { pos: okVec(f?.pos) ? f.pos : null, rot: fin(f?.rot) ? f.rot : 0 };
+  return { pos: okVec(f?.pos) ? f.pos : null, rot: fin(f?.rot) ? f.rot : 0, ...(fin(f?.scale) && f.scale !== 1 ? { scale: Math.max(FEATURE_LIMITS.scale[0], Math.min(FEATURE_LIMITS.scale[1], f.scale)) } : {}), ...(fin(f?.height) && f.height !== 1 ? { height: Math.max(FEATURE_LIMITS.height[0], Math.min(FEATURE_LIMITS.height[1], f.height)) } : {}) };
 }
 function cleanLine(l: any, problems: string[], name: string): Vec[] | null {
   if (l == null) return null;
@@ -53,7 +56,10 @@ export function parseState(input: unknown): { state: ProjectState; problems: str
     finalized: raw.finalized === true,
     ...(raw.real === true ? { real: true } : {}),
     ...(raw.islands === true ? { islands: true } : {}),
-    ...(typeof raw.capital === "string" && raw.capital.length > 0 && raw.capital.length < 40 ? { capital: raw.capital } : {}),
+    ...(prefOfSeat(raw.capital) ? { capital: raw.capital } : {}),   // a prefecture id, or the city id an older save kept
+    ...(prefOfSeat(raw.subCapital) ? { subCapital: raw.subCapital } : {}),
+    ...(prefOfSeat(raw.palace) ? { palace: raw.palace } : {}),
+    ...(okVec(raw.palacePos) ? { palacePos: raw.palacePos } : {}),
     layers: { ...d.layers },
   };
   if (raw.layers && typeof raw.layers === "object") for (const k of Object.keys(d.layers)) if (typeof raw.layers[k] === "boolean") s.layers[k] = raw.layers[k];

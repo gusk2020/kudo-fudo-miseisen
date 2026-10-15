@@ -52,7 +52,7 @@ export const POLICIES: Policy[] = [
 ];
 export const policyById = (id: string) => POLICIES.find((p) => p.id === id)!;
 
-export interface PolicyRecord { year: number; domain: Domain; adopted: { id: string; label: string; priority: number; effect: string; reason: string }[]; declined: { id: string; label: string; priority: number; reason: string }[]; spent: Record<string, number>; pointsAfter: number; auto: boolean }
+export interface PolicyRecord { none?: boolean; year: number; domain: Domain; adopted: { id: string; label: string; priority: number; effect: string; reason: string }[]; declined: { id: string; label: string; priority: number; reason: string }[]; spent: Record<string, number>; pointsAfter: number; auto: boolean }
 export interface PendingWindow { year: number; domain: Domain | null }
 export interface PolicyState { mode: PolicyMode; points: number; pending: PendingWindow | null; lastWindow: number; history: PolicyRecord[]; away: boolean }
 export const defaultPolicy = (): PolicyState => ({ mode: "priority", points: 0, pending: null, lastWindow: 0, history: [], away: false });
@@ -117,5 +117,12 @@ export function resolveWindow(sim: SimState, w: World, domain: Domain, spend: Re
   }
   rec.pointsAfter = pol.points; pol.history.push(rec); if (pol.history.length > 20) pol.history.shift(); pol.pending = null;
   return rec;
+}
+/** 「選択しない」: the window is closed without adopting anything. The points granted this time stay in the pool (carried over in full). */
+export function skipWindow(sim: SimState): PolicyRecord | null {
+  const pol = sim.policy; if (!pol?.pending) return null; const y = pol.pending.year;
+  const rec: PolicyRecord = { none: true, year: y, domain: "politics", adopted: [], declined: [], spent: {}, pointsAfter: pol.points, auto: false };
+  pol.history.push(rec); if (pol.history.length > 20) pol.history.shift(); pol.pending = null;
+  ev(sim, "policy", `${y}年: 政策介入を行わない(選択しない)`, `持ち点${pol.points}点は次回へ繰り越し`, {}); return rec;
 }
 export const setPolicyMode = (sim: SimState, m: PolicyMode) => { if (sim.policy) sim.policy.mode = m; };

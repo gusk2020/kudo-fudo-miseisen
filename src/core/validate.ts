@@ -15,8 +15,8 @@ export const FUJI_SHAPE: Vec[] = Array.from({ length: 48 }, (_, i) => {
 });
 export const featureShape = (which: "biwa" | "fuji"): Vec[] => (which === "biwa" ? JAPAN.biwa.shape : FUJI_SHAPE);
 export function featureWorld(s: ProjectState, which: "biwa" | "fuji"): Vec[] {
-  const pos = featureWorldPos(s, which), a = s.features[which].rot;
-  return featureShape(which).map((q) => { const r = rotv(q, a); return [r[0] + pos[0], r[1] + pos[1]] as Vec; });
+  const pos = featureWorldPos(s, which), a = s.features[which].rot, k = s.features[which].scale ?? 1;
+  return featureShape(which).map((q) => { const r = rotv([q[0] * k, q[1] * k], a); return [r[0] + pos[0], r[1] + pos[1]] as Vec; });
 }
 
 export interface Derived { parts: Record<IslandId, Vec[][]>; frame: AxisFrame; biwa: Vec[]; fuji: Vec[] }

@@ -4,7 +4,7 @@ import { suggestRidge } from "../../src/core/suggest";
 import { generateTerrain } from "../../src/core/terrain";
 import { derive } from "../../src/core/validate";
 import { createSim } from "../../src/sim/engine";
-import { TOKYO, performCeremony, previewCeremony, tokyoCity } from "../../src/sim/ceremony";
+import { TOKYO, homeCity, performCeremony, performNational, previewCeremony, previewNational, subCity, tokyoCity } from "../../src/sim/ceremony";
 import type { Vec } from "../../src/core/types";
 import { buildWorld, type World } from "../../src/sim/world";
 import { loadDem } from "./helpers";
@@ -34,11 +34,16 @@ export function realWorld(islands = false) {
   const s = defaultState(); if (islands) s.islands = true; const t = generateTerrain(s, loadDem()); return (realCache[key] = { w: buildWorld(t, s.seed), hash: t.hash });
 }
 /** A Stage 3 game with the ceremony performed on top of the 1950 road + rail network. */
-export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true, firstEra?: number, techK?: number, islands = false) {
-  const { w, hash } = realWorld(islands), sim = createSim(w, "m", hash, seed, firstEra !== undefined ? { stage3: true, firstEra, techK } : { era, stage3: true, techK });
+export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true, firstEra?: number, techK?: number, islands = false, seats?: { capital?: string; sub?: string }) {
+  const { w, hash } = realWorld(islands), sim = createSim(w, "m", hash, seed, firstEra !== undefined ? { stage3: true, firstEra, techK, ...(seats?.capital ? { capital: seats.capital } : {}), subCapital: seats?.sub ?? "JP-27" } : { era, stage3: true, techK });
   if (ceremony) {
-    const t = tokyoCity(w)!, e = w.cities.find((c) => c.name === "名古屋市")!;
     const line = (a: Vec, b: Vec, n = 12): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
+    if (sim.crossings) {   // the Issue #15 ceremony: one national road, capital -> sub-capital
+      const home = homeCity(w, sim.capital)!, dest = subCity(w, sim.subCapital)!, p = previewNational(w, line(home.pos, dest.pos, 20), sim.capital, sim.subCapital);
+      if (!performNational(sim, w, p)) throw new Error("national ceremony failed: " + p.reasons.join());
+      return { sim, w };
+    }
+    const t = tokyoCity(w)!, e = w.cities.find((c) => c.name === "名古屋市")!;
     const k = previewCeremony(w, "kokudo1", line(t.pos, e.pos)); let far: Vec = t.pos, bd = 0;
     for (let c = 0; c < w.N; c++) if (w.t.land[c] === 1 && w.prefOf(c) === TOKYO) { const p = w.cellPos(c), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; far = p; } }
     const f = previewCeremony(w, "fudo1", line(t.pos, far, 6)); if (!performCeremony(sim, w, k, f)) throw new Error("ceremony failed: " + k.reasons.join() + f.reasons.join());

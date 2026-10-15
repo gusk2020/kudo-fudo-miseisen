@@ -3,6 +3,8 @@ import { dist, pointSegDist } from "../core/geom";
 import type { Vec } from "../core/types";
 import { designate, ev, routeOfficial } from "./engine";
 import { layPath } from "./network";
+import { crossingPorts, findFerry, makeFerry, massRoute } from "./ferry";
+import { prefOfSeat } from "../core/seat";
 import { ERA, eraLabel, type SimState } from "./types";
 import { ERAS, eraKeyOf } from "./eras";
 import { cellDistKm, pathfind, type World } from "./world";
@@ -10,8 +12,6 @@ import { cellDistKm, pathfind, type World } from "./world";
 export type CerKind = "kokudo1" | "fudo1";
 export const CER_LABEL: Record<CerKind, string> = { kokudo1: "国道1号(東京府起点)", fudo1: "府道1号(東京府内)" };
 export const TOKYO = "JP-13";
-/** Issue #13: the capital can be Tokyo (default), Kyoto or Osaka -- the three cities whose prefecture is a 府, so the 府道1号 keeps its name. */
-export const CAPITAL_PREFS = ["JP-13", "JP-26", "JP-27"] as const;
 export interface CerPreview { ok: boolean; reasons: string[]; cells: number[]; path: Vec[]; lengthKm: number; passes: string[]; maxGradePct: number; endName: string }
 
 function resample(pts: Vec[], step: number): Vec[] {
@@ -21,10 +21,15 @@ function resample(pts: Vec[], step: number): Vec[] {
 }
 const lineDist = (p: Vec, line: Vec[]) => { let m = Infinity; for (let i = 0; i + 1 < line.length; i++) m = Math.min(m, pointSegDist(p, line[i], line[i + 1])); return m; };
 export function tokyoCity(w: World) { return w.cities.find((c) => c.pref === TOKYO && c.kind === "capital") ?? null; }
-/** The capital city of this game: the chosen one if it is a valid capital, else Tokyo. */
-export function homeCity(w: World, capId?: string) { const c = capId ? w.cityById.get(capId) : undefined; return c && c.pref && (CAPITAL_PREFS as readonly string[]).includes(c.pref) && c.kind === "capital" ? c : tokyoCity(w); }
-export const capitalChoices = (w: World) => CAPITAL_PREFS.map((p) => w.cities.find((c) => c.pref === p && c.kind === "capital")).filter((c): c is NonNullable<typeof c> => !!c);
-export const cerLabel = (kind: CerKind, home?: { name: string; pref: string | null } | null): string => { const n = home ? `${home.name.replace(/市$/, "")}府`.replace("東京府", "東京府") : "東京府"; return kind === "kokudo1" ? `国道1号(${n}起点)` : `府道1号(${n}内)`; };
+/** The prefectural capital (県庁所在地) city of a prefecture, or null. */
+export const seatCity = (w: World, prefId: string) => w.cities.find((c) => c.pref === prefId && c.kind === "capital") ?? null;
+/**
+ * The capital city of this game: the 県庁所在地 of the chosen prefecture (any of the 49), else Tokyo. `v` is a prefecture id, or the city id an older save kept.
+ * The sub-capital is the same lookup with no fallback.
+ */
+export function homeCity(w: World, v?: string) { const p = prefOfSeat(v); return (p ? seatCity(w, p) : null) ?? tokyoCity(w); }
+export function subCity(w: World, v?: string) { const p = prefOfSeat(v); return p ? seatCity(w, p) : null; }
+export const cerLabel = (kind: CerKind, home?: { name: string } | null, sub?: { name: string } | null): string => kind === "kokudo1" ? `国道1号(${(home?.name ?? "東京").replace(/市$/, "")}→${(sub?.name ?? "大阪市").replace(/市$/, "")})` : "府道1号(旧版)";
 function nearestLandCell(w: World, p: Vec, ok: (k: number) => boolean): number {
   const k0 = w.cellOf(p); if (k0 < 0) return -1; const i0 = k0 % w.nx, j0 = (k0 / w.nx) | 0; let best = -1, bd = Infinity;
   for (let r = 0; r < 8 && best < 0; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
@@ -35,7 +40,7 @@ function nearestLandCell(w: World, p: Vec, ok: (k: number) => boolean): number {
 }
 export function previewCeremony(w: World, kind: CerKind, drawn: Vec[], capId?: string): CerPreview {
   const bad = (r: string[]): CerPreview => ({ ok: false, reasons: r, cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "" });
-  const tokyo = homeCity(w, capId); if (!tokyo) return bad(["首都の都市が地図にありません"]); const HOME = tokyo.pref ?? TOKYO, homeName = capId && HOME !== TOKYO ? `${tokyo.name.replace(/市$/, "")}府` : "東京府";
+  const tokyo = homeCity(w, capId); if (!tokyo) return bad(["首都の都市が地図にありません"]); const HOME = tokyo.pref ?? TOKYO, homeName = HOME !== TOKYO ? `${tokyo.name.replace(/市$/, "")}${HOME === "JP-26" || HOME === "JP-27" ? "府" : ""}` : "東京府";
   if (drawn.length < 2) return bad(["線が短すぎます。画面上でなぞってください"]);
   let len = 0; for (let i = 1; i < drawn.length; i++) len += dist(drawn[i - 1], drawn[i]);
   const reasons: string[] = [], minLen = kind === "kokudo1" ? 60 : 12;
@@ -86,5 +91,62 @@ export function performCeremony(sim: SimState, w: World, kokudo: CerPreview, fud
   const r2 = designate(sim, b.chain, "fu", HOME, `${homeBase}府内`, "開通の儀", false, 1);
   if (!r1 || !r2) return false;
   ev(sim, "ceremony", `${routeOfficial(r1)}・${routeOfficial(r2)}が象徴の道として開通`, "開通の儀", { route: r1.id });
+  sim.ceremonyDone = true; return true;
+}
+
+
+// ---------------------------------------------------------------- Issue #15: the one national road, capital -> sub-capital ----------
+export interface CerSeg { cells: number[]; ferry: boolean }
+export interface NatPreview extends CerPreview { segments: CerSeg[]; ferries: { from: string; to: string; km: number }[]; from: string; to: string }
+/**
+ * 国道1号: from the capital's 県庁所在地 to the sub-capital's. The player draws strokes (several are fine); the program snaps them to land, joins them, and where the way
+ * leaves a land mass it adds the ferry by itself (never a road over water), chaining masses when it must (Okinawa -> Kyushu -> Honshu -> Hokkaido ...).
+ */
+export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: string): NatPreview {
+  const bad = (r: string[]): NatPreview => ({ ok: false, reasons: r, cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "", segments: [], ferries: [], from: "", to: "" });
+  const home = homeCity(w, capital), dest = subCity(w, sub) ?? seatCity(w, "JP-27"); if (!home || !dest) return bad(["首都または副首都の県庁所在地が地図にありません"]);
+  if (home.pref === dest.pref) return bad(["首都と副首都は別の府県にしてください"]);
+  if (drawn.length < 2) return bad(["線が短すぎます。画面上でなぞってください"]);
+  let len = 0; for (let i = 1; i < drawn.length; i++) len += dist(drawn[i - 1], drawn[i]);
+  const straight = dist(home.pos, dest.pos), minLen = Math.min(60, Math.max(8, 0.5 * straight)), reasons: string[] = [];
+  if (len < minLen) reasons.push(`線が短すぎます(${Math.round(len)}km。${Math.round(minLen)}km以上必要)`);
+  const near = (p: Vec, c: typeof home, r: number) => { const k = nearestLandCell(w, p, () => true); return dist(p, c.pos) <= r || (k >= 0 && dist(w.cellPos(k), p) <= 20 && w.prefOf(k) === c.pref); };
+  if (!near(drawn[0], home, 45)) reasons.push(`起点が首都(${home.name})の府県にありません。${home.name}の近くから描き始めてください`);
+  if (!near(drawn[drawn.length - 1], dest, 50)) reasons.push(`終点が副首都(${dest.name})に届いていません。${dest.name}の近く50km以内で止めてください`);
+  if (reasons.length) return bad(reasons);
+  const route = massRoute(w, w.lm[home.cell], w.lm[dest.cell]); if (!route) return bad([`${home.name}から${dest.name}へ、航路でも結べません`]);
+  // waypoints: the drawn line, resampled, each tied to the land mass it lies on (those on masses the way does not use are ignored)
+  const bias = (k: number) => 1 + Math.pow(lineDist(w.cellPos(k), drawn) / 25, 2), vias = resample(drawn, 35).slice(1, -1).map((p) => ({ p, k: nearestLandCell(w, p, () => true) })).filter((v) => v.k >= 0 && dist(w.cellPos(v.k), v.p) <= 40);
+  const segments: CerSeg[] = [], ferries: NatPreview["ferries"] = []; let entry = home.cell;
+  for (let m = 0; m < route.length; m++) {
+    const lm = route[m], cx = m < route.length - 1 ? crossingPorts(w, lm, route[m + 1]) : null; if (m < route.length - 1 && !cx) return bad(["航路の港が見つかりません"]);
+    const exitCity = cx ? (cx.la === lm ? cx.a : cx.b) : dest, nextCity = cx ? (cx.la === lm ? cx.b : cx.a) : null;
+    const stops: number[] = [entry]; for (const v of vias) if (w.lm[v.k] === lm && v.k !== stops[stops.length - 1]) stops.push(v.k); if (exitCity.cell !== stops[stops.length - 1]) stops.push(exitCity.cell);
+    const cells: number[] = [];
+    for (let i = 0; i + 1 < stops.length; i++) { const seg = pathfind(w, stops[i], stops[i + 1], { bias, margin: 18 }); if (!seg) return bad(["経路を作れません。途中が海・湖で分断されています(陸地どうしは自動でフェリーを使いますが、陸の途中は描き直してください)"]); for (const k of seg) if (cells[cells.length - 1] !== k) cells.push(k); }
+    const seen = new Map<number, number>(), flat: number[] = []; for (const k of cells) { const at = seen.get(k); if (at !== undefined) { for (const d of flat.splice(at + 1)) seen.delete(d); } else { seen.set(k, flat.length); flat.push(k); } }
+    if (flat.length >= 2) segments.push({ cells: flat, ferry: false });
+    if (cx && nextCity) { segments.push({ cells: [exitCity.cell, nextCity.cell], ferry: true }); ferries.push({ from: exitCity.name, to: nextCity.name, km: cx.km }); entry = nextCity.cell; }
+  }
+  let length = 0, maxG = 0; const all: number[] = [];
+  for (const s of segments) { if (s.ferry) { length += dist(w.cellPos(s.cells[0]), w.cellPos(s.cells[1])); continue; } for (let i = 1; i < s.cells.length; i++) { const dk = cellDistKm(w, s.cells[i - 1], s.cells[i]); length += dk; maxG = Math.max(maxG, Math.abs(w.elevM(s.cells[i]) - w.elevM(s.cells[i - 1])) / (dk * 1000) * 100); } all.push(...s.cells); }
+  if (all.length < 2) return bad(["経路が短すぎます"]);
+  const passes = all.map((k) => w.cityByCell.get(k)?.name).filter((n): n is string => !!n);
+  return { ok: true, reasons: [], cells: all, path: all.map((k) => w.cellPos(k)), lengthKm: Math.round(length), passes, maxGradePct: Math.round(maxG * 10) / 10, endName: dest.name, segments, ferries, from: home.name, to: dest.name };
+}
+/** Lay 国道1号 from the previewed segments: ordinary road for each land piece, the ferry edge (existing or new) across each strait, all designated as one route. */
+export function performNational(sim: SimState, w: World, prev: NatPreview): boolean {
+  if (sim.ceremonyDone || !prev.ok) return false;
+  ev(sim, "ceremony", sim.stage3 ? `開通の儀。${eraLabel(1950, eraKeyOf(sim.era))}(1950年)。${ERAS[eraKeyOf(sim.era)].summary}` : `開通の儀。${ERA.name}6年(1950)、${ERA.note}`, `プレイヤーが国道1号(${prev.from}→${prev.to})を描いた`, {});
+  const chain: { edgeId: string; dir: 1 | -1 }[] = [];
+  for (const s of prev.segments) {
+    if (s.ferry) {
+      const ca = w.cityByCell.get(s.cells[0]), cb = w.cityByCell.get(s.cells[1]); if (!ca || !cb) return false;
+      const e = findFerry(sim, w, ca, cb, "road") ?? makeFerry(sim, w, ca, cb, "road", "国道1号を結ぶため、開通の儀で航路を設けた");
+      const na = Object.values(sim.nodes).find((n) => n.cell === ca.cell)?.id; chain.push({ edgeId: e.id, dir: e.a === na ? 1 : -1 });
+    } else { const l = layPath(sim, w, s.cells, { open: true, surface: "gravel", quality: 55, built: 1, month: 0 }); chain.push(...l.chain); }
+  }
+  const r = designate(sim, chain, "national", "JP", `${prev.from.replace(/市$/, "")}〜${prev.to.replace(/市$/, "")}`, "開通の儀", false, 1); if (!r) return false;
+  ev(sim, "ceremony", `${routeOfficial(r)}が象徴の道として開通${prev.ferries.length ? `(海をまたぐ区間はフェリー${prev.ferries.length}本)` : ""}`, "開通の儀", { route: r.id });
   sim.ceremonyDone = true; return true;
 }

@@ -24,7 +24,8 @@ const RAIL_SPEED: Record<Standard, number> = { rural: 38, standard: 75, highgrad
 const SURF: Record<Surface, number> = { unpaved: 0.6, gravel: 0.8, paved: 1 };
 /** Curve penalty on speed: a railway is hurt more by tight curves than a road is; only Stage 3 edges carry a curvature. */
 const curveFactor = (e: SimEdge, k: number) => 1 - Math.min(0.35, (e.curv ?? 0) * k);
-export const edgeSpeed = (e: SimEdge) => modeOf(e) === "rail"
+export const FERRY_SPEED = 28, FERRY_WAIT_H = 0.7;   // a ferry is slow and waits for its sailing (the same for cars and for the rail steamer)
+export const edgeSpeed = (e: SimEdge) => e.facility === "ferry" ? FERRY_SPEED : modeOf(e) === "rail"
   ? RAIL_SPEED[e.standard] * (0.6 + 0.4 * e.quality / 100) * (1 - Math.min(0.3, e.maxGradePct / 40)) * curveFactor(e, 0.35)
   : BASE_SPEED[e.standard] * SURF[e.surface] * (0.5 + 0.5 * e.quality / 100) * (1 - Math.min(0.4, e.maxGradePct / 50)) * curveFactor(e, 0.2);
 export const passable = (e: SimEdge) => (e.state === "open" || e.state === "dormant") && e.built >= 1 && !e.lost;
@@ -58,7 +59,7 @@ export function railShare(tRoad: number, tRail: number, carBias: number, railBia
 export function airShare(sim: SimState, w: World, i: number, j: number, railS: number): number {
   const a = sim.cities[w.cities[i].id], b = sim.cities[w.cities[j].id]; if (a.airport === undefined || b.airport === undefined) return 0;
   const d = Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); if (d < AIR_MIN_KM) return 0;
-  return Math.min(0.55, (0.08 + 0.5 * (1 - Math.exp(-(d - AIR_MIN_KM) / 450))) * (1 - 0.45 * railS));
+  return Math.min(0.55 + 0.15 * Math.min(1, sim.dials.airBias), (0.08 + 0.5 * (1 - Math.exp(-(d - AIR_MIN_KM) / 450))) * (1 - 0.45 * railS) * (1 + 0.8 * sim.dials.airBias));
 }
 export function analyze(sim: SimState, w: World): Analysis {
   const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, string>(), N = nodeIds.length;
@@ -68,7 +69,7 @@ export function analyze(sim: SimState, w: World): Analysis {
   for (const e of edges) { e.through = 0; e.local = 0; e.freight = 0; }
   let anyRail = false, airFlow = 0, landFlow = 0, seaFr = 0, landFr = 0;
   for (const e of edges) if (passable(e)) {
-    const a = pos.get(e.a)!, b = pos.get(e.b)!, t = e.lengthKm / Math.max(3, edgeSpeed(e)), g = modeOf(e) === "rail" ? adjRail : adjRoad; if (g === adjRail) anyRail = true;
+    const a = pos.get(e.a)!, b = pos.get(e.b)!, t = e.lengthKm / Math.max(3, edgeSpeed(e)) + (e.facility === "ferry" ? FERRY_WAIT_H : 0), g = modeOf(e) === "rail" ? adjRail : adjRoad; if (g === adjRail) anyRail = true;
     g[a].push({ to: b, edge: e, t }); g[b].push({ to: a, edge: e, t });
   }
   const nc = w.cities.length, cityNodes = w.cities.map((c) => nodeByCell.get(c.cell) ?? null), T = new Float64Array(nc * nc).fill(Infinity), TT = new Float64Array(nc * nc).fill(Infinity), reach = new Map<string, boolean>();
@@ -94,7 +95,7 @@ export function analyze(sim: SimState, w: World): Analysis {
       if (s > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.through += land * s * RAIL_PAX;
       // freight: industry-to-industry; trucks take it unless the railway is competitive and the era favours it
       const f0 = KFREIGHT * Math.pow(pi.pop * pi.industry * pj.pop * pj.industry, 0.6) / (1 + Math.pow(tmin, 1.2)), sf = railShare(tr, tt, dl.carBias * 0.4 - dl.freightRail, dl.railBias * 0.4 + dl.freightRail);
-      const sea = w.cities[i].coastal && w.cities[j].coastal ? SEA_FREIGHT : 0, fl = f0 * (1 - sea); seaFr += f0 * sea; landFr += fl;
+      const sea = w.cities[i].coastal && w.cities[j].coastal ? Math.min(0.6, SEA_FREIGHT * (1 + dl.seaBias)) : 0, fl = f0 * (1 - sea); seaFr += f0 * sea; landFr += fl;
       if (sf < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.freight += fl * (1 - sf);
       if (sf > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.freight += fl * sf * RAIL_PAX;
     }

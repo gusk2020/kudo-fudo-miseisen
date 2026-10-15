@@ -14,7 +14,10 @@ import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./r
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
 import { techAt, TECH_K } from "./tech";
-import { homeCity, tokyoCity } from "./ceremony";
+import { finishCrossing, isCrossingProject, planCrossings } from "./crossing";
+import { homeCity, subCity, tokyoCity } from "./ceremony";
+import { prefOfSeat } from "../core/seat";
+import type { Vec } from "../core/types";
 import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
@@ -27,7 +30,7 @@ export const CATCHUP_CAP_MONTHS = 360;            // at most 30 years are simula
 export const EVENT_CAP = 600, EVENT_CAP_S3 = 1000;
 /** Everyday noise is dropped first when the timeline is full, so the history that matters (world, policy, reforms, openings, closures) survives a century. */
 const MINOR_EVENTS = new Set(["village", "boom", "city", "dormant", "reopen", "lost", "skip", "project"]);
-export const CAPITAL_BONUS = 1.35, CAPITAL_LOSS = 0.85;   // pop multipliers for a capital that is not Tokyo (provisional)
+export const CAPITAL_BONUS = 1.35, CAPITAL_LOSS = 0.85, SUB_CAPITAL_BONUS = 1.15;   // pop multipliers for a capital that is not Tokyo (provisional)
 export const BUDGET_K = 2.6e-6, NATIONAL_POOL = 0.2, EQUAL_SHARE = 0.45;
 /** Railways add this much on top of the road budget (Stage 3 only); the dials then decide the split. */
 export const RAIL_BUDGET_SCALE = 0.9, RAIL_FARE = 2.2e-6, RAIL_MAINT = { rural: 0.04, standard: 0.07, highgrade: 0.18 } as const, RAIL_DECAY = 0.25;
@@ -61,7 +64,7 @@ export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).yea
 
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
-export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; capital?: string }
+export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
   const firstCand = opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
   const sim: SimState = {
@@ -69,13 +72,15 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
     next: { node: 0, edge: 0, route: 0, project: 0, event: 0 }, nodes: {}, edges: {}, routes: {}, projects: {}, cities: {}, settlements: {}, links: [], snaps: [], regionShare: {},
     macro: { mood: 0, budgetBu: 0, maintCoverage: 1 }, routeCounters: {}, events: [], stats: [], skippedMonths: 0, lastWallMs: 0, ceremonyDone: false,
     operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0) } : {}), ...(opts.stage3 && (firstCand || opts.techK !== undefined) ? { tech: { k: opts.techK ?? TECH_K } } : {}),
-    ...(opts.capital && homeCity(w, opts.capital)?.id === opts.capital && opts.capital !== tokyoCity(w)?.id ? { capital: opts.capital } : {}),
+    ...(prefOfSeat(opts.capital) && prefOfSeat(opts.capital) !== "JP-13" ? { capital: prefOfSeat(opts.capital)! } : {}), ...(prefOfSeat(opts.subCapital) ? { subCapital: prefOfSeat(opts.subCapital)! } : {}), ...(opts.palace ? { palace: opts.palace } : {}),
+    ...(firstCand ? { crossings: true as const } : {}),
   };
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   const tokyoId = tokyoCity(w)?.id;
   for (const c of w.cities) sim.cities[c.id] = { pop: c.pop0, popSource: c.popSource, lowAccessYears: 0, industry: Math.round((0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim)) * 1000) / 1000 };
-  // a moved capital draws people and industry to itself and costs the old one some (fictional, modest)
-  if (sim.capital && tokyoId && sim.cities[sim.capital]) { const c = sim.cities[sim.capital], o = sim.cities[tokyoId]; c.pop = Math.round(c.pop * CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.15) * 1000) / 1000); o.pop = Math.round(o.pop * CAPITAL_LOSS); }
+  // a moved capital draws people and industry to itself and costs the old one some; a sub-capital gains a little (fictional, modest, provisional)
+  if (sim.capital && tokyoId && sim.cities[tokyoId]) { const hc = homeCity(w, sim.capital); if (hc && sim.cities[hc.id] && hc.id !== tokyoId) { const c = sim.cities[hc.id], o = sim.cities[tokyoId]; c.pop = Math.round(c.pop * CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.15) * 1000) / 1000); if (!(sim.subCapital && subCity(w, sim.subCapital)?.id === tokyoId)) o.pop = Math.round(o.pop * CAPITAL_LOSS); } }
+  if (sim.subCapital) { const sc = subCity(w, sim.subCapital), hc = homeCity(w, sim.capital); if (sc && sim.cities[sc.id] && sc.id !== hc?.id) { const c = sim.cities[sc.id]; c.pop = Math.round(c.pop * SUB_CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.05) * 1000) / 1000); } }
   yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); yield 1;
   return sim;
 }
@@ -139,6 +144,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   evaluateEdges(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
+  if (sim.crossings) planCrossings(sim, w, y);
   refreshNick(sim);
   if (sim.stage3) compactSim(sim, y);
   if (y !== sim.startYear && y % (sim.stage3 ? SNAP_EVERY_YEARS : 10) === 0) takeSnapshot(sim);
@@ -170,7 +176,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     st.pop = Math.max(2000, Math.round(st.pop * (1 + g)));
     const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + 0.9 * an.acc[i]); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
     st.lowAccessYears = an.acc[i] < 0.02 ? st.lowAccessYears + 1 : 0; const base = c.pop0;
-    if (sim.stage3 && st.airport === undefined && ((st.pop > 400000 && y >= 1958) || (st.pop > 200000 && y >= 1972) || (st.pop > 100000 && y >= 1988))) { st.airport = y; ev(sim, "air", `${c.name}に空港が開港`, `人口${Math.round(st.pop / 1000)}千人に達し、航空需要が見込まれた`, { city: c.id }); }
+    if (sim.stage3 && st.airport === undefined && ((st.pop > 400000 * (1 - 0.25 * sim.dials.airBias) && y >= 1958 - Math.round(8 * sim.dials.airBias)) || (st.pop > 200000 * (1 - 0.25 * sim.dials.airBias) && y >= 1972 - Math.round(8 * sim.dials.airBias)) || (st.pop > 100000 * (1 - 0.25 * sim.dials.airBias) && y >= 1988 - Math.round(8 * sim.dials.airBias)))) { st.airport = y; ev(sim, "air", `${c.name}に空港が開港`, `人口${Math.round(st.pop / 1000)}千人に達し、航空需要が見込まれた`, { city: c.id }); }
     if (before < 2 * base && st.pop >= 2 * base) ev(sim, "city", `${c.name}の人口が1950年の2倍に`, an.acc[i] > 0.1 ? "道路網で結ばれ産業が集積" : "全国的な人口増", { city: c.id });
     if (before > 0.7 * base && st.pop <= 0.7 * base) ev(sim, "city", `${c.name}の人口が3割減`, st.lowAccessYears > 3 ? "幹線から外れ孤立" : "人口減少局面", { city: c.id });
   });
@@ -288,7 +294,7 @@ function monthly(sim: SimState, w: World) {
   const regional = B * (1 - NATIONAL_POOL); let pool = B * NATIONAL_POOL, need = 0, funded = 0;
   // maintenance region by region, busiest roads first; each region has its own purse
   const byRegion = new Map<string, SimEdge[]>();
-  for (const e of Object.values(sim.edges)) if ((e.state === "open" || e.state === "dormant") && e.built >= 1 && modeOf(e) === "road") (byRegion.get(e.region) ?? byRegion.set(e.region, []).get(e.region)!).push(e);
+  for (const e of Object.values(sim.edges)) if ((e.state === "open" || e.state === "dormant") && e.built >= 1 && modeOf(e) === "road" && e.facility !== "ferry") (byRegion.get(e.region) ?? byRegion.set(e.region, []).get(e.region)!).push(e);
   const left: Record<string, number> = {};
   for (const r of w.t.prefOrder) left[r] = regional * (sim.regionShare[r] ?? 1 / w.t.prefOrder.length);
   for (const [r, es] of [...byRegion.entries()].sort()) {
@@ -338,7 +344,7 @@ function resolveConcepts(sim: SimState) {
 /** Railways: each operator pays for its own upkeep out of fares plus a share of the subsidy pool; building is funded from a national construction pool. */
 function railMonthly(sim: SimState, w: World, railB: number) {
   const dl = sim.dials, M = railB * 0.6 * dl.austerity, byOp = new Map<string, SimEdge[]>();
-  for (const e of Object.values(sim.edges)) if (modeOf(e) === "rail" && (e.state === "open" || e.state === "dormant") && e.built >= 1) (byOp.get(e.op ?? "jnr") ?? byOp.set(e.op ?? "jnr", []).get(e.op ?? "jnr")!).push(e);
+  for (const e of Object.values(sim.edges)) if (modeOf(e) === "rail" && e.facility !== "ferry" && (e.state === "open" || e.state === "dormant") && e.built >= 1) (byOp.get(e.op ?? "jnr") ?? byOp.set(e.op ?? "jnr", []).get(e.op ?? "jnr")!).push(e);
   const ops = [...byOp.keys()].sort(), rev = new Map<string, number>();
   for (const op of ops) rev.set(op, byOp.get(op)!.reduce((t, e) => t + e.traffic * e.lengthKm * RAIL_FARE * (e.state === "open" ? 1 : 0.3), 0) * (op === "jnr" ? dl.jnrFare : 1));
   const others = ops.filter((o) => o !== "jnr"), othersRev = others.reduce((t, o) => t + rev.get(o)!, 0) || 1;
@@ -404,6 +410,7 @@ function completeRailProject(sim: SimState, w: World, p: SimProject, es: SimEdge
 }
 function completeProject(sim: SimState, w: World, p: SimProject) {
   const es = p.edgeIds.map((id) => sim.edges[id]).filter(Boolean);
+  if (isCrossingProject(p)) { const moved = finishCrossing(sim, w, p); ev(sim, "open", `海峡連絡が開通: ${projLabel(sim, p)}(${es[0]?.facility === "tunnel" ? "海底トンネル" : "橋"})`, `${p.reason}${moved ? "。航路の路線は新しい連絡へ付け替えた" : ""}`, { project: p.id }); if (moved) return; }
   if (p.kind === "convert") {
     const re = es[0]; if (!re || re.convertedTo) return;
     // laid like any new road: where the right-of-way meets an existing road the two share cells and nodes, never overlap

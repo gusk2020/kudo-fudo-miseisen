@@ -5,6 +5,7 @@ import { parseState } from "../../src/core/save";
 import { defaultState, realState } from "../../src/core/state";
 import { advance } from "../../src/sim/engine";
 import { isolatedIslands } from "../../src/sim/straits";
+import { fixedLink } from "../../src/sim/ferry";
 import { checkIntegrity } from "../../src/sim/network";
 import { realWorld, stage3Sim } from "./simhelp";
 
@@ -35,11 +36,13 @@ describe("added islands: 淡路島・対馬・佐渡島・壱岐島・隠岐諸�
   it("a game on the island map runs: roads and villages on every island, integrity holds, remote islands start isolated, 淡路 gets its bridges", () => {
     const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true);
     for (let i = 0; i < 5; i++) { const c = w.cities.find((x) => x.id === "X-" + EXTRA_IDS[i].toUpperCase())!; expect(Object.values(sim.settlements).some((v) => v.city === c.id), c.name).toBe(true); }
-    expect(isolatedIslands(sim, w).sort()).toEqual([5, 6, 7, 8, 9].filter((x) => true));   // none is connected to the mainland in 1950
+    expect(isolatedIslands(sim, w)).toEqual([]);   // Issue #15: every island is joined to the mainland by ferry from the first day (no bridge is forced into 1950)
+    const lmOf = (id: string) => w.lm[w.cityById.get(id)!.cell], honshu = w.lm[w.cityById.get("C-JP-27")!.cell];
+    expect(fixedLink(sim, w, lmOf("X-AWAJI"), honshu, "road")).toBeNull();   // ... but no fixed link yet
     sim.policy!.mode = "auto"; advance(sim, w, 12 * 70);
     expect(checkIntegrity(sim)).toEqual([]);
     expect(Object.values(sim.edges).some((e) => e.facilityName?.startsWith("akashi-awaji:") || e.facilityName?.startsWith("naruto-awaji:"))).toBe(true);
-    expect(isolatedIslands(sim, w)).not.toContain(6);   // 淡路 is joined to the mainland by 1998 at the latest (heisei: 1985 / 1998)
-    expect(isolatedIslands(sim, w)).toContain(5);       // 佐渡 has no crossing: it stays an isolated island
+    expect(fixedLink(sim, w, lmOf("X-AWAJI"), honshu, "road") ?? fixedLink(sim, w, lmOf("X-AWAJI"), w.lm[w.cityById.get("C-JP-36")!.cell], "road")).not.toBeNull();   // 淡路 gets a bridge by 1998 at the latest
+    expect(fixedLink(sim, w, lmOf("X-SADO"), honshu, "road")).toBeNull();   // 佐渡 stays reachable only by ferry (no fixed link is planned for it)
   }, 300000);
 });
