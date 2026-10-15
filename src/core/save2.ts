@@ -12,7 +12,7 @@ import { ISLAND_IDS } from "./types";
 export const SAVE_VERSION = 2;
 /** Hash of everything that defines the finished map (not view prefs or step). Changes whenever the map is edited. */
 export function mapStateHash(s: ProjectState): string {
-  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne]));
+  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne, ...(s.islands ? ["islands"] : []), ...(s.capital ? ["capital", s.capital] : [])]));   // the extras are appended only when set, so a save made before them hashes exactly as it did
 }
 export interface GameSave { format: "kudo-fudo-miseisen"; schemaVersion: 2; savedAt: number; map: ProjectState; mapHash: string; sim: SimState | null }
 export function makeSave(map: ProjectState, sim: SimState | null): GameSave {

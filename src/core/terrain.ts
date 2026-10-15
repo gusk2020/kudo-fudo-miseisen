@@ -1,6 +1,6 @@
 /** Deterministic terrain/hydrology/prefecture generation on a regular world grid. Pure: no DOM, no rendering. */
 import { localToWorld, realToWorld } from "./body";
-import { BODY_DEFS, JAPAN, realToLonLat } from "./data";
+import { BODY_DEFS, EXTRA, EXTRA_IDS, JAPAN, realToLonLat } from "./data";
 import { MinHeap } from "./heap";
 import { dist, pointSegDist, rot as rotv } from "./geom";
 import { fbm, hashArrays } from "./rng";
@@ -66,6 +66,8 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   const seed = s.seed >>> 0;
   // ---- grid ----
   const parts: { id: IslandId; idx: number; polys: Vec[][] }[] = ISLAND_IDS.map((id, idx) => ({ id, idx: idx + 1, polys: BODY_DEFS[id].parts.map((p) => p.map((q) => localToWorld(s.bodies[id], q))) }));
+  // Issue #13: the extra islands share the real-km frame (world = real, since no body is placed or deformed); they take island numbers after the four bodies
+  const extras = s.islands ? EXTRA_IDS.map((id, i) => ({ id, idx: ISLAND_IDS.length + 1 + i, polys: EXTRA.islands[id].parts })) : [];
   let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
   for (const b of parts) for (const p of b.polys) for (const q of p) { bx0 = Math.min(bx0, q[0]); bx1 = Math.max(bx1, q[0]); by0 = Math.min(by0, q[1]); by1 = Math.max(by1, q[1]); }
   const pad = 40;
@@ -79,6 +81,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   progress(0.05, "陸地");
   const land = new Uint8Array(N), island = new Uint8Array(N);
   for (const b of parts) for (const p of b.polys) fillPolygon(p, x0, y0, cell, nx, ny, (i, j) => { land[j * nx + i] = 1; island[j * nx + i] = b.idx; });
+  for (const b of extras) for (const p of b.polys) fillPolygon(p, x0, y0, cell, nx, ny, (i, j) => { land[j * nx + i] = 1; island[j * nx + i] = b.idx; });
 
   // ---- elevation: the source DEM follows the warp (mesh splat) ----
   progress(0.15, "標高");
@@ -112,6 +115,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     };
     for (let j = 0; j < my - 1; j++) for (let i = 0; i < mx - 1; i++) { const a = j * mx + i, bb = a + 1, c = a + mx, e = c + 1; tri(a, bb, c); tri(bb, e, c); }
   }
+  for (const b of extras) { for (let k = 0; k < N; k++) if (island[k] === b.idx) elev[k] = sampleDem(dem, [cx(k % nx), cy((k / nx) | 0)]); }
   // chamfer distance from sea inside land (km) and from land outside (km)
   const chamfer = (src: (k: number) => boolean): Float32Array => {
     const d = new Float32Array(N).fill(1e9);
@@ -294,6 +298,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
       if (nd < D[n]) { D[n] = nd; pref[n] = lab; dh.push(nd, n); }
     }
   }
+  for (const b of extras) { const pi = prefs.findIndex((q) => q.id === EXTRA.islands[b.id].pref); if (pi >= 0) for (let k = 0; k < N; k++) if (island[k] === b.idx && land[k] === 1) pref[k] = pi + 1; }
   let unassigned = 0; for (let k = 0; k < N; k++) if (land[k] && !pref[k]) unassigned++;
   if (unassigned) warnings.push(`府県に割り当たらない陸地セルが${unassigned}個あります`);
   const counts = new Int32Array(prefs.length + 1);
@@ -309,8 +314,8 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   // ---- cities follow their island; only unsuitable sites move ----
   progress(0.9, "都市");
   const cities: CityOut[] = [];
-  for (const c of JAPAN.cities) {
-    const b = bodyOf(c.island), w = realToWorld(b, s.bodies[b], c.pos);
+  for (const c of s.islands ? [...JAPAN.cities, ...EXTRA.cities] : JAPAN.cities) {
+    const isExtra = (EXTRA_IDS as readonly string[]).includes(c.island), b = isExtra ? "honshu" : bodyOf(c.island), w = isExtra ? c.pos : realToWorld(b, s.bodies[b], c.pos);
     let k = idxOf(w), moved = false;
     const bad = (n: number) => n < 0 || land[n] !== 1 || elev[n] > 2600;
     if (bad(k)) {

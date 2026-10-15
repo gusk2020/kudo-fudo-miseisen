@@ -37,7 +37,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<s
   return e;
 }
 const ROT_STEP = Math.PI / 36; // 5 degrees
-const stateKey = (s: Store["state"]) => JSON.stringify([s.seed, s.bodies, s.features, s.ridges]);
+const stateKey = (s: Store["state"]) => JSON.stringify([s.seed, s.bodies, s.features, s.ridges, s.islands ? 1 : 0]);
 
 export class App {
   store = new Store(); r!: Renderer;

@@ -1,6 +1,6 @@
 /** Static, derived-from-the-map context for the simulation. Rebuilt on load; never saved. */
 import { MinHeap } from "../core/heap";
-import { JAPAN } from "../core/data";
+import { EXTRA, JAPAN } from "../core/data";
 import { mulberry32 } from "../core/rng";
 import type { TerrainResult } from "../core/terrain";
 import type { Vec } from "../core/types";
@@ -25,7 +25,7 @@ export function buildWorld(t: TerrainResult, seed: number): World {
   }
   const rnd = mulberry32((seed ^ 0x5eed) >>> 0);
   const pop = new Map<string, { pop: number; src: "ne" | "synthetic" }>();
-  for (const c of JAPAN.cities) { const p = (c as any).pop as number | null | undefined; if (p) pop.set(c.id, { pop: p, src: "ne" }); }
+  for (const c of [...JAPAN.cities, ...EXTRA.cities]) { const p = (c as any).pop as number | null | undefined; if (p) pop.set(c.id, { pop: p, src: "ne" }); }
   const cities: WCity[] = [];
   for (const c of t.cities) {
     const k = cellOf(c.pos); if (k < 0) continue;

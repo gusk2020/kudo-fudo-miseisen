@@ -20,7 +20,7 @@ export function defaultState(seed = 20260101): ProjectState {
   };
 }
 /** Stage 3 start: real geography, nothing deformed, already finalised, at the roads step. */
-export function realState(seed = 20260101): ProjectState { const s = defaultState(seed); s.finalized = true; s.step = 6; s.real = true; return s; }
+export function realState(seed = 20260101): ProjectState { const s = defaultState(seed); s.finalized = true; s.step = 6; s.real = true; s.islands = true; return s; }
 export const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 /** World positions of the fixed-shape features (default = real position pushed through Honshu's warp). */

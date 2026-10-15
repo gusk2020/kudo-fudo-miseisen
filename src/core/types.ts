@@ -28,6 +28,10 @@ export interface ProjectState {
   finalized: boolean;
   /** Stage 3: the real Japan (no deformation, no drawn ridges). Set only by realState(); the hand-edited map flow never sets it. */
   real?: boolean;
+  /** Issue #13: the five added islands (淡路・対馬・佐渡・壱岐・隠岐) are part of the land. Set only by realState(); older saves lack it, so their terrain stays exactly as it was. */
+  islands?: boolean;
+  /** Issue #13: id of the city chosen as the capital (default: 東京). A city/administration parameter, kept apart from the terrain. */
+  capital?: string;
   layers: Record<string, boolean>;
 }
 

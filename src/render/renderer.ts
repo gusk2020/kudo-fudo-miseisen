@@ -1,6 +1,6 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { realToWorld, worldParts } from "../core/body";
-import { BODY_DEFS, ISLAND_LABEL, JAPAN } from "../core/data";
+import { BODY_DEFS, EXTRA, EXTRA_IDS, ISLAND_LABEL, JAPAN } from "../core/data";
 import { featureWorldPos } from "../core/state";
 import type { TerrainResult } from "../core/terrain";
 import type { IslandId, Issue, Op, Place, ProjectState, Vec } from "../core/types";
@@ -106,6 +106,10 @@ export class Renderer {
         if (landFlat) fills.poly(flat(poly)).fill({ color: bad.has(id) ? 0xd89090 : this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
         if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(bad.has(id) ? 3 : 1.4), color: bad.has(id) ? 0xd22 : 0x2c3e1f });
       }
+    }
+    if (s.islands) for (const id of EXTRA_IDS) for (const poly of EXTRA.islands[id].parts) {   // the added islands (world = real km; never deformed)
+      if (landFlat) fills.poly(flat(poly)).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
+      if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(1.4), color: 0x2c3e1f });
     }
     this.base.addChild(fills);
     // lakes & features

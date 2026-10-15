@@ -23,6 +23,7 @@ async function startReal(page: Page, era = "heisei") {
 }
 
 test("real Japan opens by default: finalised, step 6, no map-editing controls, era choice before the ceremony", async ({ page }) => {
+  await bootReal(page); expect(await app(page, "a => ['X-SADO','X-AWAJI','X-TSUSHIMA','X-IKI','X-OKI'].every((id) => a.world.cityById.has(id))")).toBe(true);
   const errs = watchErrors(page); await bootReal(page);
   expect(await app(page, "a => a.real")).toBe(true); expect(await app(page, "a => a.s.step")).toBe(6); expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.real")).toBe(true);
   expect(await page.isVisible("#btn-prev")).toBe(false); expect(await page.isVisible("#era-pick")).toBe(true);
