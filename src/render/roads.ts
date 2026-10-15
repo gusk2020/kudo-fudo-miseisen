@@ -95,6 +95,7 @@ export class RoadLayer {
         if (rank < minRank && !(a.compare && zoom >= 0.35)) { if (!(isPlan && zoom >= 0.35 && a.layers.plans)) continue; }
         if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
         if (isAband && !showAband) continue;
+        if (e.facility === "ferry" && a.hide?.includes("fac:ferry")) continue;
         if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (past ? "planned" : planned.get(e.id) ?? "planned")))) continue; }
         const pts = edgeShape(w, sim, e); shapes.set(e.id, pts);
         const thin = zoom < 0.35 ? 0.6 : 1, wd = (rail ? RAIL_WIDTH[e.standard] : g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8) * thin, col = rail ? railColour(eff.q) : condColour(eff.q), isOld = e.bypassedBy.length > 0 && !past;

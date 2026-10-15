@@ -77,10 +77,10 @@ export function makeFerry(sim: SimState, w: World, ca: WCity, cb: WCity, mode: M
   };
   sim.edges[id] = e; pushHist(sim, e, `${reason}`); return e;
 }
-/** Is there a bridge or a tunnel (a fixed link, open) joining these two masses for this mode? */
-export function fixedLink(sim: SimState, w: World, la: number, lb: number, mode: Mode): SimEdge | null {
+/** Is there a bridge or a tunnel (a fixed link) joining these two masses for this mode? Open ones only, unless `anyState` (a closed one still counts as built). */
+export function fixedLink(sim: SimState, w: World, la: number, lb: number, mode: Mode, anyState = false): SimEdge | null {
   for (const e of Object.values(sim.edges)) {
-    if ((e.facility !== "bridge" && e.facility !== "tunnel") || modeOf(e) !== mode || e.built < 1 || e.state !== "open") continue;
+    if ((e.facility !== "bridge" && e.facility !== "tunnel") || modeOf(e) !== mode || e.built < 1 || (!anyState && e.state !== "open")) continue;
     const ma = w.lm[e.cells[0]], mb = w.lm[e.cells[e.cells.length - 1]]; if ((ma === la && mb === lb) || (ma === lb && mb === la)) return e;
   }
   return null;

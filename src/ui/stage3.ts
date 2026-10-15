@@ -15,11 +15,11 @@ const ym = (sim: SimState, m: number) => { const { year, month } = monthToYM(sim
 const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) * 10)) + "□".repeat(10 - Math.round(Math.max(0, Math.min(1, v)) * 10));
 
 export function eraPicker(app: App, tb: HTMLElement, current: number, pick: (i: number) => void) {
-  tb.append(h("div", { id: "era-pick", class: "note" }, "最初の元号を選んでください。1945年に昭和が終わり、1950年は新元号6年から始まります。候補は昭和改元(1926年)のときに実際に挙がった案です。"));
+  tb.append(h("div", { id: "era-pick", class: "note" }, "最初の元号(1926年の昭和改元で実際に挙がった案)"));
   const sel = h("select", { id: "era-first", "aria-label": "最初の元号", onchange: (e: Event) => pick(+(e.target as HTMLSelectElement).value) }) as HTMLSelectElement;
   CAND_1945.forEach((c, i) => sel.append(h("option", { value: String(i), ...(i === current ? { selected: "" } : {}) }, `${c.name}(${STANCE_LABEL[c.stance]})`)));
   const c = CAND_1945[current] ?? CAND_1945[0];
-  tb.append(h("div", { class: "grp" }, sel), h("div", { id: "era-desc", class: "note" }, `${c.name}: ${c.note}。方針=${STANCE_LABEL[c.stance]}。${ERAS[c.stance].summary} 方針の割り当てはゲーム上の仮のもので、元号の意味とは関係ありません。この世界は1989年・2019年にも改元があり、そのつど選べます。`));
+  tb.append(h("div", { class: "grp" }, sel), h("div", { id: "era-desc", class: "note" }, `${c.note}／方針: ${STANCE_LABEL[c.stance]}(割り当てはゲーム上の仮のもの。1989・2019年にも改元があります)`));
   void app;
 }
 /** The era-change sheet: opens by itself when a kaigen is due; time is stopped until a name is chosen. */
@@ -36,7 +36,7 @@ export function buildKaigen(app: App, body: HTMLElement) {
 
 const KIND_FILTER: Record<string, (k: string) => boolean> = {
   all: () => true, world: (k) => k === "world", domestic: (k) => k === "domestic" || k === "reform", policy: (k) => k === "policy",
-  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), city: (k) => k === "city" || k === "village" || k === "boom",
+  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), city: (k) => k === "city" || k === "village" || k === "boom",
 };
 const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", city: "人口" };
 export function buildTimeline(app: App, body: HTMLElement) {
@@ -55,7 +55,7 @@ function routeKm(sim: SimState, r: SimRoute) { return Math.round(r.edges.reduce(
 export function buildLedger(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "路線台帳")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
   const tabs = h("div", { class: "row" });
-  for (const [k, l] of [["road", "道路"], ["rail", "鉄道"], ["fac", "トンネル・橋"], ["gone", "計画・廃止・廃墟跡"]] as const) tabs.append(h("button", { id: "led-" + k, class: ui3.ledger === k ? "mode on" : "mode", "aria-pressed": ui3.ledger === k ? "true" : "false", onclick: () => { ui3.ledger = k; ui3.ledgerN = 40; app.buildSheet(); } }, l));
+  for (const [k, l] of [["road", "道路"], ["rail", "鉄道"], ["fac", "トンネル・橋・航路"], ["gone", "計画・廃止・廃墟跡"]] as const) tabs.append(h("button", { id: "led-" + k, class: ui3.ledger === k ? "mode on" : "mode", "aria-pressed": ui3.ledger === k ? "true" : "false", onclick: () => { ui3.ledger = k; ui3.ledgerN = 40; app.buildSheet(); } }, l));
   body.append(tabs, h("small", {}, "番号は一度使われたら再利用されません(同じ路線の復活を除く)。行をタップすると番号・管理主体・区間の履歴が開きます。"));
   const item = (r: SimRoute) => {
     const es = r.edges.map((x) => sim.edges[x.edgeId]).filter(Boolean), q = Math.round(es.reduce((a, e) => a + e.quality, 0) / (es.length || 1)), open = ui3.open.has(r.id);
@@ -81,7 +81,7 @@ export function buildLedger(app: App, body: HTMLElement) {
     if (shown > ui3.ledgerN) body.append(h("button", { onclick: () => { ui3.ledgerN += 40; app.buildSheet(); } }, "さらに表示"));
   } else if (ui3.ledger === "fac") {
     const fs = Object.values(sim.edges).filter((e) => e.facility).sort((a, b) => b.lengthKm - a.lengthKm);
-    body.append(h("h3", {}, `長大なトンネル・橋 ${fs.length}(新しく造った区間のうち、長いものを個別の施設として管理)`));
+    body.append(h("h3", {}, `トンネル・橋・フェリー航路 ${fs.length}(長いものを個別の施設として管理。航路は道路ではなく、海の上の連絡として別に扱う)`));
     for (const e of fs.slice(0, ui3.ledgerN)) body.append(h("div", { class: "issue" + (e.state === "open" || e.built < 1 ? "" : " warn"), id: "fac-" + e.id }, `${displayName(e)} ${Math.round(e.lengthKm * 10) / 10}km [${modeOf(e) === "rail" ? "鉄道" : "道路"}・${e.built < 1 ? "工事中" : STATE_LABEL[e.state]}]`, h("br"), h("small", {}, e.hist[e.hist.length - 1]?.t ?? `${prefName(e.region)}`)));
     if (!fs.length) body.append(h("small", {}, "まだありません。新しい路線が山地や広い河川を越えると現れます。"));
   } else {

@@ -11,6 +11,8 @@ import { stanceAt } from "./kaigen";
 import { buildIndex, newEdgeDefaults, newId, nodeAtCell, pushHist } from "./network";
 import { designate, ev, yearOf } from "./engine";
 import { successorOperator } from "./reform";
+import { fixedLink } from "./ferry";
+import { carryOver } from "./crossing";
 import type { Mode, SimEdge, SimState } from "./types";
 import type { World } from "./world";
 
@@ -35,6 +37,7 @@ export function openStraits(sim: SimState, w: World, year: number, atStart = fal
     if ((s.needs && !w.cityById.has(s.needs)) || (s.unless && w.cityById.has(s.unless))) continue;
     const due = s.year[TABLE_STANCE(era) as "heisei"]; if (due === undefined || opened(sim, s.id) || (atStart || sim.kaigen ? due > year : due !== year)) continue;
     const ca = w.cityById.get(s.a), cb = w.cityById.get(s.b); if (!ca || !cb) continue;
+    if (sim.crossings && fixedLink(sim, w, w.lm[ca.cell], w.lm[cb.cell], s.mode, true)) continue;   // already joined by a fixed link of this mode (the game planned one earlier)
     const idx = buildIndex(sim, s.mode), a = nodeAtCell(sim, w, idx, ca.cell, "junction"), b = nodeAtCell(sim, w, idx, cb.cell, "junction"), id = newId(sim, "edge");
     const rail = s.mode === "rail", real = era === "heisei" || due <= 1950;
     let op: string | undefined; if (rail) op = sim.operators.jnr?.until !== undefined ? "" : "jnr";
@@ -43,7 +46,8 @@ export function openStraits(sim: SimState, w: World, year: number, atStart = fal
       surface: "paved", quality: 92, built: 1, open: true, state: "open", standard: "standard", maxGradePct: 1, builtMonth: sim.month, region: w.prefOf(ca.cell) ?? "JP-13",
       facility: s.fac, facilityName: `${s.id}:${s.name}`, ...(rail ? { mode: "rail" as const, op: op || "jnr" } : {}),
     };
-    sim.edges[id] = e; if (rail && op === "") { e.op = successorOperator(sim, w, e, year); }
+    sim.edges[id] = e; if (sim.crossings) carryOver(sim, w, e);
+    if (rail && op === "") { e.op = successorOperator(sim, w, e, year); }
     pushHist(sim, e, `${s.name}が開通(${real ? "史実に沿う" : "この世界線の架空の開通年"})`);
     const grade = rail ? (e.op === "jnr" ? "jnr" : "priv") : "national", r = designate(sim, [{ edgeId: id, dir: 1 }], grade, rail ? (e.op === "jnr" ? "JP" : e.op!) : "JP", `${ca.name}〜${cb.name}(${s.name})`, "島をまたぐ路線", true);
     ev(sim, "facility", `${atStart ? "" : real ? "【史実】" : "【架空】"}${s.name}が開通(${ca.name}〜${cb.name})${r ? `。${r.name}` : ""}`, atStart ? "1950年にはすでに開通していた島間の連絡" : `島をまたぐ${rail ? "鉄道" : "道路"}が結ばれた。${real ? "実際の開通年" : "世界線ごとに開通年が違う(架空)"}`, { edge: id });

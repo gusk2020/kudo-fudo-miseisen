@@ -45,7 +45,7 @@ export function competeWeight(dl: { carBias: number; railBias: number }, other: 
   return Math.max(0.25, Math.min(0.9, 0.55 + 0.2 * lean));
 }
 export const MAX_PATHFINDS = 12, REGIONS_PER_YEAR = 14, MAX_ACTIVE_PER_REGION = 2;
-const UNIT: Record<Standard, number> = { rural: 1, standard: 1.8, highgrade: 4 };
+export const UNIT: Record<Standard, number> = { rural: 1, standard: 1.8, highgrade: 4 };
 interface Cand { score: number; kind: ProjectKind; edge?: SimEdge; vid?: string; a?: number; b?: number; reason: string; toCell?: number; toName?: string; local?: boolean; fromCell?: number; fromName?: string }
 /** Projects born as local branch lines/connectors carry this prefix in their reason (no new save field needed). */
 export const LOCAL_TAG = "【地方】";
@@ -63,7 +63,7 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
   const start = ((y - sim.startYear) * REGIONS_PER_YEAR) % n, slice = Array.from({ length: REGIONS_PER_YEAR }, (_, i) => regions[(start + i) % n]);
   const live = activeProjects(sim).filter((p) => modeOf(p) === "road"), busy = new Set(live.flatMap((p) => p.edgeIds)), perRegion = new Map<string, number>();
   for (const p of live) if (p.status !== "suspended") perRegion.set(p.region, (perRegion.get(p.region) ?? 0) + 1);
-  const edgesBy = new Map<string, SimEdge[]>(); for (const e of Object.values(sim.edges)) if (modeOf(e) === "road") (edgesBy.get(e.region) ?? edgesBy.set(e.region, []).get(e.region)!).push(e);
+  const edgesBy = new Map<string, SimEdge[]>(); for (const e of Object.values(sim.edges)) if (modeOf(e) === "road" && e.facility !== "ferry") (edgesBy.get(e.region) ?? edgesBy.set(e.region, []).get(e.region)!).push(e);
   const vilBy = new Map<string, string[]>(); for (const v of Object.values(sim.settlements)) if (!v.gone) { const r = w.prefOf(v.cell) ?? "JP-13"; (vilBy.get(r) ?? vilBy.set(r, []).get(r)!).push(v.id); }
   const cityBy = new Map<string, number[]>(); w.cities.forEach((c, i) => { const r = c.pref ?? "JP-13"; (cityBy.get(r) ?? cityBy.set(r, []).get(r)!).push(i); });
   const nc = w.cities.length;
@@ -98,13 +98,13 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
 export function planConvert(sim: SimState, y: number) {
   if (sim.dials.hwyBuild < 0.3 || Object.values(sim.projects).filter((p) => p.kind === "convert" && p.status !== "open" && p.status !== "abolished").length >= 2) return;
   const busy = new Set(Object.values(sim.projects).filter((p) => p.status === "planned" || p.status === "building").flatMap((p) => p.edgeIds));
-  const cs = Object.values(sim.edges).filter((e) => modeOf(e) === "rail" && (e.state === "closed" || e.state === "lost") && e.built >= 1 && !e.convertedTo && !busy.has(e.id) && e.lengthKm >= 8).sort((a, b) => (a.id < b.id ? -1 : 1));
+  const cs = Object.values(sim.edges).filter((e) => modeOf(e) === "rail" && e.facility !== "ferry" && (e.state === "closed" || e.state === "lost") && e.built >= 1 && !e.convertedTo && !busy.has(e.id) && e.lengthKm >= 8).sort((a, b) => (a.id < b.id ? -1 : 1));
   if (!cs.length || rand(sim) > 0.35) return;
   const e = cs[Math.floor(rand(sim) * cs.length)], p = createProject(sim, "convert", e.region, e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], e.lengthKm * 0.35, `廃止された鉄道の跡が使える(${Math.round(e.lengthKm)}km)`, 1.2);
   ev(sim, "project", `廃線跡の転用計画: ${sim.nodes[e.a]?.name ?? "地点"}〜${sim.nodes[e.b]?.name ?? "地点"}(道路へ)`, p.reason, { project: p.id, edge: e.id }); void y;
 }
 export const MAX_RAIL_PATHFINDS = 5;
-const RAIL_UNIT: Record<Standard, number> = { rural: 1.6, standard: 2.8, highgrade: 6 };
+export const RAIL_UNIT: Record<Standard, number> = { rural: 1.6, standard: 2.8, highgrade: 6 };
 const baseName = (n: string) => n.replace(/市$/, "");
 /** Railway planning, once a year: new lines where the demand is not served by rail, electrification/high-speed where lines are full, revival where demand returned. */
 export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
@@ -114,7 +114,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
   if (liveNew >= maxNew && liveUp >= maxUp && live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length >= 1 + Math.round(dl.railBuild * 3)) return;
   const busy = new Set(live.flatMap((p) => p.edgeIds)), nc = w.cities.length, cands: (Cand & { op?: string; std?: Standard })[] = [];
   for (const e of Object.values(sim.edges)) {
-    if (modeOf(e) !== "rail" || busy.has(e.id) || e.built < 1) continue;
+    if (modeOf(e) !== "rail" || e.facility === "ferry" || busy.has(e.id) || e.built < 1) continue;
     if (e.state === "open" && e.congYears >= 2 && e.standard !== "highgrade" && (e.standard === "rural" || dl.hsr > 0.4)) cands.push({ score: 3.2 + Math.min(3, (e.through / RAIL_CAPACITY_OF(e)) * 0.3), kind: "electrify", edge: e, reason: `輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%に達し${e.congYears}年混雑(${e.standard === "rural" ? "電化・複線化" : "高速化"})` });
     else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && dl.railBuild > 0.3 && !e.convertedTo) cands.push({ score: 2 + (an.potential.get(e.id) ?? 0) / 90, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}人/日が${e.reviveYears}年続いている` });
   }

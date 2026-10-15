@@ -14,6 +14,7 @@ import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./r
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
 import { techAt, TECH_K } from "./tech";
+import { finishCrossing, isCrossingProject, planCrossings } from "./crossing";
 import { homeCity, subCity, tokyoCity } from "./ceremony";
 import { prefOfSeat } from "../core/seat";
 import type { Vec } from "../core/types";
@@ -143,6 +144,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   evaluateEdges(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
+  if (sim.crossings) planCrossings(sim, w, y);
   refreshNick(sim);
   if (sim.stage3) compactSim(sim, y);
   if (y !== sim.startYear && y % (sim.stage3 ? SNAP_EVERY_YEARS : 10) === 0) takeSnapshot(sim);
@@ -408,6 +410,7 @@ function completeRailProject(sim: SimState, w: World, p: SimProject, es: SimEdge
 }
 function completeProject(sim: SimState, w: World, p: SimProject) {
   const es = p.edgeIds.map((id) => sim.edges[id]).filter(Boolean);
+  if (isCrossingProject(p)) { const moved = finishCrossing(sim, w, p); ev(sim, "open", `海峡連絡が開通: ${projLabel(sim, p)}(${es[0]?.facility === "tunnel" ? "海底トンネル" : "橋"})`, `${p.reason}${moved ? "。航路の路線は新しい連絡へ付け替えた" : ""}`, { project: p.id }); if (moved) return; }
   if (p.kind === "convert") {
     const re = es[0]; if (!re || re.convertedTo) return;
     // laid like any new road: where the right-of-way meets an existing road the two share cells and nodes, never overlap
