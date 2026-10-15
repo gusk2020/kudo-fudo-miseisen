@@ -43,3 +43,7 @@
 - Legend is a collapsible, persisted filter panel (road/rail, grade, state); display only, never touches the simulation.
 - 開通の儀: strokes append (start snapped to the previous end), per-kind undo/redo/restart, a tap is ignored, half-drawn ceremony persists (`kfm.cer`) across reload. Path correction/junctions are done by the existing least-cost planner and `layPath`.
 - Tests: e2e reload at x20, quarantine-not-overwritten, legend persistence, multi-stroke ceremony.
+
+
+## Issue #13（Stage 4 再改修）
+`docs/STAGE4_ISSUE13.md` に記録。ブランチ `claude/stage4-issue13`（Draft PR #14）。
