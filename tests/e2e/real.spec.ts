@@ -114,3 +114,25 @@ test("a save file from the old game is refused in the real-Japan game (and nothi
   expect(await page.textContent("#toast")).toContain("旧版"); expect(await app(page, "a => a.s.real")).toBe(true); expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.step")).toBe(6);
   expect(errs).toEqual([]);
 });
+
+const idbGet = (page: Page, key: string) => page.evaluate((k) => new Promise<any>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const g = r.result.transaction("saves").objectStore("saves").get(k); g.onsuccess = () => res(g.result ?? null); }; }), key);
+
+test("reload at ×20 keeps the game; a save whose roads cannot be attached is quarantined and the stored save is never overwritten (Issue #11)", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "shubun");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.setSpeed(20); });
+  await page.waitForTimeout(2500);
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); });
+  const month = await app(page, "a => a.sim.month") as number;
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.sim.month")).toBeGreaterThanOrEqual(month);
+  // make the stored roads unattachable (terrain hash mismatch) and reload
+  await page.evaluate(() => { (window as any).__kfm.persist = () => Promise.resolve(true); });
+  await page.evaluate(() => new Promise<void>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const st = r.result.transaction("saves", "readwrite").objectStore("saves"); const g = st.get("s3:auto"); g.onsuccess = () => { const o = JSON.parse(g.result); o.save.sim.terrainHash = "tampered"; st.put(JSON.stringify(o), "s3:auto"); res(); }; }; }));
+  const before = await idbGet(page, "s3:auto");
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(2500);
+  expect(await app(page, "a => !!a.sim")).toBe(false);
+  const strip = (x: string) => x.replace(/"savedAt":\d+/g, "");   // a re-save of the same content may refresh the timestamp; the content must be untouched
+  expect(strip(await idbGet(page, "s3:auto"))).toBe(strip(before));
+  expect(await idbGet(page, "s3:auto:quarantine")).not.toBeNull();
+  expect(errs).toEqual([]);
+});

@@ -56,6 +56,8 @@ export class App {
   private lastBackup = 0; private lastSaved = 0; private persistRetry = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
   /** Stage 3 plays on the real Japan; the old hand-edited-map flow stays reachable with ?legacy=1 and keeps its own save key. */
+  /** Set when a stored save existed but its road data could not be attached: autosave must not overwrite it with an empty state. */
+  private saveLocked = false; private prevCopied = false;
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
     const a = new App(); a.real = real; a.r = await Renderer.create(host);
@@ -69,6 +71,8 @@ export class App {
       const raw = await getRaw(a.saveKey);
       if (raw) { await putRaw(a.saveKey + ":broken", { savedAt: Date.now(), raw }); saved = await loadGame(a.saveKey + ":backup"); restoredFromBackup = !!saved; }
     }
+    if (!saved && real && (await getRaw(a.saveKey))) a.saveLocked = true;   // an unreadable save is never replaced by a fresh empty state
+    if (saved && saved.quarantine) a.saveLocked = true;
     if (restoredFromBackup) setTimeout(() => a.toast("最新のセーブが壊れていたため、バックアップから復元しました(壊れたデータは別に保管しています)"), 800);
     if (saved) {
       a.store.replace(saved.map); a.pendingSim = saved.sim;
@@ -109,6 +113,8 @@ export class App {
       this.runner.settle();
     }
     this.lastSaved = performance.now();
+    if (!this.prevCopied) { this.prevCopied = true; void getRaw(this.saveKey).then((raw) => { if (raw) { try { return putRaw(this.saveKey + ":prev", JSON.parse(raw)); } catch { return putRaw(this.saveKey + ":prev", { raw }); } } }).catch(() => { /* ignore */ }); }
+    if (this.saveLocked && !this.sim && !this.pendingSim) return Promise.resolve(false);
     if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now();
     if (this.real && this.sim && performance.now() - this.lastBackup > 120000) { this.lastBackup = performance.now(); void saveGame(this.saveKey + ":backup", makeSave(this.s, this.sim)); }   /* a second copy every two minutes; a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
   ensureWorld(): World | null { if (!this.terrain) return null; if (this.worldRef !== this.terrain) { this.world = buildWorld(this.terrain, this.s.seed); this.worldRef = this.terrain; } return this.world; }
@@ -121,9 +127,9 @@ export class App {
   }
   /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
   private attachPendingSim() {
-    if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; this.pendingSim = null; if (!w || !this.terrain) return;
+    if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
-    if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.toast(`道路データは読み込まず退避しました: ${err}`); return; }
+    if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
     finishMigration(sim, w); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); this.runner = new SimRunner(sim, w);
     if (this.safeMode) { sim.speed = 0; this.status(); return; }
     const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
@@ -280,7 +286,7 @@ export class App {
     }
     this.building = 0;
     if (!performCeremony(sim, w, k, f)) { this.toast("開通の儀を行えませんでした"); this.buildUI(); return; }
-    sim.speed = 1; this.sim = sim; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
+    sim.speed = 1; this.sim = sim; this.saveLocked = false; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
     this.persist(); this.toast("開通の儀を終えました。時間が動き始めます"); this.onChange();
   }
   /** Look at a past year (read-only, time stopped) or return to now. Never changes the simulation. */
