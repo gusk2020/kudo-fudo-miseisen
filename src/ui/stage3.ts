@@ -5,6 +5,7 @@ import { DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey
 import { effectText } from "../sim/events";
 import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
+import { displayName } from "../sim/straits";
 import { DOMAIN_LABEL, POLICIES, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
 
@@ -67,7 +68,7 @@ export function buildLedger(app: App, body: HTMLElement) {
   } else if (ui3.ledger === "fac") {
     const fs = Object.values(sim.edges).filter((e) => e.facility).sort((a, b) => b.lengthKm - a.lengthKm);
     body.append(h("h3", {}, `長大なトンネル・橋 ${fs.length}(新しく造った区間のうち、長いものを個別の施設として管理)`));
-    for (const e of fs.slice(0, ui3.ledgerN)) body.append(h("div", { class: "issue" + (e.state === "open" || e.built < 1 ? "" : " warn"), id: "fac-" + e.id }, `${e.facilityName} ${Math.round(e.lengthKm * 10) / 10}km [${modeOf(e) === "rail" ? "鉄道" : "道路"}・${e.built < 1 ? "工事中" : STATE_LABEL[e.state]}]`, h("br"), h("small", {}, e.hist[e.hist.length - 1]?.t ?? `${prefName(e.region)}`)));
+    for (const e of fs.slice(0, ui3.ledgerN)) body.append(h("div", { class: "issue" + (e.state === "open" || e.built < 1 ? "" : " warn"), id: "fac-" + e.id }, `${displayName(e)} ${Math.round(e.lengthKm * 10) / 10}km [${modeOf(e) === "rail" ? "鉄道" : "道路"}・${e.built < 1 ? "工事中" : STATE_LABEL[e.state]}]`, h("br"), h("small", {}, e.hist[e.hist.length - 1]?.t ?? `${prefName(e.region)}`)));
     if (!fs.length) body.append(h("small", {}, "まだありません。新しい路線が山地や広い河川を越えると現れます。"));
   } else {
     const act = Object.values(sim.projects).filter((p) => p.status === "concept" || p.status === "planned" || p.status === "building" || p.status === "suspended"); body.append(h("h3", {}, `構想・計画・工事中 ${act.length}`));

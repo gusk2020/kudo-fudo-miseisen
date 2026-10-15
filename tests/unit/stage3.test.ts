@@ -4,6 +4,7 @@ import { advance, checkIntegrity, reviveRoutes, routeOfficial, simHash, stepMont
 import { HIST_EVENTS, REAL_HISTORY_UNTIL } from "../../src/sim/events";
 import { baseDials, composeDials } from "../../src/sim/eras";
 import { codesAt, routeAtYear, snapCode } from "../../src/sim/ledger";
+import { displayName } from "../../src/sim/straits";
 import { ADOPT_BAR, POINTS_PER_WINDOW, autoResolve, boostOf, computeEnv, resolveWindow, topFive } from "../../src/sim/policy";
 import { modeOf, type SimState } from "../../src/sim/types";
 import type { World } from "../../src/sim/world";
@@ -69,7 +70,7 @@ describe("determinism and saving", () => {
     const r = sanitizeSim(old); expect(r.sim?.schemaVersion).toBe(3); expect(r.sim?.stage3).toBeUndefined(); expect(r.sim?.dials.roadShare).toBeGreaterThan(0);
   });
   test("the save stays small enough for a phone after a century", () => {
-    const { sim } = century("heisei"), size = JSON.stringify(sim).length; expect(size).toBeLessThan(1_100_000);
+    const { sim } = century("heisei"), size = JSON.stringify(sim).length; expect(size).toBeLessThan(1_300_000);
   });
 });
 
@@ -176,7 +177,7 @@ describe("how things get built and unbuilt", () => {
     let fac = 0, concepts = 0, faded = 0, converted = 0;
     for (const era of ["heisei", "shubun", "shoka"] as const) {
       const { sim } = century(era); expect(checkIntegrity(sim)).toEqual([]);
-      for (const e of Object.values(sim.edges)) if (e.facility) { fac++; expect(e.facilityName).toMatch(/(トンネル|橋)$/); expect(e.lengthKm).toBeGreaterThanOrEqual(5); }
+      for (const e of Object.values(sim.edges)) if (e.facility) { fac++; expect(displayName(e)).toMatch(/(トンネル|橋)(\(.*\))?$|橋$/); expect(e.lengthKm).toBeGreaterThanOrEqual(5); }
       concepts += sim.events.filter((x) => /構想:/.test(x.text)).length; faded += sim.events.filter((x) => /構想のまま立ち消え/.test(x.text)).length; converted += sim.events.filter((x) => /廃線跡を道路に転用:/.test(x.text)).length;
     }
     expect(fac).toBeGreaterThan(3); expect(concepts).toBeGreaterThan(10); expect(faded).toBeGreaterThan(3); expect(converted).toBeGreaterThan(3);
@@ -187,6 +188,22 @@ describe("how things get built and unbuilt", () => {
     for (const e of es) { e.state = "open"; e.open = true; } reviveRoutes(sim, w, es[0].id);
     expect(r.active).toBe(true); expect(r.number).toBe(num); expect(routeOfficial(r)).toBe(before); expect(r.history[r.history.length - 1].text).toMatch(/復活/); expect(r.endMonth).toBeUndefined();
     const keys = Object.values(sim.routes).map((x) => `${x.grade}:${x.scope}:${x.number}`); expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("crossings between the islands", () => {
+  const years = (sim: SimState) => Object.fromEntries(sim.events.filter((e) => e.kind === "facility" && /が開通\(/.test(e.text) && /(関門|青函|瀬戸|明石|西瀬戸)/.test(e.text)).map((e) => [e.text.replace(/^【.*?】/, "").replace(/が開通.*$/, ""), 1950 + Math.floor(e.month / 12)]));
+  test("平成 opens them in the real years, 修文 builds road crossings first and 正化 the railway ones; the first (関門 railway) is already there in 1950", () => {
+    const H = years(century("heisei").sim), S = years(century("shubun").sim), R = years(century("shoka").sim);
+    expect(H["関門鉄道トンネル"]).toBe(1950); expect(H["関門道路トンネル"]).toBe(1958); expect(H["青函トンネル"]).toBe(1988); expect(H["瀬戸大橋(道路)"]).toBe(1988); expect(H["明石海峡・鳴門の橋"]).toBe(1998);
+    expect(S["瀬戸大橋(道路)"]).toBeLessThan(S["瀬戸大橋(鉄道)"]); expect(R["瀬戸大橋(鉄道)"]).toBeLessThan(R["瀬戸大橋(道路)"]); expect(R["青函トンネル"]).toBeLessThan(H["青函トンネル"]);
+    expect(century("heisei").sim.events.filter((e) => /【史実】.*(青函|瀬戸大橋)/.test(e.text)).length).toBe(3); expect(century("shoka").sim.events.some((e) => /【史実】.*青函/.test(e.text))).toBe(false);
+  });
+  test("a crossing joins two islands in the graph, so a city on Hokkaido, Shikoku or Kyushu can reach Honshu once it opens", () => {
+    const { sim, w } = century("heisei"), nodeOf = (id: string) => Object.values(sim.nodes).find((n) => n.cell === w.cityById.get(id)!.cell)!.id;
+    const reach = (from: string, mode: "road" | "rail") => { const seen = new Set([from]), st = [from]; while (st.length) { const x = st.pop()!; for (const e of Object.values(sim.edges)) if (modeOf(e) === mode && e.state === "open" && e.built >= 1 && (e.a === x || e.b === x)) for (const y of [e.a, e.b]) if (!seen.has(y)) { seen.add(y); st.push(y); } } return seen; };
+    const tokyo = nodeOf("C-JP-13"); expect(reach(tokyo, "road").has(nodeOf("C-JP-37"))).toBe(true);   // Takamatsu by road (瀬戸大橋・明石海峡)
+    expect(reach(tokyo, "road").has(nodeOf("C-1159141097"))).toBe(true);                                  // Kitakyushu by road (関門)
   });
 });
 

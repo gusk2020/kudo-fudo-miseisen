@@ -107,3 +107,10 @@ test("ledger rows open the number history and focus the map; the timeline filter
   await page.click("#led-fac"); expect(await page.textContent("#sheet-body")).toContain("トンネル・橋");
   expect(errs).toEqual([]);
 });
+
+test("a save file from the old game is refused in the real-Japan game (and nothing is half-loaded)", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.adopt({ map: { ...a.s, real: undefined, step: 3, finalized: false }, sim: null, quarantine: null, problems: [] }); });
+  expect(await page.textContent("#toast")).toContain("旧版"); expect(await app(page, "a => a.s.real")).toBe(true); expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.step")).toBe(6);
+  expect(errs).toEqual([]);
+});

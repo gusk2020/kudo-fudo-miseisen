@@ -9,6 +9,7 @@ import { buildIndex, checkIntegrity, edgePoints, layPath, newEdgeDefaults, newId
 import { analyze, capacityOf, passable, strandedWithout, zeroDemand, type Analysis } from "./demand";
 import { ERAS, composeDials, eraKeyOf, type EraKey } from "./eras";
 import { applyYearEvents } from "./events";
+import { openStraits } from "./straits";
 import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./reform";
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
@@ -122,7 +123,7 @@ const edgeName = (sim: SimState, e: SimEdge) => `${sim.nodes[e.a]?.name ?? "åœ°ç
 // ---- yearly decisions ----
 function* yearlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
-  if (sim.stage3) { applyYearEvents(sim, y); sim.dials = composeDials(sim, y); }
+  if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); }
   const an = analyze(sim, w); yield;
   if (sim.stage3 && PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y) { reformJnr(sim, w, y); yield; }
   updatePopulation(sim, w, an, y); updateRegionShares(sim, w); yield;

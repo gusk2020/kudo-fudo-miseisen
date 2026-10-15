@@ -17,6 +17,7 @@ import { CER_LABEL, performCeremony, previewCeremony, type CerKind, type CerPrev
 import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
 import { codesAt } from "../sim/ledger";
+import { displayName } from "../sim/straits";
 import { finishMigration } from "../sim/migrate";
 import { SimRunner } from "../sim/runner";
 import { ERA, GRADE_LABEL, KIND_LABEL, NICK_LABEL, PROJECT_LABEL, STANDARD_LABEL, STANDARD_LABEL_RAIL, STATE_LABEL, SURFACE_LABEL, eraLabel, monthToYM, setActiveEra, ymLabel, type SimState } from "../sim/types";
@@ -534,7 +535,7 @@ export class App {
     line(`行政指定: ${routes.length ? routes.map((r) => routeOfficial(r) + (r.oldEdges.includes(e.id) ? "の旧道" : "")).join("・") : "市町村道(指定なし)"}${e.nick && routes[0] ? ` ／ 通称: ${NICK_LABEL[routes[0].grade]}(細く荒れた道に後から付いた呼び名)` : ""}`, "why-designation");
     const rail = e.mode === "rail", unit = rail ? "人/日" : "台/日";
     if (rail) line(`事業者: ${sim.operators[e.op ?? "jnr"]?.name ?? "国鉄"}${e.nick ? " ／ 通称: " + (e.op === "jnr" ? "酷鉄" : "死鉄") + "(利用が少なく保守が行き届かない線に後から付く呼び名)" : ""}`, "why-operator");
-    line(`規格: ${rail ? STANDARD_LABEL_RAIL[e.standard] : STANDARD_LABEL[e.standard]}${rail ? "" : ` ／ 路面: ${SURFACE_LABEL[e.surface]}`} ／ 品質${Math.round(e.quality)}・${rail ? "荒廃" : "風化"}${Math.round(e.weathering)}・最大勾配${e.maxGradePct}%${e.curv ? `・曲がり${e.curv}rad/km` : ""}${e.facility ? ` ／ 施設: ${e.facility === "tunnel" ? "トンネル" : "橋"}` : ""}`);
+    line(`規格: ${rail ? STANDARD_LABEL_RAIL[e.standard] : STANDARD_LABEL[e.standard]}${rail ? "" : ` ／ 路面: ${SURFACE_LABEL[e.surface]}`} ／ 品質${Math.round(e.quality)}・${rail ? "荒廃" : "風化"}${Math.round(e.weathering)}・最大勾配${e.maxGradePct}%${e.curv ? `・曲がり${e.curv}rad/km` : ""}${e.facility ? ` ／ 施設: ${e.facilityName ? displayName(e) : ""}(${e.facility === "tunnel" ? "トンネル" : "橋"})` : ""}`);
     line(`状態: ${e.built < 1 ? `工事中(${Math.round(e.built * 100)}%)` : STATE_LABEL[e.state]}${e.builtMonth !== null ? ` ／ 供用${monthToYM(sim.startYear, e.builtMonth).year}年〜` : ""}`, "why-state");
     line(`需要(${unit}): 旅客の通過${Math.round(e.through)}・沿線${Math.round(e.local)}${sim.stage3 ? ` ／ 貨物${Math.round(e.freight)}` : ""} ／ 通過のピーク${Math.round(e.peakThrough)} ／ 需要ゼロ${e.zeroYears}年`, "why-demand");
     if (e.bypassedBy.length) line(`旧道: ${e.bypassedBy.map((id) => `${nm(sim.edges[id]?.a)}〜${nm(sim.edges[id]?.b)}`).join("、")}のバイパス開通で通過交通が移った。沿線需要${Math.round(e.local)}台/日${e.local >= 40 ? "が残るため管理継続" : "は小さい"}`, "why-old");
@@ -578,6 +579,8 @@ export class App {
   }
   /** Load a parsed save (slot or file): map first, then roads only if they verify against the regenerated terrain. */
   private adopt(l: { map: any; sim: SimState | null; quarantine: unknown; problems: string[] }) {
+    // the two games keep separate data: a file from the other one is refused rather than half-loaded
+    if (this.real !== !!l.map?.real) { this.toast(this.real ? "旧版(架空の日本列島)のデータです。URLの末尾に ?legacy=1 を付けた旧版で開いてください" : "実在の日本版のデータです。?legacy=1 を付けない通常のURLで開いてください"); return; }
     this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.r.fit(l.map);
     if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
     this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
