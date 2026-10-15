@@ -11,7 +11,7 @@ import { KIND_LABEL, modeOf, type Operator, type ProjectKind, type SimEdge, type
 import { pathfind, type World } from "./world";
 
 /** A long tunnel or bridge costs several times as much per km as the open line. */
-export const facCost = (e: SimEdge) => (e.facility === "tunnel" ? 3 : e.facility === "bridge" ? 2.2 : 1);
+export const facCost = (e: SimEdge) => (e.facility === "tunnel" ? 3 : e.facility === "bridge" ? 2.2 : 1) * (1 + Math.min(0.5, (e.curv ?? 0) * 0.3));   // tunnels and bridges cost more; so do winding alignments (more earthwork)
 export const MAX_PATHFINDS = 12, REGIONS_PER_YEAR = 14, MAX_ACTIVE_PER_REGION = 2;
 const UNIT: Record<Standard, number> = { rural: 1, standard: 1.8, highgrade: 4 };
 interface Cand { score: number; kind: ProjectKind; edge?: SimEdge; vid?: string; a?: number; b?: number; reason: string }

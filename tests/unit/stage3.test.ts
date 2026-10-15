@@ -85,8 +85,8 @@ describe("three world lines", () => {
   test("a century on each line: roads win under 修文, railways under 正化, 平成 in between", () => {
     const H = century("heisei"), S = century("shubun"), R = century("shoka");
     for (const x of [H, S, R]) expect(checkIntegrity(x.sim)).toEqual([]);
-    const hwy = (c: typeof H) => live(c.sim, "road").filter((e) => e.standard === "highgrade").length, hsr = (c: typeof H) => live(c.sim, "rail").filter((e) => e.standard === "highgrade").length;
-    expect(hwy(S)).toBeGreaterThan(hwy(R)); expect(hwy(S)).toBeGreaterThanOrEqual(hwy(H)); expect(hsr(R)).toBeGreaterThan(hsr(S));
+    const hwy = (c: typeof H) => km(live(c.sim, "road").filter((e) => e.standard === "highgrade")), hsr = (c: typeof H) => km(live(c.sim, "rail").filter((e) => e.standard === "highgrade"));
+    expect(hwy(S)).toBeGreaterThan(hwy(H)); expect(hwy(H)).toBeGreaterThan(hwy(R)); expect(hsr(R)).toBeGreaterThan(hsr(H)); expect(hsr(H)).toBeGreaterThan(hsr(S));
     expect(km(live(R.sim, "rail"))).toBeGreaterThan(km(live(S.sim, "rail"))); expect(km(live(S.sim, "road"))).toBeGreaterThan(km(live(R.sim, "road")));
     const lostRail = (c: typeof H) => Object.values(c.sim.edges).filter((e) => modeOf(e) === "rail" && (e.state === "closed" || e.state === "lost")).length;
     expect(lostRail(S) + lostRail(H)).toBeGreaterThan(0);
@@ -104,6 +104,14 @@ describe("three world lines", () => {
     expect(Object.values(century("shoka").sim.edges).filter((e) => e.nick && modeOf(e) === "rail").every((e) => e.quality < 55 || e.weathering > 30)).toBe(true);
     expect(nick(R) + nick(H)).toBeGreaterThanOrEqual(0);
     const first = stage3Sim("heisei", 7).sim; expect(Object.values(first.edges).some((e) => e.nick)).toBe(false);
+  });
+});
+
+describe("平成 follows the real course of the population", () => {
+  test("the population grows fast to the 1970s, peaks near 2008 (Japan's real peak) and declines afterwards", () => {
+    const { sim } = century("heisei"), st = sim.stats.filter((x) => x.pop !== undefined), peak = st.reduce((a, b) => (b.pop! > a.pop! ? b : a));
+    expect(peak.year).toBeGreaterThanOrEqual(2000); expect(peak.year).toBeLessThanOrEqual(2016);
+    const at = (y: number) => st.find((x) => x.year === y)!.pop!; expect(at(1975) / at(1951)).toBeGreaterThan(1.25); expect(at(2040)).toBeLessThan(peak.pop! * 0.95);
   });
 });
 
@@ -185,6 +193,16 @@ describe("reading the past", () => {
     const r = Object.values(sim.routes).find((x) => x.history.some((h) => /国鉄から/.test(h.text)))!;
     expect(routeAtYear(sim, r, 1960).label).toMatch(/^国鉄\d+号線$/); expect(routeAtYear(sim, r, 2020).label).toBe(r.name); expect(routeAtYear(sim, r, 1960).exists).toBe(true);
     const snapJson = JSON.stringify(sim.snaps).length; expect(snapJson).toBeLessThan(250_000);
+  });
+});
+
+describe("robustness over other seeds", () => {
+  test("the network stays structurally consistent for a century on three more seeds (one per world line), checked every ten years", () => {
+    for (const [era, seed] of [["heisei", 11], ["shubun", 23], ["shoka", 31]] as const) {
+      const { sim, w } = stage3Sim(era, seed);
+      for (let d = 0; d < 10; d++) { advance(sim, w, 120); expect(checkIntegrity(sim), `${era} seed ${seed} year ${1950 + (d + 1) * 10}`).toEqual([]); }
+      for (const p of Object.values(sim.projects)) for (const id of p.edgeIds) expect(sim.edges[id], `${era} project ${p.id} edge ${id}`).toBeDefined();
+    }
   });
 });
 

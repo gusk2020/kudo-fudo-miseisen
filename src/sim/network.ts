@@ -60,6 +60,15 @@ export function edgeShape(w: World, sim: SimState, e: Pick<SimEdge, "a" | "b" | 
   }
   return p;
 }
+/** Total heading change along a grid path per km (radians/km): the zigzag of a 5 km grid reads as curvature, a straight run as none. */
+export function curvature(w: World, cells: number[]): number {
+  let turn = 0, len = 0, prev = NaN;
+  for (let i = 1; i < cells.length; i++) {
+    const a = w.cellPos(cells[i - 1]), b = w.cellPos(cells[i]), h = Math.atan2(b[1] - a[1], b[0] - a[0]); len += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (!Number.isNaN(prev)) { let d = Math.abs(h - prev); if (d > Math.PI) d = 2 * Math.PI - d; turn += d; } prev = h;
+  }
+  return len > 0 ? Math.round((turn / len) * 1000) / 1000 : 0;
+}
 export function maxGradePct(w: World, cells: number[]): number {
   let m = 0; for (let i = 1; i < cells.length; i++) m = Math.max(m, Math.abs(w.elevM(cells[i]) - w.elevM(cells[i - 1])) / (cellDistKm(w, cells[i], cells[i - 1]) * 1000) * 100);
   return Math.round(m * 10) / 10;
@@ -81,7 +90,7 @@ export function splitEdge(sim: SimState, w: World, edgeId: string, at: number, n
   const origLen = e.lengthKm; e.b = nodeId; e.cells = e.cells.slice(0, at + 1);
   e.lengthKm = edgeLengthKm(w, sim, e); e2.lengthKm = edgeLengthKm(w, sim, e2);
   const f1 = origLen > 0 ? e.lengthKm / (e.lengthKm + e2.lengthKm) : 0.5; e2.traffic = e.traffic * (1 - f1); e.traffic *= f1;
-  e.maxGradePct = maxGradePct(w, e.cells); e2.maxGradePct = maxGradePct(w, e2.cells);
+  e.maxGradePct = maxGradePct(w, e.cells); e2.maxGradePct = maxGradePct(w, e2.cells); if (e.curv !== undefined) { e.curv = curvature(w, e.cells); e2.curv = curvature(w, e2.cells); }
   sim.edges[id2] = e2;
   for (const l of sim.links) { if (l.oldEdges.includes(edgeId)) l.oldEdges.push(id2); if (l.newEdges.includes(edgeId)) l.newEdges.push(id2); }
   if (e.bypassedBy.length) e2.bypassedBy = [...e.bypassedBy]; if (e.bypassOf.length) e2.bypassOf = [...e.bypassOf];
@@ -149,7 +158,7 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     for (const pc of pieces) { if (pc.fac) { nodeAtCell(sim, w, idx, pc.cells[0], "junction"); nodeAtCell(sim, w, idx, pc.cells[pc.cells.length - 1], "junction"); } }
     for (const { cells: part, fac } of pieces) {
       const pa = idx.nodeByCell.get(part[0]) ?? nodeAtCell(sim, w, idx, part[0], "junction"), pb = idx.nodeByCell.get(part[part.length - 1]) ?? nodeAtCell(sim, w, idx, part[part.length - 1], "junction"), id = newId(sim, "edge");
-      const e: SimEdge = { ...newEdgeDefaults(), id, a: pa, b: pb, cells: part, surface: o.surface, quality: o.quality, built: o.built, open: o.open, state: o.open ? "open" : "closed", standard: o.standard ?? "rural", maxGradePct: maxGradePct(w, part), builtMonth: o.open ? o.month : null, region: regionOfCells(w, part), ...(mode === "rail" ? { mode: "rail" as const, op: o.op ?? "jnr" } : {}) };
+      const e: SimEdge = { ...newEdgeDefaults(), id, a: pa, b: pb, cells: part, surface: o.surface, quality: o.quality, built: o.built, open: o.open, state: o.open ? "open" : "closed", standard: o.standard ?? "rural", maxGradePct: maxGradePct(w, part), ...(sim.stage3 ? { curv: curvature(w, part) } : {}), builtMonth: o.open ? o.month : null, region: regionOfCells(w, part), ...(mode === "rail" ? { mode: "rail" as const, op: o.op ?? "jnr" } : {}) };
       e.lengthKm = edgeLengthKm(w, sim, e); sim.edges[id] = e; created.push(id); chain.push({ edgeId: id, dir: 1 });
       if (fac) { e.facility = fac; const mid = part[Math.floor(part.length / 2)], near = [...w.cities].sort((p, q) => cellDistKm(w, p.cell, mid) - cellDistKm(w, q.cell, mid))[0], key = `fac:${near.id}:${fac}`, k = (sim.routeCounters[key] = (sim.routeCounters[key] ?? 0) + 1); e.facilityName = `${near.name.replace(/市$/, "")}${k}号${fac === "tunnel" ? "トンネル" : "橋"}`; }
     }

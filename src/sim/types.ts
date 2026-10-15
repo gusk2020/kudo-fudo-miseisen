@@ -44,6 +44,7 @@ export interface SimEdge {
   nick: boolean; region: string; hist: { m: number; t: string }[]; bypassOf: string[]; bypassedBy: string[]; throughDropYears: number;
   // ---- v3 (Stage 3). Absent on older saves: sanitizeSim fills mode "road", freight 0 ----
   mode?: Mode; op?: string; freight: number; deficitYears?: number;
+  curv?: number;   // curvature: total heading change per km of ground (radians/km), from the grid path; absent = straight
   facility?: "tunnel" | "bridge"; facilityName?: string; convertedTo?: string;   // long tunnels/bridges are edges of their own; a closed railway can be converted into a road
 }
 export const modeOf = (x: { mode?: Mode }): Mode => x.mode ?? "road";

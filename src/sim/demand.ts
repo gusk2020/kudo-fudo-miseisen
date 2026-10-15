@@ -22,9 +22,11 @@ export const capacityOf = (e: SimEdge) => (modeOf(e) === "rail" ? RAIL_CAPACITY 
 const BASE_SPEED: Record<Standard, number> = { rural: 25, standard: 45, highgrade: 80 };
 const RAIL_SPEED: Record<Standard, number> = { rural: 38, standard: 75, highgrade: 190 };
 const SURF: Record<Surface, number> = { unpaved: 0.6, gravel: 0.8, paved: 1 };
+/** Curve penalty on speed: a railway is hurt more by tight curves than a road is; only Stage 3 edges carry a curvature. */
+const curveFactor = (e: SimEdge, k: number) => 1 - Math.min(0.35, (e.curv ?? 0) * k);
 export const edgeSpeed = (e: SimEdge) => modeOf(e) === "rail"
-  ? RAIL_SPEED[e.standard] * (0.6 + 0.4 * e.quality / 100) * (1 - Math.min(0.3, e.maxGradePct / 40))
-  : BASE_SPEED[e.standard] * SURF[e.surface] * (0.5 + 0.5 * e.quality / 100) * (1 - Math.min(0.4, e.maxGradePct / 50));
+  ? RAIL_SPEED[e.standard] * (0.6 + 0.4 * e.quality / 100) * (1 - Math.min(0.3, e.maxGradePct / 40)) * curveFactor(e, 0.35)
+  : BASE_SPEED[e.standard] * SURF[e.surface] * (0.5 + 0.5 * e.quality / 100) * (1 - Math.min(0.4, e.maxGradePct / 50)) * curveFactor(e, 0.2);
 export const passable = (e: SimEdge) => (e.state === "open" || e.state === "dormant") && e.built >= 1 && !e.lost;
 
 export interface Analysis {

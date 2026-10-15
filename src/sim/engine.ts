@@ -5,7 +5,7 @@
  */
 import { dist } from "../core/geom";
 import { JAPAN } from "../core/data";
-import { buildIndex, checkIntegrity, edgePoints, newEdgeDefaults, newId, pushHist, setEdgeState } from "./network";
+import { buildIndex, checkIntegrity, edgePoints, layPath, newEdgeDefaults, newId, pushHist, setEdgeState } from "./network";
 import { analyze, capacityOf, passable, strandedWithout, zeroDemand, type Analysis } from "./demand";
 import { ERAS, composeDials, eraKeyOf, type EraKey } from "./eras";
 import { applyYearEvents } from "./events";
@@ -102,7 +102,16 @@ export function takeSnapshot(sim: SimState) {
   sim.snaps.push({ year: yearOf(sim), edges }); if (sim.snaps.length > 14) sim.snaps.splice(1, 1);
 }
 const macroBudget = (y: number) => Math.pow(1.06, Math.min(y, 1973) - 1950) * Math.pow(1.02, Math.max(0, Math.min(y, 1990) - 1973)) * Math.pow(0.97, Math.max(0, y - 2000));
-function popRate(y: number, pop: number): number {
+/**
+ * Stage 3 worlds follow the real course of the population up to 2026 (demography is a fact of the world, the same on every line): fast growth to the mid-70s, slow growth to about 2008 (Japan's real peak),
+ * then decline. Cities grow faster than the country (the model's rural areas hold the rest). Stage 2 (legacy) keeps its own curve.
+ */
+function popRateReal(y: number, pop: number): number {
+  let r = y < 1975 ? 0.016 : y < 1990 ? 0.0105 : y < 2008 ? 0.0075 : -0.003;
+  if (pop > 1e6 && y < 1990) r += 0.007; if (pop < 1.5e5 && y >= 1955 && y < 1985) r -= 0.006; if (pop < 3e5 && y >= 2008) r -= 0.006; return r;
+}
+function popRate(y: number, pop: number, real = false): number {
+  if (real) return popRateReal(y, pop);
   let r = y < 1975 ? 0.012 : y < 1990 ? 0.004 : y < 2000 ? 0 : -0.006;
   if (pop > 1e6 && y < 1990) r += 0.008; if (pop < 1.5e5 && y >= 1955 && y < 1985) r -= 0.006; if (pop < 3e5 && y >= 2000) r -= 0.01; return r;
 }
@@ -146,7 +155,7 @@ function compactSim(sim: SimState, y: number) {
 }
 function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   w.cities.forEach((c, i) => {
-    const st = sim.cities[c.id], before = st.pop, g = popRate(y, st.pop) + 0.012 * (an.acc[i] - 0.4) + (rand(sim) - 0.5) * 0.008;
+    const st = sim.cities[c.id], before = st.pop, g = popRate(y, st.pop, sim.stage3 === true && y <= 2026) + 0.012 * (an.acc[i] - 0.4) + (rand(sim) - 0.5) * 0.008;
     st.pop = Math.max(2000, Math.round(st.pop * (1 + g)));
     const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + 0.9 * an.acc[i]); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
     st.lowAccessYears = an.acc[i] < 0.02 ? st.lowAccessYears + 1 : 0; const base = c.pop0;
@@ -382,8 +391,11 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
   const es = p.edgeIds.map((id) => sim.edges[id]).filter(Boolean);
   if (p.kind === "convert") {
     const re = es[0]; if (!re || re.convertedTo) return;
-    const id = newId(sim, "edge"), road: SimEdge = { ...newEdgeDefaults(), id, a: re.a, b: re.b, cells: [...re.cells], lengthKm: re.lengthKm, surface: "gravel", quality: 60, weathering: 0, built: 1, open: true, state: "open", standard: "rural", maxGradePct: re.maxGradePct, builtMonth: sim.month, region: re.region };
-    sim.edges[id] = road; re.convertedTo = id; pushHist(sim, road, "廃線跡を道路に転用して供用開始"); pushHist(sim, re, "廃線跡を道路に転用");
+    // laid like any new road: where the right-of-way meets an existing road the two share cells and nodes, never overlap
+    const lay = layPath(sim, w, re.cells, { open: true, surface: "gravel", quality: 60, built: 1, month: sim.month, standard: "rural" });
+    if (!lay.chain.length) return;
+    re.convertedTo = lay.chain[0].edgeId; pushHist(sim, re, "廃線跡を道路に転用");
+    for (const id of lay.created) { pushHist(sim, sim.edges[id], "廃線跡を道路に転用して供用開始"); }
     ev(sim, "convert", `廃線跡を道路に転用: ${projLabel(sim, p)}`, p.reason, { project: p.id, edge: re.id }); return;
   }
   if (modeOf(p) === "rail") return completeRailProject(sim, w, p, es);
