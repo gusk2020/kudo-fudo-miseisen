@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAND_1945, CAND_1989, CAND_2019, FORBIDDEN_CHARS, USED_NAMES, eraText, eraWeights, eto, futureCandidates, futureInterval, newKaigen, chooseEra, openKaigen, stanceAt } from "../../src/sim/kaigen";
+import { eraTable, CAND_1945, CAND_1989, CAND_2019, FORBIDDEN_CHARS, USED_NAMES, eraText, eraWeights, eto, futureCandidates, futureInterval, newKaigen, chooseEra, openKaigen, stanceAt } from "../../src/sim/kaigen";
 import { advance, settleKaigen, stepMonth, yearOf } from "../../src/sim/engine";
 import { sanitizeSim, validateSimAgainstWorld } from "../../src/core/save2";
 import { eraLabel } from "../../src/sim/types";
@@ -11,7 +11,11 @@ describe("kaigen: real candidates and the future rule", () => {
     expect(CAND_1945.map((c) => c.name)).not.toContain("昭和");
     expect(CAND_1989.map((c) => c.name)).toEqual(["平成", "修文", "正化"]);
     expect(CAND_2019.map((c) => c.name)).toEqual(["令和", "英弘", "久化", "広至", "万保"]);
-    for (const list of [CAND_1945, CAND_1989, CAND_2019]) { expect(new Set(list.map((c) => c.stance)).size).toBe(3); expect(new Set(list.map((c) => c.name)).size).toBe(list.length); }
+    expect(new Set(CAND_1945.map((c) => c.stance)).size).toBe(5); expect(new Set(CAND_1989.map((c) => c.stance)).size).toBe(3); expect(new Set(CAND_2019.map((c) => c.stance)).size).toBe(5);
+    for (const list of [CAND_1945, CAND_1989, CAND_2019]) expect(new Set(list.map((c) => c.name)).size).toBe(list.length);
+    // the air and sea stances exist among the first-era choices, and the mapping is fixed and printable (the one place that says which name leans which way)
+    expect(CAND_1945.filter((c) => c.stance === "kuuro").map((c) => c.name)).toEqual(["同和", "元安", "協中"]); expect(CAND_1945.filter((c) => c.stance === "kairo").map((c) => c.name)).toEqual(["継明", "立成"]);
+    expect(eraTable()).toContain("1945(1926年の落選案): 神化=均衡 / 元化=道路重視 / 神和=鉄道重視 / 同和=空路重視 / 継明=海路重視"); expect(eraTable()).toContain("1989: 平成=均衡 / 修文=道路重視 / 正化=鉄道重視"); expect(eraTable()).toContain("令和=均衡 / 英弘=道路重視 / 久化=鉄道重視 / 広至=空路重視 / 万保=海路重視");
   });
   it("the sexagenary year is right (1984 甲子, 2019 己亥)", () => { expect(eto(1984).label).toBe("甲子"); expect(eto(2019).label).toBe("己亥"); expect(eto(2044).label).toBe("甲子"); });
   it("future candidates: five, unique, fewest strokes first, no forbidden character, none already used; deterministic", () => {

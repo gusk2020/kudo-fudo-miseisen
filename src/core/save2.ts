@@ -1,4 +1,5 @@
 /** Save format v2: { map, sim } with integrity checks. v1 (map only) is migrated, never rejected. Nothing here throws. */
+import { STANCES } from "../sim/kaigen";
 import { checkIntegrity } from "../sim/network";
 import { DIAL_KEYS, composeDials } from "../sim/eras";
 import { defaultPolicy } from "../sim/policy";
@@ -59,8 +60,8 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.tech !== undefined && !(isRec(raw.tech) && fin(raw.tech.k) && raw.tech.k >= 1 && raw.tech.k <= 4)) delete raw.tech;
   // Issue #13: the era timeline is kept only if it is well formed; otherwise the game simply continues as a single-era game (never refused)
   if (raw.kaigen !== undefined) {
-    const k = raw.kaigen, okE = (e: any) => isRec(e) && typeof e.name === "string" && e.name.length > 0 && e.name.length < 12 && Number.isInteger(e.start) && ["heisei", "shubun", "shoka"].includes(e.stance);
-    if (!(isRec(k) && Array.isArray(k.eras) && k.eras.length >= 1 && k.eras.length < 40 && k.eras.every(okE) && Number.isInteger(k.next) && Number.isInteger(k.nextIdx) && (k.pending === null || (isRec(k.pending) && Number.isInteger(k.pending.year) && Array.isArray(k.pending.cands) && k.pending.cands.length > 0 && k.pending.cands.every((c: any) => isRec(c) && typeof c.name === "string" && ["heisei", "shubun", "shoka"].includes(c.stance)))))) delete raw.kaigen;
+    const k = raw.kaigen, okE = (e: any) => isRec(e) && typeof e.name === "string" && e.name.length > 0 && e.name.length < 12 && Number.isInteger(e.start) && STANCES.includes(e.stance);
+    if (!(isRec(k) && Array.isArray(k.eras) && k.eras.length >= 1 && k.eras.length < 40 && k.eras.every(okE) && Number.isInteger(k.next) && Number.isInteger(k.nextIdx) && (k.pending === null || (isRec(k.pending) && Number.isInteger(k.pending.year) && Array.isArray(k.pending.cands) && k.pending.cands.length > 0 && k.pending.cands.every((c: any) => isRec(c) && typeof c.name === "string" && STANCES.includes(c.stance)))))) delete raw.kaigen;
   }
   raw.schemaVersion = 3;
   const sim = { ...raw, events: Array.isArray(raw.events) ? raw.events : [], stats: Array.isArray(raw.stats) ? raw.stats : [], skippedMonths: fin(raw.skippedMonths) ? raw.skippedMonths : 0, lastWallMs: fin(raw.lastWallMs) ? raw.lastWallMs : 0, speed: [0, 1, 5, 20].includes(raw.speed) ? raw.speed : 0, ceremonyDone: raw.ceremonyDone === true } as unknown as SimState;

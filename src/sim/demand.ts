@@ -58,7 +58,7 @@ export function railShare(tRoad: number, tRail: number, carBias: number, railBia
 export function airShare(sim: SimState, w: World, i: number, j: number, railS: number): number {
   const a = sim.cities[w.cities[i].id], b = sim.cities[w.cities[j].id]; if (a.airport === undefined || b.airport === undefined) return 0;
   const d = Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); if (d < AIR_MIN_KM) return 0;
-  return Math.min(0.55, (0.08 + 0.5 * (1 - Math.exp(-(d - AIR_MIN_KM) / 450))) * (1 - 0.45 * railS));
+  return Math.min(0.55 + 0.15 * Math.min(1, sim.dials.airBias), (0.08 + 0.5 * (1 - Math.exp(-(d - AIR_MIN_KM) / 450))) * (1 - 0.45 * railS) * (1 + 0.8 * sim.dials.airBias));
 }
 export function analyze(sim: SimState, w: World): Analysis {
   const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, string>(), N = nodeIds.length;
@@ -94,7 +94,7 @@ export function analyze(sim: SimState, w: World): Analysis {
       if (s > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.through += land * s * RAIL_PAX;
       // freight: industry-to-industry; trucks take it unless the railway is competitive and the era favours it
       const f0 = KFREIGHT * Math.pow(pi.pop * pi.industry * pj.pop * pj.industry, 0.6) / (1 + Math.pow(tmin, 1.2)), sf = railShare(tr, tt, dl.carBias * 0.4 - dl.freightRail, dl.railBias * 0.4 + dl.freightRail);
-      const sea = w.cities[i].coastal && w.cities[j].coastal ? SEA_FREIGHT : 0, fl = f0 * (1 - sea); seaFr += f0 * sea; landFr += fl;
+      const sea = w.cities[i].coastal && w.cities[j].coastal ? Math.min(0.6, SEA_FREIGHT * (1 + dl.seaBias)) : 0, fl = f0 * (1 - sea); seaFr += f0 * sea; landFr += fl;
       if (sf < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.freight += fl * (1 - sf);
       if (sf > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.freight += fl * sf * RAIL_PAX;
     }

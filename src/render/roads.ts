@@ -2,7 +2,7 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { edgeShape } from "../sim/network";
 import { GRADE_MODE, GRADE_SHORT, NICK_SHORT, modeOf, type EdgeState, type Grade, type SimEdge, type SimState } from "../sim/types";
-import { routeLabel } from "../sim/engine";
+import { routeLabel, routeOfficial } from "../sim/engine";
 import { routeAtYear, type RouteView } from "../sim/ledger";
 import type { World } from "../sim/world";
 import type { Vec } from "../core/types";
@@ -151,15 +151,17 @@ export class RoadLayer {
           if (rail) {
             const opId = r.op ?? "jnr", col = grade === "jnr" ? 0x0b2a55 : opColour(opId), nm = view?.opName ?? r.opName ?? "";
             sg.roundRect(-13, -8, 26, 16, 3).fill({ color: grade === "jnr" ? col : 0xffffff }).stroke({ width: 2.5, color: col });
-            sp.t.text = `${grade === "jnr" ? "鉄" : nm.slice(0, 1) || "私"}${number}`; sp.t.style.fontSize = 9; sp.t.style.fill = grade === "jnr" ? 0xffffff : col;
+            sp.t.text = String(number); sp.t.style.fontSize = 9; sp.t.style.fill = grade === "jnr" ? 0xffffff : col;
           } else {
             const col = grade === "national" ? 0xb02020 : grade === "fu" ? 0x7b3fa0 : 0x1f7a4d;
             if (grade === "national") sg.circle(0, 0, 11).fill({ color: col }).stroke({ width: 2, color: 0xffffff });
             else if (grade === "ken") sg.roundRect(-12, -9, 24, 18, 4).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
             else sg.poly([0, -12, 12, -2, 7, 11, -7, 11, -12, -2]).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
-            sp.t.text = `${GRADE_SHORT[grade]}${number}`; sp.t.style.fontSize = grade === "national" ? 10 : 9; sp.t.style.fill = grade === "national" ? 0xffffff : col;
+            sp.t.text = String(number); sp.t.style.fontSize = grade === "national" ? 10 : 9; sp.t.style.fill = grade === "national" ? 0xffffff : col;
           }
-          sp.nk.visible = !!nick && !!a.names; if (nick && a.names) sp.nk.text = NICK_SHORT[grade];
+          // The number sign above is number-only and always follows the 標識 layer. The route-NAME text is a separate setting (a.names) and applies to every route alike:
+          // national, prefectural, railway, and the roads and lines that were designated later by the simulation.
+          sp.nk.visible = !!a.names; if (a.names) sp.nk.text = (view ? view.label : routeOfficial(r)).replace(/^(.+?)\s/, "").slice(0, 16) + (nick ? NICK_SHORT[grade] : "");
           c.label = view ? view.label : routeLabel(r); count++;
         }
       }

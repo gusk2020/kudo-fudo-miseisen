@@ -7,7 +7,7 @@ import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
 import { CAND_1945, STANCE_LABEL } from "../sim/kaigen";
 import { displayName } from "../sim/straits";
-import { DOMAIN_LABEL, POLICIES, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
+import { DOMAIN_LABEL, POLICIES, skipWindow, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
 
 export const ui3 = { tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null };
@@ -124,8 +124,13 @@ export function buildPolicy(app: App, body: HTMLElement) {
   else {
     const env = computeEnv(sim), dom = ui3.domain, win = pol.pending;
     body.append(h("div", { class: "issue warn", id: "pol-window" }, `${win.year}年: 介入する分野を選んでください。時間は止まっています。`));
-    const row = h("div", { class: "row" }); for (const d of ["politics", "economy", "opinion"] as Domain[]) row.append(h("button", { id: "dom-" + d, class: dom === d ? "mode on" : "mode", "aria-pressed": dom === d ? "true" : "false", onclick: () => { ui3.domain = d; ui3.spend = {}; app.buildSheet(); } }, `${dom === d ? "✓ " : ""}${DOMAIN_LABEL[d]}`)); body.append(row);
+    const row = h("div", { class: "row" }); for (const d of ["politics", "economy", "opinion"] as Domain[]) row.append(h("button", { id: "dom-" + d, class: dom === d ? "mode on" : "mode", "aria-pressed": dom === d ? "true" : "false", onclick: () => { ui3.domain = d; ui3.spend = {}; app.buildSheet(); } }, `${dom === d ? "✓ " : ""}${DOMAIN_LABEL[d]}`));
+    row.append(h("button", { id: "pol-none", class: "mode none", onclick: () => { skipWindow(sim); ui3.spend = {}; ui3.domain = null; app.toast("今回は介入しません。持ち点は繰り越されます"); app.afterPolicy(); } }, "選択しない"));
+    body.append(row);
     if (dom) {
+      // the buttons that act on the chosen domain sit right under the domain row, so nothing needs scrolling to confirm
+      body.append(h("div", { class: "row", id: "pol-actions" }, h("button", { id: "pol-go", class: "primary", onclick: () => { const rec = resolveWindow(sim, app.world!, dom, ui3.spend); ui3.spend = {}; ui3.domain = null; if (rec) app.toast(`採用${rec.adopted.length}件・見送り${rec.declined.length}件。理由は年表に記録しました`); app.afterPolicy(); } }, "この選択にする"),
+        h("button", { id: "pol-skip", onclick: () => { const rec = resolveWindow(sim, app.world!, dom, {}); ui3.spend = {}; ui3.domain = null; if (rec) app.toast("持ち点を使わず決定。点は繰り越されます"); app.afterPolicy(); } }, "点を使わず決定(繰越)")));
       const spentTotal = Object.values(ui3.spend).reduce((a, b) => a + b, 0), left = pol.points - spentTotal, top = new Set(topFive(env, dom).map((t) => t.p.id));
       body.append(h("div", { class: "issue", id: "pol-left" }, `残り持ち点 ${left} / ${pol.points}`, h("br"), h("small", {}, `優先度 ${ADOPT_BAR} 以上の上位2件が採用されます。環境の評価はいまの混雑・衰退・補助負担・世論から計算しています。`)));
       const rowOf = (p: (typeof POLICIES)[number], base: number) => {
@@ -135,10 +140,8 @@ export function buildPolicy(app: App, body: HTMLElement) {
       };
       body.append(h("h3", {}, `${DOMAIN_LABEL[dom]}の方針 上位5`)); for (const t of topFive(env, dom)) body.append(rowOf(t.p, t.base));
       body.append(h("h3", {}, "その他(持ち点で押し上げると候補に入ります)")); for (const t of baseScores(env, dom)) if (!top.has(t.p.id)) body.append(rowOf(t.p, t.base));
-      body.append(h("div", { class: "row" }, h("button", { id: "pol-go", onclick: () => { const rec = resolveWindow(sim, app.world!, dom, ui3.spend); ui3.spend = {}; ui3.domain = null; if (rec) app.toast(`採用${rec.adopted.length}件・見送り${rec.declined.length}件。理由は年表に記録しました`); app.afterPolicy(); } }, "この内容で決定"),
-        h("button", { id: "pol-skip", onclick: () => { const rec = resolveWindow(sim, app.world!, dom, {}); ui3.spend = {}; ui3.domain = null; if (rec) app.toast("持ち点を使わず決定。点は繰り越されます"); app.afterPolicy(); } }, "点を使わず決定(繰越)")));
     }
   }
-  if (pol.history.length) { body.append(h("h3", {}, "これまでの決定")); for (const r of [...pol.history].reverse()) body.append(h("div", { class: "issue" }, `${r.year}年 ${DOMAIN_LABEL[r.domain]}${r.auto ? "(自動)" : ""}: 採用 ${r.adopted.map((a) => a.label).join("・") || "なし"}`, h("br"), h("small", {}, [...r.adopted.map((a) => `${a.label}: ${a.reason}`), ...r.declined.map((d) => `見送り ${d.label}: ${d.reason}`)].join(" ／ ")))); }
+  if (pol.history.length) { body.append(h("h3", {}, "これまでの決定")); for (const r of [...pol.history].reverse()) body.append(h("div", { class: "issue" }, `${r.year}年 ${r.none ? "選択しない" : DOMAIN_LABEL[r.domain]}${r.auto ? "(自動)" : ""}: 採用 ${r.adopted.map((a) => a.label).join("・") || "なし"}`, h("br"), h("small", {}, [...r.adopted.map((a) => `${a.label}: ${a.reason}`), ...r.declined.map((d) => `見送り ${d.label}: ${d.reason}`)].join(" ／ ")))); }
   const now = sim.dials; body.append(h("h3", {}, "現在の世界の傾向(参考)")); body.append(h("small", {}, DIAL_KEYS.map((k) => `${DIAL_LABEL[k]} ${now[k].toFixed(2)}`).join(" ／ "))); void composeDials; void GRADE_MODE; void STATE_LABEL;
 }

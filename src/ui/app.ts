@@ -1,6 +1,7 @@
 import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
-import { ISLAND_LABEL, lonLatToReal } from "../core/data";
+import { ISLAND_LABEL, JAPAN, lonLatToReal } from "../core/data";
+import { FEATURE_LIMITS } from "../core/save";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, getRaw, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
@@ -274,6 +275,14 @@ export class App {
     const north = [[137.76, 36.76], [137.62, 36.58], [137.65, 36.34], [137.65, 36.29], [137.55, 36.11]].map(([a, b]) => to(a, b)), south = [[138.23, 35.78], [138.24, 35.67], [138.10, 35.60], [138.14, 35.45], [138.10, 35.33]].map(([a, b]) => to(a, b));
     this.commitEdit((s) => { s.ridges.ne = north; s.ridges.sw = south; });
   }
+  /** Resize Lake Biwa (outline) or Mt. Fuji (body / summit height) by a factor, within the allowed range and only if the result is still a valid map (no lake touching the coast). */
+  scaleFeature(which: "biwa" | "fuji", what: "scale" | "height", factor: number) {
+    const lim = FEATURE_LIMITS[what], cur = this.s.features[which][what] ?? 1, next = Math.round(Math.max(lim[0], Math.min(lim[1], cur * factor)) * 100) / 100;
+    if (next === cur) { this.toast("これ以上は変えられません"); return false; }
+    const cand = JSON.parse(JSON.stringify(this.s)) as Store["state"]; (cand.features[which] as any)[what] = next;
+    if (validate(cand).some((i) => i.severity === "error" && i.step === "features")) { this.toast(which === "biwa" ? "琵琶湖が海岸に近づきすぎるため、これ以上大きくできません" : "富士山が海岸に近づきすぎるため、これ以上大きくできません"); return false; }
+    return this.commitEdit((s) => { if (next === 1) delete (s.features[which] as any)[what]; else (s.features[which] as any)[what] = next; });
+  }
   clearRanges() { this.commitEdit((s) => { s.ridges.ne = null; s.ridges.sw = null; }); }
   setCapital(id: string | null) { this.commitEdit((s) => { if (id) s.capital = id; else delete s.capital; }); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); }
   scaleSel(dir: number) { const id = this.bodyForTool(); this.store.commit((s) => { s.bodies[id].place.scale = Math.max(0.3, Math.min(3, s.bodies[id].place.scale * (dir > 0 ? 1.05 : 1 / 1.05))); }); }
@@ -476,7 +485,12 @@ export class App {
     const g = h("div", { class: "grp" });
     g.append(this.tbtn("琵琶湖を回転", this.selFeature === "biwa", () => { this.selFeature = "biwa"; this.buildToolbar(); }, "sel-biwa"), this.tbtn("富士山を回転", this.selFeature === "fuji", () => { this.selFeature = "fuji"; this.buildToolbar(); }, "sel-fuji"),
       h("button", { id: "rot-l", type: "button", onclick: () => this.rotateSel(1) }, "⟲5°"), h("button", { id: "rot-r", type: "button", onclick: () => this.rotateSel(-1) }, "⟳5°"));
-    tb.append(g, h("div", { class: "grp" }, h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実際のアルプスの位置"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "山脈を消す"),
+    const bs = this.s.features.biwa.scale ?? 1, fs = this.s.features.fuji.scale ?? 1, fh = this.s.features.fuji.height ?? 1;
+    const sz = h("div", { class: "grp", id: "feature-size" },
+      h("span", { class: "note", id: "biwa-size" }, `琵琶湖 ×${bs}`), h("button", { id: "biwa-smaller", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1 / 1.15) }, "縮小"), h("button", { id: "biwa-bigger", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1.15) }, "拡大"),
+      h("span", { class: "note", id: "fuji-size" }, `富士山 山体×${fs} 高さ×${fh}(約${Math.round(JAPAN.fuji.summitM * fh)}m)`), h("button", { id: "fuji-narrower", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1 / 1.15) }, "山体縮小"), h("button", { id: "fuji-wider", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1.15) }, "山体拡大"),
+      h("button", { id: "fuji-lower", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1 / 1.1) }, "高さ−"), h("button", { id: "fuji-higher", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1.1) }, "高さ＋"));
+    tb.append(g, sz, h("div", { class: "grp" }, h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実際のアルプスの位置"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "山脈を消す"),
       h("button", { id: "edit-undo", type: "button", disabled: !this.store.canUndo, onclick: () => this.undoEdit() }, "↶ 元に戻す"), h("button", { id: "edit-redo", type: "button", disabled: !this.store.canRedo, onclick: () => this.redoEdit() }, "↷ やり直す")));
     const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
     void box;

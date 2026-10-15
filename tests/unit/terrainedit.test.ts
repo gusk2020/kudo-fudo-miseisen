@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { lonLatToReal } from "../../src/core/data";
 import { realToWorld } from "../../src/core/body";
 import { Store, defaultState, realState } from "../../src/core/state";
+import { FEATURE_LIMITS, parseState } from "../../src/core/save";
+import { mapStateHash } from "../../src/core/save2";
 import { generateTerrain } from "../../src/core/terrain";
 import { derive, validate } from "../../src/core/validate";
 import { createSim } from "../../src/sim/engine";
@@ -37,6 +39,36 @@ describe("limited terrain editing (the coastline never moves)", () => {
   });
   it("an edit that puts Fuji outside Honshu is reported as an error, so it cannot be generated", () => {
     const s = defaultState(); s.features.fuji.pos = to(s, 131.0, 33.0); const errs = validate(s).filter((i) => i.severity === "error"); expect(errs.length).toBeGreaterThan(0); void derive;
+  });
+});
+
+describe("Lake Biwa and Mt. Fuji can be resized (Issue #15)", () => {
+  const base = world();
+  const lake = (W: typeof base) => { let n = 0; for (let k = 0; k < W.w.N; k++) if (W.t.land[k] === 2) n++; return n; };
+  const fujiPos = (W: typeof base) => W.w.cellOf(to(W.s, 138.727, 35.361));
+  it("a bigger lake covers more cells and a smaller one fewer, the coastline mask never changes", () => {
+    const big = world((s) => { s.features.biwa.scale = 1.4; }), small = world((s) => { s.features.biwa.scale = 0.6; });
+    expect(lake(big)).toBeGreaterThan(lake(base)); expect(lake(small)).toBeLessThan(lake(base)); expect(lake(small)).toBeGreaterThan(0);
+    for (let k = 0; k < base.w.N; k++) { const a = base.t.land[k] > 0, b = big.t.land[k] > 0, c = small.t.land[k] > 0; if (a !== b || a !== c) throw new Error("coast changed at " + k); }
+  });
+  it("Fuji's height and body size change the summit and the footprint above 1000 m", () => {
+    const tall = world((s) => { s.features.fuji.height = 1.3; }), low = world((s) => { s.features.fuji.height = 0.5; }), wide = world((s) => { s.features.fuji.scale = 1.6; });
+    const peak = (W: typeof base) => { let m = 0; for (let k = 0; k < W.w.N; k++) m = Math.max(m, W.t.elev[k] * (W.w.cellOf(to(W.s, 138.727, 35.361)) >= 0 ? 1 : 1)); return m; };
+    void peak; const k = fujiPos(base);
+    expect(tall.t.elev[k]).toBeGreaterThan(base.t.elev[k]); expect(low.t.elev[k]).toBeLessThan(base.t.elev[k]); expect(low.t.elev[k]).toBeGreaterThan(1000);
+    const over = (W: typeof base) => { let n = 0; for (let j = -8; j <= 8; j++) for (let i = -8; i <= 8; i++) if (W.t.elev[k + j * W.w.nx + i] > 1200) n++; return n; };
+    expect(over(wide)).toBeGreaterThan(over(base));
+  });
+  it("sizes survive a save, are clamped to the allowed range, and absent sizes keep the old hash", () => {
+    const s = defaultState(); s.features.biwa.scale = 1.5; s.features.fuji.height = 0.8;
+    const back = parseState(JSON.parse(JSON.stringify(s))).state; expect(back.features.biwa.scale).toBe(1.5); expect(back.features.fuji.height).toBe(0.8);
+    const wild = parseState({ ...JSON.parse(JSON.stringify(s)), features: { biwa: { pos: null, rot: 0, scale: 50 }, fuji: { pos: null, rot: 0, scale: -3, height: 99 } } }).state;
+    expect(wild.features.biwa.scale).toBe(FEATURE_LIMITS.scale[1]); expect(wild.features.fuji.scale).toBe(FEATURE_LIMITS.scale[0]); expect(wild.features.fuji.height).toBe(FEATURE_LIMITS.height[1]);
+    expect(mapStateHash(s)).not.toBe(mapStateHash(defaultState())); expect(mapStateHash(defaultState())).toBe(mapStateHash({ ...defaultState(), features: { biwa: { pos: null, rot: 0 }, fuji: { pos: null, rot: 0 } } }));
+  });
+  it("an extreme enlargement that would press the lake onto the coast is an invalid map", () => {
+    const s = defaultState(); s.features.biwa.scale = 2; const okAtLimit = validate(s).filter((i) => i.severity === "error" && i.step === "features").length;
+    s.features.biwa.pos = to(s, 136.3, 35.9); s.features.biwa.scale = 2; expect(validate(s).filter((i) => i.severity === "error" && i.step === "features").length).toBeGreaterThan(0); void okAtLimit;
   });
 });
 

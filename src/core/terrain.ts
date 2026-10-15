@@ -168,17 +168,17 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   // ---- Mt. Fuji ----
   let fujiTop = -1;
   {
-    const c = featureWorldPos(s, "fuji"), a0 = s.features.fuji.rot;
-    const r0 = FUJI_RADIUS_KM * 1.25;
+    const c = featureWorldPos(s, "fuji"), a0 = s.features.fuji.rot, fk = s.features.fuji.scale ?? 1, summit = JAPAN.fuji.summitM * (s.features.fuji.height ?? 1);
+    const r0 = FUJI_RADIUS_KM * fk * 1.25;
     for (let j = Math.max(0, Math.floor((c[1] - r0 - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((c[1] + r0 - y0) / cell)); j++)
       for (let i = Math.max(0, Math.floor((c[0] - r0 - x0) / cell)); i <= Math.min(nx - 1, Math.ceil((c[0] + r0 - x0) / cell)); i++) {
         const k = j * nx + i; if (land[k] !== 1) continue;
         const dx = cx(i) - c[0], dy = cy(j) - c[1], d = Math.hypot(dx, dy), th = Math.atan2(dy, dx) - a0;
-        const R = FUJI_RADIUS_KM * (1 + 0.1 * Math.sin(3 * th + 1) + 0.06 * Math.sin(5 * th + 2));
-        if (d < R) { const e = 250 + (JAPAN.fuji.summitM - 250) * Math.pow(1 - d / R, 1.5); if (e > elev[k]) elev[k] = e; }
+        const R = FUJI_RADIUS_KM * fk * (1 + 0.1 * Math.sin(3 * th + 1) + 0.06 * Math.sin(5 * th + 2));
+        if (d < R) { const e = 250 + (summit - 250) * Math.pow(1 - d / R, 1.5); if (e > elev[k]) elev[k] = e; }
       }
     const kc = idxOf(c);
-    if (kc >= 0 && land[kc] === 1) { elev[kc] = JAPAN.fuji.summitM; fujiTop = kc; }
+    if (kc >= 0 && land[kc] === 1) { elev[kc] = summit; fujiTop = kc; }
   }
 
   // ---- Lake Biwa ----

@@ -6,7 +6,7 @@
  * same crossings in different, fictional years: 修文 gets road crossings earlier and 正化 the railway ones. The names and the
  * geometry are the model's (a crossing joins two city centres), not a survey.
  */
-import { type EraKey } from "./eras";
+import { TABLE_STANCE, type EraKey } from "./eras";
 import { stanceAt } from "./kaigen";
 import { buildIndex, newEdgeDefaults, newId, nodeAtCell, pushHist } from "./network";
 import { designate, ev, yearOf } from "./engine";
@@ -33,7 +33,7 @@ export function openStraits(sim: SimState, w: World, year: number, atStart = fal
   const era = stanceAt(sim, year); if (era === "kobun") return 0; let n = 0;
   for (const s of STRAITS) {
     if ((s.needs && !w.cityById.has(s.needs)) || (s.unless && w.cityById.has(s.unless))) continue;
-    const due = s.year[era]; if (due === undefined || opened(sim, s.id) || (atStart || sim.kaigen ? due > year : due !== year)) continue;
+    const due = s.year[TABLE_STANCE(era) as "heisei"]; if (due === undefined || opened(sim, s.id) || (atStart || sim.kaigen ? due > year : due !== year)) continue;
     const ca = w.cityById.get(s.a), cb = w.cityById.get(s.b); if (!ca || !cb) continue;
     const idx = buildIndex(sim, s.mode), a = nodeAtCell(sim, w, idx, ca.cell, "junction"), b = nodeAtCell(sim, w, idx, cb.cell, "junction"), id = newId(sim, "edge");
     const rail = s.mode === "rail", real = era === "heisei" || due <= 1950;
