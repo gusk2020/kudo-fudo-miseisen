@@ -15,6 +15,7 @@ export interface RoadArgs {
   cer: CerOverlay[]; pin: Vec | null;
   compare?: Record<string, number> | null; compareYear?: number | null;   // absolute edge codes of the chosen base year
   past?: PastView | null;                                                // looking at the past: draw that year, read-only
+  lite?: boolean;                                                        // light drawing for a slow device: solid lines instead of dashes, fewer labels, no ports
   sel?: string | null;
 }
 const GRADE_RANK: Record<Grade, number> = { jnr: 4, national: 3, fu: 2, ken: 1, priv: 3 };
@@ -63,7 +64,7 @@ export class RoadLayer {
       for (const c of Object.values(s.cities)) if (c.airport !== undefined) h = (h * 31 + 7) >>> 0;
     }
     const L = a.layers;
-    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
+    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${a.lite ? "L" : ""}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
   }
   set(a: RoadArgs, zoom: number) { this.last = a; const sg = RoadLayer.signature(a, zoom); if (sg === this.sig) return false; this.sig = sg; this.draw(a, zoom); return true; }
   redraw(zoom: number) { if (this.last) { this.sig = ""; this.set(this.last, zoom); } }
@@ -72,6 +73,7 @@ export class RoadLayer {
     let count = 0;
     const px = (n: number) => n / zoom, { sim, w } = a;
     if (sim && w) {
+      const lite = !!a.lite, pat = (g: Graphics, pts: Vec[], dash: number[]) => (lite ? line(g, pts) : pattern(g, pts, dash));
       const past = a.past ?? null, year = past?.year ?? 0, showRoads = a.layers.roads, showRail = a.layers.rail ?? true, showAband = a.layers.abandoned ?? true;
       const best = new Map<string, Grade>();
       for (const r of Object.values(sim.routes)) {
@@ -101,24 +103,24 @@ export class RoadLayer {
         }
         if (eff.built >= 1 && eff.state === "open") {
           if (e.facility === "bridge") { line(facb, pts); facb.stroke({ width: px(wd + 4), color: 0xffffff, alpha: 0.85, cap: "butt" }); }
-          else if (e.facility === "tunnel" && zoom >= 0.5) { pattern(fac, pts, [px(3), px(3)]); fac.stroke({ width: px(wd * 1.3), color: 0x2a1f14, alpha: 0.9 }); }
+          else if (e.facility === "tunnel" && zoom >= 0.5) { pat(fac, pts, [px(3), px(3)]); fac.stroke({ width: px(wd * 1.3), color: 0x2a1f14, alpha: 0.9 }); }
           if (rail) {
             line(rcas, pts); rcas.stroke({ width: px(wd + (thin < 1 ? 1.2 : 2.2)), color: 0xffffff, alpha: thin < 1 ? 0.7 : 0.92, cap: "round", join: "round" });
             line(rfill, pts); rfill.stroke({ width: px(wd), color: col, cap: "round", join: "round" });
-            if (e.standard !== "highgrade") { if (zoom >= 0.8) { pattern(rtie, pts, [px(4), px(5)]); rtie.stroke({ width: px(wd * 0.7), color: 0xffffff, alpha: 0.95 }); } } else { line(mid, pts); mid.stroke({ width: px(1.2), color: 0xffd23a, alpha: 0.95 }); }
+            if (e.standard !== "highgrade") { if (zoom >= 0.8) { pat(rtie, pts, [px(4), px(5)]); rtie.stroke({ width: px(wd * 0.7), color: 0xffffff, alpha: 0.95 }); } } else { line(mid, pts); mid.stroke({ width: px(1.2), color: 0xffd23a, alpha: 0.95 }); }
           } else {
             line(cas, pts); cas.stroke({ width: px(wd + 2.4), color: CASING[g ?? "none"], alpha: 0.95, cap: "round", join: "round" });
-            if (isOld) { pattern(old, pts, [px(9), px(3), px(2), px(3)]); old.stroke({ width: px(wd), color: col, cap: "butt" }); }
+            if (isOld) { pat(old, pts, [px(9), px(3), px(2), px(3)]); old.stroke({ width: px(wd), color: col, cap: "butt" }); }
             else { line(fill, pts); fill.stroke({ width: px(wd), color: col, cap: "round", join: "round" }); }
             if (e.bypassOf.length && !past) { line(mid, pts); mid.stroke({ width: px(1), color: 0xffffff, alpha: 0.9 }); }
           }
         } else if (eff.built >= 1 && eff.state === "dormant") {
-          if (rail) { pattern(rdash, pts, [px(10), px(6)]); rdash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.9 }); } else { pattern(fillDash, pts, [px(10), px(6)]); fillDash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.85 }); }
-        } else if (eff.state === "lost" && eff.built >= 1) { pattern(ghost, pts, [px(2), px(5)]); ghost.stroke({ width: px(1.2), color: 0x2b2b2b, alpha: 0.95 }); }
-        else if (eff.built >= 1) { pattern(ghost, pts, [px(5), px(4)]); ghost.stroke({ width: px(1.6), color: 0x9aa4ad, alpha: 0.95 }); }
+          if (rail) { pat(rdash, pts, [px(10), px(6)]); rdash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.9 }); } else { pat(fillDash, pts, [px(10), px(6)]); fillDash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.85 }); }
+        } else if (eff.state === "lost" && eff.built >= 1) { pat(ghost, pts, [px(2), px(5)]); ghost.stroke({ width: px(1.2), color: 0x2b2b2b, alpha: 0.95 }); }
+        else if (eff.built >= 1) { pat(ghost, pts, [px(5), px(4)]); ghost.stroke({ width: px(1.6), color: 0x9aa4ad, alpha: 0.95 }); }
         else if (a.layers.plans) {
           const st = past ? "planned" : planned.get(e.id) ?? "planned", c2 = st === "concept" ? 0xa7b4bf : st === "building" ? 0x3aa0ff : st === "suspended" ? 0xff8f1f : st === "unbuilt" ? 0xb04bff : 0x39d6c8;
-          pattern(plan, pts, st === "concept" ? [px(1), px(7)] : st === "planned" ? [px(2), px(4)] : [px(7), px(4)]); plan.stroke({ width: px(2.2), color: rail ? 0x1f4fbf : c2, alpha: 0.95 });
+          pat(plan, pts, st === "concept" ? [px(1), px(7)] : st === "planned" ? [px(2), px(4)] : [px(7), px(4)]); plan.stroke({ width: px(2.2), color: rail ? 0x1f4fbf : c2, alpha: 0.95 });
           if (!past && st === "building" && e.built > 0) { const n = Math.max(1, Math.floor(pts.length * e.built)); line(plan, pts.slice(0, n + 1)); plan.stroke({ width: px(3), color: 0x3aa0ff }); }
         }
       }
@@ -128,7 +130,7 @@ export class RoadLayer {
         if (n.kind === "pass" && showRoads && zoom >= 0.35) nodes.poly([n.pos[0], -n.pos[1] - px(6), n.pos[0] - px(5), -n.pos[1] + px(3), n.pos[0] + px(5), -n.pos[1] + px(3)]).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x222222 });
         else if (n.kind === "village" && zoom >= 0.5 && showRoads) nodes.circle(n.pos[0], -n.pos[1], px(2)).fill({ color: 0xf2e6c8 }).stroke({ width: px(0.8), color: 0x333333 });
       }
-      if ((a.layers.ports ?? true) && sim.stage3 && zoom >= 0.5) {
+      if ((a.layers.ports ?? true) && !lite && sim.stage3 && zoom >= 0.5) {
         // supporting modes: a port (blue square) at coastal cities, an airport (white cross) once it has opened
         const yr = past ? year : Number.POSITIVE_INFINITY;
         for (const c of w.cities) {
@@ -139,7 +141,7 @@ export class RoadLayer {
       if (a.layers.signs && zoom >= 0.28) {
         for (const r of Object.values(sim.routes).sort((p, q) => GRADE_RANK[q.grade] - GRADE_RANK[p.grade] || p.number - q.number)) {
           const view: RouteView | null = past ? routeAtYear(sim, r, year) : null, grade: Grade = view ? view.grade : r.grade, number: number = view ? view.number : r.number, rail = GRADE_MODE[grade] === "rail";
-          if ((past ? !view!.exists : !r.active) || count >= 60 || (rail ? !showRail : !showRoads) || (zoom < 0.55 && grade !== "national" && grade !== "jnr") || (zoom < 1.1 && grade === "fu" && number !== 1) || (zoom < 0.8 && grade === "priv")) continue;
+          if ((past ? !view!.exists : !r.active) || count >= (lite ? 24 : 60) || (rail ? !showRail : !showRoads) || (zoom < 0.55 && grade !== "national" && grade !== "jnr") || (zoom < 1.1 && grade === "fu" && number !== 1) || (zoom < 0.8 && grade === "priv")) continue;
           const es = r.edges.map((x) => sim.edges[x.edgeId]).filter((e) => e && (past ? past.codes[e.id] !== undefined && decode(past.codes[e.id])!.state === "open" && decode(past.codes[e.id])!.built === 1 : e.state === "open" && e.built >= 1) && shapes.has(e.id)).sort((p, q) => q.lengthKm - p.lengthKm || (p.id < q.id ? -1 : 1)); if (!es.length) continue;
           const pts = shapes.get(es[0].id)!, m = pts[Math.floor(pts.length / 2)], sp = this.sign(count), c = sp.c; c.visible = true; c.position.set(m[0], -m[1]); c.scale.set(1 / zoom);
           const sg = sp.bg; sg.clear(); const nick = !past && r.nick;

@@ -50,6 +50,7 @@ test("rail and road layers, road-map background, and the year atlas never change
   // layers
   await page.click("#dock-layers"); await page.uncheck("#layer-rail"); await page.waitForTimeout(100);
   expect(await app(page, "a => a.s.layers.rail")).toBe(false); await page.check("#layer-rail");
+  await page.check("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(true); await page.waitForTimeout(200); await page.uncheck("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(false);
   // atlas: look at an earlier year; time must not move and the simulation must be untouched
   await page.click("#dock-atlas"); expect(await page.isVisible("#atlas-slider")).toBe(true);
   await page.evaluate(() => (window as any).__kfm.setViewYear(1955)); await page.waitForTimeout(200);

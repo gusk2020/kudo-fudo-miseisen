@@ -49,6 +49,7 @@ export class App {
   cerDraft: Partial<Record<CerKind, { pts: Vec[]; prev: CerPreview }>> = {}; private cerLive: Vec[] | null = null; pin: Vec | null = null; scenery: any = null;
   compareYear: number | null = null; selEdge: string | null = null;
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
+  lite = false; private slowTicks = 0;
   eraChoice: EraKey = "heisei"; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain";
   runner: SimRunner | null = null; building = 0; safeMode = false; behind = false; private lastRoads = 0;
   private lastBackup = 0; private lastSaved = 0; private persistRetry = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
@@ -57,7 +58,7 @@ export class App {
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
     const a = new App(); a.real = real; a.r = await Renderer.create(host);
-    if (real) { a.store.replace(realState()); document.body.classList.add("real"); try { if (localStorage.getItem("kfm.bg") === "roadmap") { a.bg = "roadmap"; a.r.setBg("roadmap"); } } catch { /* ignore */ } }
+    if (real) { a.store.replace(realState()); document.body.classList.add("real"); try { if (localStorage.getItem("kfm.bg") === "roadmap") { a.bg = "roadmap"; a.r.setBg("roadmap"); } a.lite = localStorage.getItem("kfm.lite") === "1"; } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
     try { a.safeMode = !!localStorage.getItem("kfm.run"); localStorage.setItem("kfm.run", String(Date.now())); } catch { /* storage may be blocked */ }
     a.r.onContextLost = () => a.toast("画面の描画が一時的に失われました。復帰を待っています…"); a.r.onContextRestored = () => { a.render(); a.toast("描画が復帰しました"); };
@@ -115,7 +116,7 @@ export class App {
     if (this.cerLive) cer.push({ pts: this.cerLive, path: undefined as any, ok: true });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
     if (onRoads) this.ensureWorld();
-    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge });
+    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, lite: this.lite, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge });
   }
   /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
   private attachPendingSim() {
@@ -309,10 +310,13 @@ export class App {
     if (n > 0) { this.acc -= n * MS_PER_MONTH_X1; run.request(n); }
     // at most ~8 ms of simulation per frame: the page stays smooth and the clock simply falls behind on a slow phone
     const done = run.pump(8); this.behind = run.dropped > 0 && run.pending >= 20; if (run.pending < 3) run.dropped = 0;
+    // a device that cannot keep up for a long stretch switches itself to the light drawing (and says so)
+    this.slowTicks = this.behind ? this.slowTicks + 1 : Math.max(0, this.slowTicks - 2);
+    if (this.real && !this.lite && this.slowTicks > 1800) { this.setLite(true); this.toast("端末の処理が追いつかないため、軽量表示に切り替えました(レイヤーで戻せます)"); }
     if (done > 0) this.afterTick(now);
   }
   private afterTick(now = performance.now()) {
-    if (now - this.lastRoads > 450) { this.lastRoads = now; this.renderRoads(); }   // redrawing the road layer is the costly part: ~2 Hz is plenty
+    if (now - this.lastRoads > (this.lite ? 1200 : 450)) { this.lastRoads = now; this.renderRoads(); }   // redrawing the road layer is the costly part: ~2 Hz is plenty
     if (now - this.lastHud > 500) { this.lastHud = now; this.status(); if (this.sheet === "history" || this.sheet === "roads") this.buildSheet(); }
     if (now - this.lastPersist > 10000) this.persist();
   }
@@ -359,6 +363,7 @@ export class App {
     if (this.real) this.buildRealDock(); else document.querySelectorAll<HTMLButtonElement>("#dock [data-sheet]").forEach((b) => (b.onclick = () => this.openSheet(b.dataset.sheet!)));
     $("sheet-close").onclick = () => this.openSheet(null);
   }
+  setLite(on: boolean) { this.lite = on; this.slowTicks = 0; try { localStorage.setItem("kfm.lite", on ? "1" : "0"); } catch { /* ignore */ } this.renderRoads(); this.buildSheet(); }
   setBg(bg: "terrain" | "roadmap") { this.bg = bg; try { localStorage.setItem("kfm.bg", bg); } catch { /* ignore */ } this.r.setBg(bg); this.buildToolbar(); }
   /** Stage 3 dock: the observation tools get their own buttons (the old dock's 検証/取消/やり直し make no sense on a fixed real map). */
   private buildRealDock() {
@@ -448,6 +453,7 @@ export class App {
       const wrap = h("div", { class: "row" });
       for (const k of this.s.step === 6 ? [...LAYER_KEYS, ...ROAD_LAYER_KEYS] : LAYER_KEYS) wrap.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-" + k, checked: this.s.layers[k], onchange: (e: Event) => { const v = (e.target as HTMLInputElement).checked; this.store.set((s) => { s.layers[k] = v; }); } }), LAYER_LABELS[k]));
       body.append(wrap, h("small", {}, "河川・府県境・標高は「1E 地形生成」以降に表示されます。"));
+      if (this.real) body.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-lite", checked: this.lite, onchange: (e: Event) => this.setLite((e.target as HTMLInputElement).checked) }), "軽量表示(動作が重いとき。点線を実線にし、ラベルと港・空港を減らす)"));
     } else if (this.sheet === "issues") {
       body.append(h("h3", {}, "検証結果"));
       body.append(h("div", { class: "row" }, h("button", { id: "revalidate", onclick: () => { this.terrain = null; this.terrainKey = ""; this.onChange(); this.toast("再検証しました"); } }, "全工程を再検証")));
