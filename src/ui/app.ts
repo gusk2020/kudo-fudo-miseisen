@@ -29,6 +29,7 @@ import { buildAtlas, buildLedger, buildPolicy, buildTimeline, eraPicker } from "
 
 type Tool = "view" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const pathLen = (p: Vec[]) => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; };
 export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) { if (k.startsWith("on") && typeof v === "function") (e as any)[k] = v; else if (k === "class") e.className = v; else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : String(v)); }
@@ -47,7 +48,7 @@ export class App {
   private genTimer: any = 0; private saveTimer: any = 0; private grab: any = null;
   // ---- Stage 2 ----
   sim: SimState | null = null; world: World | null = null; private worldRef: TerrainResult | null = null; pendingSim: SimState | null = null;
-  cerDraft: Partial<Record<CerKind, { pts: Vec[]; prev: CerPreview }>> = {}; private cerLive: Vec[] | null = null; pin: Vec | null = null; scenery: any = null;
+  cerDraft: Partial<Record<CerKind, { pts: Vec[]; prev: CerPreview; strokes: Vec[][]; redo: Vec[][] }>> = {}; private cerLive: Vec[] | null = null; pin: Vec | null = null; scenery: any = null;
   compareYear: number | null = null; selEdge: string | null = null;
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
   lite = false; private slowTicks = 0;
@@ -141,7 +142,7 @@ export class App {
     try {
       const res = await this.client.generate(JSON.parse(JSON.stringify(this.s)), (p) => { this.genProgress = p; this.status(); });
       if (stateKey(this.s) !== key) return;
-      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.attachPendingSim();
+      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.attachPendingSim(); this.restoreCer();
     } catch (e: any) { if (String(e?.message) !== "cancelled") this.toast("地形生成に失敗: " + e?.message); }
     this.generating = false; this.render(); this.buildUI();
   }
@@ -266,12 +267,32 @@ export class App {
   }
 
   // ---------- Stage 2: ceremony, clock, scenery ----------
+  /** Strokes accumulate: each new one is appended (its start snapped to the previous end if close), and the whole is re-planned and previewed. */
   private finishDraw(kind: CerKind, pts: Vec[]) {
     const w = this.ensureWorld(); if (!w) return;
-    if (pts.length < 2) { this.renderRoads(); return; }
-    this.cerDraft[kind] = { pts, prev: previewCeremony(w, kind, pts) };
-    if (!this.cerDraft[kind]!.prev.ok) this.toast(this.cerDraft[kind]!.prev.reasons[0]);
+    if (pts.length < 2 || pathLen(pts) < 6 / this.r.view.zoom) { this.renderRoads(); return; }   // a tap or a twitch is not a stroke
+    const d = this.cerDraft[kind] ?? { pts: [] as Vec[], prev: null as any, strokes: [] as Vec[][], redo: [] as Vec[][] }, last = d.strokes[d.strokes.length - 1];
+    const stroke = pts.slice(); if (last && dist(last[last.length - 1], stroke[0]) < 40 / this.r.view.zoom) stroke[0] = last[last.length - 1];
+    d.strokes.push(stroke); d.redo = []; this.cerDraft[kind] = d; this.replanCer(kind);
+    if (!d.prev.ok) this.toast(d.prev.reasons[0]);
     this.renderRoads(); this.buildUI();
+  }
+  private replanCer(kind: CerKind) {
+    const w = this.ensureWorld(), d = this.cerDraft[kind]; if (!w || !d) return;
+    if (!d.strokes.length) { delete this.cerDraft[kind]; this.saveCer(); return; }
+    d.pts = d.strokes.flat(); d.prev = previewCeremony(w, kind, d.pts); this.saveCer();
+  }
+  cerUndo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.strokes.length) return; d.redo.push(d.strokes.pop()!); this.replanCer(kind); this.renderRoads(); this.buildUI(); }
+  cerRedo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.redo.length) return; d.strokes.push(d.redo.pop()!); this.replanCer(kind); this.renderRoads(); this.buildUI(); }
+  cerRestart(kind: CerKind) { delete this.cerDraft[kind]; this.saveCer(); this.renderRoads(); this.buildUI(); }
+  /** A ceremony in progress survives a reload (strokes only; the preview is recomputed from them). */
+  saveCer() { try { const o: Record<string, { strokes: Vec[][]; redo: Vec[][] }> = {}; for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const d = this.cerDraft[k]; if (d) o[k] = { strokes: d.strokes, redo: d.redo }; } if (Object.keys(o).length) localStorage.setItem("kfm.cer", JSON.stringify(o)); else localStorage.removeItem("kfm.cer"); } catch { /* ignore */ } }
+  private restoreCer() {
+    if (this.sim || Object.keys(this.cerDraft).length) return; const w = this.ensureWorld(); if (!w) return;
+    try {
+      const o = JSON.parse(localStorage.getItem("kfm.cer") || "{}"), okPt = (p: unknown) => Array.isArray(p) && p.length === 2 && p.every((x) => typeof x === "number" && Number.isFinite(x)), okS = (s: unknown): s is Vec[] => Array.isArray(s) && s.length >= 2 && s.length < 5000 && s.every(okPt);
+      for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const e = o[k]; if (!e || !Array.isArray(e.strokes)) continue; const strokes = e.strokes.filter(okS), redo = (Array.isArray(e.redo) ? e.redo : []).filter(okS); if (!strokes.length) continue; this.cerDraft[k] = { pts: [], prev: null as any, strokes, redo }; this.replanCer(k); }
+    } catch { /* ignore */ }
   }
   cerReady() { return !!(this.cerDraft.kokudo1?.prev.ok && this.cerDraft.fudo1?.prev.ok); }
   async doCeremony() {
@@ -287,7 +308,7 @@ export class App {
     }
     this.building = 0;
     if (!performCeremony(sim, w, k, f)) { this.toast("開通の儀を行えませんでした"); this.buildUI(); return; }
-    sim.speed = 1; this.sim = sim; this.saveLocked = false; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
+    sim.speed = 1; this.sim = sim; this.saveLocked = false; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.saveCer(); this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
     this.persist(); this.toast("開通の儀を終えました。時間が動き始めます"); this.onChange();
   }
   /** Look at a past year (read-only, time stopped) or return to now. Never changes the simulation. */
@@ -438,6 +459,9 @@ export class App {
       for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k]; g.append(this.tbtn(CER_LABEL[k] + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
       tb.append(g);
       for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const d = this.cerDraft[k]; if (d) tb.append(h("div", { id: "cer-status-" + k, class: "note " + (d.prev.ok ? "okc" : "badc") }, d.prev.ok ? `✓ ${CER_LABEL[k]}: 約${d.prev.lengthKm}km／終点: ${d.prev.endName}${d.prev.passes.length ? "／通過: " + d.prev.passes.slice(0, 4).join("・") : ""}` : `✗ ${d.prev.reasons.join(" / ")}`)); }
+      const ak = this.tool === "cer-kokudo1" ? "kokudo1" : this.tool === "cer-fudo1" ? "fudo1" : null;
+      if (ak) { const d = this.cerDraft[ak]; tb.append(h("div", { class: "grp" }, h("span", { class: "note" }, `線${d?.strokes.length ?? 0}本(続けて描くと追加されます)`),
+        h("button", { id: "cer-undo", type: "button", disabled: !d?.strokes.length, onclick: () => this.cerUndo(ak) }, "↶ 1本戻す"), h("button", { id: "cer-redo", type: "button", disabled: !d?.redo.length, onclick: () => this.cerRedo(ak) }, "↷ やり直す"), h("button", { id: "cer-restart", type: "button", disabled: !d, onclick: () => this.cerRestart(ak) }, "最初から"))); }
       tb.append(h("button", { id: "cer-go", type: "button", disabled: !this.cerReady(), onclick: () => void this.doCeremony() }, "開通の儀を行う"));
       return;
     }

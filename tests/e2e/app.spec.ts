@@ -162,7 +162,7 @@ test("開通の儀: invalid line is refused with a reason, valid lines start the
   await page.click("#tool-cer-kokudo1"); expect(await page.getAttribute("#tool-cer-kokudo1", "aria-pressed")).toBe("true"); expect(await page.textContent("#mode-label")).toContain("国道1号を描く");
   await draw(page, osaka, nagoya);   // does not start in Tokyo
   expect(await page.textContent("#cer-status-kokudo1")).toContain("東京府"); expect(await page.isDisabled("#cer-go")).toBe(true);
-  await draw(page, tokyo, nagoya);
+  await page.click("#cer-undo"); await draw(page, tokyo, nagoya);   // strokes now append: take the refused one back first
   expect(await page.textContent("#cer-status-kokudo1")).toContain("✓");
   await page.click("#tool-cer-fudo1");
   const inTokyo = await page.evaluate(() => { const a = (window as any).__kfm, w = a.world; const t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; });

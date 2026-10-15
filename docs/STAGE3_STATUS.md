@@ -35,3 +35,11 @@
 3. 路線台帳の検索・絞り込み、地図上の路線タップで台帳へ移動。
 4. 国鉄/私鉄の収支（赤字）をもっと明示して、酷鉄/死鉄の理由を年表に出す。
 5. 大規模パラメータ調整（世界線ごとの鉄道・道路の発展曲線を史実に近づける）。
+
+
+## Issue #11 fixes (reload / display / ceremony)
+- Save safety: a stored save whose roads cannot be attached (hash mismatch, bad data, unreadable) is quarantined and the main save is **never overwritten** by an empty state until a new ceremony is performed; a `s3:auto:prev` copy of the stored save is taken on the first write of each session.
+- Defaults: road-map background, route-name text hidden (number signs stay). Settings in localStorage `kfm.ui` / `kfm.bg`.
+- Legend is a collapsible, persisted filter panel (road/rail, grade, state); display only, never touches the simulation.
+- 開通の儀: strokes append (start snapped to the previous end), per-kind undo/redo/restart, a tap is ignored, half-drawn ceremony persists (`kfm.cer`) across reload. Path correction/junctions are done by the existing least-cost planner and `layPath`.
+- Tests: e2e reload at x20, quarantine-not-overwritten, legend persistence, multi-stroke ceremony.

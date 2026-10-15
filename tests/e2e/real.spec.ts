@@ -154,3 +154,22 @@ test("defaults to the road map with route-name text hidden; legend toggles filte
   expect(await app(page, "a => a.hide.has('st:lost') && a.hide.has('g:national:road') && a.names && !a.s.layers.rail")).toBe(true);
   expect(errs).toEqual([]);
 });
+
+test("開通の儀 takes several strokes, undo/redo/restart work per kind, and a half-drawn ceremony survives a reload", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#era-heisei");
+  const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市"), mid: [number, number] = [(tokyo[0] + nagoya[0]) / 2, (tokyo[1] + nagoya[1]) / 2];
+  await page.click("#tool-cer-kokudo1");
+  await draw(page, tokyo, mid); await draw(page, mid, nagoya);
+  expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
+  await page.click("#cer-undo"); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(1);
+  await page.click("#cer-redo"); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
+  expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true);
+  // a tap is not a stroke
+  await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
+  await page.waitForTimeout(600); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  await page.waitForFunction(() => (window as any).__kfm.cerDraft.kokudo1, null, { timeout: 30000 });
+  expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
+  await page.click("#tool-cer-kokudo1"); await page.click("#cer-restart"); expect(await app(page, "a => !a.cerDraft.kokudo1")).toBe(true);
+  expect(errs).toEqual([]);
+});
