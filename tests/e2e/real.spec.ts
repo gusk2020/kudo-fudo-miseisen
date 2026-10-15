@@ -183,8 +183,8 @@ test("改元: time stops at 1989, the sheet opens by itself, the choice is kept 
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "priority"; a.ffYears(5); });
   // jump to the end of 1988 with the policy windows answered automatically, then let the clock reach the era change
   await page.evaluate(() => { const a = (window as any).__kfm, w = a.world; let g = 0; while (a.sim.month < 12 * 39 && g++ < 12 * 60) { (window as any).__adv(a.sim, w, 1); } a.sim.policy.pending = null; });
-  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "priority"; a.sim.speed = 20; a.ffYears(1); });
-  await page.waitForFunction(() => (window as any).__kfm.sim.kaigen.pending || (window as any).__kfm.sim.kaigen.eras.length > 1, null, { timeout: 30000 });
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "priority"; a.sim.speed = 20; });
+  await page.waitForFunction(() => (window as any).__kfm.sim.kaigen.pending, null, { timeout: 60000 });
   expect(await app(page, "a => !!a.sim.kaigen.pending")).toBe(true);
   {
     await page.evaluate(() => { (window as any).__kfm.tickClock(); });
@@ -198,5 +198,24 @@ test("改元: time stops at 1989, the sheet opens by itself, the choice is kept 
     expect(await app(page, "a => a.sim.kaigen.eras.map((e) => e.name).join()")).toBe("神化,修文");
     expect(await app(page, "a => a.sim.kaigen.pending")).toBeNull();
   }
+  expect(errs).toEqual([]);
+});
+
+test("限定の地形編集: capital, Alps and Fuji can be set before the first road, undo/redo work, edits survive a reload, and the ceremony locks them", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#terrain-edit-toggle"); await expect(page.locator("#terrain-edit-note")).toContainText("海岸線");
+  const hash0 = await app(page, "a => a.terrain.hash") as string;
+  await page.click("#alps-real"); expect(await app(page, "a => !!a.s.ridges.ne && !!a.s.ridges.sw")).toBe(true);
+  await page.waitForFunction((h) => (window as any).__kfm.terrain?.hash && (window as any).__kfm.terrain.hash !== h, hash0, { timeout: 60000 });
+  await page.click("#edit-undo"); expect(await app(page, "a => a.s.ridges.ne === null")).toBe(true); await page.click("#edit-redo"); expect(await app(page, "a => !!a.s.ridges.ne")).toBe(true);
+  const osaka = await app(page, "a => a.world.cities.find((c) => c.pref === 'JP-27' && c.kind === 'capital').id") as string;
+  await page.click("#capital-" + osaka); expect(await app(page, "a => a.s.capital")).toBe(osaka);
+  expect(await page.textContent("#tool-cer-kokudo1")).toContain("大阪府");
+  expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(0);   // the outline is never touched
+  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(await app(page, "a => a.s.capital && !!a.s.ridges.ne")).toBeTruthy(); expect(await app(page, "a => a.s.islands")).toBe(true);
+  // first road laid -> locked
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim = { fake: true }; });
+  expect(await app(page, "a => a.commitEdit((s) => { s.capital = 'x'; })")).toBe(false); await page.evaluate(() => { (window as any).__kfm.sim = null; });
   expect(errs).toEqual([]);
 });

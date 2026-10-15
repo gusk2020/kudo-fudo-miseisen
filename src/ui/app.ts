@@ -1,6 +1,6 @@
-import { worldToPostOps, worldParts } from "../core/body";
+import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
-import { ISLAND_LABEL } from "../core/data";
+import { ISLAND_LABEL, lonLatToReal } from "../core/data";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, getRaw, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
@@ -13,7 +13,7 @@ import { clampOp } from "../core/warp";
 import { derive, errorsFor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
-import { CER_LABEL, performCeremony, previewCeremony, type CerKind, type CerPreview } from "../sim/ceremony";
+import { CER_LABEL, capitalChoices, cerLabel, homeCity, performCeremony, previewCeremony, tokyoCity, type CerKind, type CerPreview } from "../sim/ceremony";
 import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
 import { codesAt } from "../sim/ledger";
@@ -52,7 +52,7 @@ export class App {
   compareYear: number | null = null; selEdge: string | null = null;
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
   lite = false; private slowTicks = 0;
-  eraChoice: EraKey = "heisei"; firstEra = 0; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain"; hide = new Set<string>(); names = false; legendOpen = true;
+  eraChoice: EraKey = "heisei"; firstEra = 0; editOpen = false; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain"; hide = new Set<string>(); names = false; legendOpen = true;
   runner: SimRunner | null = null; building = 0; safeMode = false; behind = false; private lastRoads = 0;
   private lastBackup = 0; private lastSaved = 0; private persistRetry = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
@@ -142,7 +142,7 @@ export class App {
     try {
       const res = await this.client.generate(JSON.parse(JSON.stringify(this.s)), (p) => { this.genProgress = p; this.status(); });
       if (stateKey(this.s) !== key) return;
-      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.attachPendingSim(); this.restoreCer();
+      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.attachPendingSim(); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.restoreCer();
     } catch (e: any) { if (String(e?.message) !== "cancelled") this.toast("地形生成に失敗: " + e?.message); }
     this.generating = false; this.render(); this.buildUI();
   }
@@ -251,15 +251,31 @@ export class App {
       if (op && (op.t !== "pull" || Math.hypot(op.d[0], op.d[1]) > 0.5)) this.store.commit((s) => { s.bodies[g.id as IslandId].ops.push(op!); });
       else this.render();
     } else if (g.t === "move" && g.place) this.store.commit((s) => { s.bodies[g.id as IslandId].place = g.place; });
-    else if (g.t === "feature" && g.pos) this.store.commit((s) => { s.features[g.which as "biwa" | "fuji"].pos = g.pos; });
-    else if ((g.t === "ridge-sw" || g.t === "ridge-ne") && g.pts.length >= 2) this.store.commit((s) => { s.ridges[g.key as "sw" | "ne"] = simplifyLine(g.pts, 4); });
-    else if (g.t === "ridge-edit" && g.pts) this.store.commit((s) => { s.ridges[g.key as "sw" | "ne"] = g.pts; });
+    else if (g.t === "feature" && g.pos) this.commitEdit((s) => { s.features[g.which as "biwa" | "fuji"].pos = g.pos; });
+    else if ((g.t === "ridge-sw" || g.t === "ridge-ne") && g.pts.length >= 2) this.commitEdit((s) => { s.ridges[g.key as "sw" | "ne"] = simplifyLine(g.pts, 4); });
+    else if (g.t === "ridge-edit" && g.pts) this.commitEdit((s) => { s.ridges[g.key as "sw" | "ne"] = g.pts; });
     else this.render();
   }
   rotateSel(dir: number) {
-    if (this.s.step === 3) this.store.commit((s) => { s.features[this.selFeature].rot += dir * ROT_STEP; });
+    if (this.s.step === 3 || this.real) this.commitEdit((s) => { s.features[this.selFeature].rot += dir * ROT_STEP; });
     else { const id = this.bodyForTool(); this.store.commit((s) => { s.bodies[id].place.rot += dir * ROT_STEP; }); }
   }
+  /** The few edits the real-Japan game allows before its first road; everything else stays locked. Refused once a simulation exists. */
+  commitEdit(mut: (s: Store["state"]) => void): boolean {
+    if (!this.real) return this.store.commit(mut);
+    if (this.sim || this.pendingSim) { this.toast("道路づくりが始まったあとは、地形は変えられません"); return false; }
+    return this.store.commitLimited(mut);
+  }
+  undoEdit() { if (this.real && !this.sim) this.store.undoLimited(); else this.store.undo(); }
+  redoEdit() { if (this.real && !this.sim) this.store.redoLimited(); else this.store.redo(); }
+  /** Put the two Alps ranges where they really are (飛騨山脈=北, 赤石山脈=南). Points are rough ridge lines, not survey data. */
+  realAlps() {
+    const to = (lon: number, lat: number): Vec => realToWorld("honshu", this.s.bodies.honshu, lonLatToReal(lon, lat));
+    const north = [[137.76, 36.76], [137.62, 36.58], [137.65, 36.34], [137.65, 36.29], [137.55, 36.11]].map(([a, b]) => to(a, b)), south = [[138.23, 35.78], [138.24, 35.67], [138.10, 35.60], [138.14, 35.45], [138.10, 35.33]].map(([a, b]) => to(a, b));
+    this.commitEdit((s) => { s.ridges.ne = north; s.ridges.sw = south; });
+  }
+  clearRanges() { this.commitEdit((s) => { s.ridges.ne = null; s.ridges.sw = null; }); }
+  setCapital(id: string | null) { this.commitEdit((s) => { if (id) s.capital = id; else delete s.capital; }); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); }
   scaleSel(dir: number) { const id = this.bodyForTool(); this.store.commit((s) => { s.bodies[id].place.scale = Math.max(0.3, Math.min(3, s.bodies[id].place.scale * (dir > 0 ? 1.05 : 1 / 1.05))); }); }
   suggestRanges() {
     const d = derive(this.s), neRef = rotv([Math.SQRT1_2, Math.SQRT1_2], this.s.bodies.honshu.place.rot), f = axisFrame(d.parts.honshu[0], neRef);
@@ -280,7 +296,7 @@ export class App {
   private replanCer(kind: CerKind) {
     const w = this.ensureWorld(), d = this.cerDraft[kind]; if (!w || !d) return;
     if (!d.strokes.length) { delete this.cerDraft[kind]; this.saveCer(); return; }
-    d.pts = d.strokes.flat(); d.prev = previewCeremony(w, kind, d.pts); this.saveCer();
+    d.pts = d.strokes.flat(); d.prev = previewCeremony(w, kind, d.pts, this.s.capital); this.saveCer();
   }
   cerUndo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.strokes.length) return; d.redo.push(d.strokes.pop()!); this.replanCer(kind); this.renderRoads(); this.buildUI(); }
   cerRedo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.redo.length) return; d.strokes.push(d.redo.pop()!); this.replanCer(kind); this.renderRoads(); this.buildUI(); }
@@ -300,7 +316,7 @@ export class App {
     if (!w || !this.terrain || !k?.ok || !f?.ok || !this.s.finalized || this.sim || this.building) return;
     this.building = 0.01; this.status(); this.buildUI();
     // the 1950 network is generated in slices (a single long task froze phones); the UI shows progress and stays responsive
-    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra } : {}); let sim: SimState | null = null;
+    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra, capital: this.s.capital } : {}); let sim: SimState | null = null;
     while (!sim) {
       const t0 = performance.now();
       while (performance.now() - t0 < 10) { const r = gen.next(); if (r.done) { sim = r.value; break; } this.building = Math.max(this.building, r.value); }
@@ -447,6 +463,24 @@ export class App {
       tb.append(h("div", { class: "grp" }, h("button", { id: "reseed", onclick: () => this.store.commit((s) => { s.seed = (s.seed * 1664525 + 1013904223) >>> 0; }) }, "地形の乱数を変える"), h("span", {}, `seed ${this.s.seed}`)));
     }
   }
+  /** 限定の地形編集: the coastline stays the real one; only the capital, Fuji, Lake Biwa and the two Alps ranges can be set, until the first road. */
+  private buildTerrainEdit(tb: HTMLElement) {
+    const open = this.editOpen;
+    tb.append(h("button", { id: "terrain-edit-toggle", type: "button", class: open ? "mode on" : "mode", "aria-pressed": open ? "true" : "false", onclick: () => { this.editOpen = !this.editOpen; if (!this.editOpen && this.tool !== "view" && !String(this.tool).startsWith("cer-")) this.tool = "view"; this.buildToolbar(); } }, open ? "▼ 地形・首都の編集(限定)" : "▶ 地形・首都の編集(限定)"));
+    if (!open) return;
+    const w = this.ensureWorld(), box = h("div", { id: "terrain-edit", class: "grp" });
+    tb.append(h("div", { class: "note", id: "terrain-edit-note" }, "海岸線と日本列島の輪郭は現実のまま固定です。首都・富士山・琵琶湖・南北アルプスだけ、最初の道を引く前に変えられます(開通の儀のあとは固定)。"));
+    if (w) { const g = h("div", { class: "grp" }); for (const c of capitalChoices(w)) { const on = (this.s.capital ?? tokyoCity(w)?.id) === c.id; g.append(h("button", { id: "capital-" + c.id, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: () => this.setCapital(c.id === tokyoCity(w)?.id ? null : c.id) }, `${on ? "✓ " : ""}首都: ${c.name.replace(/市$/, "")}`)); } tb.append(h("small", {}, "首都の移動は地形の変形ではなく、都市・行政の設定です"), g); }
+    const tools = (list: [Tool, string][]) => { const g = h("div", { class: "grp" }); for (const [t, l] of list) g.append(this.tbtn(l, this.tool === t, () => this.setTool(t), "tool-" + t)); tb.append(g); };
+    tools([["feature", "富士山・琵琶湖を動かす"], ["ridge-ne", "北の山脈を描く"], ["ridge-sw", "南の山脈を描く"], ["ridge-edit", "山脈の点を動かす"]]);
+    const g = h("div", { class: "grp" });
+    g.append(this.tbtn("琵琶湖を回転", this.selFeature === "biwa", () => { this.selFeature = "biwa"; this.buildToolbar(); }, "sel-biwa"), this.tbtn("富士山を回転", this.selFeature === "fuji", () => { this.selFeature = "fuji"; this.buildToolbar(); }, "sel-fuji"),
+      h("button", { id: "rot-l", type: "button", onclick: () => this.rotateSel(1) }, "⟲5°"), h("button", { id: "rot-r", type: "button", onclick: () => this.rotateSel(-1) }, "⟳5°"));
+    tb.append(g, h("div", { class: "grp" }, h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実際のアルプスの位置"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "山脈を消す"),
+      h("button", { id: "edit-undo", type: "button", disabled: !this.store.canUndo, onclick: () => this.undoEdit() }, "↶ 元に戻す"), h("button", { id: "edit-redo", type: "button", disabled: !this.store.canRedo, onclick: () => this.redoEdit() }, "↷ やり直す")));
+    const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
+    void box;
+  }
   unlockMap() {
     if (this.sim && !confirm("地図の編集を再開すると、作成済みの道路とシミュレーションは消えます。よろしいですか?")) return;
     this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.pin = null; this.store.unlock(); this.persist(); this.toast("ロックを解除しました");
@@ -458,8 +492,9 @@ export class App {
       label(`選択中: ${names[this.tool]}`);
       if (this.real) eraPicker(this, tb, this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); });
       else tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));
+      if (this.real) this.buildTerrainEdit(tb);
       const g = h("div", { class: "grp" });
-      for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k]; g.append(this.tbtn(CER_LABEL[k] + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
+      for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k]; g.append(this.tbtn(cerLabel(k, this.world ? homeCity(this.world, this.s.capital) : null) + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
       tb.append(g);
       for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const d = this.cerDraft[k]; if (d) tb.append(h("div", { id: "cer-status-" + k, class: "note " + (d.prev.ok ? "okc" : "badc") }, d.prev.ok ? `✓ ${CER_LABEL[k]}: 約${d.prev.lengthKm}km／終点: ${d.prev.endName}${d.prev.passes.length ? "／通過: " + d.prev.passes.slice(0, 4).join("・") : ""}` : `✗ ${d.prev.reasons.join(" / ")}`)); }
       const ak = this.tool === "cer-kokudo1" ? "kokudo1" : this.tool === "cer-fudo1" ? "fudo1" : null;

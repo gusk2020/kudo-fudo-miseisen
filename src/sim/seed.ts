@@ -7,10 +7,11 @@ import { pathfind, type World, type WCity } from "./world";
 import { refBias, referenceGrids } from "./reference";
 import { seedRailGen } from "./seedRail";
 import { openStraits } from "./straits";
+import { homeCity } from "./ceremony";
 
 export const RESERVED = { national: 1, fuTokyo: 1 };   // numbers kept for the 開通の儀 roads
 export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<number> {
-  sim.routeCounters["national:JP"] = RESERVED.national; sim.routeCounters["fu:JP-13"] = RESERVED.fuTokyo;
+  sim.routeCounters["national:JP"] = RESERVED.national; sim.routeCounters["fu:" + (homeCity(w, sim.capital)?.pref ?? "JP-13")] = RESERVED.fuTokyo;
   // 1) settlements around every city (synthetic)
   let sid = 0; const used = new Set<number>(w.cities.map((c) => c.cell)); let idx = buildIndex(sim);
   for (const c of w.cities) {

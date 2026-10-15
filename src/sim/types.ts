@@ -96,6 +96,7 @@ export interface SimState {
   mods: Mod[];                // active and expired event/policy effects (kept for the timeline)
   policy?: PolicyState;       // ten-yearly interventions (Stage 3 only)
   stage3?: boolean;           // true for games started on the real map; false/absent = the Stage 2 flow
+  capital?: string;           // Issue #13: id of the capital city chosen for this game (Tokyo / Kyoto / Osaka); absent = Tokyo
   tech?: { k: number };       // Issue #13: bridge/tunnel technology rule (see tech.ts). Absent = older games, which keep the old fixed facility rules
   kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
 }

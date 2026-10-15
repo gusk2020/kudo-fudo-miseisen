@@ -51,6 +51,20 @@ export class Store {
     this.emit();
     return true;
   }
+  /**
+   * Real-Japan games: before the first road is laid the capital, Fuji, Lake Biwa and the two Alps ranges may still be set, though the map is finalised.
+   * Undoable exactly like commit(); the caller (the app) refuses it once a simulation exists. The coastline and bodies are never touched through here.
+   */
+  commitLimited(mut: (s: ProjectState) => void): boolean {
+    this.undoStack.push(JSON.stringify(this.state)); if (this.undoStack.length > 200) this.undoStack.shift(); this.redoStack = [];
+    mut(this.state); this.emit(); return true;
+  }
+  undoLimited() { return this.stepHistory(this.undoStack, this.redoStack); }
+  redoLimited() { return this.stepHistory(this.redoStack, this.undoStack); }
+  private stepHistory(from: string[], to: string[]) {
+    const p = from.pop(); if (!p) return false; to.push(JSON.stringify(this.state));
+    const keepStep = this.state.step, keepLayers = this.state.layers; this.state = JSON.parse(p); this.state.step = keepStep; this.state.layers = keepLayers; this.emit(); return true;
+  }
   /** The only way to edit a finalised map again: explicit, not undoable. */
   unlock() { this.state.finalized = false; this.emit(); }
   /** Non-undoable change (view preferences, step navigation). */
