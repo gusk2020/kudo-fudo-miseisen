@@ -8,6 +8,7 @@
  *  - 修文 and 正化 are fictional: same world events, different domestic responses.
  */
 import type { SimState } from "./types";
+import { eraWeights } from "./kaigen";
 
 export type EraKey = "heisei" | "shubun" | "shoka" | "kobun";
 export interface EraDef { key: EraKey; name: string; firstYear: number; summary: string; focus: string }
@@ -90,11 +91,18 @@ const PROFILE: Record<EraKey, Record<keyof Dials, Key>> = {
 export function baseDials(era: EraKey, year: number): Dials {
   const p = PROFILE[era], d = {} as Dials; for (const k of DIAL_KEYS) d[k] = at(p[k], year); return d;
 }
+/** Issue #13: with an era timeline the baseline is a weighted blend of the stances chosen so far (see eraWeights): earlier choices keep a share. */
+export function blendedDials(eras: { stance: EraKey; start: number }[], year: number): Dials {
+  const w = eraWeights(eras as never, year), out = {} as Dials; for (const k of DIAL_KEYS) out[k] = 0;
+  const cache = new Map<EraKey, Dials>();
+  eras.forEach((e, i) => { if (!w[i]) return; const b = cache.get(e.stance) ?? baseDials(e.stance, year); cache.set(e.stance, b); for (const k of DIAL_KEYS) out[k] += w[i] * b[k]; });
+  return out;
+}
 /** A time-limited nudge to the dials, from an event or a policy. `d` is additive; the reason is kept so the timeline can say why. */
 export interface Mod { id: string; kind: "event" | "policy"; label: string; from: number; until: number; d: Partial<Dials> }
 /** Baseline + every active mod, clamped. The only place dials are composed. */
-export function composeDials(sim: Pick<SimState, "era" | "mods">, year: number): Dials {
-  const d = baseDials(eraKeyOf(sim.era), year);
+export function composeDials(sim: Pick<SimState, "era" | "mods" | "kaigen">, year: number): Dials {
+  const d = sim.kaigen ? blendedDials(sim.kaigen.eras, year) : baseDials(eraKeyOf(sim.era), year);
   for (const m of sim.mods) if (year >= m.from && year < m.until) for (const k of DIAL_KEYS) { const v = m.d[k]; if (v) d[k] += v; }
   for (const k of DIAL_KEYS) d[k] = clampDial(k, d[k]);
   return d;

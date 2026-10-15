@@ -20,7 +20,7 @@ export function defaultState(seed = 20260101): ProjectState {
   };
 }
 /** Stage 3 start: real geography, nothing deformed, already finalised, at the roads step. */
-export function realState(seed = 20260101): ProjectState { const s = defaultState(seed); s.finalized = true; s.step = 6; s.real = true; return s; }
+export function realState(seed = 20260101): ProjectState { const s = defaultState(seed); s.finalized = true; s.step = 6; s.real = true; s.islands = true; return s; }
 export const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 /** World positions of the fixed-shape features (default = real position pushed through Honshu's warp). */
@@ -50,6 +50,20 @@ export class Store {
     mut(this.state);
     this.emit();
     return true;
+  }
+  /**
+   * Real-Japan games: before the first road is laid the capital, Fuji, Lake Biwa and the two Alps ranges may still be set, though the map is finalised.
+   * Undoable exactly like commit(); the caller (the app) refuses it once a simulation exists. The coastline and bodies are never touched through here.
+   */
+  commitLimited(mut: (s: ProjectState) => void): boolean {
+    this.undoStack.push(JSON.stringify(this.state)); if (this.undoStack.length > 200) this.undoStack.shift(); this.redoStack = [];
+    mut(this.state); this.emit(); return true;
+  }
+  undoLimited() { return this.stepHistory(this.undoStack, this.redoStack); }
+  redoLimited() { return this.stepHistory(this.redoStack, this.undoStack); }
+  private stepHistory(from: string[], to: string[]) {
+    const p = from.pop(); if (!p) return false; to.push(JSON.stringify(this.state));
+    const keepStep = this.state.step, keepLayers = this.state.layers; this.state = JSON.parse(p); this.state.step = keepStep; this.state.layers = keepLayers; this.emit(); return true;
   }
   /** The only way to edit a finalised map again: explicit, not undoable. */
   unlock() { this.state.finalized = false; this.emit(); }

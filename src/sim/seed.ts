@@ -7,10 +7,11 @@ import { pathfind, type World, type WCity } from "./world";
 import { refBias, referenceGrids } from "./reference";
 import { seedRailGen } from "./seedRail";
 import { openStraits } from "./straits";
+import { homeCity } from "./ceremony";
 
 export const RESERVED = { national: 1, fuTokyo: 1 };   // numbers kept for the 開通の儀 roads
 export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<number> {
-  sim.routeCounters["national:JP"] = RESERVED.national; sim.routeCounters["fu:JP-13"] = RESERVED.fuTokyo;
+  sim.routeCounters["national:JP"] = RESERVED.national; sim.routeCounters["fu:" + (homeCity(w, sim.capital)?.pref ?? "JP-13")] = RESERVED.fuTokyo;
   // 1) settlements around every city (synthetic)
   let sid = 0; const used = new Set<number>(w.cities.map((c) => c.cell)); let idx = buildIndex(sim);
   for (const c of w.cities) {
@@ -18,7 +19,7 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
     for (let k = 0; k < n; k++) {
       let cell = -1;
       for (let tries = 0; tries < 10 && cell < 0; tries++) {
-        const ang = rand(sim) * Math.PI * 2, r = 15 + rand(sim) * 30, q = w.cellOf([c.pos[0] + Math.cos(ang) * r, c.pos[1] + Math.sin(ang) * r]);
+        const ang = rand(sim) * Math.PI * 2, r = c.island > 4 ? 4 + rand(sim) * 12 : 15 + rand(sim) * 30, q = w.cellOf([c.pos[0] + Math.cos(ang) * r, c.pos[1] + Math.sin(ang) * r]);
         if (q >= 0 && w.t.land[q] === 1 && w.t.island[q] === c.island && !used.has(q)) cell = q;
       }
       const popv = Math.round((350 + rand(sim) * 3600) * (c.pop0 > 1e6 ? 1.5 : 1)); if (cell < 0) continue;

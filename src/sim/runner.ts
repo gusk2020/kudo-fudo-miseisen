@@ -17,7 +17,7 @@ export class SimRunner {
   pump(budgetMs: number): number {
     const t0 = performance.now(); let done = 0;
     while (performance.now() - t0 < budgetMs) {
-      if (!this.gen) { if (this.pending <= 0) break; if (this.sim.policy?.pending) { this.pending = 0; break; } this.pending--; this.m0 = this.sim.month; this.gen = stepMonthGen(this.sim, this.w); }
+      if (!this.gen) { if (this.pending <= 0) break; if (this.sim.policy?.pending || this.sim.kaigen?.pending) { this.pending = 0; break; } this.pending--; this.m0 = this.sim.month; this.gen = stepMonthGen(this.sim, this.w); }
       if (this.gen.next().done) { this.gen = null; if (this.sim.month !== this.m0) done++; else { this.pending = 0; break; } }   // a month that did not advance was blocked at a policy window
     }
     return done;

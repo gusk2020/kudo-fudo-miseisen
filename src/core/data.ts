@@ -1,4 +1,5 @@
 import raw from "../data/japan.json";
+import extraRaw from "../data/islands-extra.json";
 import { centroid, densify } from "./geom";
 import type { IslandId, Vec } from "./types";
 import { ISLAND_IDS } from "./types";
@@ -34,3 +35,9 @@ export const ISLAND_LABEL: Record<IslandId, string> = { honshu: "本州", hokkai
 export function realToLonLat(p: Vec): Vec { return [p[0] / JAPAN.proj.kmPerDegLon + JAPAN.proj.lon0, p[1] / JAPAN.proj.kmPerDegLat + JAPAN.proj.lat0]; }
 export function lonLatToReal(lon: number, lat: number): Vec { return [(lon - JAPAN.proj.lon0) * JAPAN.proj.kmPerDegLon, (lat - JAPAN.proj.lat0) * JAPAN.proj.kmPerDegLat]; }
 export { ISLAND_IDS };
+
+/** Issue #13: islands added to the real Japan (outlines in the same real-km frame as every other outline, so world = real for them). */
+export interface ExtraIsland { name: string; pref: string; parts: Vec[][]; areaKm2: number }
+export interface ExtraData { islands: Record<string, ExtraIsland>; cities: (CityDef & { pop: number })[]; sources: { name: string; license: string; url: string }[] }
+export const EXTRA = extraRaw as unknown as ExtraData;
+export const EXTRA_IDS = ["sado", "awaji", "tsushima", "iki", "oki"] as const;

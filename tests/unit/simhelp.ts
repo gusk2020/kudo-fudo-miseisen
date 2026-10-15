@@ -28,14 +28,14 @@ export function startedSim(seed = 1, end = "名古屋市") {
 }
 
 /** The real Japan (no deformation, no drawn ridges): what Stage 3 plays on. */
-let realCache: { w: World; hash: string } | null = null;
-export function realWorld() {
-  if (realCache) return realCache;
-  const s = defaultState(), t = generateTerrain(s, loadDem()); return (realCache = { w: buildWorld(t, s.seed), hash: t.hash });
+const realCache: Record<string, { w: World; hash: string }> = {};
+export function realWorld(islands = false) {
+  const key = islands ? "i" : "p"; if (realCache[key]) return realCache[key];
+  const s = defaultState(); if (islands) s.islands = true; const t = generateTerrain(s, loadDem()); return (realCache[key] = { w: buildWorld(t, s.seed), hash: t.hash });
 }
 /** A Stage 3 game with the ceremony performed on top of the 1950 road + rail network. */
-export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true) {
-  const { w, hash } = realWorld(), sim = createSim(w, "m", hash, seed, { era, stage3: true });
+export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true, firstEra?: number, techK?: number, islands = false) {
+  const { w, hash } = realWorld(islands), sim = createSim(w, "m", hash, seed, firstEra !== undefined ? { stage3: true, firstEra, techK } : { era, stage3: true, techK });
   if (ceremony) {
     const t = tokyoCity(w)!, e = w.cities.find((c) => c.name === "名古屋市")!;
     const line = (a: Vec, b: Vec, n = 12): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);

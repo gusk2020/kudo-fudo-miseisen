@@ -52,6 +52,8 @@ export function parseState(input: unknown): { state: ProjectState; problems: str
     ridges: { sw: cleanLine(raw.ridges?.sw, problems, "南西山脈"), ne: cleanLine(raw.ridges?.ne, problems, "北東山脈") },
     finalized: raw.finalized === true,
     ...(raw.real === true ? { real: true } : {}),
+    ...(raw.islands === true ? { islands: true } : {}),
+    ...(typeof raw.capital === "string" && raw.capital.length > 0 && raw.capital.length < 40 ? { capital: raw.capital } : {}),
     layers: { ...d.layers },
   };
   if (raw.layers && typeof raw.layers === "object") for (const k of Object.keys(d.layers)) if (typeof raw.layers[k] === "boolean") s.layers[k] = raw.layers[k];
