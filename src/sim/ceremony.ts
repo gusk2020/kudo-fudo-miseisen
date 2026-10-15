@@ -3,7 +3,8 @@ import { dist, pointSegDist } from "../core/geom";
 import type { Vec } from "../core/types";
 import { designate, ev, routeOfficial } from "./engine";
 import { layPath } from "./network";
-import { ERA, type SimState } from "./types";
+import { ERA, eraLabel, type SimState } from "./types";
+import { ERAS, eraKeyOf } from "./eras";
 import { cellDistKm, pathfind, type World } from "./world";
 
 export type CerKind = "kokudo1" | "fudo1";
@@ -71,7 +72,7 @@ export function previewCeremony(w: World, kind: CerKind, drawn: Vec[]): CerPrevi
 /** Perform the ceremony: lay both roads, designate 酷道1号 and 腐道1号, start the clock. */
 export function performCeremony(sim: SimState, w: World, kokudo: CerPreview, fudo: CerPreview): boolean {
   if (sim.ceremonyDone || !kokudo.ok || !fudo.ok) return false;
-  ev(sim, "ceremony", `開通の儀。${ERA.name}6年(1950)、${ERA.note}`, "プレイヤーが二本の道を描いた", {});
+  ev(sim, "ceremony", sim.stage3 ? `開通の儀。${eraLabel(1950, eraKeyOf(sim.era))}(1950年)。${ERAS[eraKeyOf(sim.era)].summary}` : `開通の儀。${ERA.name}6年(1950)、${ERA.note}`, "プレイヤーが二本の道(国道1号・東京府道1号)を描いた", {});
   const a = layPath(sim, w, kokudo.cells, { open: true, surface: "gravel", quality: 55, built: 1, month: 0 });
   const r1 = designate(sim, a.chain, "national", "JP", `東京〜${kokudo.endName}`, "開通の儀", false, 1);
   const b = layPath(sim, w, fudo.cells, { open: true, surface: "gravel", quality: 55, built: 1, month: 0 });

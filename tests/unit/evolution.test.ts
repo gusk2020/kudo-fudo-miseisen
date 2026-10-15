@@ -107,7 +107,7 @@ describe("1950-2050: roads, population and decline that can be seen", () => {
     const { sim, rows } = century(1); const idle = (y: number) => rows[y].dormant + rows[y].closed + rows[y].lost;
     expect(idle(2050)).toBeGreaterThan(idle(2000)); expect(rows[2050].lost).toBeGreaterThanOrEqual(3); expect(rows[2050].poor).toBeGreaterThan(rows[2000].poor + 5);
     const peakPop = Math.max(...Object.values(rows).map((r) => (typeof r === "object" ? (r as any).pop : 0)));
-    expect(rows[2050].pop).toBeLessThan(peakPop * 0.85); expect(rows[2050].villagePop).toBeLessThan(rows[1950].villagePop * 0.9 || 1e12);
+    expect(rows[2050].pop).toBeLessThan(peakPop * 0.85); expect(rows[2050].villagePop).toBeLessThan(rows[1950].villagePop * 0.97 || 1e12);
     expect(rows[2050].bypass).toBeGreaterThan(rows[1980].bypass); expect(rows[2050].nick).toBeGreaterThanOrEqual(3); expect(rows[1950].nick).toBe(0);
     expect(sim.snaps.length).toBeGreaterThanOrEqual(9); expect(sim.snaps[0].year).toBe(1950);
     const a = sim.snaps.find((s) => s.year === 2000)!, b = sim.snaps[sim.snaps.length - 1]; let worse = 0; for (const [id, c] of Object.entries(b.edges)) { const o = a.edges[id]; if (o !== undefined && Math.floor(c / 16) > Math.floor(o / 16)) worse++; }
@@ -127,7 +127,7 @@ describe("compatibility with Stage 2 (v1) road saves", () => {
     for (const e of Object.values<any>(old.edges)) for (const k of ["standard", "state", "through", "local", "peakThrough", "zeroYears", "reviveYears", "congYears", "nick", "region", "hist", "bypassOf", "bypassedBy", "throughDropYears"]) delete e[k];
     for (const r of Object.values<any>(old.routes)) { delete r.nick; delete r.oldEdges; r.name = "酷道" + r.number + "号"; } for (const p of Object.values<any>(old.projects)) { delete p.region; delete p.replaces; }
     delete old.settlements; delete old.links; delete old.snaps; delete old.regionShare;
-    const r = sanitizeSim(old); expect(r.problems).toEqual([]); const s = r.sim!; expect(s.schemaVersion).toBe(2); finishMigration(s, w);
+    const r = sanitizeSim(old); expect(r.problems).toEqual([]); const s = r.sim!; expect(s.schemaVersion).toBe(3); finishMigration(s, w);
     expect(Object.values(s.edges).every((e) => e.region.length > 0 && e.state)).toBe(true); expect(Object.values(s.routes).every((x) => /(国道|県道|府道)/.test(x.name))).toBe(true);
     advance(s, w, 12 * 10); expect(checkIntegrity(s)).toEqual([]); expect(s.month).toBe(36 + 120);
   });

@@ -42,14 +42,19 @@ export class Renderer {
   private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
   private lastArgs: [ProjectState, TerrainResult | null, Issue[], Pending | null] | null = null;
   private rebuildTimer: any = 0;
-  onViewChange: (() => void) | null = null;
+  /** Background map: shaded terrain, or a plain road-map style (flat land, no relief) that keeps the network readable. */
+  bg: "terrain" | "roadmap" = "terrain";
+  setBg(bg: "terrain" | "roadmap") { if (bg === this.bg) return; this.bg = bg; this.app.renderer.background.color = bg === "roadmap" ? 0xcfe3ee : 0x123c69; this.rebuild(); }
+  onViewChange: (() => void) | null = null; onContextLost: (() => void) | null = null; onContextRestored: (() => void) | null = null;
 
   static async create(host: HTMLElement): Promise<Renderer> {
     const r = new Renderer();
     r.app = new Application();
-    await r.app.init({ resizeTo: host, background: 0x123c69, antialias: true, resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true });
+    await r.app.init({ resizeTo: host, background: 0x123c69, antialias: false, resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true });
     host.appendChild(r.app.canvas);
     r.app.canvas.style.touchAction = "none";
+    r.app.canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); r.onContextLost?.(); });
+    r.app.canvas.addEventListener("webglcontextrestored", () => { r.roads.redraw(r.view.zoom); r.onContextRestored?.(); });
     r.root.addChild(r.base, r.overlay, r.roads.container, r.labels); r.app.stage.addChild(r.root);
     r.app.renderer.on("resize", () => r.applyView());
     return r;
@@ -80,7 +85,7 @@ export class Renderer {
     if (!this.lastArgs) return;
     const [s, t, issues, pending] = this.lastArgs, z = this.view.zoom, px = (n: number) => n / z;
     if (this.terrainSprite?.parent) this.terrainSprite.parent.removeChild(this.terrainSprite); // reused across rebuilds, destroyed only with its terrain
-    this.base.removeChildren().forEach((c) => c.destroy({ children: true })); this.overlay.removeChildren().forEach((c) => c.destroy({ children: true })); this.labels.removeChildren().forEach((c) => c.destroy());
+    this.base.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.overlay.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.labels.removeChildren().forEach((c) => c.destroy());
     const P = (v: Vec): [number, number] => [v[0], -v[1]];
     const flat = (poly: Vec[]) => poly.flatMap((q) => P(q));
     const bad = new Set<string>();
@@ -91,14 +96,14 @@ export class Renderer {
       if (this.terrainRef !== t) { this.terrainSprite?.destroy(true); this.terrainSprite = new Sprite(Texture.from(terrainCanvas(t))); this.terrainRef = t; }
       const sp = this.terrainSprite!, g = t.grid;
       sp.position.set(g.x0, -(g.y0 + g.ny * g.cell)); sp.scale.set(g.cell);
-      sp.visible = s.layers.elevation; if (sp.parent !== this.base) this.base.addChild(sp);
+      sp.visible = s.layers.elevation && this.bg === "terrain"; if (sp.parent !== this.base) this.base.addChild(sp);
     } else { this.terrainSprite?.destroy(true); this.terrainSprite = null; this.terrainRef = null; }
-    const landFlat = !(showTerrain && s.layers.elevation);
+    const landFlat = !(showTerrain && s.layers.elevation && this.bg === "terrain");
     const coast = new Graphics(), fills = new Graphics();
     for (const id of ISLAND_IDS) {
       const bp = pending?.body?.id === id ? worldParts(id, { ops: s.bodies[id].ops, place: pending.body.place ?? s.bodies[id].place }, pending.body.op) : worldParts(id, s.bodies[id]);
       for (const poly of bp) {
-        if (landFlat) fills.poly(flat(poly)).fill({ color: bad.has(id) ? 0xd89090 : 0xbfd18d });
+        if (landFlat) fills.poly(flat(poly)).fill({ color: bad.has(id) ? 0xd89090 : this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
         if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(bad.has(id) ? 3 : 1.4), color: bad.has(id) ? 0xd22 : 0x2c3e1f });
       }
     }
@@ -135,7 +140,8 @@ export class Renderer {
         const w = t.streams[i + 4], b = buckets[w < 1.5 ? 0 : w < 3 ? 1 : 2];
         b.moveTo(t.streams[i], -t.streams[i + 1]).lineTo(t.streams[i + 2], -t.streams[i + 3]);
       }
-      buckets.forEach((b, n) => { b.stroke({ width: px(1 + n * 1.1), color: 0x3a82d0, alpha: 0.95, cap: "round" }); this.base.addChild(b); });
+      const minBucket = this.view.zoom < 0.35 ? 2 : this.view.zoom < 0.8 ? 1 : 0;   // national view: only the big rivers
+      buckets.forEach((b, n) => { if (n < minBucket) { b.destroy(); return; } b.stroke({ width: px(1 + n * 1.1), color: 0x3a82d0, alpha: 0.95, cap: "round" }); this.base.addChild(b); });
     }
     if (s.layers.borders) {
       const g = new Graphics();

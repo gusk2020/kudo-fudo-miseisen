@@ -4,9 +4,12 @@ import { FU_PREFS, type Grade, type SimState } from "./types";
 import { layPath, newId, nodeAtCell, buildIndex, pad } from "./network";
 import { designate, ev, rand } from "./engine";
 import { pathfind, type World, type WCity } from "./world";
+import { refBias, referenceGrids } from "./reference";
+import { seedRailGen } from "./seedRail";
+import { openStraits } from "./straits";
 
 export const RESERVED = { national: 1, fuTokyo: 1 };   // numbers kept for the 開通の儀 roads
-export function seedInitialNetwork(sim: SimState, w: World) {
+export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<number> {
   sim.routeCounters["national:JP"] = RESERVED.national; sim.routeCounters["fu:JP-13"] = RESERVED.fuTokyo;
   // 1) settlements around every city (synthetic)
   let sid = 0; const used = new Set<number>(w.cities.map((c) => c.cell)); let idx = buildIndex(sim);
@@ -23,6 +26,7 @@ export function seedInitialNetwork(sim: SimState, w: World) {
       sim.settlements[id] = { id, name: `${c.name.replace(/市$/, "")}近郊${k + 1}`, cell, city: c.id, pop: popv, pop0: popv, isolatedYears: 0, gone: false };
       nodeAtCell(sim, w, idx, cell, "village");
     }
+    yield 0.05;
   }
   // 2) city-to-city roads: minimum spanning forest per island, plus each city's nearest unlinked neighbour
   const links: [WCity, WCity][] = [], key = new Set<string>(), add = (a: WCity, b: WCity) => { const k = a.id < b.id ? a.id + b.id : b.id + a.id; if (key.has(k)) return; key.add(k); links.push([a, b]); };
@@ -37,12 +41,13 @@ export function seedInitialNetwork(sim: SimState, w: World) {
   }
   let nRoutes = 0;
   for (const [a, b] of links) {
-    const path = pathfind(w, a.cell, b.cell, { margin: 16 }); if (!path) continue;
+    const path = pathfind(w, a.cell, b.cell, sim.stage3 ? { margin: 16, bias: refBias(referenceGrids(w).road) } : { margin: 16 }); if (!path) continue;
     const l = layPath(sim, w, path, { open: true, surface: a.pop0 + b.pop0 > 400000 ? "gravel" : "unpaved", quality: 38 + rand(sim) * 27, built: 1, month: 0, standard: "rural" });
     if (!l.chain.length) continue;
     const national = a.pref !== b.pref || (a.pop0 > 150000 && b.pop0 > 150000), pf = a.pref ?? "JP-13";
     const g: Grade = national ? "national" : FU_PREFS.has(pf) ? "fu" : "ken";
     if (designate(sim, l.chain, g, national ? "JP" : pf, `${a.name}〜${b.name}`, "1950年の既存道路網(合成)", true)) nRoutes++;
+    yield 0.3;
   }
   // 3) every settlement is tied to its city by a lane; some are prefectural roads
   idx = buildIndex(sim);
@@ -51,7 +56,9 @@ export function seedInitialNetwork(sim: SimState, w: World) {
     const l = layPath(sim, w, path, { open: true, surface: "unpaved", quality: 30 + rand(sim) * 25, built: 1, month: 0, standard: "rural" });
     if (l.chain.length && v.pop >= 3000 && rand(sim) < 0.35) { const pf = c.pref ?? "JP-13"; if (designate(sim, l.chain, FU_PREFS.has(pf) ? "fu" : "ken", pf, `${v.name}〜${c.name}`, "1950年の既存道路網(合成)", true)) nRoutes++; }
     else rand(sim);
+    yield 0.9;
   }
   ev(sim, "seed", `1950年の既存道路網: 都市間${links.length}線・集落${Object.keys(sim.settlements).length}か所(合成)・路線${nRoutes}本`, "初期条件(実在の道路網ではない)", {});
   void newId;
+  if (sim.stage3) { yield* seedRailGen(sim, w); openStraits(sim, w, sim.startYear, true); yield 0.95; }
 }

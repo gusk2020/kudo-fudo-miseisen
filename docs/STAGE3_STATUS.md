@@ -1,0 +1,45 @@
+# Stage 3 の現状と再開メモ（Issue #8）
+
+ブランチ: `claude/stage3-foundation`（Draft PR #10）。mainには決してマージしない。Sonnet 5.5で実装、Opusは使わない。
+
+## できていること（実機未確認のものは「未確認」と書く）
+| 段階 | 内容 | 状態 |
+| --- | --- | --- |
+| Issue #7 | Chromeの停止の調査と修正（描画オブジェクトの再利用、シミュレーションの時間分割、安全モード、WebGL喪失対応） | 実装・自動テスト済み。**実機は未確認** |
+| A 実地形 | 実在の日本（海岸線・標高・河川・都市・府県。東京府・北海道3県）で開始。地形の手動変形は凍結（コードは残し、`?legacy=1` で従来の流れ）。地形/道路地図の背景切替、縮尺別の詳細度 | 実装・自動テスト済み。実機未確認 |
+| B 道路+鉄道 | 共通ネットワーク（edge/route/projectに mode）、1950年風の初期網（実在回廊を参考に再構成）、旅客・貨物の需要配分と競争（時間・世界線のバイアス）、新線・電化・復活・廃線、国鉄/私鉄、港・空港、島間の連絡（関門・青函・瀬戸大橋・明石鳴門・西瀬戸。平成は史実の開通年、修文・正化は架空の年）、トンネル・橋の個別管理、構想→計画→着工、廃線跡の転用、酷鉄/死鉄、番号表示 | 実装・自動テスト済み。実機未確認 |
+| C 世界線 | 平成/修文/正化（平成元年=1945）、史実/架空/予測モデルの区別つき事件表、国鉄の分割・民営化（平成1987・修文1973・正化なし） | 実装・自動テスト済み |
+| D 政策介入 | 10年ごと、分野選択→上位5と配点→共通持ち点（繰越・逓減・上位5外の押し上げ）→採否と理由を年表へ。放置時の設定（介入優先／放置中のみ自動／常に自動、初期値は介入優先） | 実装・自動テスト済み |
+| E 観察と保存 | 年表（理由つき・絞り込み）、路線台帳（番号・管理主体の履歴）、交通地図帳（年代スライダー、差分表示、過去閲覧中は時間停止・読み取り専用）、5スロット、ファイル出力/読込、破損時のバックアップ復元 | 実装済み。実機未確認 |
+
+## 設計の要点（次の担当が最初に読むところ）
+- 世界線の違い・事件・政策はすべて `src/sim/eras.ts` の **Dials** を動かすだけで、メカニズム側は「どの元号か」を知らない。`composeDials = 基準 + 有効な Mod`。
+- 時間は10年ごとの窓（`src/sim/policy.ts`）で止まる。`stepMonthGen` は `sim.policy.pending` の間は何もしない。`advance()`（テスト用早送り）は窓を自動で処理する。
+- 旧Stage 2の挙動は `sim.stage3 !== true` の経路で変えていない（旧テストが通る）。バイパス完成時の旧道分割バグ、1セルに2ノードができるバグは両方で直した。
+- セーブは v3。v1/v2 は読み込み時に補完（`sanitizeSim`）。実地形版のキーは `s3:` 始まりで旧データと分離。
+- 100年後のセーブは約1.2MB（`tests/unit/stage3.test.ts` で上限1.3MB。予算1MBを少し超えており、既定値の項目を省く保存形式が次の改善候補）。
+
+## 性能（Nodeでの実測。実機は未確認）
+- 1か月の最長スライス: 約46ms（100年・2世界線）。CPU×6相当で約280ms（予算300ms）。
+- 100年の早送り: 約8秒（Node）。画面では時間分割で進むので止まらない。
+- 起動時データ: 約270KB（`docs/STAGE3_DATA_SOURCES.md`）。
+
+## 既知の制限
+- 島間の連絡は「2つの都市の中心を直接つなぐ施設」で、海峡の測量ではない。新しい海峡横断の計画（未成線の海峡トンネルなど）は未対応。
+- 地図の鉄道・道路は5km格子の経路で、曲線は描画時になめらかにしただけ（曲がりは曲率として速度・費用に反映）。
+- 人口・需要・予算・事業者名は架空モデル。史実と合わせているのは出来事の年と、人口の大きな流れ（ピークは2008年ごろ）。
+
+## 未完・次にやること（2026-10-15 時点）
+1. 実機確認（Pixel 7a）: Pages のURLを開き、平成/修文/正化で開始→開通の儀→時間を進める→介入窓→地図帳。
+2. 性能: CPU×6のブラウザ計測を Stage 3 モードで取り、最長タスク・ヒープを `STAGE3_PERF_BUDGET.md` に追記。
+3. 路線台帳の検索・絞り込み、地図上の路線タップで台帳へ移動。
+4. 国鉄/私鉄の収支（赤字）をもっと明示して、酷鉄/死鉄の理由を年表に出す。
+5. 大規模パラメータ調整（世界線ごとの鉄道・道路の発展曲線を史実に近づける）。
+
+
+## Issue #11 fixes (reload / display / ceremony)
+- Save safety: a stored save whose roads cannot be attached (hash mismatch, bad data, unreadable) is quarantined and the main save is **never overwritten** by an empty state until a new ceremony is performed; a `s3:auto:prev` copy of the stored save is taken on the first write of each session.
+- Defaults: road-map background, route-name text hidden (number signs stay). Settings in localStorage `kfm.ui` / `kfm.bg`.
+- Legend is a collapsible, persisted filter panel (road/rail, grade, state); display only, never touches the simulation.
+- 開通の儀: strokes append (start snapped to the previous end), per-kind undo/redo/restart, a tap is ignored, half-drawn ceremony persists (`kfm.cer`) across reload. Path correction/junctions are done by the existing least-cost planner and `layPath`.
+- Tests: e2e reload at x20, quarantine-not-overwritten, legend persistence, multi-stroke ceremony.

@@ -1,20 +1,38 @@
-/** Dynamic road layer: redrawn on its own (time ticks, zoom end) without touching the terrain layers. */
+/** Dynamic transport layer (roads and railways): redrawn on its own (time ticks, zoom end) without touching the terrain layers. */
 import { Container, Graphics, Text } from "pixi.js";
 import { edgeShape } from "../sim/network";
-import { GRADE_SHORT, NICK_SHORT, type Grade, type SimEdge, type SimState, type Snapshot } from "../sim/types";
+import { GRADE_MODE, GRADE_SHORT, NICK_SHORT, modeOf, type EdgeState, type Grade, type SimEdge, type SimState } from "../sim/types";
 import { routeLabel } from "../sim/engine";
+import { routeAtYear, type RouteView } from "../sim/ledger";
 import type { World } from "../sim/world";
 import type { Vec } from "../core/types";
 
 export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean }
-export interface RoadArgs { sim: SimState | null; w: World | null; layers: { roads: boolean; plans: boolean; signs: boolean }; cer: CerOverlay[]; pin: Vec | null; compare?: Snapshot | null; sel?: string | null }
-const GRADE_RANK: Record<Grade, number> = { national: 3, fu: 2, ken: 1 };
+export interface PastView { year: number; codes: Record<string, number> }
+export interface RoadArgs {
+  sim: SimState | null; w: World | null;
+  layers: { roads: boolean; rail?: boolean; plans: boolean; signs: boolean; abandoned?: boolean; ports?: boolean };
+  cer: CerOverlay[]; pin: Vec | null;
+  compare?: Record<string, number> | null; compareYear?: number | null;   // absolute edge codes of the chosen base year
+  past?: PastView | null;                                                // looking at the past: draw that year, read-only
+  lite?: boolean;                                                        // light drawing for a slow device: solid lines instead of dashes, fewer labels, no ports
+  sel?: string | null;
+  hide?: string[];                                                       // legend filters (display only): grade ids, 'road'/'rail' state keys
+  names?: boolean;                                                       // route-name text beside the number signs
+}
+const GRADE_RANK: Record<Grade, number> = { jnr: 4, national: 3, fu: 2, ken: 1, priv: 3 };
 /** Fill colour = physical condition. (Legend text repeats every class: colour is never the only cue.) */
 export const COND = [{ min: 70, col: 0x5bd66b, label: "良" }, { min: 40, col: 0xffe14a, label: "可" }, { min: 15, col: 0xff9a3c, label: "悪" }, { min: 0, col: 0xe8483c, label: "荒廃" }];
 export const condColour = (q: number) => COND.find((c) => q >= c.min)!.col;
-export const CASING: Record<Grade | "none", number> = { national: 0x8e1b1b, ken: 0x1b6b3a, fu: 0x5a2a8a, none: 0x3a3a3a };
+/** Railways read as dark lines whose shade lightens as they decay, so they never get mistaken for the colour-coded roads. */
+export const RCOND = [{ min: 70, col: 0x12284d, label: "良" }, { min: 40, col: 0x3a4f78, label: "可" }, { min: 15, col: 0x7a869c, label: "悪" }, { min: 0, col: 0xa9a9a9, label: "荒廃" }];
+export const railColour = (q: number) => RCOND.find((c) => q >= c.min)!.col;
+export const CASING: Record<Grade | "none", number> = { national: 0x8e1b1b, ken: 0x1b6b3a, fu: 0x5a2a8a, jnr: 0x0b2a55, priv: 0x2a2a6a, none: 0x3a3a3a };
 export const WIDTH = { rural: 1.6, standard: 2.8, highgrade: 4.6 } as const;
-export function snapCode(e: SimEdge): number { return (e.built < 1 ? 4 : { open: 0, dormant: 1, closed: 2, lost: 3 }[e.state]) * 16 + Math.min(15, Math.floor(e.quality / 6.5)); }
+export const RAIL_WIDTH = { rural: 1.7, standard: 2.5, highgrade: 4 } as const;
+export { snapCode } from "../sim/ledger";
+const STATES: EdgeState[] = ["open", "dormant", "closed", "lost"];
+const decode = (c: number | undefined) => (c === undefined ? null : { built: c >> 4 === 4 ? 0 : 1, state: (STATES[c >> 4] ?? "open") as EdgeState, q: (c & 15) * 6.5 + 3 });
 
 function pattern(g: Graphics, pts: Vec[], dash: number[]) {
   let i = 0, left = dash[0], draw = true;
@@ -23,76 +41,138 @@ function pattern(g: Graphics, pts: Vec[], dash: number[]) {
     while (seg > 1e-6) { const step = Math.min(left, seg); if (draw) { g.moveTo(x, -y); g.lineTo(x + ux * step, -(y + uy * step)); } x += ux * step; y += uy * step; seg -= step; left -= step; if (left <= 1e-9) { i = (i + 1) % dash.length; draw = i % 2 === 0; left = dash[i]; } }
   }
 }
+const KEYS = ["halo", "facb", "ghost", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "sel", "ov"];
+const line = (g: Graphics, pts: Vec[]) => { g.moveTo(pts[0][0], -pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], -pts[i][1]); };
+const opColour = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return [0x7a1f3d, 0x1f5f7a, 0x6b4a14, 0x3b6b1f, 0x5a2a8a, 0x8a3a1a, 0x1f3f8a][h % 7]; };
+
 export class RoadLayer {
   container = new Container(); private last: RoadArgs | null = null; private sig = "";
+  // Everything below is created once and reused: creating and destroying Graphics/Text on every redraw leaked ~130 KB each time (Issue #7).
+  private g = Object.fromEntries(KEYS.map((k) => [k, new Graphics()])) as Record<string, Graphics>;
+  private signLayer = new Container(); private signs: { c: Container; bg: Graphics; t: Text; nk: Text }[] = [];
+  constructor() { for (const k of KEYS.filter((k) => k !== "ov")) this.container.addChild(this.g[k]); this.container.addChild(this.signLayer, this.g.ov); }
+  private sign(i: number) {
+    let s = this.signs[i];
+    if (!s) { const c = new Container(), bg = new Graphics(), t = new Text({ text: "", style: { fontSize: 10, fontWeight: "700", fill: 0xffffff } }), nk = new Text({ text: "", style: { fontSize: 9, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } } }); t.anchor.set(0.5); nk.anchor.set(0.5); nk.position.set(0, 16); c.addChild(bg, t, nk); this.signLayer.addChild(c); s = this.signs[i] = { c, bg, t, nk }; }
+    return s;
+  }
   /** Cheap change detector so a monthly tick that changed nothing visible costs nothing. */
   static signature(a: RoadArgs, zoom: number): string {
     let h = 0; const s = a.sim;
-    if (s) { for (const e of Object.values(s.edges)) h = (h * 31 + (e.open ? 1 : 0) + (e.lost ? 2 : 0) + e.state.length * 5 + Math.floor(e.built * 10) * 4 + Math.floor(e.quality / 15) * 64 + e.cells.length + (e.nick ? 7 : 0) + e.standard.length * 13 + e.bypassedBy.length * 17) >>> 0; for (const r of Object.values(s.routes)) h = (h * 31 + r.number + (r.active ? 1 : 0) + r.edges.length * 7 + r.oldEdges.length * 3 + (r.grade === "national" ? 3 : r.grade === "fu" ? 5 : 11) + (r.nick ? 19 : 0)) >>> 0; for (const p of Object.values(s.projects)) h = (h * 31 + p.status.length + p.edgeIds.length) >>> 0; }
-    return `${h}|${Object.keys(s?.edges ?? {}).length}|${a.layers.roads}${a.layers.plans}${a.layers.signs}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compare?.year ?? ""}|${a.sel ?? ""}`;
+    if (s) {
+      for (const e of Object.values(s.edges)) h = (h * 31 + (e.open ? 1 : 0) + (e.lost ? 2 : 0) + e.state.length * 5 + Math.floor(e.built * 10) * 4 + Math.floor(e.quality / 15) * 64 + e.cells.length + (e.nick ? 7 : 0) + e.standard.length * 13 + e.bypassedBy.length * 17 + (e.mode === "rail" ? 29 : 0)) >>> 0;
+      for (const r of Object.values(s.routes)) h = (h * 31 + r.number + (r.active ? 1 : 0) + r.edges.length * 7 + r.oldEdges.length * 3 + (r.grade === "national" ? 3 : r.grade === "fu" ? 5 : r.grade === "jnr" ? 13 : r.grade === "priv" ? 17 : 11) + (r.nick ? 19 : 0)) >>> 0;
+      for (const p of Object.values(s.projects)) h = (h * 31 + p.status.length + p.edgeIds.length) >>> 0;
+      for (const c of Object.values(s.cities)) if (c.airport !== undefined) h = (h * 31 + 7) >>> 0;
+    }
+    const L = a.layers;
+    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
   }
   set(a: RoadArgs, zoom: number) { this.last = a; const sg = RoadLayer.signature(a, zoom); if (sg === this.sig) return false; this.sig = sg; this.draw(a, zoom); return true; }
   redraw(zoom: number) { if (this.last) { this.sig = ""; this.set(this.last, zoom); } }
   private draw(a: RoadArgs, zoom: number) {
-    this.container.removeChildren().forEach((c) => c.destroy({ children: true }));
+    for (const k of Object.keys(this.g)) this.g[k].clear();
+    let count = 0;
     const px = (n: number) => n / zoom, { sim, w } = a;
     if (sim && w) {
-      const best = new Map<string, Grade>(), nickGrade = new Map<string, Grade>();
-      for (const r of Object.values(sim.routes)) if (r.active) for (const id of [...r.edges.map((x) => x.edgeId), ...r.oldEdges]) { const b = best.get(id); if (!b || GRADE_RANK[r.grade] > GRADE_RANK[b]) best.set(id, r.grade); }
+      const lite = !!a.lite, pat = (g: Graphics, pts: Vec[], dash: number[]) => (lite ? line(g, pts) : pattern(g, pts, dash));
+      const past = a.past ?? null, year = past?.year ?? 0, showRoads = a.layers.roads, showRail = a.layers.rail ?? true, showAband = a.layers.abandoned ?? true;
+      const best = new Map<string, Grade>(), hide = new Set(a.hide ?? []);
+      for (const r of Object.values(sim.routes)) {
+        const view = past ? routeAtYear(sim, r, year) : null; if (past ? !view!.exists : !r.active) continue;
+        const grade = view ? view.grade : r.grade;
+        for (const id of past ? r.edges.map((x) => x.edgeId) : [...r.edges.map((x) => x.edgeId), ...r.oldEdges]) { const b = best.get(id); if (!b || GRADE_RANK[grade] > GRADE_RANK[b]) best.set(id, grade); }
+      }
       const planned = new Map<string, string>(); for (const p of Object.values(sim.projects)) if (p.status !== "open" && p.status !== "abolished") for (const id of p.edgeIds) planned.set(id, p.status);
-      const ghost = new Graphics(), plan = new Graphics(), halo = new Graphics(), shapes = new Map<string, Vec[]>(), cas = new Graphics(), fill = new Graphics(), mid = new Graphics(), fillDash = new Graphics(), old = new Graphics();
-      const hasRoadLayer = a.layers.roads;
+      const { ghost, plan, halo, cas, fill, mid, fillDash, old, rcas, rfill, rtie, rdash, fac, facb } = this.g, shapes = new Map<string, Vec[]>(), nickGrade = new Map<string, Grade>();
+      // level of detail: the whole country shows only the trunk network; regional and local lines appear as you zoom in
+      const minRank = zoom < 0.35 ? 3 : zoom < 0.8 ? 2 : 0;
       for (const e of Object.values(sim.edges)) {
-        const pts = edgeShape(w, sim, e); shapes.set(e.id, pts); const g = best.get(e.id), wd = (g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8), col = condColour(e.quality), isOld = e.bypassedBy.length > 0;
-        if (g && e.nick) nickGrade.set(e.id, g);
+        const eff = past ? decode(past.codes[e.id]) : { built: e.built, state: e.state, q: e.quality }; if (!eff) continue;
+        const rail = modeOf(e) === "rail", g = best.get(e.id);
+        const rank = (g ? GRADE_RANK[g] : 0) + (e.standard === "highgrade" ? 2 : 0) + (rail ? 1 : 0);
+        const isPlan = eff.built < 1, isAband = eff.built >= 1 && (eff.state === "closed" || eff.state === "lost");
+        if (rank < minRank && !(a.compare && zoom >= 0.35)) { if (!(isPlan && zoom >= 0.35 && a.layers.plans)) continue; }
+        if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
+        if (isAband && !showAband) continue;
+        if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (past ? "planned" : planned.get(e.id) ?? "planned")))) continue; }
+        const pts = edgeShape(w, sim, e); shapes.set(e.id, pts);
+        const thin = zoom < 0.35 ? 0.6 : 1, wd = (rail ? RAIL_WIDTH[e.standard] : g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8) * thin, col = rail ? railColour(eff.q) : condColour(eff.q), isOld = e.bypassedBy.length > 0 && !past;
+        if (g && e.nick && !past) nickGrade.set(e.id, g);
         if (a.compare) { // halo = what changed since the chosen year
-          const base = a.compare.edges[e.id], now = snapCode(e); let c = 0;
-          if (base === undefined) c = 0x39a0ff; else if (Math.floor(now / 16) > Math.floor(base / 16)) c = 0x111111; else if (Math.floor(now / 16) < Math.floor(base / 16)) c = 0x39e08a; else if (Math.floor(base % 16) - Math.floor(now % 16) >= 3) c = 0xff3b3b; else if (Math.floor(now % 16) - Math.floor(base % 16) >= 3) c = 0x39e08a;
-          if (c) { halo.moveTo(pts[0][0], -pts[0][1]); for (const q of pts.slice(1)) halo.lineTo(q[0], -q[1]); halo.stroke({ width: px(wd + 7), color: c, alpha: 0.6, cap: "round", join: "round" }); }
+          const base = a.compare[e.id], now = past ? past.codes[e.id] : (e.built < 1 ? 4 : { open: 0, dormant: 1, closed: 2, lost: 3 }[e.state]) * 16 + Math.min(15, Math.floor(e.quality / 6.5)); let c = 0;
+          if (base === undefined) c = 0x39a0ff; else if (Math.floor(now / 16) > Math.floor(base / 16)) c = 0x111111; else if (Math.floor(now / 16) < Math.floor(base / 16)) c = 0x39e08a; else if (Math.floor(base % 16) - Math.floor(now % 16) >= 3) c = 0xff3b3b; else if (Math.floor(now % 16) - Math.floor(base % 16) >= 3) c = 0x39e0c8;
+          if (c) { line(halo, pts); halo.stroke({ width: px(wd + 7), color: c, alpha: 0.6, cap: "round", join: "round" }); }
         }
-        if (e.built >= 1 && (e.state === "open")) {
-          if (!hasRoadLayer) continue;
-          cas.moveTo(pts[0][0], -pts[0][1]); for (const q of pts.slice(1)) cas.lineTo(q[0], -q[1]); cas.stroke({ width: px(wd + 2.4), color: CASING[g ?? "none"], alpha: 0.95, cap: "round", join: "round" });
-          if (isOld) { pattern(old, pts, [px(9), px(3), px(2), px(3)]); old.stroke({ width: px(wd), color: col, cap: "butt" }); }
-          else { fill.moveTo(pts[0][0], -pts[0][1]); for (const q of pts.slice(1)) fill.lineTo(q[0], -q[1]); fill.stroke({ width: px(wd), color: col, cap: "round", join: "round" }); }
-          if (e.bypassOf.length) { mid.moveTo(pts[0][0], -pts[0][1]); for (const q of pts.slice(1)) mid.lineTo(q[0], -q[1]); mid.stroke({ width: px(1), color: 0xffffff, alpha: 0.9 }); }
-        } else if (e.built >= 1 && e.state === "dormant") { if (hasRoadLayer) { pattern(fillDash, pts, [px(10), px(6)]); fillDash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.85 }); } }
-        else if (e.state === "lost" && e.built >= 1) { if (hasRoadLayer) { pattern(ghost, pts, [px(2), px(5)]); ghost.stroke({ width: px(1.2), color: 0x2b2b2b, alpha: 0.95 }); } }
-        else if (e.built >= 1) { if (hasRoadLayer) { pattern(ghost, pts, [px(5), px(4)]); ghost.stroke({ width: px(1.6), color: 0x9aa4ad, alpha: 0.95 }); } }
+        if (eff.built >= 1 && eff.state === "open") {
+          if (e.facility === "bridge") { line(facb, pts); facb.stroke({ width: px(wd + 4), color: 0xffffff, alpha: 0.85, cap: "butt" }); }
+          else if (e.facility === "tunnel" && zoom >= 0.5) { pat(fac, pts, [px(3), px(3)]); fac.stroke({ width: px(wd * 1.3), color: 0x2a1f14, alpha: 0.9 }); }
+          if (rail) {
+            line(rcas, pts); rcas.stroke({ width: px(wd + (thin < 1 ? 1.2 : 2.2)), color: 0xffffff, alpha: thin < 1 ? 0.7 : 0.92, cap: "round", join: "round" });
+            line(rfill, pts); rfill.stroke({ width: px(wd), color: col, cap: "round", join: "round" });
+            if (e.standard !== "highgrade") { if (zoom >= 0.8) { pat(rtie, pts, [px(4), px(5)]); rtie.stroke({ width: px(wd * 0.7), color: 0xffffff, alpha: 0.95 }); } } else { line(mid, pts); mid.stroke({ width: px(1.2), color: 0xffd23a, alpha: 0.95 }); }
+          } else {
+            line(cas, pts); cas.stroke({ width: px(wd + 2.4), color: CASING[g ?? "none"], alpha: 0.95, cap: "round", join: "round" });
+            if (isOld) { pat(old, pts, [px(9), px(3), px(2), px(3)]); old.stroke({ width: px(wd), color: col, cap: "butt" }); }
+            else { line(fill, pts); fill.stroke({ width: px(wd), color: col, cap: "round", join: "round" }); }
+            if (e.bypassOf.length && !past) { line(mid, pts); mid.stroke({ width: px(1), color: 0xffffff, alpha: 0.9 }); }
+          }
+        } else if (eff.built >= 1 && eff.state === "dormant") {
+          if (rail) { pat(rdash, pts, [px(10), px(6)]); rdash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.9 }); } else { pat(fillDash, pts, [px(10), px(6)]); fillDash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.85 }); }
+        } else if (eff.state === "lost" && eff.built >= 1) { pat(ghost, pts, [px(2), px(5)]); ghost.stroke({ width: px(1.2), color: 0x2b2b2b, alpha: 0.95 }); }
+        else if (eff.built >= 1) { pat(ghost, pts, [px(5), px(4)]); ghost.stroke({ width: px(1.6), color: 0x9aa4ad, alpha: 0.95 }); }
         else if (a.layers.plans) {
-          const st = planned.get(e.id) ?? "planned", c2 = st === "building" ? 0x3aa0ff : st === "suspended" ? 0xff8f1f : st === "unbuilt" ? 0xb04bff : 0x39d6c8;
-          pattern(plan, pts, st === "planned" ? [px(2), px(4)] : [px(7), px(4)]); plan.stroke({ width: px(2.2), color: c2, alpha: 0.95 });
-          if (st === "building" && e.built > 0) { const n = Math.max(1, Math.floor(pts.length * e.built)); plan.moveTo(pts[0][0], -pts[0][1]); for (const q of pts.slice(0, n + 1)) plan.lineTo(q[0], -q[1]); plan.stroke({ width: px(3), color: 0x3aa0ff }); }
+          const st = past ? "planned" : planned.get(e.id) ?? "planned", c2 = st === "concept" ? 0xa7b4bf : st === "building" ? 0x3aa0ff : st === "suspended" ? 0xff8f1f : st === "unbuilt" ? 0xb04bff : 0x39d6c8;
+          pat(plan, pts, st === "concept" ? [px(1), px(7)] : st === "planned" ? [px(2), px(4)] : [px(7), px(4)]); plan.stroke({ width: px(2.2), color: rail ? 0x1f4fbf : c2, alpha: 0.95 });
+          if (!past && st === "building" && e.built > 0) { const n = Math.max(1, Math.floor(pts.length * e.built)); line(plan, pts.slice(0, n + 1)); plan.stroke({ width: px(3), color: 0x3aa0ff }); }
         }
       }
-      if (a.sel && shapes.has(a.sel)) { const pts = shapes.get(a.sel)!, s2 = new Graphics(); s2.moveTo(pts[0][0], -pts[0][1]); for (const q of pts.slice(1)) s2.lineTo(q[0], -q[1]); s2.stroke({ width: px(9), color: 0xffffff, alpha: 0.55, cap: "round", join: "round" }); this.container.addChild(s2); }
-      this.container.addChild(halo, ghost, plan, cas, old, fillDash, fill, mid);
-      const nodes = new Graphics();
-      if (hasRoadLayer) for (const n of Object.values(sim.nodes)) { if (n.kind === "pass") nodes.poly([n.pos[0], -n.pos[1] - px(6), n.pos[0] - px(5), -n.pos[1] + px(3), n.pos[0] + px(5), -n.pos[1] + px(3)]).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x222222 }); else if (n.kind === "village" && zoom >= 0.5) nodes.circle(n.pos[0], -n.pos[1], px(2.4)).fill({ color: 0xe8e0c8 }).stroke({ width: px(0.8), color: 0x333333 }); }
-      this.container.addChild(nodes);
+      if (a.sel && shapes.has(a.sel)) { const pts = shapes.get(a.sel)!; line(this.g.sel, pts); this.g.sel.stroke({ width: px(9), color: 0xffffff, alpha: 0.55, cap: "round", join: "round" }); }
+      const nodes = this.g.nodes;
+      for (const n of Object.values(sim.nodes)) {
+        if (n.kind === "pass" && showRoads && zoom >= 0.35) nodes.poly([n.pos[0], -n.pos[1] - px(6), n.pos[0] - px(5), -n.pos[1] + px(3), n.pos[0] + px(5), -n.pos[1] + px(3)]).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x222222 });
+        else if (n.kind === "village" && zoom >= 0.5 && showRoads) nodes.circle(n.pos[0], -n.pos[1], px(2)).fill({ color: 0xf2e6c8 }).stroke({ width: px(0.8), color: 0x333333 });
+      }
+      if ((a.layers.ports ?? true) && !lite && sim.stage3 && zoom >= 0.5) {
+        // supporting modes: a port (blue square) at coastal cities, an airport (white cross) once it has opened
+        const yr = past ? year : Number.POSITIVE_INFINITY;
+        for (const c of w.cities) {
+          const [x, y] = c.pos; if (c.coastal) nodes.rect(x + px(5), -y + px(3), px(6), px(6)).fill({ color: 0x2a7fd0 }).stroke({ width: px(1), color: 0xffffff });
+          const ap = sim.cities[c.id]?.airport; if (ap !== undefined && ap <= yr) { const u = px(1); nodes.poly([x - 7 * u, -y - 3 * u, x - 2 * u, -y - 3 * u, x - 2 * u, -y - 8 * u, x, -y - 8 * u, x, -y - 3 * u, x + 4 * u, -y - 3 * u, x + 4 * u, -y - 1 * u, x, -y - 1 * u, x, -y + 4 * u, x - 2 * u, -y + 4 * u, x - 2 * u, -y - 1 * u, x - 7 * u, -y - 1 * u]).fill({ color: 0xffffff }).stroke({ width: px(0.8), color: 0x222222 }); }
+        }
+      }
       if (a.layers.signs && zoom >= 0.28) {
-        let count = 0;
         for (const r of Object.values(sim.routes).sort((p, q) => GRADE_RANK[q.grade] - GRADE_RANK[p.grade] || p.number - q.number)) {
-          if (!r.active || count >= 60 || (zoom < 0.55 && r.grade !== "national") || (zoom < 1.1 && r.grade === "fu" && r.number !== 1)) continue;
-          const es = r.edges.map((x) => sim.edges[x.edgeId]).filter((e) => e && e.state === "open" && e.built >= 1).sort((p, q) => q.lengthKm - p.lengthKm || (p.id < q.id ? -1 : 1)); if (!es.length) continue;
-          const pts = shapes.get(es[0].id)!, m = pts[Math.floor(pts.length / 2)], c = new Container(); c.position.set(m[0], -m[1]); c.scale.set(1 / zoom);
-          const sg = new Graphics(), col = r.grade === "national" ? 0xb02020 : r.grade === "fu" ? 0x7b3fa0 : 0x1f7a4d;
-          if (r.grade === "national") sg.circle(0, 0, 11).fill({ color: col }).stroke({ width: 2, color: 0xffffff });
-          else if (r.grade === "ken") sg.roundRect(-12, -9, 24, 18, 4).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
-          else sg.poly([0, -12, 12, -2, 7, 11, -7, 11, -12, -2]).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
-          const t = new Text({ text: `${GRADE_SHORT[r.grade]}${r.number}`, style: { fontSize: r.grade === "national" ? 10 : 9, fontWeight: "700", fill: r.grade === "national" ? 0xffffff : col } }); t.anchor.set(0.5); c.addChild(sg, t);
-          if (r.nick) { const nk = new Text({ text: NICK_SHORT[r.grade], style: { fontSize: 9, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } } }); nk.anchor.set(0.5); nk.position.set(0, 16); c.addChild(nk); }
-          c.label = routeLabel(r); this.container.addChild(c); count++;
+          const view: RouteView | null = past ? routeAtYear(sim, r, year) : null, grade: Grade = view ? view.grade : r.grade, number: number = view ? view.number : r.number, rail = GRADE_MODE[grade] === "rail";
+          if ((past ? !view!.exists : !r.active) || count >= (lite ? 24 : 60) || (rail ? !showRail : !showRoads) || (zoom < 0.55 && grade !== "national" && grade !== "jnr") || (zoom < 1.1 && grade === "fu" && number !== 1) || (zoom < 0.8 && grade === "priv")) continue;
+          const es = r.edges.map((x) => sim.edges[x.edgeId]).filter((e) => e && (past ? past.codes[e.id] !== undefined && decode(past.codes[e.id])!.state === "open" && decode(past.codes[e.id])!.built === 1 : e.state === "open" && e.built >= 1) && shapes.has(e.id)).sort((p, q) => q.lengthKm - p.lengthKm || (p.id < q.id ? -1 : 1)); if (!es.length) continue;
+          const pts = shapes.get(es[0].id)!, m = pts[Math.floor(pts.length / 2)], sp = this.sign(count), c = sp.c; c.visible = true; c.position.set(m[0], -m[1]); c.scale.set(1 / zoom);
+          const sg = sp.bg; sg.clear(); const nick = !past && r.nick;
+          if (rail) {
+            const opId = r.op ?? "jnr", col = grade === "jnr" ? 0x0b2a55 : opColour(opId), nm = view?.opName ?? r.opName ?? "";
+            sg.roundRect(-13, -8, 26, 16, 3).fill({ color: grade === "jnr" ? col : 0xffffff }).stroke({ width: 2.5, color: col });
+            sp.t.text = `${grade === "jnr" ? "鉄" : nm.slice(0, 1) || "私"}${number}`; sp.t.style.fontSize = 9; sp.t.style.fill = grade === "jnr" ? 0xffffff : col;
+          } else {
+            const col = grade === "national" ? 0xb02020 : grade === "fu" ? 0x7b3fa0 : 0x1f7a4d;
+            if (grade === "national") sg.circle(0, 0, 11).fill({ color: col }).stroke({ width: 2, color: 0xffffff });
+            else if (grade === "ken") sg.roundRect(-12, -9, 24, 18, 4).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
+            else sg.poly([0, -12, 12, -2, 7, 11, -7, 11, -12, -2]).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
+            sp.t.text = `${GRADE_SHORT[grade]}${number}`; sp.t.style.fontSize = grade === "national" ? 10 : 9; sp.t.style.fill = grade === "national" ? 0xffffff : col;
+          }
+          sp.nk.visible = !!nick && !!a.names; if (nick && a.names) sp.nk.text = NICK_SHORT[grade];
+          c.label = view ? view.label : routeLabel(r); count++;
         }
       }
+      void nickGrade;
     }
-    const ov = new Graphics();
+    for (let i = count; i < this.signs.length; i++) this.signs[i].c.visible = false;
+    const ov = this.g.ov;
     for (const c of a.cer) {
-      if (c.path && c.path.length > 1) { ov.moveTo(c.path[0][0], -c.path[0][1]); for (const q of c.path.slice(1)) ov.lineTo(q[0], -q[1]); ov.stroke({ width: px(5), color: c.ok ? 0x45e06f : 0xff5252, alpha: 0.8, cap: "round", join: "round" }); }
-      if (c.pts.length > 1) { ov.moveTo(c.pts[0][0], -c.pts[0][1]); for (const q of c.pts.slice(1)) ov.lineTo(q[0], -q[1]); ov.stroke({ width: px(2), color: 0xffffff, alpha: 0.95 }); }
+      if (c.path && c.path.length > 1) { line(ov, c.path); ov.stroke({ width: px(5), color: c.ok ? 0x45e06f : 0xff5252, alpha: 0.8, cap: "round", join: "round" }); }
+      if (c.pts.length > 1) { line(ov, c.pts); ov.stroke({ width: px(2), color: 0xffffff, alpha: 0.95 }); }
     }
     if (a.pin) { ov.circle(a.pin[0], -a.pin[1], px(7)).fill({ color: 0xff3b6b }).stroke({ width: px(2), color: 0xffffff }); }
-    this.container.addChild(ov);
   }
-  clear() { this.last = null; this.sig = ""; this.container.removeChildren().forEach((c) => c.destroy({ children: true })); }
+  clear() { this.last = null; this.sig = ""; for (const k of Object.keys(this.g)) this.g[k].clear(); for (const sg of this.signs) sg.c.visible = false; }
 }
+export type { SimEdge };
