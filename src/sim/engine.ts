@@ -102,7 +102,7 @@ export function takeSnapshot(sim: SimState) {
   for (const e of Object.values(sim.edges)) edges[e.id] = (e.built < 1 ? 4 : { open: 0, dormant: 1, closed: 2, lost: 3 }[e.state]) * 16 + Math.min(15, Math.floor(e.quality / 6.5));
   sim.snaps.push({ year: yearOf(sim), edges }); if (sim.snaps.length > 14) sim.snaps.splice(1, 1);
 }
-const macroBudget = (y: number) => Math.pow(1.06, Math.min(y, 1973) - 1950) * Math.pow(1.02, Math.max(0, Math.min(y, 1990) - 1973)) * Math.pow(0.97, Math.max(0, y - 2000));
+const macroBudget = (y: number) => Math.pow(1.06, Math.min(y, 1973) - 1950) * Math.pow(1.02, Math.max(0, Math.min(y, 1990) - 1973)) * Math.pow(0.985, Math.max(0, y - 2000));
 /**
  * Stage 3 worlds follow the real course of the population up to 2026 (demography is a fact of the world, the same on every line): fast growth to the mid-70s, slow growth to about 2008 (Japan's real peak),
  * then decline. Cities grow faster than the country (the model's rural areas hold the rest). Stage 2 (legacy) keeps its own curve.
@@ -154,6 +154,7 @@ function compactSim(sim: SimState, y: number) {
     else if ((p.status === "open" || p.status === "abolished") && age >= 8 && p.chain.length) { p.chain = []; p.replaces = []; }
   }
 }
+export const LOCAL_RAIL_KEEP = 0.007, LOCAL_ROAD_KEEP = 0.005;   // yearly growth a village gains from a railway / a proper road beside it
 function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   w.cities.forEach((c, i) => {
     const st = sim.cities[c.id], before = st.pop, g = popRate(y, st.pop, sim.stage3 === true && y <= 2026) + 0.012 * (an.acc[i] - 0.4) + (rand(sim) - 0.5) * 0.008;
@@ -165,9 +166,13 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     if (before > 0.7 * base && st.pop <= 0.7 * base) ev(sim, "city", `${c.name}の人口が3割減`, st.lowAccessYears > 3 ? "幹線から外れ孤立" : "人口減少局面", { city: c.id });
   });
   const nodeCells = new Set(Object.values(sim.nodes).map((n) => n.cell));
+  // Stage 3: a village that a railway or a proper road passes keeps its people better (empirical, not a statistic): this is the feedback that lets local transport pay back
+  const railCells = new Set<number>(), goodCells = new Set<number>();
+  if (sim.stage3) for (const e of Object.values(sim.edges)) if (e.state === "open" && e.built >= 1 && (modeOf(e) === "rail" || e.standard !== "rural")) for (const c of e.cells) (modeOf(e) === "rail" ? railCells : goodCells).add(c);
+  const nearSet = (cell: number, s: Set<number>) => { if (!s.size) return false; const i = cell % w.nx, j = (cell / w.nx) | 0; for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) if (s.has((j + dj) * w.nx + i + di)) return true; return false; };
   for (const v of Object.values(sim.settlements)) {
     if (v.gone) continue; const ok = an.reach.get(v.id) !== false || !nodeCells.has(v.cell);   // a settlement with no road node yet is not 'cut off' v.isolatedYears = ok ? 0 : v.isolatedYears + 1;
-    let g = y < 1960 ? 0.004 : y < 1975 ? -0.006 : y < 2000 ? -0.012 : -0.028; g += (rand(sim) - 0.5) * 0.01; if (!ok) g -= 0.03;
+    let g = y < 1960 ? 0.004 : y < 1975 ? -0.006 : y < 2000 ? -0.012 : -0.028; g += (rand(sim) - 0.5) * 0.01; if (!ok) g -= 0.03; if (sim.stage3 && ok) g += (nearSet(v.cell, railCells) ? LOCAL_RAIL_KEEP : 0) + (nearSet(v.cell, goodCells) ? LOCAL_ROAD_KEEP : 0);
     v.pop = Math.round(v.pop * (1 + g));
     if (v.pop < 120) { v.gone = true; v.pop = 0; ev(sim, "village", `${v.name}が無人化(廃村)`, ok ? "長期の人口減少" : "道路が途絶え孤立", { settlement: v.id }); }
   }
