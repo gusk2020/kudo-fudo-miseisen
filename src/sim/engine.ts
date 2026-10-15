@@ -25,7 +25,7 @@ export const EVENT_CAP = 600, EVENT_CAP_S3 = 1000;
 const MINOR_EVENTS = new Set(["village", "boom", "city", "dormant", "reopen", "lost", "skip", "project"]);
 export const BUDGET_K = 2.6e-6, NATIONAL_POOL = 0.2, EQUAL_SHARE = 0.45;
 /** Railways add this much on top of the road budget (Stage 3 only); the dials then decide the split. */
-export const RAIL_BUDGET_SCALE = 0.9, RAIL_FARE = 2.2e-6, RAIL_MAINT = { rural: 0.0065, standard: 0.011, highgrade: 0.03 } as const, RAIL_DECAY = 0.11;
+export const RAIL_BUDGET_SCALE = 0.9, RAIL_FARE = 2.2e-6, RAIL_MAINT = { rural: 0.04, standard: 0.07, highgrade: 0.18 } as const, RAIL_DECAY = 0.25;
 export const DORMANT_YEARS = 5, CLOSE_YEARS = 12, DROP_YEARS = 8, LOCAL_KEEP = 25, REVIVE_DEMAND = 30, REVIVE_YEARS = 3;
 const MAINT = { unpaved: 0.003, gravel: 0.0045, paved: 0.007 } as const, STD_MAINT = { rural: 1, standard: 1.5, highgrade: 3 } as const;
 const DECAY = { unpaved: 0.2, gravel: 0.14, paved: 0.07 } as const;
@@ -325,7 +325,7 @@ function railMonthly(sim: SimState, w: World, railB: number) {
   const dl = sim.dials, M = railB * 0.6 * dl.austerity, byOp = new Map<string, SimEdge[]>();
   for (const e of Object.values(sim.edges)) if (modeOf(e) === "rail" && (e.state === "open" || e.state === "dormant") && e.built >= 1) (byOp.get(e.op ?? "jnr") ?? byOp.set(e.op ?? "jnr", []).get(e.op ?? "jnr")!).push(e);
   const ops = [...byOp.keys()].sort(), rev = new Map<string, number>();
-  for (const op of ops) rev.set(op, byOp.get(op)!.reduce((t, e) => t + e.traffic * e.lengthKm * RAIL_FARE * (e.state === "open" ? 1 : 0.3), 0));
+  for (const op of ops) rev.set(op, byOp.get(op)!.reduce((t, e) => t + e.traffic * e.lengthKm * RAIL_FARE * (e.state === "open" ? 1 : 0.3), 0) * (op === "jnr" ? dl.jnrFare : 1));
   const others = ops.filter((o) => o !== "jnr"), othersRev = others.reduce((t, o) => t + rev.get(o)!, 0) || 1;
   for (const op of ops) {
     let pool = rev.get(op)! + (op === "jnr" ? M * dl.jnrSubsidy : M * (1 - dl.jnrSubsidy) * (rev.get(op)! / othersRev));

@@ -130,6 +130,6 @@ function push(sim: SimState, y: number, id: string, text: string, real: boolean,
   ev(sim, scope === "intl" ? "world" : "domestic", `${tag}${text}`, `${cause || "世界の動き"}${eff}`, {});
   if (sim.mods.length > 160) sim.mods.splice(0, sim.mods.length - 160);
 }
-export const DIAL_SHORT: Record<keyof Dials, string> = { roadShare: "道路配分", carBias: "自動車選好", railBias: "鉄道選好", freightRail: "貨物鉄道選好", jnrSubsidy: "国鉄補助", railBuild: "鉄道建設", hwyBuild: "道路建設", hsr: "高速交通", growth: "成長", austerity: "維持費余裕", privatize: "民営化" };
+export const DIAL_SHORT: Record<keyof Dials, string> = { roadShare: "道路配分", carBias: "自動車選好", railBias: "鉄道選好", freightRail: "貨物鉄道選好", jnrSubsidy: "国鉄補助", jnrFare: "国鉄運賃収入", railBuild: "鉄道建設", hwyBuild: "道路建設", hsr: "高速交通", growth: "成長", austerity: "維持費余裕", privatize: "民営化" };
 export const effectText = (d: Delta) => Object.entries(d).map(([k, v]) => `${DIAL_SHORT[k as keyof Dials]}${(v as number) > 0 ? "+" : ""}${Math.round((v as number) * 100)}%`).join("・");
 export type { EraKey };

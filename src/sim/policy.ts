@@ -42,6 +42,7 @@ export const POLICIES: Policy[] = [
     block: (e) => (e.mood < -0.3 ? "不況下の緊縮に世論が反発している" : null) },
   { id: "e-rail-freight", domain: "economy", label: "貨物の鉄道回帰", desc: "物流を鉄道へ(環境負荷と道路混雑の軽減)", d: { freightRail: 0.2, railBuild: 0.05 }, base: (e) => c01(0.15 + 0.7 * e.roadCong) },
   { id: "e-truck", domain: "economy", label: "トラック物流の拡大", desc: "物流を道路へ(高規格道路の活用)", d: { freightRail: -0.2, hwyBuild: 0.1 }, base: (e) => c01(0.15 + 0.6 * e.carDep) },
+  { id: "e-fare", domain: "economy", label: "運賃・料金制度の見直し", desc: "公的鉄道の運賃を実情に合わせ、収支を改善する", d: { jnrFare: 0.18, railBias: -0.03, austerity: 0.03 }, base: (e) => c01(e.privatized ? 0.05 : 0.15 + 0.9 * e.jnrWeak) },
   { id: "e-tourism", domain: "economy", label: "観光立国", desc: "観光客向けの高速・地方鉄道に投資する", d: { railBias: 0.08, hsr: 0.1, growth: 0.02 }, base: (e) => c01(0.3 + 0.3 * e.ruralDecay) },
   { id: "o-car", domain: "opinion", label: "自動車社会の推進", desc: "自動車の便利さを広く訴える", d: { carBias: 0.2 }, base: (e) => c01(0.15 + 0.6 * e.carDep) },
   { id: "o-green", domain: "opinion", label: "環境・渋滞対策キャンペーン", desc: "鉄道・公共交通の利用を呼びかける", d: { carBias: -0.2, railBias: 0.1 }, base: (e) => c01(0.2 + 0.8 * e.roadCong) },
