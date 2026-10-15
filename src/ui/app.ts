@@ -14,18 +14,18 @@ import { derive, errorsFor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
 import { CER_LABEL, performCeremony, previewCeremony, type CerKind, type CerPreview } from "../sim/ceremony";
-import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
+import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
 import { codesAt } from "../sim/ledger";
 import { displayName } from "../sim/straits";
 import { finishMigration } from "../sim/migrate";
 import { SimRunner } from "../sim/runner";
-import { ERA, GRADE_LABEL, KIND_LABEL, NICK_LABEL, PROJECT_LABEL, STANDARD_LABEL, STANDARD_LABEL_RAIL, STATE_LABEL, SURFACE_LABEL, eraLabel, monthToYM, setActiveEra, ymLabel, type SimState } from "../sim/types";
+import { ERA, GRADE_LABEL, KIND_LABEL, NICK_LABEL, PROJECT_LABEL, STANDARD_LABEL, STANDARD_LABEL_RAIL, STATE_LABEL, SURFACE_LABEL, eraLabel, monthToYM, setActiveEra, setActiveTimeline, ymLabel, type SimState } from "../sim/types";
 import { COND, CASING } from "../render/roads";
 import { edgePoints } from "../sim/network";
 import { buildWorld, type World } from "../sim/world";
 import { eraKeyOf, type EraKey } from "../sim/eras";
-import { buildAtlas, buildLedger, buildPolicy, buildTimeline, eraPicker } from "./stage3";
+import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraPicker } from "./stage3";
 
 type Tool = "view" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -52,7 +52,7 @@ export class App {
   compareYear: number | null = null; selEdge: string | null = null;
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
   lite = false; private slowTicks = 0;
-  eraChoice: EraKey = "heisei"; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain"; hide = new Set<string>(); names = false; legendOpen = true;
+  eraChoice: EraKey = "heisei"; firstEra = 0; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain"; hide = new Set<string>(); names = false; legendOpen = true;
   runner: SimRunner | null = null; building = 0; safeMode = false; behind = false; private lastRoads = 0;
   private lastBackup = 0; private lastSaved = 0; private persistRetry = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
@@ -132,7 +132,7 @@ export class App {
     if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
-    finishMigration(sim, w); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); this.runner = new SimRunner(sim, w);
+    finishMigration(sim, w); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
     if (this.safeMode) { sim.speed = 0; this.status(); return; }
     const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
   }
@@ -300,7 +300,7 @@ export class App {
     if (!w || !this.terrain || !k?.ok || !f?.ok || !this.s.finalized || this.sim || this.building) return;
     this.building = 0.01; this.status(); this.buildUI();
     // the 1950 network is generated in slices (a single long task froze phones); the UI shows progress and stays responsive
-    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { era: this.eraChoice, stage3: true } : {}); let sim: SimState | null = null;
+    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra } : {}); let sim: SimState | null = null;
     while (!sim) {
       const t0 = performance.now();
       while (performance.now() - t0 < 10) { const r = gen.next(); if (r.done) { sim = r.value; break; } this.building = Math.max(this.building, r.value); }
@@ -325,6 +325,8 @@ export class App {
     const { w: sw, h: sh } = this.r.size, zoom = Math.min(2.5, Math.max(0.3, 0.8 * Math.min(sw / (x1 - x0 + 40), (sh * 0.45) / (y1 - y0 + 40))));
     this.selEdge = es.sort((p, q) => q.lengthKm - p.lengthKm)[0].id; this.r.setView({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 - (sh * 0.2) / zoom, zoom }); this.renderRoads();
   }
+  /** The player chose an era name at a kaigen. */
+  chooseKaigen(idx: number) { const sim = this.sim; if (!sim?.kaigen?.pending) return; const e = settleKaigen(sim, idx, false); this.sheet = null; this.afterPolicy(); if (e) this.toast(`${e.name}元年になりました`); this.buildUI(); }
   afterPolicy() { this.lastTick = performance.now(); this.acc = 0; this.persist(true); this.renderRoads(); this.status(); this.buildSheet(); }
   /** Test/debug hook: advance synchronously (the normal clock is slower than a test can wait). */
   ffYears(n: number) { if (!this.sim || !this.world) return; this.runner?.settle(); advance(this.sim, this.world, 12 * n); this.renderRoads(); this.status(); this.buildUI(); }
@@ -332,8 +334,9 @@ export class App {
   /** Real-time clock: only while this page is visible. Tab hidden or app closed = no simulation; return = capped catch-up. */
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
-    if (sim?.policy?.pending && this.sheet !== "policy") { this.sheet = "policy"; this.buildSheet(); this.toast("10年ごとの政策介入の機会です(時間は止まっています)"); }
-    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || this.viewYear !== null || sim.policy?.pending) { this.lastTick = now; return; }
+    if (sim?.kaigen?.pending && this.sheet !== "kaigen") { this.sheet = "kaigen"; this.buildSheet(); this.toast("改元の時です。元号を選んでください(時間は止まっています)"); }
+    else if (sim?.policy?.pending && this.sheet !== "policy") { this.sheet = "policy"; this.buildSheet(); this.toast("10年ごとの政策介入の機会です(時間は止まっています)"); }
+    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || this.viewYear !== null || sim.policy?.pending || sim.kaigen?.pending) { this.lastTick = now; return; }
     const dt = Math.min(250, Math.max(0, now - this.lastTick)); this.lastTick = now;
     this.acc += dt * sim.speed; const n = Math.floor(this.acc / MS_PER_MONTH_X1);
     if (n > 0) { this.acc -= n * MS_PER_MONTH_X1; run.request(n); }
@@ -354,7 +357,7 @@ export class App {
     const plan = planCatchUp(elapsedMs, sim.speed); if (plan.months <= 0 && plan.skipped <= 0) return;
     this.catching = true; const target = sim.month + plan.months; if (sim.policy) sim.policy.away = true;
     while (sim.month < target) {
-      if (sim.policy?.pending) break;
+      if (sim.policy?.pending || sim.kaigen?.pending) break;
       run.request(Math.min(24, target - sim.month - run.pending)); run.pump(12);
       this.catchInfo = `放置分を計算中 ${Math.floor((plan.months - (target - sim.month)) / 12)}/${Math.floor(plan.months / 12)}年`; this.status();
       await new Promise((r) => setTimeout(r, 0));
@@ -453,7 +456,7 @@ export class App {
     if (!this.s.finalized || !this.terrain) { label(this.s.finalized ? "地形を生成中…" : "地図を最終確定すると道路を始められます"); return; }
     if (!this.sim) {
       label(`選択中: ${names[this.tool]}`);
-      if (this.real) eraPicker(this, tb, this.eraChoice, (k) => { this.eraChoice = k; this.buildToolbar(); });
+      if (this.real) eraPicker(this, tb, this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); });
       else tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));
       const g = h("div", { class: "grp" });
       for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k]; g.append(this.tbtn(CER_LABEL[k] + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
@@ -507,6 +510,7 @@ export class App {
     else if (this.sheet === "ledger") buildLedger(this, body);
     else if (this.sheet === "atlas") buildAtlas(this, body);
     else if (this.sheet === "policy") buildPolicy(this, body);
+    else if (this.sheet === "kaigen") buildKaigen(this, body);
   }
   private buildHistory(body: HTMLElement) {
     body.append(h("h3", {}, "年表(新しい順)"));

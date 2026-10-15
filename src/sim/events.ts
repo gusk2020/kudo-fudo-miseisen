@@ -10,6 +10,7 @@
  */
 import type { Dials, EraKey } from "./eras";
 import { eraKeyOf, type Mod } from "./eras";
+import { stanceAt } from "./kaigen";
 import { ev, rand } from "./engine";
 import type { SimState } from "./types";
 
@@ -109,7 +110,7 @@ const FUTURE: { id: string; text: string; d: Delta; years: number; cause: string
 
 /** Fire this year's events. Deterministic: history is a table, the future draws from the sim's own random stream. */
 export function applyYearEvents(sim: SimState, y: number): void {
-  const era = eraKeyOf(sim.era); if (era === "kobun") return;
+  const era = stanceAt(sim, y); if (era === "kobun") return;
   for (const h of HIST_EVENTS) {
     if (h.year !== y || y > REAL_HISTORY_UNTIL) continue;
     const v: Variant | undefined = h[era as "heisei"] ?? h.all; if (!v) continue;

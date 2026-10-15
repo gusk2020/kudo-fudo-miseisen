@@ -11,9 +11,11 @@ async function draw(page: Page, from: [number, number], to: [number, number]) {
 async function bootReal(page: Page) {
   await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(300);
 }
+/** The first era is chosen from the 14 candidates of 1926; index 0/1/2 carry the balanced / road / rail stance. */
+async function pickEra(page: Page, stance: string) { await page.selectOption("#era-first", String({ heisei: 0, shubun: 1, shoka: 2 }[stance as "heisei"])); }
 async function startReal(page: Page, era = "heisei") {
   await bootReal(page);
-  await page.click("#era-" + era);
+  await pickEra(page, era);
   const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市");
   await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, nagoya); await page.click("#tool-cer-fudo1");
   const far = await page.evaluate(() => { const w = (window as any).__kfm.world, t = w.cities.find((c: any) => c.name === "東京"); let best: any = null, bd = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-13") { const p = w.cellPos(k), d = Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]); if (d > bd) { bd = d; best = p; } } return best; }) as [number, number];
@@ -24,7 +26,7 @@ test("real Japan opens by default: finalised, step 6, no map-editing controls, e
   const errs = watchErrors(page); await bootReal(page);
   expect(await app(page, "a => a.real")).toBe(true); expect(await app(page, "a => a.s.step")).toBe(6); expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.real")).toBe(true);
   expect(await page.isVisible("#btn-prev")).toBe(false); expect(await page.isVisible("#era-pick")).toBe(true);
-  for (const k of ["heisei", "shubun", "shoka"]) expect(await page.isVisible("#era-" + k)).toBe(true);
+  expect(await page.locator("#era-first option").count()).toBe(14); expect(await page.locator("#era-first").inputValue()).toBe("0");
   expect(await page.isDisabled("#cer-go")).toBe(true);
   expect(await app(page, "a => a.world.cities.length")).toBeGreaterThan(40);
   expect(errs).toEqual([]);
@@ -35,7 +37,7 @@ test("era choice, 開通の儀 and a running 1950 world with railways; the old f
   expect(await app(page, "a => a.sim.era")).toBe("shoka"); expect(await app(page, "a => a.sim.stage3")).toBe(true);
   const km = await app(page, "a => { const e = Object.values(a.sim.edges); return { rail: e.filter(x => x.mode === 'rail').length, road: e.filter(x => !x.mode).length, ops: Object.keys(a.sim.operators).length, routes: Object.values(a.sim.routes).filter(r => r.mode === 'rail').length }; }") as any;
   expect(km.rail).toBeGreaterThan(60); expect(km.road).toBeGreaterThan(200); expect(km.routes).toBeGreaterThan(20); expect(km.ops).toBeGreaterThan(2);
-  expect(await page.textContent("#status")).toContain("正化");
+  expect(await page.textContent("#status")).toContain("神和");
   expect(await app(page, "a => Object.values(a.sim.routes).filter(r => r.grade === 'national' && r.number === 1).length")).toBe(1);
   expect(errs).toEqual([]);
 });
@@ -157,7 +159,7 @@ test("defaults to the road map with route-name text hidden; legend toggles filte
 
 test("開通の儀 takes several strokes, undo/redo/restart work per kind, and a half-drawn ceremony survives a reload", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#era-heisei");
+  await pickEra(page, "heisei");
   const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "名古屋市"), mid: [number, number] = [(tokyo[0] + nagoya[0]) / 2, (tokyo[1] + nagoya[1]) / 2];
   await page.click("#tool-cer-kokudo1");
   await draw(page, tokyo, mid); await draw(page, mid, nagoya);
@@ -171,5 +173,29 @@ test("開通の儀 takes several strokes, undo/redo/restart work per kind, and a
   await page.waitForFunction(() => (window as any).__kfm.cerDraft.kokudo1, null, { timeout: 30000 });
   expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
   await page.click("#tool-cer-kokudo1"); await page.click("#cer-restart"); expect(await app(page, "a => !a.cerDraft.kokudo1")).toBe(true);
+  expect(errs).toEqual([]);
+});
+
+test("改元: time stops at 1989, the sheet opens by itself, the choice is kept through a reload, and the era names follow", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "heisei");
+  expect(await app(page, "a => a.sim.kaigen.eras[0].name")).toBe("神化");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "priority"; a.ffYears(5); });
+  // jump to the end of 1988 with the policy windows answered automatically, then let the clock reach the era change
+  await page.evaluate(() => { const a = (window as any).__kfm, w = a.world; let g = 0; while (a.sim.month < 12 * 39 && g++ < 12 * 60) { (window as any).__adv(a.sim, w, 1); } a.sim.policy.pending = null; });
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "priority"; a.sim.speed = 20; a.ffYears(1); });
+  await page.waitForFunction(() => (window as any).__kfm.sim.kaigen.pending || (window as any).__kfm.sim.kaigen.eras.length > 1, null, { timeout: 30000 });
+  expect(await app(page, "a => !!a.sim.kaigen.pending")).toBe(true);
+  {
+    await page.evaluate(() => { (window as any).__kfm.tickClock(); });
+    await expect(page.locator("#kaigen-window")).toBeVisible();
+    expect(await page.locator("[id^=kaigen-cand-]").count()).toBe(3);
+    const month = await app(page, "a => a.sim.month") as number; await page.waitForTimeout(400); expect(await app(page, "a => a.sim.month")).toBe(month);
+    await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+    expect(await app(page, "a => a.sim.kaigen.pending && a.sim.kaigen.pending.year")).toBe(1989);
+    await page.evaluate(() => { (window as any).__kfm.sheet = "kaigen"; (window as any).__kfm.buildSheet(); });
+    await page.click("#kaigen-pick-1");
+    expect(await app(page, "a => a.sim.kaigen.eras.map((e) => e.name).join()")).toBe("神化,修文");
+    expect(await app(page, "a => a.sim.kaigen.pending")).toBeNull();
+  }
   expect(errs).toEqual([]);
 });

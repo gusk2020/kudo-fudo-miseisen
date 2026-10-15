@@ -34,8 +34,8 @@ export function realWorld() {
   const s = defaultState(), t = generateTerrain(s, loadDem()); return (realCache = { w: buildWorld(t, s.seed), hash: t.hash });
 }
 /** A Stage 3 game with the ceremony performed on top of the 1950 road + rail network. */
-export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true) {
-  const { w, hash } = realWorld(), sim = createSim(w, "m", hash, seed, { era, stage3: true });
+export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true, firstEra?: number) {
+  const { w, hash } = realWorld(), sim = createSim(w, "m", hash, seed, firstEra !== undefined ? { stage3: true, firstEra } : { era, stage3: true });
   if (ceremony) {
     const t = tokyoCity(w)!, e = w.cities.find((c) => c.name === "名古屋市")!;
     const line = (a: Vec, b: Vec, n = 12): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);

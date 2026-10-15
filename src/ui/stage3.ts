@@ -5,6 +5,7 @@ import { DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey
 import { effectText } from "../sim/events";
 import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
+import { CAND_1945, STANCE_LABEL } from "../sim/kaigen";
 import { displayName } from "../sim/straits";
 import { DOMAIN_LABEL, POLICIES, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
@@ -13,12 +14,24 @@ export const ui3 = { tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fa
 const ym = (sim: SimState, m: number) => { const { year, month } = monthToYM(sim.startYear, m); return `${year}年${month}月`; };
 const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) * 10)) + "□".repeat(10 - Math.round(Math.max(0, Math.min(1, v)) * 10));
 
-export function eraPicker(app: App, tb: HTMLElement, current: EraKey, pick: (e: EraKey) => void) {
-  tb.append(h("div", { id: "era-pick", class: "note" }, "世界線(元号)を選んでください。1945年に昭和が終わり、1950年は新元号6年から始まります。"));
-  const g = h("div", { class: "grp" });
-  for (const k of SELECTABLE_ERAS) { const d = ERAS[k], on = current === k; g.append(h("button", { id: "era-" + k, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: () => pick(k) }, `${on ? "✓ " : ""}${d.name}(${d.focus})`)); }
-  tb.append(g, h("div", { id: "era-desc", class: "note" }, ERAS[current].summary));
+export function eraPicker(app: App, tb: HTMLElement, current: number, pick: (i: number) => void) {
+  tb.append(h("div", { id: "era-pick", class: "note" }, "最初の元号を選んでください。1945年に昭和が終わり、1950年は新元号6年から始まります。候補は昭和改元(1926年)のときに実際に挙がった案です。"));
+  const sel = h("select", { id: "era-first", "aria-label": "最初の元号", onchange: (e: Event) => pick(+(e.target as HTMLSelectElement).value) }) as HTMLSelectElement;
+  CAND_1945.forEach((c, i) => sel.append(h("option", { value: String(i), ...(i === current ? { selected: "" } : {}) }, `${c.name}(${STANCE_LABEL[c.stance]})`)));
+  const c = CAND_1945[current] ?? CAND_1945[0];
+  tb.append(h("div", { class: "grp" }, sel), h("div", { id: "era-desc", class: "note" }, `${c.name}: ${c.note}。方針=${STANCE_LABEL[c.stance]}。${ERAS[c.stance].summary} 方針の割り当てはゲーム上の仮のもので、元号の意味とは関係ありません。この世界は1989年・2019年にも改元があり、そのつど選べます。`));
   void app;
+}
+/** The era-change sheet: opens by itself when a kaigen is due; time is stopped until a name is chosen. */
+export function buildKaigen(app: App, body: HTMLElement) {
+  const sim = app.sim, k = sim?.kaigen; if (!sim || !k) { body.append(h("small", {}, "このデータには改元の仕組みがありません(旧形式のセーブ)")); return; }
+  body.append(h("h3", {}, "改元"));
+  body.append(h("div", { class: "issue", id: "kaigen-history" }, "元号の履歴: " + k.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → ")));
+  if (!k.pending) { body.append(h("div", { class: "issue" }, `次の改元: ${k.next}年ごろ(27〜33年間隔の暫定規則)`)); return; }
+  const p = k.pending, real = p.year === 1989 || p.year === 2019;
+  body.append(h("div", { class: "issue warn", id: "kaigen-window" }, `${p.year}年: 新しい元号を選んでください。時間は止まっています。`, h("br"), h("small", {}, real ? "候補は史実でこの年に挙がった案です(最初が実際に選ばれた元号)。方針の割り当てはゲーム上の仮のものです。" : "候補は暫定の生成規則による名前です(いろは順の漢字化+改元年の干支、画数の少ない順)。実在の元号ではありません。")));
+  p.cands.forEach((c, i) => body.append(h("div", { class: "issue", id: "kaigen-cand-" + i }, `${c.name}(${STANCE_LABEL[c.stance]}) ${c.real ? "" : "【暫定規則】"}`, h("br"), h("small", {}, `${c.note}。${ERAS[c.stance].focus}`), h("div", { class: "row" }, h("button", { id: "kaigen-pick-" + i, onclick: () => app.chooseKaigen(i) }, `${c.name}にする`)))));
+  body.append(h("small", {}, "これまでの元号の方針は、新しい元号のあとも一部が残って効き続けます。"));
 }
 
 const KIND_FILTER: Record<string, (k: string) => boolean> = {
@@ -28,6 +41,7 @@ const KIND_FILTER: Record<string, (k: string) => boolean> = {
 const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", city: "人口" };
 export function buildTimeline(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "年表(新しい順・原因つき)")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
+  if (sim.kaigen) body.append(h("div", { class: "issue", id: "era-line" }, "元号: " + sim.kaigen.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → "), h("br"), h("small", {}, sim.kaigen.pending ? "改元の選択待ち" : `次の改元: ${sim.kaigen.next}年ごろ`)));
   const row = h("div", { class: "row" });
   for (const k of Object.keys(FILTER_LABEL)) row.append(h("button", { id: "tl-" + k, class: ui3.tl === k ? "mode on" : "mode", "aria-pressed": ui3.tl === k ? "true" : "false", onclick: () => { ui3.tl = k; ui3.tlN = 60; app.buildSheet(); } }, FILTER_LABEL[k]));
   body.append(row, h("small", {}, "【史実】=実際の歴史／【架空】=この世界線だけの出来事／【予測モデル】=2027年以降の確率的な想定"));

@@ -56,6 +56,11 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   raw.mods = (raw.mods as unknown[]).filter((m: any) => isRec(m) && typeof m.id === "string" && fin(m.from) && fin(m.until) && isRec(m.d) && Object.values(m.d).every(fin));
   if (!DIAL_KEYS.every((k) => fin(raw.dials[k]))) raw.dials = composeDials({ era: raw.era, mods: raw.mods }, monthYear(raw));
   if (raw.stage3 === true && !(isRec(raw.policy) && fin(raw.policy.points) && Array.isArray(raw.policy.history) && ["priority", "idleAuto", "auto"].includes(raw.policy.mode) && (raw.policy.pending === null || (isRec(raw.policy.pending) && Number.isInteger(raw.policy.pending.year))))) raw.policy = defaultPolicy(); if (raw.stage3 !== true) { delete raw.stage3; delete raw.policy; }
+  // Issue #13: the era timeline is kept only if it is well formed; otherwise the game simply continues as a single-era game (never refused)
+  if (raw.kaigen !== undefined) {
+    const k = raw.kaigen, okE = (e: any) => isRec(e) && typeof e.name === "string" && e.name.length > 0 && e.name.length < 12 && Number.isInteger(e.start) && ["heisei", "shubun", "shoka"].includes(e.stance);
+    if (!(isRec(k) && Array.isArray(k.eras) && k.eras.length >= 1 && k.eras.length < 40 && k.eras.every(okE) && Number.isInteger(k.next) && Number.isInteger(k.nextIdx) && (k.pending === null || (isRec(k.pending) && Number.isInteger(k.pending.year) && Array.isArray(k.pending.cands) && k.pending.cands.length > 0 && k.pending.cands.every((c: any) => isRec(c) && typeof c.name === "string" && ["heisei", "shubun", "shoka"].includes(c.stance)))))) delete raw.kaigen;
+  }
   raw.schemaVersion = 3;
   const sim = { ...raw, events: Array.isArray(raw.events) ? raw.events : [], stats: Array.isArray(raw.stats) ? raw.stats : [], skippedMonths: fin(raw.skippedMonths) ? raw.skippedMonths : 0, lastWallMs: fin(raw.lastWallMs) ? raw.lastWallMs : 0, speed: [0, 1, 5, 20].includes(raw.speed) ? raw.speed : 0, ceremonyDone: raw.ceremonyDone === true } as unknown as SimState;
   const bad = checkIntegrity(sim); if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);

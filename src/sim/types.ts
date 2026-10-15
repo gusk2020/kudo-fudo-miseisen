@@ -1,6 +1,7 @@
 import type { Vec } from "../core/types";
 import { eraNameOf, type Dials, type EraKey, type Mod } from "./eras";
 import type { PolicyState } from "./policy";
+import { eraText, type EraEntry, type KaigenState } from "./kaigen";
 
 /**
  * Administrative designation (行政指定), kept apart from the physical road.
@@ -95,6 +96,7 @@ export interface SimState {
   mods: Mod[];                // active and expired event/policy effects (kept for the timeline)
   policy?: PolicyState;       // ten-yearly interventions (Stage 3 only)
   stage3?: boolean;           // true for games started on the real map; false/absent = the Stage 2 flow
+  kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
 }
 export const SIM_VERSION = 3;
 export const ERA = { key: "kobun", name: "光文", firstYear: 1945, note: "1926年の昭和代替元号候補『光文』を、1945年の敗戦時に改元が起きた架空史へ転用" };
@@ -104,6 +106,9 @@ export const monthToYM = (start: number, month: number) => ({ year: start + Math
 let activeEra: EraKey = "kobun";
 export const setActiveEra = (e: EraKey) => { activeEra = e; };
 export const getActiveEra = () => activeEra;
-export const eraLabel = (calYear: number, era: EraKey = activeEra) => eraNameOf(era, calYear);
+/** Games with an era timeline name their years from it; older games use the one fixed era. */
+let activeTimeline: EraEntry[] | null = null;
+export const setActiveTimeline = (e: EraEntry[] | null) => { activeTimeline = e; };
+export const eraLabel = (calYear: number, era: EraKey = activeEra) => (activeTimeline ? eraText(activeTimeline, calYear) : eraNameOf(era, calYear));
 export const ymLabel = (start: number, month: number, era: EraKey = activeEra) => { const { year, month: m } = monthToYM(start, month); return `${eraLabel(year, era)}(${year})${m}月`; };
 export type { Vec };

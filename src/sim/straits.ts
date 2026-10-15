@@ -6,7 +6,8 @@
  * same crossings in different, fictional years: 修文 gets road crossings earlier and 正化 the railway ones. The names and the
  * geometry are the model's (a crossing joins two city centres), not a survey.
  */
-import { eraKeyOf, type EraKey } from "./eras";
+import { type EraKey } from "./eras";
+import { stanceAt } from "./kaigen";
 import { buildIndex, newEdgeDefaults, newId, nodeAtCell, pushHist } from "./network";
 import { designate, ev, yearOf } from "./engine";
 import { successorOperator } from "./reform";
@@ -26,9 +27,9 @@ export const STRAITS: Strait[] = [
 const opened = (sim: SimState, id: string) => Object.values(sim.edges).some((e) => e.facilityName?.startsWith(id + ":"));
 /** Open every crossing due by `year` (all that are due at the start, one year at a time afterwards). Returns how many opened. */
 export function openStraits(sim: SimState, w: World, year: number, atStart = false): number {
-  const era = eraKeyOf(sim.era); if (era === "kobun") return 0; let n = 0;
+  const era = stanceAt(sim, year); if (era === "kobun") return 0; let n = 0;
   for (const s of STRAITS) {
-    const due = s.year[era]; if (due === undefined || opened(sim, s.id) || (atStart ? due > year : due !== year)) continue;
+    const due = s.year[era]; if (due === undefined || opened(sim, s.id) || (atStart || sim.kaigen ? due > year : due !== year)) continue;
     const ca = w.cityById.get(s.a), cb = w.cityById.get(s.b); if (!ca || !cb) continue;
     const idx = buildIndex(sim, s.mode), a = nodeAtCell(sim, w, idx, ca.cell, "junction"), b = nodeAtCell(sim, w, idx, cb.cell, "junction"), id = newId(sim, "edge");
     const rail = s.mode === "rail", real = era === "heisei" || due <= 1950;

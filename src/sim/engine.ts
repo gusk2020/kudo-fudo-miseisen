@@ -13,9 +13,10 @@ import { openStraits } from "./straits";
 import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./reform";
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
+import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
-import { ERA, FU_PREFS, GRADE_LABEL, GRADE_MODE, KIND_LABEL, NICK_LABEL, SIM_VERSION, modeOf, monthToYM, setActiveEra, ymLabel, type Grade, type RouteEdgeRef, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
+import { ERA, FU_PREFS, GRADE_LABEL, GRADE_MODE, KIND_LABEL, NICK_LABEL, SIM_VERSION, modeOf, monthToYM, setActiveEra, setActiveTimeline, ymLabel, type Grade, type RouteEdgeRef, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
 import { cellDistKm, type World } from "./world";
 
 export const MONTHS_PER_YEAR_X1_MS = 60000;       // x1: one real minute is one game year
@@ -56,16 +57,17 @@ export const routeLabel = (r: SimRoute) => routeOfficial(r) + (r.nick ? `(通称
 export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).year;
 
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
-export interface SimOpts { era?: EraKey; stage3?: boolean }
+/** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
+export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number }
 export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
-  const eraKey = opts.era ?? "kobun";
+  const firstCand = opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
   const sim: SimState = {
     schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
     next: { node: 0, edge: 0, route: 0, project: 0, event: 0 }, nodes: {}, edges: {}, routes: {}, projects: {}, cities: {}, settlements: {}, links: [], snaps: [], regionShare: {},
     macro: { mood: 0, budgetBu: 0, maintCoverage: 1 }, routeCounters: {}, events: [], stats: [], skippedMonths: 0, lastWallMs: 0, ceremonyDone: false,
-    operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}),
+    operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0) } : {}),
   };
-  sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey));
+  sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   for (const c of w.cities) sim.cities[c.id] = { pop: c.pop0, popSource: c.popSource, lowAccessYears: 0, industry: Math.round((0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim)) * 1000) / 1000 };
   yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); yield 1;
   return sim;
@@ -125,7 +127,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); }
   const an = analyze(sim, w); yield;
-  if (sim.stage3 && PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y) { reformJnr(sim, w, y); yield; }
+  if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
   updatePopulation(sim, w, an, y); updateRegionShares(sim, w); yield;
   evaluateEdges(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); yield;
@@ -440,16 +442,30 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
 
 /** One simulated month as a series of short atoms (yield between them). */
 export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
-  if (sim.policy?.pending) return;   // waiting for the player at a policy window: time does not move
+  if (sim.policy?.pending || sim.kaigen?.pending) return;   // waiting for the player at a policy window or an era change: time does not move
   if (sim.month % 12 === 0) {
+    if (kaigenDue(sim.kaigen, yearOf(sim))) { startKaigen(sim, yearOf(sim)); if (sim.kaigen!.pending) return; }
     if (windowDue(sim, yearOf(sim))) { openWindow(sim, w, yearOf(sim)); if (sim.policy!.pending) return; }
     yield* yearlyGen(sim, w);
   }
   monthly(sim, w); yield; sim.month++;
 }
+/** An era change is due: open it; if nobody is there to choose (or the setting says so) the first candidate (the real one for 1989/2019, else fewest strokes) is taken. */
+export function startKaigen(sim: SimState, year: number) {
+  const k = sim.kaigen!; openKaigen(k, year); const pol = sim.policy, auto = !!pol && (pol.mode === "auto" || (pol.mode === "idleAuto" && pol.away));
+  if (auto) { settleKaigen(sim, 0, true); return; }
+  ev(sim, "kaigen", `${year}年: 改元の時を迎えた(候補${k.pending!.cands.length}案)`, "元号を選んでください。時間は止まっています", {});
+}
+export function settleKaigen(sim: SimState, idx: number, auto = false) {
+  const k = sim.kaigen; if (!k?.pending) return null; const year = k.pending.year, prev = k.eras[k.eras.length - 1], names = k.pending.cands.map((c) => c.name).join("・");
+  const e = chooseEra(k, idx, sim.seed, auto); if (!e) return null; setActiveTimeline(k.eras);
+  ev(sim, "kaigen", `改元: ${e.name}元年(${year}年)${auto ? "【自動】" : ""}`, `${prev.name}が終わり${e.name}へ。候補: ${names}。方針: ${STANCE_NAME[e.stance]}${e.real ? "" : "(暫定規則で生成した名)"}。以後の道路・鉄道の方針に${prev.name}の分も一部残って効く`, {});
+  sim.dials = composeDials(sim, year); return e;
+}
+const STANCE_NAME: Record<string, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kobun: "旧版" };
 export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
 /** Fast-forward with no player (tests, tools): a policy window that opens is resolved by the world's own scores. */
-export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
+export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };
