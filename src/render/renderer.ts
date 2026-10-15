@@ -1,6 +1,7 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { realToWorld, worldParts } from "../core/body";
 import { BODY_DEFS, EXTRA, EXTRA_IDS, ISLAND_LABEL, JAPAN } from "../core/data";
+import { palaceWorld, prefPoint, seatsOf } from "../core/seat";
 import { featureWorldPos } from "../core/state";
 import type { TerrainResult } from "../core/terrain";
 import type { IslandId, Issue, Op, Place, ProjectState, Vec } from "../core/types";
@@ -135,7 +136,7 @@ export class Renderer {
       }
       this.overlay.addChild(rg);
     }
-    if (s.layers.cities) this.drawCities(s, t, showTerrain, px);
+    if (s.layers.cities) this.drawCities(s, t, showTerrain, px); this.drawSeats(s, t, px);
   }
   private drawHydro(t: TerrainResult, s: ProjectState, px: (n: number) => number) {
     if (s.layers.rivers) {
@@ -152,6 +153,18 @@ export class Renderer {
       for (let i = 0; i < t.borders.length; i += 4) g.moveTo(t.borders[i], -t.borders[i + 1]).lineTo(t.borders[i + 2], -t.borders[i + 3]);
       g.stroke({ width: px(1.1), color: 0x5b1f6e, alpha: 0.9, cap: "round" }); this.base.addChild(g);
     }
+  }
+  /** 首都・副首都・皇居: three independent markers (a red star, a blue star, a gold diamond), always shown, each with its name. */
+  private drawSeats(s: ProjectState, t: TerrainResult | null, px: (n: number) => number) {
+    if (!s.real) return; const seats = seatsOf(s), g = new Graphics(), z = this.view.zoom;
+    const at = (pref: string): Vec | null => { const c = t?.cities.find((x) => x.pref === pref && x.kind === "capital"); return c ? c.pos : prefPoint(s, pref); };
+    const star = (p: Vec, col: number, r: number) => { const pts: number[] = []; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r; pts.push(p[0] + Math.cos(a) * rr, -p[1] + Math.sin(a) * rr); } g.poly(pts).fill({ color: col }).stroke({ width: px(1.2), color: 0xffffff }); };
+    const label = (p: Vec, text: string, dy: number) => { const tx = new Text({ text, style: { fontSize: 11, fontWeight: "700", fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(p[0] + px(10), -p[1] + px(dy)); this.labels.addChild(tx); };
+    const cp = at(seats.capital), sp = at(seats.sub), pp = s.palacePos ?? at(seats.palace);
+    if (cp) { star(cp, 0xd62828, px(10)); label(cp, "首都", -14); }
+    if (sp) { star(sp, 0x1f6fd0, px(9)); label(sp, "副首都", -14); }
+    if (pp) { const r = px(7); g.poly([pp[0], -pp[1] - r, pp[0] + r, -pp[1], pp[0], -pp[1] + r, pp[0] - r, -pp[1]]).fill({ color: 0xf2c200 }).stroke({ width: px(1.4), color: 0x5a3b00 }); label(pp, "皇居", 2); }
+    this.overlay.addChild(g);
   }
   private drawCities(s: ProjectState, t: TerrainResult | null, showTerrain: boolean, px: (n: number) => number) {
     const g = new Graphics(), z = this.view.zoom;

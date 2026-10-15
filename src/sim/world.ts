@@ -11,6 +11,8 @@ export interface World {
   cities: WCity[]; cityById: Map<string, WCity>; cityByCell: Map<number, WCity>;
   river: Uint8Array; cellPos(k: number): Vec; cellOf(p: Vec): number;
   elevM(k: number): number; prefOf(k: number): string | null;
+  /** Land mass id per cell (1..lmCount; 0 = sea or lake). A mass is a connected piece of land with ONE island number, so Honshu and Kyushu (touching on the 5 km grid at Kanmon) and Okinawa (which shares Kyushu's island number) are all different masses: exactly the pieces a road cannot join without a crossing. */
+  lm: Uint16Array; lmCount: number;
 }
 export const POP_1950_SCALE = 0.32; // reference (modern) population -> 1950 level; a synthetic scaling, not a statistic
 
@@ -38,9 +40,14 @@ export function buildWorld(t: TerrainResult, seed: number): World {
     }
     cities.push({ id: c.id, name: c.name, cell: k, pos: c.pos, pref: c.prefIndex ? t.prefOrder[c.prefIndex - 1] : null, island: t.island[k], pop0: Math.round(p.pop * POP_1950_SCALE), popSource: p.src, coastal, plains: cnt ? plain / cnt : 0, kind: c.kind });
   }
+  const lm = new Uint16Array(N); let lmCount = 0; const stack: number[] = [];
+  for (let k0 = 0; k0 < N; k0++) if (t.land[k0] === 1 && !lm[k0]) {
+    lm[k0] = ++lmCount; stack.push(k0);
+    while (stack.length) { const c = stack.pop()!, i = c % nx, j = (c / nx) | 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue; const q = b * nx + a; if (t.land[q] === 1 && !lm[q] && t.island[q] === t.island[c]) { lm[q] = lmCount; stack.push(q); } } }
+  }
   const cityById = new Map(cities.map((c) => [c.id, c])), cityByCell = new Map<number, WCity>();
   for (const c of cities) if (!cityByCell.has(c.cell)) cityByCell.set(c.cell, c);
-  return { t, nx, ny, cell, N, cities, cityById, cityByCell, river, cellPos, cellOf, elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
+  return { t, nx, ny, cell, N, cities, cityById, cityByCell, lm, lmCount, river, cellPos, cellOf, elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
 }
 
 export interface PathOpts { bias?: (k: number) => number; allow?: (k: number) => boolean; roadCells?: { has(k: number): boolean }; margin?: number; rail?: boolean; ease?: number }   // ease 0..1: how much better tunnelling and bridging make mountains and rivers to cross (tech.ts); 0 = the older cost

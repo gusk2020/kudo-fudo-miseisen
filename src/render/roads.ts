@@ -7,7 +7,7 @@ import { routeAtYear, type RouteView } from "../sim/ledger";
 import type { World } from "../sim/world";
 import type { Vec } from "../core/types";
 
-export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean }
+export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[] }   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
 export interface PastView { year: number; codes: Record<string, number> }
 export interface RoadArgs {
   sim: SimState | null; w: World | null;
@@ -41,7 +41,7 @@ function pattern(g: Graphics, pts: Vec[], dash: number[]) {
     while (seg > 1e-6) { const step = Math.min(left, seg); if (draw) { g.moveTo(x, -y); g.lineTo(x + ux * step, -(y + uy * step)); } x += ux * step; y += uy * step; seg -= step; left -= step; if (left <= 1e-9) { i = (i + 1) % dash.length; draw = i % 2 === 0; left = dash[i]; } }
   }
 }
-const KEYS = ["halo", "facb", "ghost", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "sel", "ov"];
+const KEYS = ["halo", "facb", "ghost", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "sel", "ov"];
 const line = (g: Graphics, pts: Vec[]) => { g.moveTo(pts[0][0], -pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], -pts[i][1]); };
 const opColour = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return [0x7a1f3d, 0x1f5f7a, 0x6b4a14, 0x3b6b1f, 0x5a2a8a, 0x8a3a1a, 0x1f3f8a][h % 7]; };
 
@@ -84,7 +84,7 @@ export class RoadLayer {
         for (const id of past ? r.edges.map((x) => x.edgeId) : [...r.edges.map((x) => x.edgeId), ...r.oldEdges]) { const b = best.get(id); if (!b || GRADE_RANK[grade] > GRADE_RANK[b]) best.set(id, grade); }
       }
       const planned = new Map<string, string>(); for (const p of Object.values(sim.projects)) if (p.status !== "open" && p.status !== "abolished") for (const id of p.edgeIds) planned.set(id, p.status);
-      const { ghost, plan, halo, cas, fill, mid, fillDash, old, rcas, rfill, rtie, rdash, fac, facb } = this.g, shapes = new Map<string, Vec[]>(), nickGrade = new Map<string, Grade>();
+      const { ferry: fer, ghost, plan, halo, cas, fill, mid, fillDash, old, rcas, rfill, rtie, rdash, fac, facb } = this.g, shapes = new Map<string, Vec[]>(), nickGrade = new Map<string, Grade>();
       // level of detail: the whole country shows only the trunk network; regional and local lines appear as you zoom in
       const minRank = zoom < 0.35 ? 3 : zoom < 0.8 ? 2 : 0;
       for (const e of Object.values(sim.edges)) {
@@ -103,6 +103,10 @@ export class RoadLayer {
           const base = a.compare[e.id], now = past ? past.codes[e.id] : (e.built < 1 ? 4 : { open: 0, dormant: 1, closed: 2, lost: 3 }[e.state]) * 16 + Math.min(15, Math.floor(e.quality / 6.5)); let c = 0;
           if (base === undefined) c = 0x39a0ff; else if (Math.floor(now / 16) > Math.floor(base / 16)) c = 0x111111; else if (Math.floor(now / 16) < Math.floor(base / 16)) c = 0x39e08a; else if (Math.floor(base % 16) - Math.floor(now % 16) >= 3) c = 0xff3b3b; else if (Math.floor(now % 16) - Math.floor(base % 16) >= 3) c = 0x39e0c8;
           if (c) { line(halo, pts); halo.stroke({ width: px(wd + 7), color: c, alpha: 0.6, cap: "round", join: "round" }); }
+        }
+        if (e.facility === "ferry") {   // a sea route: a dashed line in its own colour, never the road's casing and fill
+          if (eff.built >= 1) { const on = eff.state === "open"; pat(fer, pts, [px(7), px(5)]); fer.stroke({ width: px(rail ? 2.4 : 3), color: rail ? 0x1b3f8f : 0x2f8fd8, alpha: on ? 0.95 : eff.state === "dormant" ? 0.6 : 0.35 }); }
+          continue;
         }
         if (eff.built >= 1 && eff.state === "open") {
           if (e.facility === "bridge") { line(facb, pts); facb.stroke({ width: px(wd + 4), color: 0xffffff, alpha: 0.85, cap: "butt" }); }
@@ -170,7 +174,8 @@ export class RoadLayer {
     for (let i = count; i < this.signs.length; i++) this.signs[i].c.visible = false;
     const ov = this.g.ov;
     for (const c of a.cer) {
-      if (c.path && c.path.length > 1) { line(ov, c.path); ov.stroke({ width: px(5), color: c.ok ? 0x45e06f : 0xff5252, alpha: 0.8, cap: "round", join: "round" }); }
+      if (c.segs?.length) for (const sg of c.segs) { if (sg.pts.length < 2) continue; if (sg.ferry) pattern(ov, sg.pts, [px(8), px(6)]); else line(ov, sg.pts); ov.stroke({ width: px(sg.ferry ? 4 : 5), color: sg.ferry ? 0x2f9bff : c.ok ? 0x45e06f : 0xff5252, alpha: 0.85, cap: "round", join: "round" }); }
+      else if (c.path && c.path.length > 1) { line(ov, c.path); ov.stroke({ width: px(5), color: c.ok ? 0x45e06f : 0xff5252, alpha: 0.8, cap: "round", join: "round" }); }
       if (c.pts.length > 1) { line(ov, c.pts); ov.stroke({ width: px(2), color: 0xffffff, alpha: 0.95 }); }
     }
     if (a.pin) { ov.circle(a.pin[0], -a.pin[1], px(7)).fill({ color: 0xff3b6b }).stroke({ width: px(2), color: 0xffffff }); }

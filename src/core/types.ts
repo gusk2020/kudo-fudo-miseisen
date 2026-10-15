@@ -32,6 +32,10 @@ export interface ProjectState {
   islands?: boolean;
   /** Issue #13: id of the city chosen as the capital (default: 東京). A city/administration parameter, kept apart from the terrain. */
   capital?: string;
+  /** Issue #15: the sub-capital (a prefecture id; must differ from the capital), and the Imperial Palace's prefecture and exact point. All are administrative settings. */
+  subCapital?: string;
+  palace?: string;
+  palacePos?: Vec;
   layers: Record<string, boolean>;
 }
 

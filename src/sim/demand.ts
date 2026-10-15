@@ -24,7 +24,8 @@ const RAIL_SPEED: Record<Standard, number> = { rural: 38, standard: 75, highgrad
 const SURF: Record<Surface, number> = { unpaved: 0.6, gravel: 0.8, paved: 1 };
 /** Curve penalty on speed: a railway is hurt more by tight curves than a road is; only Stage 3 edges carry a curvature. */
 const curveFactor = (e: SimEdge, k: number) => 1 - Math.min(0.35, (e.curv ?? 0) * k);
-export const edgeSpeed = (e: SimEdge) => modeOf(e) === "rail"
+export const FERRY_SPEED = 28, FERRY_WAIT_H = 0.7;   // a ferry is slow and waits for its sailing (the same for cars and for the rail steamer)
+export const edgeSpeed = (e: SimEdge) => e.facility === "ferry" ? FERRY_SPEED : modeOf(e) === "rail"
   ? RAIL_SPEED[e.standard] * (0.6 + 0.4 * e.quality / 100) * (1 - Math.min(0.3, e.maxGradePct / 40)) * curveFactor(e, 0.35)
   : BASE_SPEED[e.standard] * SURF[e.surface] * (0.5 + 0.5 * e.quality / 100) * (1 - Math.min(0.4, e.maxGradePct / 50)) * curveFactor(e, 0.2);
 export const passable = (e: SimEdge) => (e.state === "open" || e.state === "dormant") && e.built >= 1 && !e.lost;
@@ -68,7 +69,7 @@ export function analyze(sim: SimState, w: World): Analysis {
   for (const e of edges) { e.through = 0; e.local = 0; e.freight = 0; }
   let anyRail = false, airFlow = 0, landFlow = 0, seaFr = 0, landFr = 0;
   for (const e of edges) if (passable(e)) {
-    const a = pos.get(e.a)!, b = pos.get(e.b)!, t = e.lengthKm / Math.max(3, edgeSpeed(e)), g = modeOf(e) === "rail" ? adjRail : adjRoad; if (g === adjRail) anyRail = true;
+    const a = pos.get(e.a)!, b = pos.get(e.b)!, t = e.lengthKm / Math.max(3, edgeSpeed(e)) + (e.facility === "ferry" ? FERRY_WAIT_H : 0), g = modeOf(e) === "rail" ? adjRail : adjRoad; if (g === adjRail) anyRail = true;
     g[a].push({ to: b, edge: e, t }); g[b].push({ to: a, edge: e, t });
   }
   const nc = w.cities.length, cityNodes = w.cities.map((c) => nodeByCell.get(c.cell) ?? null), T = new Float64Array(nc * nc).fill(Infinity), TT = new Float64Array(nc * nc).fill(Infinity), reach = new Map<string, boolean>();

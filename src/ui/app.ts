@@ -2,6 +2,7 @@ import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL, JAPAN, lonLatToReal } from "../core/data";
 import { FEATURE_LIMITS } from "../core/save";
+import { PREF_IDS, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, getRaw, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
@@ -14,7 +15,7 @@ import { clampOp } from "../core/warp";
 import { derive, errorsFor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
-import { CER_LABEL, capitalChoices, cerLabel, homeCity, performCeremony, previewCeremony, tokyoCity, type CerKind, type CerPreview } from "../sim/ceremony";
+import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
 import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
 import { codesAt } from "../sim/ledger";
@@ -28,7 +29,7 @@ import { buildWorld, type World } from "../sim/world";
 import { eraKeyOf, type EraKey } from "../sim/eras";
 import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraPicker } from "./stage3";
 
-type Tool = "view" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
+type Tool = "view" | "palace" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const pathLen = (p: Vec[]) => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; };
 export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -122,8 +123,8 @@ export class App {
     if (this.real && this.sim && performance.now() - this.lastBackup > 120000) { this.lastBackup = performance.now(); void saveGame(this.saveKey + ":backup", makeSave(this.s, this.sim)); }   /* a second copy every two minutes; a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
   ensureWorld(): World | null { if (!this.terrain) return null; if (this.worldRef !== this.terrain) { this.world = buildWorld(this.terrain, this.s.seed); this.worldRef = this.terrain; } return this.world; }
   renderRoads() {
-    const cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok }));
-    if (this.cerLive) cer.push({ pts: this.cerLive, path: undefined as any, ok: true });
+    const w0 = this.world, cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok, segs: (d!.prev as NatPreview).segments && w0 ? (d!.prev as NatPreview).segments.map((sg) => ({ pts: sg.cells.map((c) => w0.cellPos(c)), ferry: sg.ferry })) : undefined }));
+    if (this.cerLive) cer.push({ pts: this.cerLive, path: undefined as any, ok: true, segs: undefined });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
     if (onRoads) this.ensureWorld();
     this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, lite: this.lite, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge, hide: [...this.hide], names: this.names });
@@ -194,6 +195,7 @@ export class App {
   toolBegin(w: Vec, sc: Vec): boolean {
     const t = this.tool, s = this.s;
     if (t === "cer-kokudo1" || t === "cer-fudo1") { this.grab = { t, kind: t === "cer-kokudo1" ? "kokudo1" : "fudo1", pts: [w] }; this.cerLive = [w]; this.renderRoads(); return true; }
+    if (t === "palace") { this.grab = { t, w }; return true; }
     if (t === "pick" || t === "why") { this.grab = { t, w }; return true; }
     if (t === "pull" || t === "bulge" || t === "dent" || t === "move") {
       const id = this.bodyForTool(), bs = s.bodies[id];
@@ -222,7 +224,7 @@ export class App {
   toolMove(w: Vec, sc: Vec) {
     const g = this.grab; if (!g) return;
     if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { if (dist(g.pts[g.pts.length - 1], w) >= 8 / this.r.view.zoom) { g.pts.push(w); this.cerLive = g.pts; this.renderRoads(); } return; }
-    if (g.t === "pick" || g.t === "why") { g.w = w; return; }
+    if (g.t === "pick" || g.t === "why" || g.t === "palace") { g.w = w; return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
       const scl = g.place0.scale, r = this.brushKm / scl;
       let op: Op;
@@ -244,6 +246,7 @@ export class App {
     const g = this.grab; this.grab = null; if (!g) return;
     this.pending = null; this.cerLive = null;
     if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { this.finishDraw(g.kind, g.pts); return; }
+    if (g.t === "palace") { this.placePalace(g.w); return; }
     if (g.t === "pick") { this.pickScenery(g.w); return; }
     if (g.t === "why") { this.whyAt(g.w); return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
@@ -284,7 +287,24 @@ export class App {
     return this.commitEdit((s) => { if (next === 1) delete (s.features[which] as any)[what]; else (s.features[which] as any)[what] = next; });
   }
   clearRanges() { this.commitEdit((s) => { s.ridges.ne = null; s.ridges.sw = null; }); }
-  setCapital(id: string | null) { this.commitEdit((s) => { if (id) s.capital = id; else delete s.capital; }); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); }
+  /**
+   * Set one of the three seats (the capital, the sub-capital, the Imperial Palace) to a prefecture. They are independent, except that the capital and the
+   * sub-capital must be different prefectures (refused with a message); the palace may share a prefecture with either. Choosing a palace prefecture
+   * forgets a hand-placed palace point (it goes back to that prefecture's 県庁所在地).
+   */
+  setSeat(which: "capital" | "sub" | "palace", pref: string): boolean {
+    if (!PREF_IDS.includes(pref)) return false; const cur = seatsOf(this.s);
+    if ((which === "capital" && pref === cur.sub) || (which === "sub" && pref === cur.capital)) { this.toast("首都と副首都は別の府県にしてください"); this.buildToolbar(); return false; }
+    const ok = this.commitEdit((s) => { if (which === "capital") s.capital = pref; else if (which === "sub") s.subCapital = pref; else { s.palace = pref; delete s.palacePos; } });
+    for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
+  }
+  /** Put the palace at a point inside its own prefecture (on land); outside it the tap is refused. */
+  placePalace(w: Vec): boolean {
+    const world = this.ensureWorld(); if (!world) return false; const k = world.cellOf(w), pref = seatsOf(this.s).palace;
+    if (k < 0 || world.t.land[k] !== 1 || world.prefOf(k) !== pref) { this.toast(`皇居は${seatPrefName(pref)}の陸地の中に置いてください`); return false; }
+    return this.commitEdit((s) => { s.palacePos = [world.cellPos(k)[0], world.cellPos(k)[1]]; });
+  }
+  resetPalace() { this.commitEdit((s) => { delete s.palacePos; }); }
   scaleSel(dir: number) { const id = this.bodyForTool(); this.store.commit((s) => { s.bodies[id].place.scale = Math.max(0.3, Math.min(3, s.bodies[id].place.scale * (dir > 0 ? 1.05 : 1 / 1.05))); }); }
   suggestRanges() {
     const d = derive(this.s), neRef = rotv([Math.SQRT1_2, Math.SQRT1_2], this.s.bodies.honshu.place.rot), f = axisFrame(d.parts.honshu[0], neRef);
@@ -305,7 +325,8 @@ export class App {
   private replanCer(kind: CerKind) {
     const w = this.ensureWorld(), d = this.cerDraft[kind]; if (!w || !d) return;
     if (!d.strokes.length) { delete this.cerDraft[kind]; this.saveCer(); return; }
-    d.pts = d.strokes.flat(); d.prev = previewCeremony(w, kind, d.pts, this.s.capital); this.saveCer();
+    d.pts = d.strokes.flat(); const st = seatsOf(this.s);
+    d.prev = this.real ? previewNational(w, d.pts, st.capital, st.sub) : previewCeremony(w, kind, d.pts, this.s.capital); this.saveCer();
   }
   cerUndo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.strokes.length) return; d.redo.push(d.strokes.pop()!); this.replanCer(kind); this.renderRoads(); this.buildUI(); }
   cerRedo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.redo.length) return; d.strokes.push(d.redo.pop()!); this.replanCer(kind); this.renderRoads(); this.buildUI(); }
@@ -316,23 +337,24 @@ export class App {
     if (this.sim || Object.keys(this.cerDraft).length) return; const w = this.ensureWorld(); if (!w) return;
     try {
       const o = JSON.parse(localStorage.getItem("kfm.cer") || "{}"), okPt = (p: unknown) => Array.isArray(p) && p.length === 2 && p.every((x) => typeof x === "number" && Number.isFinite(x)), okS = (s: unknown): s is Vec[] => Array.isArray(s) && s.length >= 2 && s.length < 5000 && s.every(okPt);
-      for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const e = o[k]; if (!e || !Array.isArray(e.strokes)) continue; const strokes = e.strokes.filter(okS), redo = (Array.isArray(e.redo) ? e.redo : []).filter(okS); if (!strokes.length) continue; this.cerDraft[k] = { pts: [], prev: null as any, strokes, redo }; this.replanCer(k); }
+      for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const e = o[k]; if (!e || !Array.isArray(e.strokes)) continue; const strokes = e.strokes.filter(okS), redo = (Array.isArray(e.redo) ? e.redo : []).filter(okS); if (!strokes.length) continue; this.cerDraft[k] = { pts: [], prev: null as any, strokes, redo }; this.replanCer(k); }
     } catch { /* ignore */ }
   }
-  cerReady() { return !!(this.cerDraft.kokudo1?.prev.ok && this.cerDraft.fudo1?.prev.ok); }
+  cerReady() { return this.real ? !!this.cerDraft.kokudo1?.prev.ok : !!(this.cerDraft.kokudo1?.prev.ok && this.cerDraft.fudo1?.prev.ok); }
   async doCeremony() {
     const w = this.ensureWorld(), k = this.cerDraft.kokudo1?.prev, f = this.cerDraft.fudo1?.prev;
-    if (!w || !this.terrain || !k?.ok || !f?.ok || !this.s.finalized || this.sim || this.building) return;
+    if (!w || !this.terrain || !k?.ok || (!this.real && !f?.ok) || !this.s.finalized || this.sim || this.building) return;
+    const seats = seatsOf(this.s), palacePos = palaceWorld(this.s);
     this.building = 0.01; this.status(); this.buildUI();
     // the 1950 network is generated in slices (a single long task froze phones); the UI shows progress and stays responsive
-    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra, capital: this.s.capital } : {}); let sim: SimState | null = null;
+    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra, capital: seats.capital, subCapital: seats.sub, palace: { pref: seats.palace, pos: palacePos ?? [0, 0] } } : {}); let sim: SimState | null = null;
     while (!sim) {
       const t0 = performance.now();
       while (performance.now() - t0 < 10) { const r = gen.next(); if (r.done) { sim = r.value; break; } this.building = Math.max(this.building, r.value); }
       this.status(); await new Promise((res) => setTimeout(res, 0));
     }
     this.building = 0;
-    if (!performCeremony(sim, w, k, f)) { this.toast("開通の儀を行えませんでした"); this.buildUI(); return; }
+    if (!(this.real ? performNational(sim, w, k as NatPreview) : performCeremony(sim, w, k, f!))) { this.toast("開通の儀を行えませんでした"); this.buildUI(); return; }
     sim.speed = 1; this.sim = sim; this.saveLocked = false; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.saveCer(); this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
     this.persist(); this.toast("開通の儀を終えました。時間が動き始めます"); this.onChange();
   }
@@ -444,7 +466,7 @@ export class App {
   private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); }
   buildToolbar() {
     const tb = $("toolbar"); tb.replaceChildren(); const st = this.stepId;
-    const TOOL_NAMES: Record<Tool, string> = { "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
+    const TOOL_NAMES: Record<Tool, string> = { palace: "皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
     if (this.store.locked && (st === "honshu" || st === "islands" || st === "features")) {
       tb.append(h("div", { id: "lock-banner", role: "status" }, "🔒 地図は最終確定済みのためロック中(閲覧のみ)"), h("button", { id: "unlock-map", type: "button", onclick: () => this.unlockMap() }, "ロックを解除して編集"));
       return;
@@ -479,7 +501,14 @@ export class App {
     if (!open) return;
     const w = this.ensureWorld(), box = h("div", { id: "terrain-edit", class: "grp" });
     tb.append(h("div", { class: "note", id: "terrain-edit-note" }, "海岸線と日本列島の輪郭は現実のまま固定です。首都・富士山・琵琶湖・南北アルプスだけ、最初の道を引く前に変えられます(開通の儀のあとは固定)。"));
-    if (w) { const g = h("div", { class: "grp" }); for (const c of capitalChoices(w)) { const on = (this.s.capital ?? tokyoCity(w)?.id) === c.id; g.append(h("button", { id: "capital-" + c.id, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: () => this.setCapital(c.id === tokyoCity(w)?.id ? null : c.id) }, `${on ? "✓ " : ""}首都: ${c.name.replace(/市$/, "")}`)); } tb.append(h("small", {}, "首都の移動は地形の変形ではなく、都市・行政の設定です"), g); }
+    const st = seatsOf(this.s), sel = (id: string, label: string, val: string, which: "capital" | "sub" | "palace") => {
+      const s = h("select", { id, "aria-label": label, onchange: (e: Event) => { this.setSeat(which, (e.target as HTMLSelectElement).value); } }) as HTMLSelectElement;
+      for (const pid of PREF_IDS) { const dis = (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital); s.append(h("option", { value: pid, ...(pid === val ? { selected: "" } : {}), ...(dis ? { disabled: "" } : {}) }, `${seatPrefName(pid)}(${w ? seatCity(w, pid)?.name ?? "" : ""})${dis ? " ※別の府県に" : ""}`)); }
+      return h("label", { class: "seat" }, label, s);
+    };
+    tb.append(h("small", {}, "首都・副首都・皇居は別々に決められます(49府県すべて)。首都と副首都は別の府県。国道1号は首都から副首都へ引きます"),
+      h("div", { class: "grp", id: "seats" }, sel("seat-capital", "首都", st.capital, "capital"), sel("seat-sub", "副首都", st.sub, "sub"), sel("seat-palace", "皇居", st.palace, "palace")),
+      h("div", { class: "grp" }, this.tbtn("皇居の位置を地図で選ぶ", this.tool === "palace", () => this.setTool("palace"), "tool-palace"), h("button", { id: "palace-reset", type: "button", disabled: !this.s.palacePos, onclick: () => this.resetPalace() }, "県庁所在地に戻す")));
     const tools = (list: [Tool, string][]) => { const g = h("div", { class: "grp" }); for (const [t, l] of list) g.append(this.tbtn(l, this.tool === t, () => this.setTool(t), "tool-" + t)); tb.append(g); };
     tools([["feature", "富士山・琵琶湖を動かす"], ["ridge-ne", "北の山脈を描く"], ["ridge-sw", "南の山脈を描く"], ["ridge-edit", "山脈の点を動かす"]]);
     const g = h("div", { class: "grp" });
@@ -508,9 +537,9 @@ export class App {
       else tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));
       if (this.real) this.buildTerrainEdit(tb);
       const g = h("div", { class: "grp" });
-      for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k]; g.append(this.tbtn(cerLabel(k, this.world ? homeCity(this.world, this.s.capital) : null) + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
+      for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k], w2 = this.world; g.append(this.tbtn(this.real ? cerLabel(k, w2 ? homeCity(w2, seatsOf(this.s).capital) : null, w2 ? subCity(w2, seatsOf(this.s).sub) : null) + (d ? (d.prev.ok ? " 済" : " 要修正") : "") : CER_LABEL[k] + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
       tb.append(g);
-      for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const d = this.cerDraft[k]; if (d) tb.append(h("div", { id: "cer-status-" + k, class: "note " + (d.prev.ok ? "okc" : "badc") }, d.prev.ok ? `✓ ${CER_LABEL[k]}: 約${d.prev.lengthKm}km／終点: ${d.prev.endName}${d.prev.passes.length ? "／通過: " + d.prev.passes.slice(0, 4).join("・") : ""}` : `✗ ${d.prev.reasons.join(" / ")}`)); }
+      for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const d = this.cerDraft[k], nat = d?.prev as NatPreview | undefined; if (d) tb.append(h("div", { id: "cer-status-" + k, class: "note " + (d.prev.ok ? "okc" : "badc") }, d.prev.ok ? `✓ ${this.real ? "国道1号" : CER_LABEL[k]}: 約${d.prev.lengthKm}km／終点: ${d.prev.endName}${nat?.ferries?.length ? `／フェリー${nat.ferries.length}本(${nat.ferries.map((f) => `${f.from}→${f.to}`).join("・")})` : ""}${d.prev.passes.length ? "／通過: " + d.prev.passes.slice(0, 4).join("・") : ""}` : `✗ ${d.prev.reasons.join(" / ")}`)); }
       const ak = this.tool === "cer-kokudo1" ? "kokudo1" : this.tool === "cer-fudo1" ? "fudo1" : null;
       if (ak) { const d = this.cerDraft[ak]; tb.append(h("div", { class: "grp" }, h("span", { class: "note" }, `線${d?.strokes.length ?? 0}本(続けて描くと追加されます)`),
         h("button", { id: "cer-undo", type: "button", disabled: !d?.strokes.length, onclick: () => this.cerUndo(ak) }, "↶ 1本戻す"), h("button", { id: "cer-redo", type: "button", disabled: !d?.redo.length, onclick: () => this.cerRedo(ak) }, "↷ やり直す"), h("button", { id: "cer-restart", type: "button", disabled: !d, onclick: () => this.cerRestart(ak) }, "最初から"))); }

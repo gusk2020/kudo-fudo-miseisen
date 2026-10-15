@@ -46,7 +46,7 @@ export interface SimEdge {
   // ---- v3 (Stage 3). Absent on older saves: sanitizeSim fills mode "road", freight 0 ----
   mode?: Mode; op?: string; freight: number; deficitYears?: number;
   curv?: number;   // curvature: total heading change per km of ground (radians/km), from the grid path; absent = straight
-  facility?: "tunnel" | "bridge"; facilityName?: string; convertedTo?: string;   // long tunnels/bridges are edges of their own; a closed railway can be converted into a road
+  facility?: "tunnel" | "bridge" | "ferry"; facilityName?: string; convertedTo?: string;   // long tunnels/bridges are edges of their own; a closed railway can be converted into a road
 }
 export const modeOf = (x: { mode?: Mode }): Mode => x.mode ?? "road";
 export interface RouteEdgeRef { edgeId: string; dir: 1 | -1 }
@@ -97,6 +97,9 @@ export interface SimState {
   policy?: PolicyState;       // ten-yearly interventions (Stage 3 only)
   stage3?: boolean;           // true for games started on the real map; false/absent = the Stage 2 flow
   capital?: string;           // Issue #13: id of the capital city chosen for this game (Tokyo / Kyoto / Osaka); absent = Tokyo
+  crossings?: true;           // Issue #15: the game starts with ferries between land masses and plans strait links (bridge / tunnel / ferry); absent = older games
+  subCapital?: string;        // Issue #15: prefecture ids of the sub-capital and the palace (administrative settings; the palace point is where it is drawn)
+  palace?: { pref: string; pos: Vec };
   tech?: { k: number };       // Issue #13: bridge/tunnel technology rule (see tech.ts). Absent = older games, which keep the old fixed facility rules
   kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
 }

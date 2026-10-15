@@ -58,9 +58,9 @@ export { yearOf };
  * Which of the added islands are cut off from the mainland right now: no open road or rail edge joins the island's network to a city on another
  * island. Returns island numbers (5.. in EXTRA_IDS order). A crossing that is not built yet leaves the island isolated, which is the intended state.
  */
-export function isolatedIslands(sim: SimState, w: World): number[] {
+export function isolatedIslands(sim: SimState, w: World, fixedOnly = false): number[] {
   const nodes = Object.values(sim.nodes), nid = new Map(nodes.map((n, i) => [n.id, i])), adj: number[][] = nodes.map(() => []);
-  for (const e of Object.values(sim.edges)) if (e.built >= 1 && (e.state === "open" || e.state === "dormant")) { const a = nid.get(e.a), b = nid.get(e.b); if (a !== undefined && b !== undefined) { adj[a].push(b); adj[b].push(a); } }
+  for (const e of Object.values(sim.edges)) if (e.built >= 1 && (e.state === "open" || e.state === "dormant") && !(fixedOnly && e.facility === "ferry")) { const a = nid.get(e.a), b = nid.get(e.b); if (a !== undefined && b !== undefined) { adj[a].push(b); adj[b].push(a); } }
   const comp = new Int32Array(nodes.length).fill(-1); let c = 0;
   for (let s = 0; s < nodes.length; s++) if (comp[s] < 0) { const st = [s]; comp[s] = c; while (st.length) { const x = st.pop()!; for (const y of adj[x]) if (comp[y] < 0) { comp[y] = c; st.push(y); } } c++; }
   const byCell = new Map(nodes.map((n, i) => [n.cell, i])), out: number[] = [];

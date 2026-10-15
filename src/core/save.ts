@@ -1,3 +1,4 @@
+import { prefOfSeat } from "./seat";
 import { defaultBody, defaultState, SCHEMA_VERSION } from "./state";
 import type { BodyState, FeatureState, Op, ProjectState, Vec } from "./types";
 import { ISLAND_IDS, STEPS } from "./types";
@@ -55,7 +56,10 @@ export function parseState(input: unknown): { state: ProjectState; problems: str
     finalized: raw.finalized === true,
     ...(raw.real === true ? { real: true } : {}),
     ...(raw.islands === true ? { islands: true } : {}),
-    ...(typeof raw.capital === "string" && raw.capital.length > 0 && raw.capital.length < 40 ? { capital: raw.capital } : {}),
+    ...(prefOfSeat(raw.capital) ? { capital: raw.capital } : {}),   // a prefecture id, or the city id an older save kept
+    ...(prefOfSeat(raw.subCapital) ? { subCapital: raw.subCapital } : {}),
+    ...(prefOfSeat(raw.palace) ? { palace: raw.palace } : {}),
+    ...(okVec(raw.palacePos) ? { palacePos: raw.palacePos } : {}),
     layers: { ...d.layers },
   };
   if (raw.layers && typeof raw.layers === "object") for (const k of Object.keys(d.layers)) if (typeof raw.layers[k] === "boolean") s.layers[k] = raw.layers[k];
