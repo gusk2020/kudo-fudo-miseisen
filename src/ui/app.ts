@@ -51,7 +51,7 @@ export class App {
   compareYear: number | null = null; selEdge: string | null = null;
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
   lite = false; private slowTicks = 0;
-  eraChoice: EraKey = "heisei"; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain";
+  eraChoice: EraKey = "heisei"; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain"; hide = new Set<string>(); names = false; legendOpen = true;
   runner: SimRunner | null = null; building = 0; safeMode = false; behind = false; private lastRoads = 0;
   private lastBackup = 0; private lastSaved = 0; private persistRetry = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
@@ -61,7 +61,8 @@ export class App {
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
     const a = new App(); a.real = real; a.r = await Renderer.create(host);
-    if (real) { a.store.replace(realState()); document.body.classList.add("real"); try { if (localStorage.getItem("kfm.bg") === "roadmap") { a.bg = "roadmap"; a.r.setBg("roadmap"); } a.lite = localStorage.getItem("kfm.lite") === "1"; } catch { /* ignore */ } }
+    if (real) { a.store.replace(realState()); document.body.classList.add("real"); try { if (localStorage.getItem("kfm.bg") !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
+      try { const u = JSON.parse(localStorage.getItem("kfm.ui") || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; } catch { /* ignore */ } a.lite = localStorage.getItem("kfm.lite") === "1"; } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
     try { a.safeMode = !!localStorage.getItem("kfm.run"); localStorage.setItem("kfm.run", String(Date.now())); } catch { /* storage may be blocked */ }
     a.r.onContextLost = () => a.toast("画面の描画が一時的に失われました。復帰を待っています…"); a.r.onContextRestored = () => { a.render(); a.toast("描画が復帰しました"); };
@@ -123,7 +124,7 @@ export class App {
     if (this.cerLive) cer.push({ pts: this.cerLive, path: undefined as any, ok: true });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
     if (onRoads) this.ensureWorld();
-    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, lite: this.lite, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge });
+    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, lite: this.lite, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge, hide: [...this.hide], names: this.names });
   }
   /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
   private attachPendingSim() {
@@ -371,6 +372,9 @@ export class App {
     $("sheet-close").onclick = () => this.openSheet(null);
   }
   setLite(on: boolean) { this.lite = on; this.slowTicks = 0; try { localStorage.setItem("kfm.lite", on ? "1" : "0"); } catch { /* ignore */ } this.renderRoads(); this.buildSheet(); }
+  saveUi() { try { localStorage.setItem("kfm.ui", JSON.stringify({ hide: [...this.hide], names: this.names, legendOpen: this.legendOpen })); } catch { /* ignore */ } }
+  /** Legend filters are display-only: they never touch the simulation. */
+  toggleHide(key: string) { if (this.hide.has(key)) this.hide.delete(key); else this.hide.add(key); this.saveUi(); this.renderRoads(); this.buildSheet(); }
   setBg(bg: "terrain" | "roadmap") { this.bg = bg; try { localStorage.setItem("kfm.bg", bg); } catch { /* ignore */ } this.r.setBg(bg); this.buildToolbar(); }
   /** Stage 3 dock: the observation tools get their own buttons (the old dock's 検証/取消/やり直し make no sense on a fixed real map). */
   private buildRealDock() {
@@ -497,6 +501,18 @@ export class App {
     for (const p of Object.values(sim.projects).filter((x) => x.status !== "open").slice(-30)) body.append(h("div", { class: "issue warn" }, `[${PROJECT_LABEL[p.status]}/${KIND_LABEL[p.kind]}/${prefName(p.region)}] ${sim.nodes[p.from]?.name ?? "地点"}〜${sim.nodes[p.to]?.name ?? "地点"} (${Math.round((p.spentBu / (p.costBu || 1)) * 100)}%)`, h("br"), h("small", {}, p.reason)));
   }
   private buildLegend(body: HTMLElement) {
+    if (this.real) {
+      const det = h("details", { id: "legend-ops", ...(this.legendOpen ? { open: "" } : {}) }, h("summary", {}, "表示の切替(地図に即反映・保存されます)")) as HTMLDetailsElement;
+      det.addEventListener("toggle", () => { this.legendOpen = det.open; this.saveUi(); });
+      const chk = (id: string, label: string, on: boolean, fn: (v: boolean) => void) => h("label", { class: "layer" }, h("input", { type: "checkbox", id, checked: on, onchange: (e: Event) => fn((e.target as HTMLInputElement).checked) }), label);
+      const grp = (title: string, items: HTMLElement[]) => det.append(h("div", { class: "legend-group" }, h("b", {}, title), ...items));
+      grp("種類", [chk("lg-roads", "道路", this.s.layers.roads, (v) => this.store.set((s) => { s.layers.roads = v; })), chk("lg-rail", "鉄道", this.s.layers.rail, (v) => this.store.set((s) => { s.layers.rail = v; })), chk("lg-names", "路線名の文字", this.names, (v) => { this.names = v; this.saveUi(); this.renderRoads(); })]);
+      const G: [string, string][] = [["national", "国道"], ["fu", "府県道(府道)"], ["ken", "県道"], ["jnr", "国鉄"], ["priv", "私鉄"], ["none", "指定なし"]];
+      grp("規格・行政区分", G.map(([k, l]) => { const key = (k === "jnr" || k === "priv") ? `g:${k}:rail` : `g:${k}:road`; return chk("lg-g-" + k, l, !this.hide.has(key), () => this.toggleHide(key)); }));
+      const ST: [string, string][] = [["open", "供用中"], ["building", "工事中"], ["planned", "計画"], ["unbuilt", "未成"], ["closed", "廃止(閉鎖)"], ["lost", "廃道・遺構"], ["dormant", "休止"]];
+      grp("状態", ST.map(([k, l]) => chk("lg-s-" + k, l, !this.hide.has("st:" + k), () => this.toggleHide("st:" + k))));
+      body.append(det);
+    }
     body.append(h("h3", {}, "凡例(色だけに頼らず、線の種類と文字で区別します)"));
     const row = (svg: string, text: string) => { const d = h("div", { class: "legend-row" }); d.innerHTML = `<svg width="64" height="14" viewBox="0 0 64 14" aria-hidden="true">${svg}</svg><span>${text}</span>`; body.append(d); };
     const hex = (n: number) => "#" + n.toString(16).padStart(6, "0");

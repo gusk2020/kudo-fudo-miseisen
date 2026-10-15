@@ -46,7 +46,7 @@ test("rail and road layers, road-map background, and the year atlas never change
   await page.evaluate(() => (window as any).__kfm.ffYears(12));
   const month = await app(page, "a => a.sim.month") as number, hash = await page.evaluate(() => { const a = (window as any).__kfm; return JSON.stringify([a.sim.month, Object.keys(a.sim.edges).length, a.sim.rngState]); });
   // background toggle
-  await page.click("#btn-bg"); expect(await app(page, "a => a.r.bg")).toBe("roadmap"); await page.click("#btn-bg"); expect(await app(page, "a => a.r.bg")).toBe("terrain");
+  await page.click("#btn-bg"); expect(await app(page, "a => a.r.bg")).toBe("terrain"); await page.click("#btn-bg"); expect(await app(page, "a => a.r.bg")).toBe("roadmap");
   // layers
   await page.click("#dock-layers"); await page.uncheck("#layer-rail"); await page.waitForTimeout(100);
   expect(await app(page, "a => a.s.layers.rail")).toBe(false); await page.check("#layer-rail");
@@ -134,5 +134,23 @@ test("reload at ×20 keeps the game; a save whose roads cannot be attached is qu
   const strip = (x: string) => x.replace(/"savedAt":\d+/g, "");   // a re-save of the same content may refresh the timestamp; the content must be untouched
   expect(strip(await idbGet(page, "s3:auto"))).toBe(strip(before));
   expect(await idbGet(page, "s3:auto:quarantine")).not.toBeNull();
+  expect(errs).toEqual([]);
+});
+
+test("defaults to the road map with route-name text hidden; legend toggles filter the display, never the simulation, and survive a reload", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "shubun");
+  expect(await app(page, "a => a.bg")).toBe("roadmap"); expect(await app(page, "a => a.names")).toBe(false);
+  const hashOf = () => app(page, "a => JSON.stringify([a.sim.month, Object.keys(a.sim.edges).length, a.sim.rngState])");
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; });
+  const before = await hashOf();
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = "legend"; a.buildSheet(); });
+  await expect(page.locator("#legend-ops")).toBeVisible();
+  await page.locator("#lg-s-lost").uncheck(); await page.locator("#lg-g-national").uncheck(); await page.locator("#lg-names").check();
+  expect(await app(page, "a => [...a.hide].sort().join()")).toContain("g:national:road"); expect(await app(page, "a => a.names")).toBe(true);
+  await page.locator("#lg-rail").uncheck(); expect(await app(page, "a => a.s.layers.rail")).toBe(false);
+  expect(await hashOf()).toBe(before);
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); });
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.hide.has('st:lost') && a.hide.has('g:national:road') && a.names && !a.s.layers.rail")).toBe(true);
   expect(errs).toEqual([]);
 });

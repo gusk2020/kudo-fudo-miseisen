@@ -17,6 +17,8 @@ export interface RoadArgs {
   past?: PastView | null;                                                // looking at the past: draw that year, read-only
   lite?: boolean;                                                        // light drawing for a slow device: solid lines instead of dashes, fewer labels, no ports
   sel?: string | null;
+  hide?: string[];                                                       // legend filters (display only): grade ids, 'road'/'rail' state keys
+  names?: boolean;                                                       // route-name text beside the number signs
 }
 const GRADE_RANK: Record<Grade, number> = { jnr: 4, national: 3, fu: 2, ken: 1, priv: 3 };
 /** Fill colour = physical condition. (Legend text repeats every class: colour is never the only cue.) */
@@ -64,7 +66,7 @@ export class RoadLayer {
       for (const c of Object.values(s.cities)) if (c.airport !== undefined) h = (h * 31 + 7) >>> 0;
     }
     const L = a.layers;
-    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${a.lite ? "L" : ""}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
+    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
   }
   set(a: RoadArgs, zoom: number) { this.last = a; const sg = RoadLayer.signature(a, zoom); if (sg === this.sig) return false; this.sig = sg; this.draw(a, zoom); return true; }
   redraw(zoom: number) { if (this.last) { this.sig = ""; this.set(this.last, zoom); } }
@@ -75,7 +77,7 @@ export class RoadLayer {
     if (sim && w) {
       const lite = !!a.lite, pat = (g: Graphics, pts: Vec[], dash: number[]) => (lite ? line(g, pts) : pattern(g, pts, dash));
       const past = a.past ?? null, year = past?.year ?? 0, showRoads = a.layers.roads, showRail = a.layers.rail ?? true, showAband = a.layers.abandoned ?? true;
-      const best = new Map<string, Grade>();
+      const best = new Map<string, Grade>(), hide = new Set(a.hide ?? []);
       for (const r of Object.values(sim.routes)) {
         const view = past ? routeAtYear(sim, r, year) : null; if (past ? !view!.exists : !r.active) continue;
         const grade = view ? view.grade : r.grade;
@@ -93,6 +95,7 @@ export class RoadLayer {
         if (rank < minRank && !(a.compare && zoom >= 0.35)) { if (!(isPlan && zoom >= 0.35 && a.layers.plans)) continue; }
         if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
         if (isAband && !showAband) continue;
+        if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (past ? "planned" : planned.get(e.id) ?? "planned")))) continue; }
         const pts = edgeShape(w, sim, e); shapes.set(e.id, pts);
         const thin = zoom < 0.35 ? 0.6 : 1, wd = (rail ? RAIL_WIDTH[e.standard] : g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8) * thin, col = rail ? railColour(eff.q) : condColour(eff.q), isOld = e.bypassedBy.length > 0 && !past;
         if (g && e.nick && !past) nickGrade.set(e.id, g);
@@ -156,7 +159,7 @@ export class RoadLayer {
             else sg.poly([0, -12, 12, -2, 7, 11, -7, 11, -12, -2]).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
             sp.t.text = `${GRADE_SHORT[grade]}${number}`; sp.t.style.fontSize = grade === "national" ? 10 : 9; sp.t.style.fill = grade === "national" ? 0xffffff : col;
           }
-          sp.nk.visible = nick; if (nick) sp.nk.text = NICK_SHORT[grade];
+          sp.nk.visible = !!nick && !!a.names; if (nick && a.names) sp.nk.text = NICK_SHORT[grade];
           c.label = view ? view.label : routeLabel(r); count++;
         }
       }
