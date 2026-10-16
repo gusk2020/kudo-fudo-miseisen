@@ -12,7 +12,10 @@ async function bootReal(page: Page) {
   await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(300);
 }
 /** The first era is chosen from the 14 candidates of 1926; index 0/1/2 carry the balanced / road / rail stance. */
-async function pickEra(page: Page, stance: string) { await page.selectOption("#era-first", String({ heisei: 0, shubun: 1, shoka: 2 }[stance as "heisei"])); }
+/** Issue #20: the era and the seats live in their own sheet (⚙ 元号・首都), not in the terrain menu. */
+async function openSetup(page: Page) { if (!(await page.isVisible("#era-first"))) await page.click("#open-setup"); await page.waitForSelector("#era-first"); }
+async function closeSheet(page: Page) { if (await page.isVisible("#sheet-close")) await page.click("#sheet-close"); }
+async function pickEra(page: Page, stance: string) { await openSetup(page); await page.selectOption("#era-first", String({ heisei: 0, shubun: 1, shoka: 2 }[stance as "heisei"]));  await closeSheet(page); }
 async function startReal(page: Page, era = "heisei") {
   await bootReal(page);
   await pickEra(page, era);
@@ -26,9 +29,9 @@ test("real Japan opens by default: finalised, step 6, no map-editing controls, e
   await bootReal(page); expect(await app(page, "a => ['X-SADO','X-AWAJI','X-TSUSHIMA','X-IKI','X-OKI'].every((id) => a.world.cityById.has(id))")).toBe(true);
   const errs = watchErrors(page); await bootReal(page);
   expect(await app(page, "a => a.real")).toBe(true); expect(await app(page, "a => a.s.step")).toBe(6); expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.real")).toBe(true);
-  expect(await page.isVisible("#btn-prev")).toBe(false); expect(await page.isVisible("#era-pick")).toBe(true);
+  expect(await page.isVisible("#btn-prev")).toBe(false); expect(await page.isVisible("#open-setup")).toBe(true); await openSetup(page); expect(await page.isVisible("#era-pick")).toBe(true);
   expect(await page.locator("#era-first option").count()).toBe(14); expect(await page.locator("#era-first").inputValue()).toBe("0");
-  expect(await page.isDisabled("#cer-go")).toBe(true);
+  await closeSheet(page); expect(await page.isDisabled("#cer-go")).toBe(true);
   expect(await app(page, "a => a.world.cities.length")).toBeGreaterThan(40);
   expect(errs).toEqual([]);
 });
@@ -208,11 +211,11 @@ test("限定の地形編集: capital, Alps and Fuji can be set before the first 
   await page.click("#alps-real"); expect(await app(page, "a => !!a.s.ridges.ne && !!a.s.ridges.sw")).toBe(true);
   await page.waitForFunction((h) => (window as any).__kfm.terrain?.hash && (window as any).__kfm.terrain.hash !== h, hash0, { timeout: 60000 });
   await page.click("#edit-undo"); expect(await app(page, "a => a.s.ridges.ne === null")).toBe(true); await page.click("#edit-redo"); expect(await app(page, "a => !!a.s.ridges.ne")).toBe(true);
-  await page.selectOption("#seat-capital", "JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47");   // Okinawa
+  await openSetup(page); await page.selectOption("#seat-capital", "JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47");   // Okinawa
   await page.selectOption("#seat-sub", "HK-SAP"); expect(await app(page, "a => a.s.subCapital")).toBe("HK-SAP");   // Sapporo
   await page.selectOption("#seat-palace", "JP-26"); expect(await app(page, "a => a.s.palace")).toBe("JP-26");
   expect(await page.locator("#seat-capital option").count()).toBe(49); expect(await page.locator("#seat-sub option[value='JP-47']").evaluate((o: HTMLOptionElement) => o.disabled)).toBe(true);   // the capital cannot be chosen again as the sub-capital
-  expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇");
+  await closeSheet(page); expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇");
   expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(0);   // the outline is never touched
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.capital === 'JP-47' && a.s.subCapital === 'HK-SAP' && a.s.palace === 'JP-26' && !!a.s.ridges.ne")).toBe(true); expect(await app(page, "a => a.s.islands")).toBe(true);
@@ -246,7 +249,7 @@ test("政策介入: 「点を使わず決定」が最初から並び、「この
 test("沖縄を首都、札幌を副首都にしても国道1号が成立し、海は船でつながり、保存・再読み込みで残る", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
   await page.click("#terrain-edit-toggle");
-  await page.selectOption("#seat-capital", "JP-47"); await page.selectOption("#seat-sub", "HK-SAP");
+  await openSetup(page); await page.selectOption("#seat-capital", "JP-47"); await page.selectOption("#seat-sub", "HK-SAP"); await closeSheet(page);
   await page.click("#terrain-edit-toggle");   // fold the panel so it does not cover the map
   expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇"); expect(await page.locator("#tool-cer-fudo1").count()).toBe(0);   // no 府道1号 to draw any more
   // fit the seven cities into the part of the screen above the toolbar
@@ -274,18 +277,18 @@ test("皇居: 49府県から選べ、首都と同じ府県でもよく、地図�
   const errs = watchErrors(page); await bootReal(page);
   await page.click("#terrain-edit-toggle");
   expect(await app(page, "a => a.s.palace")).toBeUndefined();   // the default (Tokyo) is not stored until chosen
-  await page.selectOption("#seat-palace", "JP-13"); expect(await app(page, "a => a.s.palace")).toBe("JP-13");   // same prefecture as the capital is fine
+  await openSetup(page); await page.selectOption("#seat-palace", "JP-13"); expect(await app(page, "a => a.s.palace")).toBe("JP-13");   // same prefecture as the capital is fine
   await page.selectOption("#seat-palace", "JP-26"); await page.click("#tool-palace");
   const k = await app(page, "a => a.world.cellPos(a.world.cities.find((c) => c.pref === 'JP-26' && c.kind === 'capital').cell)") as [number, number];
   await page.evaluate((p) => { (window as any).__kfm.placePalace([p[0] + 5, p[1] + 5]); }, k);
   const pp = await app(page, "a => a.s.palacePos") as [number, number]; expect(pp).toBeTruthy();
   expect(await app(page, "a => a.placePalace([0, -9999])")).toBe(false);   // outside its prefecture / on the sea is refused
-  await page.click("#biwa-bigger"); await page.click("#biwa-bigger"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeGreaterThan(1.2);
-  await page.click("#fuji-higher"); expect(await app(page, "a => a.s.features.fuji.height")).toBeGreaterThan(1); await page.click("#fuji-narrower"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeLessThan(1);
+  await closeSheet(page); await page.click("#sel-biwa"); await page.click("#biwa-bigger"); await page.click("#biwa-bigger"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeGreaterThan(1.2);
+  await page.click("#sel-fuji"); await page.click("#fuji-higher"); expect(await app(page, "a => a.s.features.fuji.height")).toBeGreaterThan(1); await page.click("#fuji-narrower"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeLessThan(1);
   await page.click("#edit-undo"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeUndefined(); await page.click("#edit-redo"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeLessThan(1);
   for (let i = 0; i < 12; i++) await page.click("#fuji-wider");   // widening is refused once the mountain would touch the coast: the map stays valid
   expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error' && i.step === 'features').length")).toBe(0); expect(await app(page, "a => a.s.features.fuji.scale ?? 1")).toBeLessThanOrEqual(2);
-  await page.click("#biwa-smaller"); await page.click("#biwa-smaller"); await page.click("#biwa-smaller"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeLessThan(1);
+  await page.click("#sel-biwa"); await page.click("#biwa-smaller"); await page.click("#biwa-smaller"); await page.click("#biwa-smaller"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeLessThan(1);
   await page.waitForFunction(() => !(window as any).__kfm.generating && (window as any).__kfm.terrain, null, { timeout: 60000 });
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.palace === 'JP-26' && !!a.s.palacePos && !!a.s.features.fuji.height && !!a.s.features.biwa.scale")).toBe(true);
@@ -315,7 +318,7 @@ async function touch(page: Page, steps: { type: "touchStart" | "touchMove" | "to
 }
 test("琵琶湖・富士山のタッチ操作: 1本指で移動、2本指で拡大縮小と回転、置けない所では元に戻り、Undo/Redo・保存で残る", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle"); await page.click("#tool-feature");
+  await page.click("#terrain-edit-toggle"); await page.click("#sel-biwa");
   const lake = await app(page, "a => { let sx = 0, sy = 0, n = 0; for (let k = 0; k < a.world.N; k++) if (a.world.t.land[k] === 2) { const p = a.world.cellPos(k); sx += p[0]; sy += p[1]; n++; } return [sx / n, sy / n]; }") as [number, number];
   const box = await page.locator("#app canvas, canvas").first().boundingBox(); const off = { x: box?.x ?? 0, y: box?.y ?? 0 };
   const c = await screenOf(page, lake), P = (dx: number, dy: number, id: number) => ({ x: off.x + c[0] + dx, y: off.y + c[1] + dy, id });
@@ -346,5 +349,50 @@ test("琵琶湖・富士山のタッチ操作: 1本指で移動、2本指で拡�
   await page.waitForFunction(() => !(window as any).__kfm.generating && (window as any).__kfm.terrain, null, { timeout: 60000 });
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.features.biwa.scale === " + sc + " && a.s.features.fuji.auto === true")).toBe(true);
+  expect(errs).toEqual([]);
+});
+
+test("Issue #20: 置けない所で指を離しても止まらない(直前の状態に戻り、地形生成中のまま残らない)。ツールは再度押すと解除。府県は北から南", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  const healthy = async () => { await page.waitForFunction(() => { const a = (window as any).__kfm; return !!a.terrain && !a.generating; }, null, { timeout: 60000 }); expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error').length")).toBe(0); expect(await page.textContent("#status")).not.toContain("不正"); };
+  await page.click("#terrain-edit-toggle"); await page.click("#sel-biwa"); expect(await app(page, "a => a.tool")).toBe("feature");
+  const box = await page.locator("canvas").first().boundingBox(); const off = { x: box?.x ?? 0, y: box?.y ?? 0 };
+  const lakeAt = async () => screenOf(page, await app(page, "a => { let sx = 0, sy = 0, n = 0; for (let k = 0; k < a.world.N; k++) if (a.world.t.land[k] === 2) { const p = a.world.cellPos(k); sx += p[0]; sy += p[1]; n++; } return [sx / n, sy / n]; }") as [number, number]);
+  // 1) one finger: drag the lake far out to sea and let go -> refused, put back, nothing stuck
+  const before = await app(page, "a => JSON.stringify(a.s.features)") as string, undo0 = await app(page, "a => a.store.canUndo");
+  let c = await lakeAt(); await touch(page, [{ type: "touchStart", pts: [{ x: off.x + c[0], y: off.y + c[1], id: 1 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] + 60, y: off.y + c[1] + 60, id: 1 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] + 160, y: off.y + c[1] + 140, id: 1 }] }, { type: "touchEnd", pts: [] }]);
+  expect(await app(page, "a => JSON.stringify(a.s.features)")).toBe(before); expect(await app(page, "a => a.store.canUndo")).toBe(undo0); await healthy();
+  // 2) two fingers: a huge spread and twist ending off the coast -> refused the same way
+  c = await lakeAt(); await touch(page, [{ type: "touchStart", pts: [{ x: off.x + c[0] - 20, y: off.y + c[1], id: 1 }, { x: off.x + c[0] + 20, y: off.y + c[1], id: 2 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] - 120, y: off.y + c[1] - 80, id: 1 }, { x: off.x + c[0] + 120, y: off.y + c[1] + 80, id: 2 }] }, { type: "touchEnd", pts: [] }]);
+  expect(await app(page, "a => JSON.stringify(a.s.features)")).toBe(before); await healthy();
+  // 5) a valid move still works afterwards, and survives a reload
+  c = await lakeAt(); await touch(page, [{ type: "touchStart", pts: [{ x: off.x + c[0], y: off.y + c[1], id: 1 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] - 1, y: off.y + c[1], id: 1 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] - 2, y: off.y + c[1] - 1, id: 1 }] }, { type: "touchEnd", pts: [] }]);
+  const moved = await app(page, "a => JSON.stringify(a.s.features.biwa.pos)") as string; expect(moved).not.toBe("null"); await healthy();
+  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(await app(page, "a => JSON.stringify(a.s.features.biwa.pos)")).toBe(moved); await healthy();
+  await page.click("#terrain-edit-toggle"); await page.click("#sel-biwa");
+  // 3) the rotation buttons, many times in a row on a big lake: each press is either a valid map or refused; never a stuck map
+  for (let i = 0; i < 6; i++) await page.click("#biwa-bigger");
+  for (let i = 0; i < 18; i++) await page.click("#rot-l");
+  await healthy();
+  // 4) a save written in an invalid state (before this fix) is put right by itself
+  await page.evaluate(() => { (window as any).__kfm.store.set((s: any) => { s.features.fuji.pos = [9000, 9000]; }); });
+  expect(await app(page, "a => a.s.features.fuji.pos")).toBeNull(); await healthy();
+  // 6) toggles: pressing the active tool again turns it off and the map pans again; one-shot buttons stay one-shot
+  if (await app(page, "a => a.tool") !== "view") await page.click("#sel-biwa");
+  for (const id of ["#sel-biwa", "#sel-fuji", "#tool-ridge-ne", "#tool-ridge-sw", "#tool-ridge-edit"]) {
+    await page.click(id); expect(await app(page, "a => a.tool"), id).not.toBe("view"); await page.click(id); expect(await app(page, "a => a.tool"), id).toBe("view");
+  }
+  await page.click("#sel-biwa"); await page.click("#sel-fuji"); expect(await app(page, "a => a.tool + ':' + a.selFeature")).toBe("feature:fuji");   // switching target, not off
+  await page.click("#sel-fuji"); expect(await app(page, "a => a.tool")).toBe("view");
+  const lake0 = await app(page, "a => JSON.stringify(a.s.features.biwa)"), cx0 = await app(page, "a => a.r.view.cx") as number; c = await lakeAt();
+  await touch(page, [{ type: "touchStart", pts: [{ x: off.x + c[0], y: off.y + c[1], id: 1 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] + 40, y: off.y + c[1], id: 1 }] }, { type: "touchEnd", pts: [] }]);
+  expect(await app(page, "a => a.r.view.cx")).not.toBe(cx0); expect(await app(page, "a => JSON.stringify(a.s.features.biwa)")).toBe(lake0);   // panned, not edited
+  await page.click("#terrain-edit-toggle"); await page.click("#terrain-edit-toggle"); await page.click("#sel-biwa"); await page.click("#sel-biwa"); expect(await app(page, "a => a.tool")).toBe("view");
+  // 7) the compact terrain menu holds no era / seat controls; the seats are listed north to south (Hokkaido's three first, Okinawa last)
+  expect(await page.locator("#toolbar #era-first, #toolbar #seat-capital").count()).toBe(0);
+  const tbH = await page.evaluate(() => document.getElementById("toolbar")!.getBoundingClientRect().height), vh = await page.evaluate(() => innerHeight); expect(tbH).toBeLessThan(vh * 0.45);
+  await openSetup(page); const ids = await page.locator("#seat-capital option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+  expect(ids).toHaveLength(49); expect(ids.slice(0, 3).every((x) => x.startsWith("HK-"))).toBe(true); expect(ids[ids.length - 1]).toBe("JP-47");
   expect(errs).toEqual([]);
 });

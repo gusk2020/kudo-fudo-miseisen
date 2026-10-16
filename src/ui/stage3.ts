@@ -124,7 +124,7 @@ export function buildPolicy(app: App, body: HTMLElement) {
   else {
     const env = computeEnv(sim), dom = ui3.domain, win = pol.pending;
     body.append(h("div", { class: "issue warn", id: "pol-window" }, `${win.year}年: 介入する分野を選んでください。時間は止まっています。`));
-    const row = h("div", { class: "row" }); for (const d of ["politics", "economy", "opinion"] as Domain[]) row.append(h("button", { id: "dom-" + d, class: dom === d ? "mode on" : "mode", "aria-pressed": dom === d ? "true" : "false", onclick: () => { ui3.domain = d; ui3.spend = {}; app.buildSheet(); } }, `${dom === d ? "✓ " : ""}${DOMAIN_LABEL[d]}`));
+    const row = h("div", { class: "row" }); for (const d of ["politics", "economy", "opinion"] as Domain[]) row.append(h("button", { id: "dom-" + d, class: dom === d ? "mode on" : "mode", "aria-pressed": dom === d ? "true" : "false", onclick: () => { ui3.domain = ui3.domain === d ? null : d; ui3.spend = {}; app.buildSheet(); } }, `${dom === d ? "✓ " : ""}${DOMAIN_LABEL[d]}`));
     row.append(h("button", { id: "pol-none", class: "mode none", onclick: () => { skipWindow(sim); ui3.spend = {}; ui3.domain = null; app.toast("点を使わず決定しました。持ち点は繰り越されます"); app.afterPolicy(); } }, "点を使わず決定"));
     body.append(row);
     if (dom) {
