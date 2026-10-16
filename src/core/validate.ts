@@ -1,6 +1,6 @@
 import { realToWorld, worldParts } from "./body";
-import { axisFrame, featureInside, featuresOverlap, hokkaidoOk, inKHRange, islandsOverlap, kyushuOk, tOf, type AxisFrame } from "./constraints";
-import { BODY_DEFS, ISLAND_LABEL, JAPAN } from "./data";
+import { axisFrame, featureHost, featuresOverlap, hokkaidoOk, inKHRange, DEFAULT_MIN_SCALE, SMALL_LAND_KM2, islandsOverlap, kyushuOk, tOf, type AxisFrame } from "./constraints";
+import { BODY_DEFS, EXTRA, EXTRA_IDS, ISLAND_LABEL, JAPAN } from "./data";
 import { featureWorldPos } from "./state";
 import { centroid, pointInPolygon, polyArea, principalAxis, rot as rotv, selfIntersections } from "./geom";
 import type { IslandId, Issue, ProjectState, StepId, Vec } from "./types";
@@ -17,6 +17,14 @@ export const featureShape = (which: "biwa" | "fuji"): Vec[] => (which === "biwa"
 export function featureWorld(s: ProjectState, which: "biwa" | "fuji"): Vec[] {
   const pos = featureWorldPos(s, which), a = s.features[which].rot, k = s.features[which].scale ?? 1;
   return featureShape(which).map((q) => { const r = rotv([q[0] * k, q[1] * k], a); return [r[0] + pos[0], r[1] + pos[1]] as Vec; });
+}
+
+/** Issue #18: Fuji's summit factor. A manual height always wins; with the `auto` link (set when the size is changed by touch) the elevation follows the size at HALF the proportion, capped at 3x (size 5x). The manual height range is separate and unchanged. */
+export const FUJI_AUTO_HEIGHT_MAX = 3;   // = 1 + (5-1)/2: the body's 5x limit gives 3x. NOT the manual height range (FEATURE_LIMITS.height, 0.5-1.3x), which is a separate hand-set value
+export function fujiHeightFactor(f: { scale?: number; height?: number; auto?: true }): number {
+  if (f.height !== undefined) return f.height;
+  if (!f.auto) return 1;
+  return Math.max(0.5, Math.min(FUJI_AUTO_HEIGHT_MAX, 1 + ((f.scale ?? 1) - 1) / 2));
 }
 
 export interface Derived { parts: Record<IslandId, Vec[][]>; frame: AxisFrame; biwa: Vec[]; fuji: Vec[] }
@@ -73,11 +81,14 @@ export function validate(s: ProjectState): Issue[] {
   if (!inKHRange(kc, hc, centroid(sk))) add("islands", "error", "shikoku.range", "四国の中心が北海道〜九州の軸範囲外です");
   for (let i = 0; i < ISLAND_IDS.length; i++) for (let j = i + 1; j < ISLAND_IDS.length; j++)
     if (islandsOverlap(d.parts[ISLAND_IDS[i]], d.parts[ISLAND_IDS[j]])) add("islands", "error", `overlap.${ISLAND_IDS[i]}.${ISLAND_IDS[j]}`, `${ISLAND_LABEL[ISLAND_IDS[i]]}と${ISLAND_LABEL[ISLAND_IDS[j]]}が重なっています`);
+  const lands: Vec[][] = s.real ? [] : [d.parts.honshu[0]]; if (s.real) for (const id of ISLAND_IDS) lands.push(...d.parts[id]);
+  if (s.real && s.islands) for (const id of EXTRA_IDS) lands.push(...EXTRA.islands[id].parts);
   for (const which of ["biwa", "fuji"] as const) {
-    const nm = which === "biwa" ? "琵琶湖" : "富士山";
-    if (!featureInside(d.parts.honshu[0], d[which])) add("features", "error", `${which}.coast`, `${nm}が本州の内側に収まっていないか、海岸線に近すぎます(面積1.2倍で判定)`);
-    if (!inKHRange(kc, hc, centroid(d[which]))) add("features", "error", `${which}.range`, `${nm}が北海道〜九州の軸範囲外です`);
+    const nm = which === "biwa" ? "琵琶湖" : "富士山", host = featureHost(lands, d[which]);
+    if (!host) add("features", "error", `${which}.coast`, `${nm}の中心が陸地にないか、同じ陸地に収まっていないか、海岸線に近すぎます(面積1.2倍で判定)`);
+    else if (s.real && (s.features[which].scale ?? 1) < DEFAULT_MIN_SCALE && Math.abs(polyArea(host)) > SMALL_LAND_KM2) add("features", "error", `${which}.minscale`, `${nm}を0.5倍より小さくできるのは沖縄など小さな島だけです`);
   }
+  if (!s.real) for (const which of ["biwa", "fuji"] as const) if (!inKHRange(kc, hc, centroid(d[which]))) add("features", "error", `${which}.range`, `${which === "biwa" ? "琵琶湖" : "富士山"}が北海道〜九州の軸範囲外です`);
   if (featuresOverlap(d.biwa, d.fuji)) add("features", "error", "features.overlap", "琵琶湖と富士山が重なっています");
   if (!s.real) for (const k of ["sw", "ne"] as const) {
     const r = s.ridges[k], nm = k === "sw" ? "南西側の山脈" : "北東側の山脈";

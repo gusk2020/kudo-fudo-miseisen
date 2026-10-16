@@ -3,10 +3,11 @@
  * Every change that matters appends an event with its cause and, for roads, an entry in the edge's own history.
  * All demand, population and budget figures are SYNTHETIC (a toy economy), not statistics.
  */
+import { cityBoost, settlementBoost } from "./sites";
 import { dist } from "../core/geom";
 import { JAPAN } from "../core/data";
 import { buildIndex, checkIntegrity, edgePoints, layPath, newEdgeDefaults, newId, pushHist, setEdgeState } from "./network";
-import { analyze, capacityOf, passable, strandedWithout, zeroDemand, type Analysis } from "./demand";
+import { analyze, analyzeGen, capacityOf, passable, strandedWithout, zeroDemand, type Analysis } from "./demand";
 import { ERAS, composeDials, eraKeyOf, type EraKey } from "./eras";
 import { applyYearEvents } from "./events";
 import { openStraits } from "./straits";
@@ -14,6 +15,7 @@ import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./r
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
 import { techAt, TECH_K } from "./tech";
+import { reviewLakeFerries } from "./ferry";
 import { finishCrossing, isCrossingProject, planCrossings } from "./crossing";
 import { homeCity, subCity, tokyoCity } from "./ceremony";
 import { prefOfSeat } from "../core/seat";
@@ -138,13 +140,13 @@ const edgeName = (sim: SimState, e: SimEdge) => `${sim.nodes[e.a]?.name ?? "地�
 function* yearlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); }
-  const an = analyze(sim, w); yield;
+  const an = yield* analyzeGen(sim, w); yield;
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
   updatePopulation(sim, w, an, y); updateRegionShares(sim, w); yield;
   evaluateEdges(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
-  if (sim.crossings) planCrossings(sim, w, y);
+  if (sim.crossings) { planCrossings(sim, w, y); reviewLakeFerries(sim, w, y); }
   refreshNick(sim);
   if (sim.stage3) compactSim(sim, y);
   if (y !== sim.startYear && y % (sim.stage3 ? SNAP_EVERY_YEARS : 10) === 0) takeSnapshot(sim);
@@ -172,9 +174,9 @@ function compactSim(sim: SimState, y: number) {
 export const LOCAL_RAIL_KEEP = 0.007, LOCAL_ROAD_KEEP = 0.005;   // yearly growth a village gains from a railway / a proper road beside it
 function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   w.cities.forEach((c, i) => {
-    const st = sim.cities[c.id], before = st.pop, g = popRate(y, st.pop, sim.stage3 === true && y <= 2026) + 0.012 * (an.acc[i] - 0.4) + (rand(sim) - 0.5) * 0.008;
+    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), before = st.pop, g = popRate(y, st.pop, sim.stage3 === true && y <= 2026) + 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3 + (rand(sim) - 0.5) * 0.008;
     st.pop = Math.max(2000, Math.round(st.pop * (1 + g)));
-    const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + 0.9 * an.acc[i]); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
+    const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + 0.9 * an.acc[i] + 0.5 * bo.industry); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
     st.lowAccessYears = an.acc[i] < 0.02 ? st.lowAccessYears + 1 : 0; const base = c.pop0;
     if (sim.stage3 && st.airport === undefined && ((st.pop > 400000 * (1 - 0.25 * sim.dials.airBias) && y >= 1958 - Math.round(8 * sim.dials.airBias)) || (st.pop > 200000 * (1 - 0.25 * sim.dials.airBias) && y >= 1972 - Math.round(8 * sim.dials.airBias)) || (st.pop > 100000 * (1 - 0.25 * sim.dials.airBias) && y >= 1988 - Math.round(8 * sim.dials.airBias)))) { st.airport = y; ev(sim, "air", `${c.name}に空港が開港`, `人口${Math.round(st.pop / 1000)}千人に達し、航空需要が見込まれた`, { city: c.id }); }
     if (before < 2 * base && st.pop >= 2 * base) ev(sim, "city", `${c.name}の人口が1950年の2倍に`, an.acc[i] > 0.1 ? "道路網で結ばれ産業が集積" : "全国的な人口増", { city: c.id });
@@ -187,7 +189,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   const nearSet = (cell: number, s: Set<number>) => { if (!s.size) return false; const i = cell % w.nx, j = (cell / w.nx) | 0; for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) if (s.has((j + dj) * w.nx + i + di)) return true; return false; };
   for (const v of Object.values(sim.settlements)) {
     if (v.gone) continue; const ok = an.reach.get(v.id) !== false || !nodeCells.has(v.cell);   // a settlement with no road node yet is not 'cut off' v.isolatedYears = ok ? 0 : v.isolatedYears + 1;
-    let g = y < 1960 ? 0.004 : y < 1975 ? -0.006 : y < 2000 ? -0.012 : -0.028; g += (rand(sim) - 0.5) * 0.01; if (!ok) g -= 0.03; if (sim.stage3 && ok) g += (nearSet(v.cell, railCells) ? LOCAL_RAIL_KEEP : 0) + (nearSet(v.cell, goodCells) ? LOCAL_ROAD_KEEP : 0);
+    let g = y < 1960 ? 0.004 : y < 1975 ? -0.006 : y < 2000 ? -0.012 : -0.028; g += (rand(sim) - 0.5) * 0.01 + 0.01 * settlementBoost(sim, w, v.cell).tourism; if (!ok) g -= 0.03; if (sim.stage3 && ok) g += (nearSet(v.cell, railCells) ? LOCAL_RAIL_KEEP : 0) + (nearSet(v.cell, goodCells) ? LOCAL_ROAD_KEEP : 0);
     v.pop = Math.round(v.pop * (1 + g));
     if (v.pop < 120) { v.gone = true; v.pop = 0; ev(sim, "village", `${v.name}が無人化(廃村)`, ok ? "長期の人口減少" : "道路が途絶え孤立", { settlement: v.id }); }
   }
@@ -213,7 +215,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
 }
 export function updateRegionShares(sim: SimState, w: World) {
   const econ: Record<string, number> = {}; let tot = 0;
-  for (const c of w.cities) { const r = c.pref ?? "JP-13", v = sim.cities[c.id].pop * sim.cities[c.id].industry; econ[r] = (econ[r] ?? 0) + v; tot += v; }
+  for (const c of w.cities) { const r = c.pref ?? "JP-13", bo = cityBoost(sim, w, c.id), v = sim.cities[c.id].pop * (1 + bo.commerce) * sim.cities[c.id].industry * (1 + bo.manufacturing); econ[r] = (econ[r] ?? 0) + v; tot += v; }
   for (const v of Object.values(sim.settlements)) { const r = w.prefOf(v.cell) ?? "JP-13", e = v.pop * 0.15; econ[r] = (econ[r] ?? 0) + e; tot += e; }
   const n = w.t.prefOrder.length, share: Record<string, number> = {};
   for (const r of w.t.prefOrder) share[r] = EQUAL_SHARE / n + (1 - EQUAL_SHARE) * ((econ[r] ?? 0) / (tot || 1));

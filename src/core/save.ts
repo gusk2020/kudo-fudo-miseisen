@@ -24,9 +24,9 @@ function cleanBody(b: any, id: (typeof ISLAND_IDS)[number], problems: string[]):
   return { ops, place };
 }
 /** Allowed range of the size controls (Lake Biwa / Mt. Fuji): wide enough to see, narrow enough to keep the lake off the coast and the summit above sea level. */
-export const FEATURE_LIMITS = { scale: [0.5, 2] as [number, number], height: [0.5, 1.3] as [number, number] };
+export const FEATURE_LIMITS = { scale: [0.2, 5] as [number, number], height: [0.5, 1.3] as [number, number] };
 function cleanFeature(f: any): FeatureState {
-  return { pos: okVec(f?.pos) ? f.pos : null, rot: fin(f?.rot) ? f.rot : 0, ...(fin(f?.scale) && f.scale !== 1 ? { scale: Math.max(FEATURE_LIMITS.scale[0], Math.min(FEATURE_LIMITS.scale[1], f.scale)) } : {}), ...(fin(f?.height) && f.height !== 1 ? { height: Math.max(FEATURE_LIMITS.height[0], Math.min(FEATURE_LIMITS.height[1], f.height)) } : {}) };
+  return { pos: okVec(f?.pos) ? f.pos : null, rot: fin(f?.rot) ? f.rot : 0, ...(fin(f?.scale) && f.scale !== 1 ? { scale: Math.max(FEATURE_LIMITS.scale[0], Math.min(FEATURE_LIMITS.scale[1], f.scale)) } : {}), ...(f?.auto === true ? { auto: true as const } : {}), ...(fin(f?.height) && f.height !== 1 ? { height: Math.max(FEATURE_LIMITS.height[0], Math.min(FEATURE_LIMITS.height[1], f.height)) } : {}) };
 }
 function cleanLine(l: any, problems: string[], name: string): Vec[] | null {
   if (l == null) return null;

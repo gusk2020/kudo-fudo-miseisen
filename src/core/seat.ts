@@ -11,6 +11,11 @@ import { JAPAN } from "./data";
 import type { ProjectState, Vec } from "./types";
 
 export const PREF_IDS: string[] = JAPAN.prefectures.map((p) => p.id);
+/** Issue #20: the same 49 ids in geographic order, north to south (by the latitude of each 県庁所在地): what every prefecture picker lists. */
+export const PREF_IDS_NS: string[] = [...PREF_IDS].sort((a, b) => {
+  const y = (id: string) => JAPAN.cities.find((c) => c.pref === id && c.kind === "capital")?.pos[1] ?? -1e9;
+  return y(b) - y(a) || (a < b ? -1 : 1);
+});
 export const prefName = (id: string): string => JAPAN.prefectures.find((p) => p.id === id)?.name ?? id;
 /** A prefecture id from a stored value: a prefecture id as is, a legacy city id ("C-JP-27") by its prefecture, anything else -> null. */
 export function prefOfSeat(v: unknown): string | null {

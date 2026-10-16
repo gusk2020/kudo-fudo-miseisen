@@ -8,7 +8,10 @@
  * Everything here is a pure function of the world plus the sim's own edges: no place names, no coordinates.
  */
 import { dist } from "../core/geom";
-import { buildIndex, newEdgeDefaults, newId, nodeAtCell, pushHist } from "./network";
+import { pathfind } from "./world";
+import type { Vec } from "../core/types";
+import { capacityOf } from "./demand";
+import { buildIndex, layPath, newEdgeDefaults, newId, nodeAtCell, pushHist, setEdgeState } from "./network";
 import { ev } from "./engine";
 import { modeOf, type Mode, type SimEdge, type SimState } from "./types";
 import type { World, WCity } from "./world";
@@ -69,11 +72,15 @@ const nodeCell = (sim: SimState, cell: number): string | null => { for (const n 
 /** Start a ferry service between two ports. Not designated as a numbered route; it carries whatever route is laid across it. */
 export function makeFerry(sim: SimState, w: World, ca: WCity, cb: WCity, mode: Mode = "road", reason = "島・半島の間を結ぶ航路(1950年の既存の連絡)"): SimEdge {
   const old = findFerry(sim, w, ca, cb, mode); if (old) return old;
+  return makeFerryAt(sim, w, ca, cb, mode, reason, `ferry:${ca.name.replace(/市$/, "")}〜${cb.name.replace(/市$/, "")}${mode === "rail" ? "鉄道連絡船" : "フェリー"}`);
+}
+/** The same for any two end points that have a cell and a position (a lakeshore port is not a city). */
+export function makeFerryAt(sim: SimState, w: World, ca: { cell: number; pos: Vec }, cb: { cell: number; pos: Vec }, mode: Mode, reason: string, facilityName: string): SimEdge {
   const idx = buildIndex(sim, mode), a = nodeAtCell(sim, w, idx, ca.cell, "junction"), b = nodeAtCell(sim, w, idx, cb.cell, "junction"), id = newId(sim, "edge");
   const km = Math.round(dist(ca.pos, cb.pos) * 10) / 10, rail = mode === "rail";
   const e: SimEdge = {
     ...newEdgeDefaults(), id, a, b, cells: [ca.cell, cb.cell], lengthKm: km, surface: "paved", quality: 90, built: 1, open: true, state: "open", standard: "rural", maxGradePct: 0, builtMonth: sim.month,
-    region: w.prefOf(ca.cell) ?? "JP-13", facility: "ferry", facilityName: `ferry:${ca.name.replace(/市$/, "")}〜${cb.name.replace(/市$/, "")}${rail ? "鉄道連絡船" : "フェリー"}`, ...(rail ? { mode: "rail" as const, op: "jnr" } : {}),
+    region: w.prefOf(ca.cell) ?? "JP-13", facility: "ferry", facilityName, ...(rail ? { mode: "rail" as const, op: "jnr" } : {}),
   };
   sim.edges[id] = e; pushHist(sim, e, `${reason}`); return e;
 }
@@ -105,4 +112,69 @@ export function seedFerries(sim: SimState, w: World): number {
     if (na && nb && railNode.has(na) && railNode.has(nb) && !fixedLink(sim, w, c.la, c.lb, "rail")) { makeFerry(sim, w, c.a, c.b, "rail", "鉄道連絡船(1950年の既存の連絡)"); n++; }
   }
   ev(sim, "seed", `1950年の航路: フェリー・連絡船${n}本(島や海を隔てた地域をまず船でつなぐ)`, "初期条件。橋やトンネルを1950年に強制せず、まず航路で結ぶ(合成。実在の航路表ではない)", {}); return n;
+}
+
+// ---------------------------------------------------------------- Issue #18: Lake Biwa ferries ----------
+/**
+ * A lake is NOT the sea: its two shores are one land mass, so none of the strait logic (bridges, tunnels, `lm`) applies. A lake ferry is an ordinary ferry edge between two PORTS on
+ * the lakeshore, named 【湖】 so it is told apart. Ports are shore cells (not cities); each is joined to the road network (an existing road if one passes within 20 km, else a rural
+ * access road is laid), so the ferry connects to the roads like any other link. Everything is derived from the lake as it stands on the map: a lake moved or resized before the
+ * game began gets its ports and routes where it now is, nothing where it used to be.
+ * Era / demand / cost: the long route (along the lake) runs from 1950; a second, cross route is opened by the yearly review only when the long one is busy, the era has the
+ * appetite for roads, and the port works cost under 2% of the year's budget. An unused service is closed by the ordinary edge review.
+ */
+export const LAKE_TAG = "【湖】", LAKE_MIN_CELLS = 4, LAKE_CROSS_CELLS = 30, LAKE_MIN_KM = 12, LAKE_PORT_COST_PER_KM = 0.004, LAKE_SNAP_KM = 20, LAKE_CROSS_LOAD = 0.5, LAKE_CROSS_YEAR = 1965;
+export const isLakeFerry = (e: SimEdge) => e.facility === "ferry" && (e.facilityName ?? "").startsWith(`ferry:${LAKE_TAG}`);
+export interface LakeCrossing { id: "long" | "cross"; portA: number; portB: number; km: number; nameA: string; nameB: string }
+/** The ferry routes the lake allows (pure function of the map). `long` follows the lake's long axis; `cross` (big lakes only) its short one. */
+export function lakeCrossings(w: World): LakeCrossing[] {
+  const lake: number[] = []; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 2) lake.push(k); if (lake.length < LAKE_MIN_CELLS) return [];
+  const N8: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]], shore: number[] = [], seen = new Set<number>();
+  for (const k of lake) { const i = k % w.nx, j = (k / w.nx) | 0; for (const [di, dj] of N8) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= w.nx || b >= w.ny) continue; const q = b * w.nx + a; if (w.t.land[q] === 1 && w.lm[q] > 0 && !seen.has(q)) { seen.add(q); shore.push(q); } } }
+  if (shore.length < 2) return [];
+  const pts = lake.map((k) => w.cellPos(k)), mx = pts.reduce((s, p) => s + p[0], 0) / pts.length, my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  let sxx = 0, syy = 0, sxy = 0; for (const p of pts) { sxx += (p[0] - mx) ** 2; syy += (p[1] - my) ** 2; sxy += (p[0] - mx) * (p[1] - my); }
+  const ang = 0.5 * Math.atan2(2 * sxy, sxx - syy), u: Vec = [Math.cos(ang), Math.sin(ang)], n: Vec = [-u[1], u[0]];
+  const town = (k: number) => { let best = w.cities[0], bd = Infinity; for (const c of w.cities) { const d = dist(c.pos, w.cellPos(k)); if (d < bd) { bd = d; best = c; } } return best.name.replace(/市$/, ""); };
+  const pick = (axis: Vec, near: Vec | null): LakeCrossing | null => {
+    const proj = (k: number, ax: Vec) => { const p = w.cellPos(k); return (p[0] - mx) * ax[0] + (p[1] - my) * ax[1]; }, other: Vec = [-axis[1], axis[0]];
+    const cand = near ? shore.filter((k) => Math.abs(proj(k, other)) < w.cell * 3) : shore;
+    if (cand.length < 2) return null; let lo = cand[0], hi = cand[0]; for (const k of cand) { if (proj(k, axis) < proj(lo, axis)) lo = k; if (proj(k, axis) > proj(hi, axis)) hi = k; }
+    if (w.lm[lo] !== w.lm[hi]) return null; const km = Math.round(dist(w.cellPos(lo), w.cellPos(hi)) * 10) / 10; if (km < LAKE_MIN_KM) return null;
+    const na = town(lo), nb = town(hi); return { id: near ? "cross" : "long", portA: lo, portB: hi, km, nameA: na, nameB: nb === na ? `${nb}対岸` : nb };
+  };
+  const out: LakeCrossing[] = [], l = pick(u, null); if (l) out.push(l);
+  if (lake.length >= LAKE_CROSS_CELLS) { const c = pick(n, [0, 0]); if (c && (!l || c.portA !== l.portA || c.portB !== l.portB)) out.push(c); }
+  return out;
+}
+/** What the port works cost (budget units, a rough proportional figure). */
+export const lakePortCost = (c: LakeCrossing) => Math.round((0.05 + LAKE_PORT_COST_PER_KM * c.km) * 1000) / 1000;
+export const lakeFerryName = (c: LakeCrossing) => `ferry:${LAKE_TAG}${c.nameA}港〜${c.nameB}港湖上フェリー${c.id === "cross" ? "(横断)" : ""}`;
+export const lakeEdge = (sim: SimState, c: LakeCrossing): SimEdge | null => Object.values(sim.edges).find((e) => isLakeFerry(e) && e.facilityName === lakeFerryName(c)) ?? null;
+/** A port is useful only if roads reach it: share a road that already passes within LAKE_SNAP_KM, else lay a rural access road to the nearest road (or city). Returns the cell the port ends up at. */
+function connectPort(sim: SimState, w: World, cell: number): number {
+  const idx = buildIndex(sim, "road"), R = Math.ceil(LAKE_SNAP_KM / w.cell), ci = cell % w.nx, cj = (cell / w.nx) | 0, lay = (to: number, margin: number) => { const path = pathfind(w, cell, to, { margin }); if (path && path.length > 1) layPath(sim, w, path, { open: true, surface: "unpaved", quality: 40, built: 1, month: sim.month, standard: "rural" }); };
+  if (idx.nodeByCell.has(cell)) return cell;
+  let best = -1, bd = Infinity; for (const q of idx.nodeByCell.keys()) { if (w.lm[q] !== w.lm[cell]) continue; const d = Math.hypot((q % w.nx) - ci, ((q / w.nx) | 0) - cj); if (d < bd) { bd = d; best = q; } }
+  if (best >= 0) lay(best, bd <= R ? 6 : 24);   // an existing road node within reach, else the nearest one (a longer access road)
+  return cell;
+}
+function openLake(sim: SimState, w: World, c: LakeCrossing, reason: string): SimEdge {
+  const pa = connectPort(sim, w, c.portA), pb = connectPort(sim, w, c.portB);
+  return makeFerryAt(sim, w, { cell: pa, pos: w.cellPos(pa) }, { cell: pb, pos: w.cellPos(pb) }, "road", reason, lakeFerryName(c));
+}
+/** The lake ferry a new game starts with: the long route (1950, like the sea ferries). */
+export function seedLakeFerries(sim: SimState, w: World): number {
+  const c = lakeCrossings(w).find((x) => x.id === "long"); if (!c || lakeEdge(sim, c)) return 0;
+  const e = openLake(sim, w, c, `湖上フェリー(1950年の既存の連絡。湖岸の港${c.nameA}港・${c.nameB}港、港の整備費${lakePortCost(c)})`);
+  ev(sim, "seed", `1950年の湖上フェリー: ${c.nameA}港〜${c.nameB}港(${e.lengthKm}km)`, "湖は海ではない。同じ陸地の湖岸の港を結ぶ(合成。実在の航路表ではない)", { edge: e.id }); return 1;
+}
+/** Yearly: the cross route opens when the long one is busy, the era builds roads, and the port works are affordable. */
+export function reviewLakeFerries(sim: SimState, w: World, y: number): number {
+  const cs = lakeCrossings(w), long = cs.find((x) => x.id === "long"), cross = cs.find((x) => x.id === "cross"); if (!long || !cross || lakeEdge(sim, cross)) return 0;
+  const le = lakeEdge(sim, long); if (!le || le.state !== "open") return 0;
+  const load = (le.through + le.local + 0.4 * le.freight) / capacityOf(le), cost = lakePortCost(cross);
+  if (y < LAKE_CROSS_YEAR || load < LAKE_CROSS_LOAD || sim.dials.hwyBuild < 0.3 || sim.macro.budgetBu * 0.02 < cost) return 0;
+  const e = openLake(sim, w, cross, `湖上フェリーの新設(長い航路の混雑${Math.round(load * 100)}%。港の整備費${cost})`);
+  ev(sim, "ferry", `湖上フェリー新設: ${cross.nameA}港〜${cross.nameB}港`, `${y}年、湖の航路が混み、港の整備費${cost}を負担できた`, { edge: e.id }); return 1;
 }

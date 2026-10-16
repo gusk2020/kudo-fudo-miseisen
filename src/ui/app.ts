@@ -2,7 +2,7 @@ import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL, JAPAN, lonLatToReal } from "../core/data";
 import { FEATURE_LIMITS } from "../core/save";
-import { PREF_IDS, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
+import { PREF_IDS, PREF_IDS_NS, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, getRaw, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
@@ -12,7 +12,7 @@ import { TerrainClient } from "../core/terrainClient";
 import { GeoMap } from "../core/geoid";
 import { STEPS, STEP_LABELS, type IslandId, type Issue, type Op, type Place, type StepId, type Vec } from "../core/types";
 import { clampOp } from "../core/warp";
-import { derive, errorsFor, validate } from "../core/validate";
+import { derive, errorsFor, featureWorld, fujiHeightFactor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
 import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
@@ -28,6 +28,7 @@ import { edgePoints } from "../sim/network";
 import { buildWorld, type World } from "../sim/world";
 import { eraKeyOf, type EraKey } from "../sim/eras";
 import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraPicker } from "./stage3";
+import { CAND_1945 } from "../sim/kaigen";
 
 type Tool = "view" | "palace" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -43,7 +44,7 @@ const stateKey = (s: Store["state"]) => JSON.stringify([s.seed, s.bodies, s.feat
 
 export class App {
   store = new Store(); r!: Renderer;
-  terrain: TerrainResult | null = null; terrainKey = ""; generating = false; genProgress = 0;
+  terrain: TerrainResult | null = null; terrainKey = ""; generating = false; genProgress = 0; private genTok = 0;
   issues: Issue[] = []; tool: Tool = "view"; activeBody: IslandId = "honshu"; selFeature: "biwa" | "fuji" = "biwa";
   brushKm = 160; pending: Pending | null = null; sheet: string | null = null;
   client = new TerrainClient(new URL(import.meta.env.BASE_URL + "japan-dem.bin", document.baseURI).href, () => new Worker(new URL("../core/terrain.worker.ts", import.meta.url), { type: "module" }));
@@ -100,13 +101,26 @@ export class App {
   // ---------- change pipeline ----------
   onChange(initial = false) {
     this.issues = validate(this.s);
+    if (this.real && !this.sim && !this.pendingSim && this.repairFeatures()) return;   // a map saved in an invalid state (Issue #20) is put right before anything else
     const key = stateKey(this.s);
     if (key !== this.terrainKey) { this.terrain = null; this.terrainKey = ""; if (this.generating) { this.client.cancel(); this.generating = false; } }
     if ((this.s.step >= 4 || this.pendingSim) && !this.terrain && !this.generating) { clearTimeout(this.genTimer); this.genTimer = setTimeout(() => this.generate(), initial ? 0 : 250); }
     this.render(); this.buildUI();
     clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.persist(), 400);
   }
-  render() { this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+  /**
+   * Issue #20: a save written while a lake or a mountain stood where it cannot (before the edit guard existed) would wait for its terrain for ever. Only the offending
+   * feature is put back where it really is (its position, rotation and size); everything else in the save stays as it was. Returns true when it changed something.
+   */
+  repairFeatures(): boolean {
+    const errs = this.issues.filter((i) => i.severity === "error" && i.step === "features" && /^(biwa|fuji|features)\./.test(i.code)); if (!errs.length) return false;
+    const which = new Set<"biwa" | "fuji">(); for (const e of errs) { if (e.code.startsWith("biwa")) which.add("biwa"); else if (e.code.startsWith("fuji")) which.add("fuji"); else { which.add("biwa"); which.add("fuji"); } }
+    const fix = (s: Store["state"], set: Set<"biwa" | "fuji">) => { for (const f of set) s.features[f] = { pos: null, rot: 0 }; };
+    const cand = JSON.parse(JSON.stringify(this.s)) as Store["state"]; fix(cand, which);
+    if (validate(cand).some((i) => i.severity === "error" && i.step === "features" && /^(biwa|fuji|features)\./.test(i.code))) which.add("biwa").add("fuji");
+    this.store.set((s) => fix(s, which)); this.toast(`置けない位置にあった${[...which].map((f) => (f === "biwa" ? "琵琶湖" : "富士山")).join("・")}を元の位置に戻しました`); return true;
+  }
+  render() { this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -140,13 +154,13 @@ export class App {
   }
   async generate() {
     if (errorsFor(this.issues, "honshu").length || errorsFor(this.issues, "islands").length || errorsFor(this.issues, "features").length) { this.status(); return; }
-    const key = stateKey(this.s); this.generating = true; this.genProgress = 0; this.status();
+    const key = stateKey(this.s), tok = ++this.genTok; this.generating = true; this.genProgress = 0; this.status();
     try {
       const res = await this.client.generate(JSON.parse(JSON.stringify(this.s)), (p) => { this.genProgress = p; this.status(); });
       if (stateKey(this.s) !== key) return;
       this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.attachPendingSim(); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.restoreCer();
     } catch (e: any) { if (String(e?.message) !== "cancelled") this.toast("地形生成に失敗: " + e?.message); }
-    this.generating = false; this.render(); this.buildUI();
+    finally { if (this.genTok === tok) { this.generating = false; this.render(); this.buildUI(); } }   // the busy state is always cleared, whatever happened
   }
   status() {
     const el = $("status"); el.replaceChildren();
@@ -190,7 +204,41 @@ export class App {
       move: (w: Vec, sc: Vec) => this.toolMove(w, sc),
       end: () => this.toolEnd(),
       cancel: () => { this.grab = null; this.pending = null; this.render(); },
+      multiBegin: (a: Vec, b: Vec) => this.featureMultiBegin(a, b),
+      multiMove: (a: Vec, b: Vec) => this.featureMultiMove(a, b),
+      multiEnd: (c: boolean) => this.featureMultiEnd(c),
     };
+  }
+  // ---- Issue #18: Lake Biwa / Mt. Fuji by touch -- one finger moves, two fingers scale and twist ----
+  private fpose: { which: "biwa" | "fuji"; a0: Vec; b0: Vec; pos0: Vec; rot0: number; k0: number; cur: { pos: Vec; rot: number; scale: number } | null } | null = null;
+  /** Would this pose be a valid map (anchor on land, whole outline on the same landmass, off the coast and off the other feature)? */
+  featureOk(which: "biwa" | "fuji", pose: { pos: Vec; rot: number; scale: number }): boolean {
+    const cand = JSON.parse(JSON.stringify(this.s)) as Store["state"]; Object.assign(cand.features[which], { pos: pose.pos, rot: pose.rot }); if (pose.scale === 1) delete cand.features[which].scale; else cand.features[which].scale = pose.scale;
+    return !validate(cand).some((i) => i.severity === "error" && i.step === "features");
+  }
+  private featureMultiBegin(a: Vec, b: Vec): boolean {
+    if (this.tool !== "feature" || !this.editable()) return false;
+    const which = this.selFeature, f = this.s.features[which]; this.grab = null; this.pending = null;
+    this.fpose = { which, a0: a, b0: b, pos0: featureWorldPos(this.s, which), rot0: f.rot, k0: f.scale ?? 1, cur: null }; return true;
+  }
+  private featureMultiMove(a: Vec, b: Vec) {
+    const g = this.fpose; if (!g) return;
+    const d0 = Math.hypot(g.b0[0] - g.a0[0], g.b0[1] - g.a0[1]) || 1, d1 = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const th = Math.atan2(b[1] - a[1], b[0] - a[0]) - Math.atan2(g.b0[1] - g.a0[1], g.b0[0] - g.a0[0]);
+    const m0: Vec = [(g.a0[0] + g.b0[0]) / 2, (g.a0[1] + g.b0[1]) / 2], m1: Vec = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const lim = FEATURE_LIMITS.scale, k = Math.round(Math.max(lim[0], Math.min(lim[1], g.k0 * d1 / d0)) * 100) / 100;
+    const pose = { pos: [g.pos0[0] + m1[0] - m0[0], g.pos0[1] + m1[1] - m0[1]] as Vec, rot: g.rot0 + th, scale: k };
+    g.cur = pose; this.pending = { feature: { which: g.which, ...pose, bad: !this.featureOk(g.which, pose) } }; this.render();
+  }
+  private featureMultiEnd(cancelled: boolean) {
+    const g = this.fpose; this.fpose = null; this.pending = null; if (!g || !g.cur || cancelled) { this.render(); return; }
+    this.applyFeaturePose(g.which, g.cur);
+  }
+  /** Commit a pose (one Undo step) if it is a valid map; otherwise say why and change nothing. Fuji's summit follows its size (half the proportion) unless a height was set by hand. */
+  applyFeaturePose(which: "biwa" | "fuji", pose: { pos: Vec; rot: number; scale: number }): boolean {
+    if (!this.featureOk(which, pose)) { this.toast(`${which === "biwa" ? "琵琶湖" : "富士山"}をそこには置けません(海・他の陸地・海岸に近すぎます)`); this.render(); return false; }
+    const ok = this.commitEdit((s) => { const f = s.features[which]; f.pos = pose.pos; f.rot = pose.rot; if (pose.scale === 1) delete f.scale; else f.scale = pose.scale; if (which === "fuji" && f.height === undefined) { if (pose.scale === 1) delete f.auto; else f.auto = true; } });
+    this.buildUI(); return ok;
   }
   toolBegin(w: Vec, sc: Vec): boolean {
     const t = this.tool, s = this.s;
@@ -205,10 +253,10 @@ export class App {
     }
     if (t === "feature") {
       let best: "biwa" | "fuji" | null = null, bd = 34 / this.r.view.zoom;
-      for (const f of ["biwa", "fuji"] as const) { const d = dist(featureWorldPos(s, f), w); if (d < bd) { bd = d; best = f; } }
+      for (const f of ["biwa", "fuji"] as const) { const d = pointInPolygon(w, featureWorld(s, f)) ? 0 : dist(featureWorldPos(s, f), w); if (d < bd) { bd = d; best = f; } }
       if (!best) return false;
       this.selFeature = best; this.grab = { t, which: best, off: [featureWorldPos(s, best)[0] - w[0], featureWorldPos(s, best)[1] - w[1]] as Vec };
-      this.buildUI(); return true;
+      this.buildUI(); this.render(); return true;
     }
     if (t === "ridge-sw" || t === "ridge-ne") { if (!this.onHonshu(w)) return false; this.grab = { t, key: t === "ridge-sw" ? "sw" : "ne", pts: [w] }; this.pending = { ridge: { key: this.grab.key, pts: [w] } }; this.render(); return true; }
     if (t === "ridge-edit") {
@@ -235,7 +283,7 @@ export class App {
       const place: Place = { ...g.place0, pos: [g.place0.pos[0] + w[0] - g.w0[0], g.place0.pos[1] + w[1] - g.w0[1]] };
       g.place = place; this.pending = { body: { id: g.id, place } }; this.render();
     } else if (g.t === "feature") {
-      g.pos = [w[0] + g.off[0], w[1] + g.off[1]]; this.pending = { feature: { which: g.which, pos: g.pos } }; this.render();
+      g.pos = [w[0] + g.off[0], w[1] + g.off[1]]; const f = this.s.features[g.which as "biwa" | "fuji"]; this.pending = { feature: { which: g.which, pos: g.pos, bad: !this.featureOk(g.which, { pos: g.pos, rot: f.rot, scale: f.scale ?? 1 }) } }; this.render();
     } else if (g.t === "ridge-sw" || g.t === "ridge-ne") {
       if (dist(g.pts[g.pts.length - 1], w) >= 10 / this.r.view.zoom && this.onHonshu(w)) { g.pts.push(w); this.pending = { ridge: { key: g.key, pts: g.pts } }; this.render(); }
     } else if (g.t === "ridge-edit") {
@@ -255,7 +303,7 @@ export class App {
       if (op && (op.t !== "pull" || Math.hypot(op.d[0], op.d[1]) > 0.5)) this.store.commit((s) => { s.bodies[g.id as IslandId].ops.push(op!); });
       else this.render();
     } else if (g.t === "move" && g.place) this.store.commit((s) => { s.bodies[g.id as IslandId].place = g.place; });
-    else if (g.t === "feature" && g.pos) this.commitEdit((s) => { s.features[g.which as "biwa" | "fuji"].pos = g.pos; });
+    else if (g.t === "feature" && g.pos) { const f = this.s.features[g.which as "biwa" | "fuji"]; this.applyFeaturePose(g.which, { pos: g.pos, rot: f.rot, scale: f.scale ?? 1 }); }
     else if ((g.t === "ridge-sw" || g.t === "ridge-ne") && g.pts.length >= 2) this.commitEdit((s) => { s.ridges[g.key as "sw" | "ne"] = simplifyLine(g.pts, 4); });
     else if (g.t === "ridge-edit" && g.pts) this.commitEdit((s) => { s.ridges[g.key as "sw" | "ne"] = g.pts; });
     else this.render();
@@ -268,6 +316,12 @@ export class App {
   commitEdit(mut: (s: Store["state"]) => void): boolean {
     if (!this.real) return this.store.commit(mut);
     if (this.sim || this.pendingSim) { this.toast("道路づくりが始まったあとは、地形は変えられません"); return false; }
+    // Issue #20: an edit that would make the map invalid (a lake or a mountain that does not fit) is never committed: the map stays exactly as it was before the
+    // operation, no Undo step is added, nothing invalid reaches the save, and terrain generation is never left waiting on a map it will refuse to generate.
+    const bad = (s: Store["state"]) => validate(s).filter((i) => i.severity === "error").map((i) => i.code).sort().join(",");
+    const cand = JSON.parse(JSON.stringify(this.s)) as Store["state"]; mut(cand);
+    const before = bad(this.s), after = bad(cand);
+    if (after && after !== before && after.split(",").some((c) => !before.split(",").includes(c))) { this.pending = null; this.toast("置けない配置のため、操作の前の状態に戻しました"); this.render(); this.buildUI(); return false; }
     return this.store.commitLimited(mut);
   }
   undoEdit() { if (this.real && !this.sim) this.store.undoLimited(); else this.store.undo(); }
@@ -280,11 +334,11 @@ export class App {
   }
   /** Resize Lake Biwa (outline) or Mt. Fuji (body / summit height) by a factor, within the allowed range and only if the result is still a valid map (no lake touching the coast). */
   scaleFeature(which: "biwa" | "fuji", what: "scale" | "height", factor: number) {
-    const lim = FEATURE_LIMITS[what], cur = this.s.features[which][what] ?? 1, next = Math.round(Math.max(lim[0], Math.min(lim[1], cur * factor)) * 100) / 100;
+    const lim = FEATURE_LIMITS[what], cur = what === "height" && which === "fuji" ? fujiHeightFactor(this.s.features.fuji) : (this.s.features[which][what] ?? 1), next = Math.round(Math.max(lim[0], Math.min(lim[1], cur * factor)) * 100) / 100;
     if (next === cur) { this.toast("これ以上は変えられません"); return false; }
     const cand = JSON.parse(JSON.stringify(this.s)) as Store["state"]; (cand.features[which] as any)[what] = next;
     if (validate(cand).some((i) => i.severity === "error" && i.step === "features")) { this.toast(which === "biwa" ? "琵琶湖が海岸に近づきすぎるため、これ以上大きくできません" : "富士山が海岸に近づきすぎるため、これ以上大きくできません"); return false; }
-    return this.commitEdit((s) => { if (next === 1) delete (s.features[which] as any)[what]; else (s.features[which] as any)[what] = next; });
+    return this.commitEdit((s) => { if (next === 1 && !(what === "height" && s.features[which].auto)) delete (s.features[which] as any)[what]; else (s.features[which] as any)[what] = next; if (which === "fuji" && what === "scale" && s.features.fuji.height === undefined) { if (next === 1) delete s.features.fuji.auto; else s.features.fuji.auto = true; } });
   }
   clearRanges() { this.commitEdit((s) => { s.ridges.ne = null; s.ridges.sw = null; }); }
   /**
@@ -463,7 +517,7 @@ export class App {
     this.status(); this.buildToolbar(); this.buildSheet();
   }
   private tbtn(label: string, on: boolean, f: () => void, id?: string) { return h("button", { id, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: f }, on ? "✓ " + label : label); }
-  private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); }
+  private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); this.render(); }
   buildToolbar() {
     const tb = $("toolbar"); tb.replaceChildren(); const st = this.stepId;
     const TOOL_NAMES: Record<Tool, string> = { palace: "皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
@@ -487,7 +541,7 @@ export class App {
     } else if (st === "features") {
       tools([["feature", "琵琶湖/富士山"], ["ridge-sw", "南西の山脈を描く"], ["ridge-ne", "北東の山脈を描く"], ["ridge-edit", "山脈の点を動かす"]]);
       const g = h("div", { class: "grp" });
-      g.append(this.tbtn("琵琶湖を回転対象", this.selFeature === "biwa", () => { this.selFeature = "biwa"; this.buildToolbar(); }), this.tbtn("富士山を回転対象", this.selFeature === "fuji", () => { this.selFeature = "fuji"; this.buildToolbar(); }));
+      g.append(this.tbtn("琵琶湖を回転対象", this.selFeature === "biwa", () => { this.selFeature = "biwa"; this.buildToolbar(); this.render(); }), this.tbtn("富士山を回転対象", this.selFeature === "fuji", () => { this.selFeature = "fuji"; this.buildToolbar(); this.render(); }));
       g.append(h("button", { id: "rot-l", onclick: () => this.rotateSel(1) }, "⟲5°"), h("button", { id: "rot-r", onclick: () => this.rotateSel(-1) }, "⟳5°"), h("button", { id: "suggest", onclick: () => this.suggestRanges() }, "標準の山脈"));
       tb.append(g);
     } else if (st === "terrain") {
@@ -497,32 +551,40 @@ export class App {
   /** 限定の地形編集: the coastline stays the real one; only the capital, Fuji, Lake Biwa and the two Alps ranges can be set, until the first road. */
   private buildTerrainEdit(tb: HTMLElement) {
     const open = this.editOpen;
-    tb.append(h("button", { id: "terrain-edit-toggle", type: "button", class: open ? "mode on" : "mode", "aria-pressed": open ? "true" : "false", onclick: () => { this.editOpen = !this.editOpen; if (!this.editOpen && this.tool !== "view" && !String(this.tool).startsWith("cer-")) this.tool = "view"; this.buildToolbar(); } }, open ? "▼ 地形・首都の編集(限定)" : "▶ 地形・首都の編集(限定)"));
+    tb.append(h("button", { id: "terrain-edit-toggle", type: "button", class: open ? "mode on" : "mode", "aria-pressed": open ? "true" : "false", onclick: () => { this.editOpen = !this.editOpen; if (!this.editOpen && this.tool !== "view" && !String(this.tool).startsWith("cer-")) this.tool = "view"; this.buildToolbar(); this.render(); } }, open ? "✓ 地形編集" : "地形編集"));
     if (!open) return;
-    const w = this.ensureWorld(), box = h("div", { id: "terrain-edit", class: "grp" });
-    tb.append(h("div", { class: "note", id: "terrain-edit-note" }, "海岸線と日本列島の輪郭は現実のまま固定です。首都・富士山・琵琶湖・南北アルプスだけ、最初の道を引く前に変えられます(開通の儀のあとは固定)。"));
-    const st = seatsOf(this.s), sel = (id: string, label: string, val: string, which: "capital" | "sub" | "palace") => {
+    // Issue #20: only what edits the terrain lives here, in as few short rows as possible (the era and the seats are in ⚙ 元号・首都)
+    tb.append(h("small", { class: "note", id: "terrain-edit-note" }, "海岸線は固定。最初の道を引くまで変更可"));
+    const featOn = (f: "biwa" | "fuji") => this.tool === "feature" && this.selFeature === f;
+    const featBtn = (f: "biwa" | "fuji", label: string) => this.tbtn(label, featOn(f), () => { if (featOn(f)) this.setTool("feature"); else { this.selFeature = f; this.tool = "feature"; this.pending = null; this.buildToolbar(); this.render(); } }, "sel-" + f);
+    const tool = (t: Tool, l: string) => this.tbtn(l, this.tool === t, () => this.setTool(t), "tool-" + t);
+    tb.append(h("div", { class: "grp", id: "edit-tools" }, featBtn("biwa", "琵琶湖"), featBtn("fuji", "富士山"), tool("ridge-ne", "北の山脈"), tool("ridge-sw", "南の山脈"), tool("ridge-edit", "山脈の点")));
+    if (this.tool === "feature") {
+      const f = this.selFeature, row = h("div", { class: "grp", id: "feature-size" }, h("button", { id: "rot-l", type: "button", onclick: () => this.rotateSel(1) }, "⟲5°"), h("button", { id: "rot-r", type: "button", onclick: () => this.rotateSel(-1) }, "⟳5°"));
+      if (f === "biwa") row.append(h("span", { class: "note", id: "biwa-size" }, `×${this.s.features.biwa.scale ?? 1}`), h("button", { id: "biwa-smaller", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1 / 1.15) }, "縮小"), h("button", { id: "biwa-bigger", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1.15) }, "拡大"));
+      else { const fs = this.s.features.fuji.scale ?? 1, fh = Math.round(fujiHeightFactor(this.s.features.fuji) * 100) / 100;
+        row.append(h("span", { class: "note", id: "fuji-size" }, `山体×${fs} 高さ×${fh}(約${Math.round(JAPAN.fuji.summitM * fh)}m)`), h("button", { id: "fuji-narrower", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1 / 1.15) }, "山体−"), h("button", { id: "fuji-wider", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1.15) }, "山体＋"),
+          h("button", { id: "fuji-lower", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1 / 1.1) }, "高さ−"), h("button", { id: "fuji-higher", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1.1) }, "高さ＋")); }
+      tb.append(row);
+    }
+    tb.append(h("div", { class: "grp" }, h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実際のアルプス"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "山脈を消す"),
+      h("button", { id: "edit-undo", type: "button", disabled: !this.store.canUndo, onclick: () => this.undoEdit() }, "↶"), h("button", { id: "edit-redo", type: "button", disabled: !this.store.canRedo, onclick: () => this.redoEdit() }, "↷")));
+    const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
+  }
+  /** Issue #20: the start-of-game settings (the first era, the capital, the sub-capital, the palace) in a sheet of their own, off the terrain menu. */
+  buildSetup(body: HTMLElement) {
+    if (!this.real || this.sim) { body.append(h("small", {}, "道路づくりが始まったあとは変えられません")); return; }
+    const w = this.ensureWorld(), st = seatsOf(this.s);
+    body.append(h("h3", {}, "元号・首都・副首都・皇居"));
+    eraPicker(this, body, this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); this.buildSheet(); });
+    const sel = (id: string, label: string, val: string, which: "capital" | "sub" | "palace") => {
       const s = h("select", { id, "aria-label": label, onchange: (e: Event) => { this.setSeat(which, (e.target as HTMLSelectElement).value); } }) as HTMLSelectElement;
-      for (const pid of PREF_IDS) { const dis = (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital); s.append(h("option", { value: pid, ...(pid === val ? { selected: "" } : {}), ...(dis ? { disabled: "" } : {}) }, `${seatPrefName(pid)}(${w ? seatCity(w, pid)?.name ?? "" : ""})${dis ? " ※別の府県に" : ""}`)); }
+      for (const pid of PREF_IDS_NS) { const dis = (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital); s.append(h("option", { value: pid, ...(pid === val ? { selected: "" } : {}), ...(dis ? { disabled: "" } : {}) }, `${seatPrefName(pid)}(${w ? seatCity(w, pid)?.name ?? "" : ""})${dis ? " ※別の府県に" : ""}`)); }
       return h("label", { class: "seat" }, label, s);
     };
-    tb.append(h("small", {}, "首都・副首都・皇居は別々に決められます(49府県すべて)。首都と副首都は別の府県。国道1号は首都から副首都へ引きます"),
+    body.append(h("small", {}, "49府県から別々に選べます(北から南の順)。首都と副首都は別の府県。国道1号は首都から副首都へ引きます"),
       h("div", { class: "grp", id: "seats" }, sel("seat-capital", "首都", st.capital, "capital"), sel("seat-sub", "副首都", st.sub, "sub"), sel("seat-palace", "皇居", st.palace, "palace")),
-      h("div", { class: "grp" }, this.tbtn("皇居の位置を地図で選ぶ", this.tool === "palace", () => this.setTool("palace"), "tool-palace"), h("button", { id: "palace-reset", type: "button", disabled: !this.s.palacePos, onclick: () => this.resetPalace() }, "県庁所在地に戻す")));
-    const tools = (list: [Tool, string][]) => { const g = h("div", { class: "grp" }); for (const [t, l] of list) g.append(this.tbtn(l, this.tool === t, () => this.setTool(t), "tool-" + t)); tb.append(g); };
-    tools([["feature", "富士山・琵琶湖を動かす"], ["ridge-ne", "北の山脈を描く"], ["ridge-sw", "南の山脈を描く"], ["ridge-edit", "山脈の点を動かす"]]);
-    const g = h("div", { class: "grp" });
-    g.append(this.tbtn("琵琶湖を回転", this.selFeature === "biwa", () => { this.selFeature = "biwa"; this.buildToolbar(); }, "sel-biwa"), this.tbtn("富士山を回転", this.selFeature === "fuji", () => { this.selFeature = "fuji"; this.buildToolbar(); }, "sel-fuji"),
-      h("button", { id: "rot-l", type: "button", onclick: () => this.rotateSel(1) }, "⟲5°"), h("button", { id: "rot-r", type: "button", onclick: () => this.rotateSel(-1) }, "⟳5°"));
-    const bs = this.s.features.biwa.scale ?? 1, fs = this.s.features.fuji.scale ?? 1, fh = this.s.features.fuji.height ?? 1;
-    const sz = h("div", { class: "grp", id: "feature-size" },
-      h("span", { class: "note", id: "biwa-size" }, `琵琶湖 ×${bs}`), h("button", { id: "biwa-smaller", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1 / 1.15) }, "縮小"), h("button", { id: "biwa-bigger", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1.15) }, "拡大"),
-      h("span", { class: "note", id: "fuji-size" }, `富士山 山体×${fs} 高さ×${fh}(約${Math.round(JAPAN.fuji.summitM * fh)}m)`), h("button", { id: "fuji-narrower", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1 / 1.15) }, "山体縮小"), h("button", { id: "fuji-wider", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1.15) }, "山体拡大"),
-      h("button", { id: "fuji-lower", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1 / 1.1) }, "高さ−"), h("button", { id: "fuji-higher", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1.1) }, "高さ＋"));
-    tb.append(g, sz, h("div", { class: "grp" }, h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実際のアルプスの位置"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "山脈を消す"),
-      h("button", { id: "edit-undo", type: "button", disabled: !this.store.canUndo, onclick: () => this.undoEdit() }, "↶ 元に戻す"), h("button", { id: "edit-redo", type: "button", disabled: !this.store.canRedo, onclick: () => this.redoEdit() }, "↷ やり直す")));
-    const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
-    void box;
+      h("div", { class: "grp" }, this.tbtn("皇居の位置を地図で選ぶ", this.tool === "palace", () => { this.setTool("palace"); if (this.tool === "palace") this.openSheet(null); }, "tool-palace"), h("button", { id: "palace-reset", type: "button", disabled: !this.s.palacePos, onclick: () => this.resetPalace() }, "県庁所在地に戻す")));
   }
   unlockMap() {
     if (this.sim && !confirm("地図の編集を再開すると、作成済みの道路とシミュレーションは消えます。よろしいですか?")) return;
@@ -530,10 +592,10 @@ export class App {
   }
   private buildRoadToolbar(tb: HTMLElement, names: Record<Tool, string>) {
     const label = (t: string) => tb.append(h("div", { id: "mode-label", role: "status", "aria-live": "polite", "data-tool": this.tool }, t));
-    if (!this.s.finalized || !this.terrain) { label(this.s.finalized ? "地形を生成中…" : "地図を最終確定すると道路を始められます"); return; }
+    if (!this.s.finalized || !this.terrain) { const bad = this.issues.some((i) => i.severity === "error"); label(!this.s.finalized ? "地図を最終確定すると道路を始められます" : bad ? "地図に不正があるため地形を作れません(元に戻すで直せます)" : "地形を生成中…"); if (bad && this.real && !this.sim) this.buildTerrainEdit(tb); return; }
     if (!this.sim) {
       label(`選択中: ${names[this.tool]}`);
-      if (this.real) eraPicker(this, tb, this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); });
+      if (this.real) { const st = seatsOf(this.s); tb.append(h("div", { class: "grp", id: "setup-row" }, h("button", { id: "open-setup", type: "button", class: this.sheet === "setup" ? "mode on" : "mode", "aria-pressed": this.sheet === "setup" ? "true" : "false", onclick: () => this.openSheet("setup") }, "⚙ 元号・首都"), h("small", { id: "setup-summary" }, `${CAND_1945[this.firstEra]?.name ?? ""}／首都 ${seatPrefName(st.capital)}・副 ${seatPrefName(st.sub)}・皇居 ${seatPrefName(st.palace)}`))); }
       else tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));
       if (this.real) this.buildTerrainEdit(tb);
       const g = h("div", { class: "grp" });
@@ -585,6 +647,7 @@ export class App {
     else if (this.sheet === "compare") this.buildCompare(body);
     else if (this.sheet === "why") this.buildWhy(body);
     else if (this.sheet === "menu") this.buildMenu(body);
+    else if (this.sheet === "setup") this.buildSetup(body);
     else if (this.sheet === "timeline") buildTimeline(this, body);
     else if (this.sheet === "ledger") buildLedger(this, body);
     else if (this.sheet === "atlas") buildAtlas(this, body);

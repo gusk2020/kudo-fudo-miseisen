@@ -1,5 +1,5 @@
 /** Pure placement rules. No rendering, no DOM: input is world-space geometry, output is verdicts. */
-import { centroid, containsWithClearance, dist, dot, polygonsOverlap, principalAxis, scaleAbout, sub } from "./geom";
+import { centroid, containsWithClearance, pointInPolygon, dist, dot, polygonsOverlap, principalAxis, scaleAbout, sub } from "./geom";
 import type { Vec } from "./types";
 
 export const HOKKAIDO_MIN_T = 0.5;   // centre must lie in Honshu's NE half (t >= 0.5)
@@ -44,3 +44,15 @@ export function islandsOverlap(a: Vec[][], b: Vec[][]): boolean {
   return false;
 }
 export { dist };
+
+/**
+ * Issue #18: where a lake or a mountain may stand. The ANCHOR (the outline's centre) must lie on land; the AREA must then lie wholly on that SAME landmass (never spilling into
+ * the sea or onto another island) with COAST_CLEARANCE_KM to its coast. Prefecture borders play no part. `lands` is every land polygon of the world (all bodies' parts, extras).
+ * Returns the landmass polygon that hosts it, or null.
+ */
+export function featureHost(lands: Vec[][], shape: Vec[]): Vec[] | null {
+  const c = centroid(shape), host = lands.find((l) => pointInPolygon(c, l)); if (!host) return null;
+  return containsWithClearance(host, scaleAbout(shape, c, LINEAR_CHECK_FACTOR), COAST_CLEARANCE_KM) ? host : null;
+}
+/** Below this scale a feature is only allowed on a small landmass (Okinawa-sized); the default lower bound stays 0.5. */
+export const SMALL_LAND_KM2 = 4000, DEFAULT_MIN_SCALE = 0.5;

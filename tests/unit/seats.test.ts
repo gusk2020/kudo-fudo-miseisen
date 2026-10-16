@@ -79,3 +79,14 @@ describe("国道1号 from the capital to the sub-capital, ferries across the str
     for (const f of ferries) expect(f.state).toBe("open");
   }, 120000);
 });
+
+describe("Issue #20: prefectures are listed north to south", () => {
+  it("all 49, Hokkaido's three first and Okinawa last, by the latitude of each 県庁所在地 (not by code)", async () => {
+    const { PREF_IDS_NS } = await import("../../src/core/seat");
+    expect(PREF_IDS_NS).toHaveLength(49); expect(new Set(PREF_IDS_NS)).toEqual(new Set(PREF_IDS));
+    expect(PREF_IDS_NS.slice(0, 3).every((x) => x.startsWith("HK-"))).toBe(true); expect(PREF_IDS_NS[48]).toBe("JP-47");
+    const lat = (id: string) => JAPAN.cities.find((c) => c.pref === id && c.kind === "capital")!.pos[1];
+    for (let i = 1; i < 49; i++) expect(lat(PREF_IDS_NS[i]), PREF_IDS_NS[i]).toBeLessThanOrEqual(lat(PREF_IDS_NS[i - 1]));
+    expect(PREF_IDS_NS).not.toEqual([...PREF_IDS].sort());
+  });
+});

@@ -9,7 +9,7 @@ import { ISLAND_IDS } from "../core/types";
 import { featureWorld } from "../core/validate";
 import { RoadLayer, type RoadArgs } from "./roads";
 
-export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[] }; feature?: { which: "biwa" | "fuji"; pos: Vec } }
+export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[] }; feature?: { which: "biwa" | "fuji"; pos: Vec; rot?: number; scale?: number; bad?: boolean } }
 export interface View { cx: number; cy: number; zoom: number } // centre in world km (y up), zoom = px per km
 
 const RAMP: [number, number[]][] = [[0, [92, 148, 76]], [150, [134, 170, 86]], [450, [196, 192, 112]], [900, [170, 136, 88]], [1600, [138, 108, 84]], [2400, [196, 190, 184]], [3400, [250, 250, 250]]];
@@ -81,6 +81,12 @@ export class Renderer {
   }
   /** Road layer only: cheap enough to call every simulation tick; skips redraw when nothing visible changed. */
   setRoads(a: RoadArgs) { this.roadArgs = a; return this.roads.set(a, this.view.zoom); }
+  /** The feature being edited by touch (null = none): drawn with a handle. */
+  featureSel: "biwa" | "fuji" | null = null;
+  private withPending(s: ProjectState, pending: Pending | null, which: "biwa" | "fuji"): ProjectState {
+    const f = pending?.feature; if (!f || f.which !== which) return s;
+    return { ...s, features: { ...s.features, [which]: { ...s.features[which], pos: f.pos, ...(f.rot !== undefined ? { rot: f.rot } : {}), ...(f.scale !== undefined ? { scale: f.scale } : {}) } } };
+  }
   update(s: ProjectState, t: TerrainResult | null, issues: Issue[], pending: Pending | null) { this.lastArgs = [s, t, issues, pending]; this.rebuild(); }
   private rebuild() {
     if (!this.lastArgs) return;
@@ -116,16 +122,24 @@ export class Renderer {
     // lakes & features
     const lakes = new Graphics();
     const showFeat = s.step >= 3 || s.layers.lakes;
-    if (showFeat && s.layers.lakes) { const pw = pending?.feature?.which === "biwa" ? { ...s, features: { ...s.features, biwa: { ...s.features.biwa, pos: pending.feature.pos } } } : s; lakes.poly(flat(featureWorld(pw, "biwa"))).fill({ color: 0x4682c8 }).stroke({ width: px(1), color: 0x1d4f8a }); }
+    if (showFeat && s.layers.lakes) { const pw = this.withPending(s, pending, "biwa"); lakes.poly(flat(featureWorld(pw, "biwa"))).fill({ color: 0x4682c8 }).stroke({ width: px(1), color: 0x1d4f8a }); }
     this.base.addChild(lakes);
     if (showTerrain && t) this.drawHydro(t, s, px);
     this.base.addChild(coast);
     // fuji marker
     if (s.step >= 3 || s.step === 0) {
-      const f = new Graphics(), pf = pending?.feature?.which === "fuji" ? { ...s, features: { ...s.features, fuji: { ...s.features.fuji, pos: pending.feature.pos } } } : s;
+      const f = new Graphics(), pf = this.withPending(s, pending, "fuji");
       f.poly(flat(featureWorld(pf, "fuji"))).stroke({ width: px(1.5), color: 0xffffff, alpha: 0.9 }).fill({ color: 0xffffff, alpha: s.step >= 3 ? 0.25 : 0 });
       const c = P(featureWorldPos(pf, "fuji")); f.poly([c[0], c[1] - px(9), c[0] - px(8), c[1] + px(6), c[0] + px(8), c[1] + px(6)]).fill({ color: 0xc8483a }).stroke({ width: px(1), color: 0xffffff });
       this.overlay.addChild(f);
+    }
+    if (this.featureSel && (s.step >= 3 || s.real)) {   // Issue #18: the handle -- an outline round the feature being edited, a centre dot and a rotation knob
+      const ps = this.withPending(s, pending, this.featureSel), h = new Graphics(), bad = pending?.feature?.which === this.featureSel && pending.feature.bad, col = bad ? 0xe03030 : 0xffd400;
+      const poly = featureWorld(ps, this.featureSel), c = P(featureWorldPos(ps, this.featureSel)), kn = P([featureWorldPos(ps, this.featureSel)[0] + Math.cos(ps.features[this.featureSel].rot) * Math.max(...poly.map((q) => Math.hypot(q[0] - featureWorldPos(ps, this.featureSel!)[0], q[1] - featureWorldPos(ps, this.featureSel!)[1]))) * 1.0, featureWorldPos(ps, this.featureSel)[1] + Math.sin(ps.features[this.featureSel].rot) * Math.max(...poly.map((q) => Math.hypot(q[0] - featureWorldPos(ps, this.featureSel!)[0], q[1] - featureWorldPos(ps, this.featureSel!)[1]))) * 1.0]);
+      h.poly(flat(poly)).stroke({ width: px(2.5), color: col, alpha: 0.95 });
+      h.moveTo(c[0], c[1]).lineTo(kn[0], kn[1]).stroke({ width: px(1.5), color: col }); h.circle(kn[0], kn[1], px(6)).fill({ color: col }).stroke({ width: px(1), color: 0x333333 });
+      h.circle(c[0], c[1], px(8)).stroke({ width: px(2.5), color: col }).fill({ color: 0xffffff, alpha: 0.5 });
+      this.overlay.addChild(h);
     }
     if (s.layers.ridges) {
       const rg = new Graphics();
