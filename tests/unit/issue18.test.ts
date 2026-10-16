@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { realToWorld } from "../../src/core/body";
+import { pointInPolygon } from "../../src/core/geom";
 import { featureHost } from "../../src/core/constraints";
 import { EXTRA, EXTRA_IDS, JAPAN, lonLatToReal } from "../../src/core/data";
 import { FEATURE_LIMITS, parseState } from "../../src/core/save";
-import { prefPoint, PREF_IDS } from "../../src/core/seat";
+import { palaceWorld, prefPoint, PREF_IDS } from "../../src/core/seat";
 import { defaultState, realState } from "../../src/core/state";
 import { generateTerrain } from "../../src/core/terrain";
 import type { Vec } from "../../src/core/types";
@@ -28,7 +29,7 @@ describe("Issue #18: limits and the Fuji elevation link", () => {
   });
   it("the summit follows the size at half the proportion, only when linked, capped at 2x, and a manual height always wins", () => {
     expect(fujiHeightFactor({})).toBe(1); expect(fujiHeightFactor({ scale: 3 })).toBe(1);
-    expect(fujiHeightFactor({ scale: 2, auto: true })).toBe(1.5); expect(fujiHeightFactor({ scale: 5, auto: true })).toBe(2); expect(fujiHeightFactor({ scale: 0.5, auto: true })).toBe(0.75);
+    expect(fujiHeightFactor({ scale: 2, auto: true })).toBe(1.5); expect(fujiHeightFactor({ scale: 5, auto: true })).toBe(3); expect(fujiHeightFactor({ scale: 3, auto: true })).toBe(2); expect(fujiHeightFactor({ scale: 0.2, auto: true })).toBeCloseTo(0.6, 10); expect(FEATURE_LIMITS.height[1]).toBe(1.3); expect(fujiHeightFactor({ scale: 0.5, auto: true })).toBe(0.75);
     expect(fujiHeightFactor({ scale: 5, auto: true, height: 1.1 })).toBe(1.1);
   });
 });
@@ -76,10 +77,10 @@ describe("Issue #18: terrain leaves nothing behind", () => {
     expect(base.t.land[kb]).toBe(2); expect(mv.t.land[kb]).toBe(1);
     let diff = 0; for (let k = 0; k < base.w.N; k++) if ((base.t.land[k] === 0) !== (mv.t.land[k] === 0)) diff++; expect(diff).toBe(0);
   });
-  it("an auto-linked Fuji at 2x is 1.5x as high; at 5x it is capped at 2x the height", () => {
+  it("an auto-linked Fuji at 2x is 1.5x as high; at 5x it reaches 3x the height", () => {
     const peak = (k: number, auto: boolean) => gen((s) => { s.features.fuji.scale = k; if (auto) s.features.fuji.auto = true; }).t.stats.maxElevM;
     const h1 = peak(1.0001, false), h2 = peak(2, true), h5 = peak(5, true);
-    expect(h2 / JAPAN.fuji.summitM).toBeGreaterThan(1.4); expect(h2 / JAPAN.fuji.summitM).toBeLessThan(1.7); expect(h5 / JAPAN.fuji.summitM).toBeLessThan(2.2); expect(h1).toBeLessThan(h2);
+    expect(h2 / JAPAN.fuji.summitM).toBeGreaterThan(1.4); expect(h2 / JAPAN.fuji.summitM).toBeLessThan(1.7); expect(h5 / JAPAN.fuji.summitM).toBeGreaterThan(2.8); expect(h5 / JAPAN.fuji.summitM).toBeLessThan(3.3); expect(h1).toBeLessThan(h2);
   });
 });
 
@@ -116,5 +117,32 @@ describe("Issue #18: Lake Biwa ferries", () => {
     const key = (w: ReturnType<typeof mk>) => lakeCrossings(w).map((c) => `${c.id}:${c.portA}-${c.portB}`).join(",");
     expect(key(base)).not.toBe(""); expect(key(base)).not.toBe(key(moved)); expect(key(big)).not.toBe(key(base)); expect(lakeCrossings(tiny).length).toBeLessThan(lakeCrossings(big).length);
     for (const c of lakeCrossings(moved)) { expect(moved.t.land[c.portA]).toBe(1); expect(moved.t.land[c.portB]).toBe(1); }
+  });
+});
+
+describe("Issue #18 audit: Okinawa's prefecture point sits on the game map's Okinawa", () => {
+  it("every Okinawa seat point is on Okinawa land, at the city the terrain placed, and not in the sea", () => {
+    const s = realState(), { w } = realWorld(true), naha = w.cities.find((c) => c.name === "那覇市")!, ok = derive(s).parts.kyushu[1];
+    const p = prefPoint(s, "JP-47")!; expect(pointInPolygon(p, ok)).toBe(true); expect(Math.hypot(p[0] - naha.pos[0], p[1] - naha.pos[1])).toBeLessThan(1e-6);
+    expect(w.t.land[w.cellOf(p)]).toBe(1); expect(w.prefOf(w.cellOf(p))).toBe("JP-47");
+    const pal = realState(); pal.palace = "JP-47"; const q = palaceWorld(pal)!; expect(pointInPolygon(q, ok)).toBe(true);
+    const sd = JAPAN.prefectures.find((x) => x.id === "JP-47")!.seed; expect(pointInPolygon(sd, ok)).toBe(true);
+  });
+  it("saves are safe: the generated world is exactly what it was before the data fix (terrain hash, Naha's cell, Okinawa's cells)", () => {
+    const { w, hash } = realWorld(true), naha = w.cities.find((c) => c.name === "那覇市")!;
+    expect(hash).toBe("6ab9fd85"); expect(naha.cell).toBe(3105); expect(naha.pos).toEqual([-837.5, -1202.5]); let n = 0; for (let k = 0; k < w.N; k++) if (w.prefOf(k) === "JP-47") n++; expect(n).toBe(46);
+  });
+  it("every prefecture point and city is where the map draws the prefectural capital (within one cell), so no seat point is detached from its city", () => {
+    const s = realState(), { w } = realWorld(true);
+    for (const id of PREF_IDS) { const p = prefPoint(s, id)!, c = w.cities.find((x) => x.pref === id && x.kind === "capital")!; expect(Math.hypot(p[0] - c.pos[0], p[1] - c.pos[1]), id).toBeLessThan(w.cell * 1.5); }   // the seat point and the city drawn there are the same place (a coastal 5 km cell at most)
+    for (const c of w.cities) expect(w.t.land[c.cell], c.name).toBe(1);
+  });
+  it("capital and sub-capital in Okinawa: the national road and the ferries start from the Naha node, and a ferry port is on Okinawa", () => {
+    const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true, { capital: "JP-47", sub: "HK-SAP" }), naha = w.cities.find((c) => c.name === "那覇市")!;
+    const node = Object.values(sim.nodes).find((n) => n.cell === naha.cell)!; expect(node).toBeTruthy();
+    expect(Object.values(sim.edges).some((e) => (e.a === node.id || e.b === node.id) && e.state === "open")).toBe(true);
+    const ferries = Object.values(sim.edges).filter((e) => e.facility === "ferry" && (e.a === node.id || e.b === node.id)); expect(ferries.length).toBeGreaterThan(0);
+    for (const f of ferries) for (const c of [f.cells[0], f.cells[f.cells.length - 1]]) expect(w.t.land[c]).toBe(1);
+    const sub = Object.values(sim.routes).filter((r) => r.scope === "national" || r.name.includes("国道1")); expect(sub.length).toBeGreaterThan(0);
   });
 });

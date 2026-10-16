@@ -19,8 +19,8 @@ export function featureWorld(s: ProjectState, which: "biwa" | "fuji"): Vec[] {
   return featureShape(which).map((q) => { const r = rotv([q[0] * k, q[1] * k], a); return [r[0] + pos[0], r[1] + pos[1]] as Vec; });
 }
 
-/** Issue #18: Fuji's summit factor. A manual height always wins; with the `auto` link (set when the size is changed by touch) the elevation follows the size at HALF the proportion, capped at 2x so it never reaches the 5x size limit. */
-export const FUJI_AUTO_HEIGHT_MAX = 2;
+/** Issue #18: Fuji's summit factor. A manual height always wins; with the `auto` link (set when the size is changed by touch) the elevation follows the size at HALF the proportion, capped at 3x (size 5x). The manual height range is separate and unchanged. */
+export const FUJI_AUTO_HEIGHT_MAX = 3;   // = 1 + (5-1)/2: the body's 5x limit gives 3x. NOT the manual height range (FEATURE_LIMITS.height, 0.5-1.3x), which is a separate hand-set value
 export function fujiHeightFactor(f: { scale?: number; height?: number; auto?: true }): number {
   if (f.height !== undefined) return f.height;
   if (!f.auto) return 1;
