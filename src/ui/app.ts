@@ -55,7 +55,7 @@ export class App {
   compareYear: number | null = null; selEdge: string | null = null;
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
   lite = false; private slowTicks = 0;
-  eraChoice: EraKey = "heisei"; firstEra = 0; editOpen = false; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain"; hide = new Set<string>(); names = false; legendOpen = true;
+  eraChoice: EraKey = "heisei"; firstEra = 0; editOpen = false; editMore = false; viewYear: number | null = null; bg: "terrain" | "roadmap" = "terrain"; hide = new Set<string>(); names = false; legendOpen = true;
   runner: SimRunner | null = null; building = 0; safeMode = false; behind = false; private lastRoads = 0;
   private lastBackup = 0; private lastSaved = 0; private persistRetry = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
 
@@ -519,7 +519,7 @@ export class App {
   private tbtn(label: string, on: boolean, f: () => void, id?: string) { return h("button", { id, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: f }, on ? "✓ " + label : label); }
   private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); this.render(); }
   buildToolbar() {
-    const tb = $("toolbar"); tb.replaceChildren(); const st = this.stepId;
+    const tb = $("toolbar"); tb.replaceChildren(); tb.classList.remove("compact"); const st = this.stepId;
     const TOOL_NAMES: Record<Tool, string> = { palace: "皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
     if (this.store.locked && (st === "honshu" || st === "islands" || st === "features")) {
       tb.append(h("div", { id: "lock-banner", role: "status" }, "🔒 地図は最終確定済みのためロック中(閲覧のみ)"), h("button", { id: "unlock-map", type: "button", onclick: () => this.unlockMap() }, "ロックを解除して編集"));
@@ -551,24 +551,25 @@ export class App {
   /** 限定の地形編集: the coastline stays the real one; only the capital, Fuji, Lake Biwa and the two Alps ranges can be set, until the first road. */
   private buildTerrainEdit(tb: HTMLElement) {
     const open = this.editOpen;
-    tb.append(h("button", { id: "terrain-edit-toggle", type: "button", class: open ? "mode on" : "mode", "aria-pressed": open ? "true" : "false", onclick: () => { this.editOpen = !this.editOpen; if (!this.editOpen && this.tool !== "view" && !String(this.tool).startsWith("cer-")) this.tool = "view"; this.buildToolbar(); this.render(); } }, open ? "✓ 地形編集" : "地形編集"));
-    if (!open) return;
-    // Issue #20: only what edits the terrain lives here, in as few short rows as possible (the era and the seats are in ⚙ 元号・首都)
-    tb.append(h("small", { class: "note", id: "terrain-edit-note" }, "海岸線は固定。最初の道を引くまで変更可"));
+    const toggle = h("button", { id: "terrain-edit-toggle", type: "button", title: "海岸線は固定。最初の道を引くまで、富士山・琵琶湖・南北アルプスを変えられます", class: open ? "mode on" : "mode", "aria-pressed": open ? "true" : "false", onclick: () => { this.editOpen = !this.editOpen; this.editMore = false; if (!this.editOpen && this.tool !== "view" && !String(this.tool).startsWith("cer-")) this.tool = "view"; this.buildToolbar(); this.render(); } }, open ? "✓ 地形" : "地形編集");
+    if (!open) { tb.append(toggle); return; }
+    // Issue #20 (round 2): while editing, the whole toolbar is ONE short row -- [close] [targets] [undo/redo] [more]; the target's own controls appear only while it is
+    // selected, and the rarely used ones (real Alps, clear, the note) sit behind "⋯". Nothing else (era, seats, ceremony) is shown until the editor is closed.
     const featOn = (f: "biwa" | "fuji") => this.tool === "feature" && this.selFeature === f;
     const featBtn = (f: "biwa" | "fuji", label: string) => this.tbtn(label, featOn(f), () => { if (featOn(f)) this.setTool("feature"); else { this.selFeature = f; this.tool = "feature"; this.pending = null; this.buildToolbar(); this.render(); } }, "sel-" + f);
     const tool = (t: Tool, l: string) => this.tbtn(l, this.tool === t, () => this.setTool(t), "tool-" + t);
-    tb.append(h("div", { class: "grp", id: "edit-tools" }, featBtn("biwa", "琵琶湖"), featBtn("fuji", "富士山"), tool("ridge-ne", "北の山脈"), tool("ridge-sw", "南の山脈"), tool("ridge-edit", "山脈の点")));
+    tb.append(h("div", { class: "grp", id: "edit-tools" }, toggle, featBtn("biwa", "琵琶湖"), featBtn("fuji", "富士山"), tool("ridge-ne", "北山脈"), tool("ridge-sw", "南山脈"), tool("ridge-edit", "山脈点"),
+      h("button", { id: "edit-undo", type: "button", "aria-label": "元に戻す", disabled: !this.store.canUndo, onclick: () => this.undoEdit() }, "↶"), h("button", { id: "edit-redo", type: "button", "aria-label": "やり直す", disabled: !this.store.canRedo, onclick: () => this.redoEdit() }, "↷"),
+      h("button", { id: "edit-more", type: "button", "aria-label": "その他", "aria-pressed": this.editMore ? "true" : "false", class: this.editMore ? "mode on" : "mode", onclick: () => { this.editMore = !this.editMore; this.buildToolbar(); } }, "⋯")));
     if (this.tool === "feature") {
-      const f = this.selFeature, row = h("div", { class: "grp", id: "feature-size" }, h("button", { id: "rot-l", type: "button", onclick: () => this.rotateSel(1) }, "⟲5°"), h("button", { id: "rot-r", type: "button", onclick: () => this.rotateSel(-1) }, "⟳5°"));
-      if (f === "biwa") row.append(h("span", { class: "note", id: "biwa-size" }, `×${this.s.features.biwa.scale ?? 1}`), h("button", { id: "biwa-smaller", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1 / 1.15) }, "縮小"), h("button", { id: "biwa-bigger", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1.15) }, "拡大"));
+      const f = this.selFeature, row = h("div", { class: "grp", id: "feature-size" }, h("button", { id: "rot-l", type: "button", onclick: () => this.rotateSel(1) }, "⟲"), h("button", { id: "rot-r", type: "button", onclick: () => this.rotateSel(-1) }, "⟳"));
+      if (f === "biwa") row.append(h("button", { id: "biwa-smaller", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1 / 1.15) }, "−"), h("span", { class: "tag", id: "biwa-size" }, `×${this.s.features.biwa.scale ?? 1}`), h("button", { id: "biwa-bigger", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1.15) }, "＋"));
       else { const fs = this.s.features.fuji.scale ?? 1, fh = Math.round(fujiHeightFactor(this.s.features.fuji) * 100) / 100;
-        row.append(h("span", { class: "note", id: "fuji-size" }, `山体×${fs} 高さ×${fh}(約${Math.round(JAPAN.fuji.summitM * fh)}m)`), h("button", { id: "fuji-narrower", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1 / 1.15) }, "山体−"), h("button", { id: "fuji-wider", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1.15) }, "山体＋"),
-          h("button", { id: "fuji-lower", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1 / 1.1) }, "高さ−"), h("button", { id: "fuji-higher", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1.1) }, "高さ＋")); }
+        row.append(h("button", { id: "fuji-narrower", type: "button", "aria-label": "山体を小さく", onclick: () => this.scaleFeature("fuji", "scale", 1 / 1.15) }, "−"), h("span", { class: "tag", id: "fuji-size" }, `山体×${fs} 高さ×${fh}(${Math.round(JAPAN.fuji.summitM * fh)}m)`), h("button", { id: "fuji-wider", type: "button", "aria-label": "山体を大きく", onclick: () => this.scaleFeature("fuji", "scale", 1.15) }, "＋"),
+          h("button", { id: "fuji-lower", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1 / 1.1) }, "高−"), h("button", { id: "fuji-higher", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1.1) }, "高＋")); }
       tb.append(row);
     }
-    tb.append(h("div", { class: "grp" }, h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実際のアルプス"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "山脈を消す"),
-      h("button", { id: "edit-undo", type: "button", disabled: !this.store.canUndo, onclick: () => this.undoEdit() }, "↶"), h("button", { id: "edit-redo", type: "button", disabled: !this.store.canRedo, onclick: () => this.redoEdit() }, "↷")));
+    if (this.editMore) tb.append(h("div", { class: "grp", id: "edit-more-row" }, h("small", { class: "tag", id: "terrain-edit-note" }, "海岸線は固定・道を引くまで変更可"), h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実際のアルプス"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "山脈を消す")));
     const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
   }
   /** Issue #20: the start-of-game settings (the first era, the capital, the sub-capital, the palace) in a sheet of their own, off the terrain menu. */
@@ -594,6 +595,7 @@ export class App {
     const label = (t: string) => tb.append(h("div", { id: "mode-label", role: "status", "aria-live": "polite", "data-tool": this.tool }, t));
     if (!this.s.finalized || !this.terrain) { const bad = this.issues.some((i) => i.severity === "error"); label(!this.s.finalized ? "地図を最終確定すると道路を始められます" : bad ? "地図に不正があるため地形を作れません(元に戻すで直せます)" : "地形を生成中…"); if (bad && this.real && !this.sim) this.buildTerrainEdit(tb); return; }
     if (!this.sim) {
+      if (this.real && this.editOpen) { tb.classList.add("compact"); this.buildTerrainEdit(tb); return; }   // the editor alone: nothing else competes with the map
       label(`選択中: ${names[this.tool]}`);
       if (this.real) { const st = seatsOf(this.s); tb.append(h("div", { class: "grp", id: "setup-row" }, h("button", { id: "open-setup", type: "button", class: this.sheet === "setup" ? "mode on" : "mode", "aria-pressed": this.sheet === "setup" ? "true" : "false", onclick: () => this.openSheet("setup") }, "⚙ 元号・首都"), h("small", { id: "setup-summary" }, `${CAND_1945[this.firstEra]?.name ?? ""}／首都 ${seatPrefName(st.capital)}・副 ${seatPrefName(st.sub)}・皇居 ${seatPrefName(st.palace)}`))); }
       else tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));

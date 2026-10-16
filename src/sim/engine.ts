@@ -16,6 +16,8 @@ import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
 import { techAt, TECH_K } from "./tech";
 import { reviewLakeFerries } from "./ferry";
+import { reviewRailLines } from "./railecon";
+import { reviewWorks } from "./freeze";
 import { finishCrossing, isCrossingProject, planCrossings } from "./crossing";
 import { homeCity, subCity, tokyoCity } from "./ceremony";
 import { prefOfSeat } from "../core/seat";
@@ -144,9 +146,10 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
   updatePopulation(sim, w, an, y); updateRegionShares(sim, w); yield;
   evaluateEdges(sim, w, an, y); yield;
-  evaluateRoutes(sim, w, y); yield;
+  evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
   if (sim.crossings) { planCrossings(sim, w, y); reviewLakeFerries(sim, w, y); }
+  reviewWorks(sim);
   refreshNick(sim);
   if (sim.stage3) compactSim(sim, y);
   if (y !== sim.startYear && y % (sim.stage3 ? SNAP_EVERY_YEARS : 10) === 0) takeSnapshot(sim);
@@ -171,10 +174,19 @@ function compactSim(sim: SimState, y: number) {
     else if ((p.status === "open" || p.status === "abolished") && age >= 8 && p.chain.length) { p.chain = []; p.replaces = []; }
   }
 }
+/**
+ * Stage 7: the brake on runaway growth. Good transport and the seats of government make a city grow, and growth brings more traffic and more building --
+ * a loop with no end unless something pushes back. Land, water and housing do: a city that has grown past CROWD_ROOM times its 1950 size (more room on a
+ * wide plain) loses growth in proportion to how far past it is. Explainable, gentle, and only in the new economy.
+ */
+/** Stage 7: only projects at least this urgent get national top-up money; minor local works stay at the mercy of their own region (and may stall into 未成). */
+export const TOPUP_MIN_PRIORITY = 3, TOPUP_SHARE = 0.5;
+export const CROWD_ROOM = 3, CROWD_PLAINS = 5, CROWD_K = 0.02;
+export const crowding = (pop: number, pop0: number, plains: number) => CROWD_K * Math.max(0, pop / (Math.max(1, pop0) * (CROWD_ROOM + CROWD_PLAINS * plains)) - 1);
 export const LOCAL_RAIL_KEEP = 0.007, LOCAL_ROAD_KEEP = 0.005;   // yearly growth a village gains from a railway / a proper road beside it
 function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   w.cities.forEach((c, i) => {
-    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), before = st.pop, g = popRate(y, st.pop, sim.stage3 === true && y <= 2026) + 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3 + (rand(sim) - 0.5) * 0.008;
+    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), before = st.pop, g = popRate(y, st.pop, sim.stage3 === true && y <= 2026) + 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3 - (sim.stage3 ? crowding(st.pop, c.pop0, c.plains) : 0) + (rand(sim) - 0.5) * 0.008;
     st.pop = Math.max(2000, Math.round(st.pop * (1 + g)));
     const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + 0.9 * an.acc[i] + 0.5 * bo.industry); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
     st.lowAccessYears = an.acc[i] < 0.02 ? st.lowAccessYears + 1 : 0; const base = c.pop0;
@@ -315,13 +327,14 @@ function monthly(sim: SimState, w: World) {
   for (const e of Object.values(sim.edges)) if (e.state === "closed" && e.built >= 1) { e.weathering = Math.min(100, e.weathering + 0.3); if (e.weathering >= 100) { setEdgeState(sim, e, "lost", "閉鎖後に放置され風化"); ev(sim, "lost", `${edgeName(sim, e)}が廃道化`, "閉鎖後に維持されず風化(復旧には再整備が必要)", { edge: e.id }); } }
   // construction: each region funds its own queue; leftovers and the national pool fund the rest
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "road").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
-  const pass = (p: SimProject, purse: () => number, take: (n: number) => void) => {
-    const totLen = p.edgeIds.reduce((s, id) => s + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, tm = sim.tech && p.edgeIds.some((id) => sim.edges[id]?.facility) ? techAt(sim.tech.k, yearOf(sim)).timeMult : 1, req = Math.max(0.0001, p.costBu / Math.max(24 * tm, totLen * 0.8 * tm)), f = Math.min(req, Math.max(0, purse())); take(f);
-    if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen);
-  };
-  const done = new Set<string>();
-  for (const p of projs) if (p.region !== "JP") { const r = p.region; pass(p, () => left[r] ?? 0, (n) => (left[r] = (left[r] ?? 0) - n)); done.add(p.id); }
-  for (const p of projs) if (p.region === "JP") { pass(p, () => pool, (n) => (pool -= n)); done.add(p.id); }
+  // Stage 7: what the national pool does not need for national projects goes to regional projects their own region could not fully fund this month
+  // (国庫補助). Measured before this: 96% of the pool and 63% of the regional purses went unspent while regional projects stalled for lack of money.
+  const reqOf = (p: SimProject) => { const totLen = p.edgeIds.reduce((s, id) => s + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, tm = sim.tech && p.edgeIds.some((id) => sim.edges[id]?.facility) ? techAt(sim.tech.k, yearOf(sim)).timeMult : 1; return { totLen, req: Math.max(0.0001, p.costBu / Math.max(24 * tm, totLen * 0.8 * tm)) }; };
+  const short: { p: SimProject; f: number; req: number; totLen: number }[] = [];
+  for (const p of projs) if (p.region !== "JP") { const r = p.region, { req, totLen } = reqOf(p), f = Math.min(req, Math.max(0, left[r] ?? 0)); left[r] = (left[r] ?? 0) - f; if (sim.stage3 && f < req) short.push({ p, f, req, totLen }); else if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen); }
+  for (const p of projs) if (p.region === "JP") { const { req, totLen } = reqOf(p), f = Math.min(req, Math.max(0, pool)); pool -= f; if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen); }
+  for (const s of short) { const g = s.p.priority >= TOPUP_MIN_PRIORITY ? Math.min((s.req - s.f) * TOPUP_SHARE, Math.max(0, pool)) : 0; pool -= g; const f = s.f + g; if (f > 0 || s.p.status === "building") progressProject(sim, w, s.p, f, s.req, s.totLen); }
+  if (sim.stage3) { const sl = (sim.regionSlack ??= {}); for (const r of w.t.prefOrder) { const full = regional * (sim.regionShare[r] ?? 1 / w.t.prefOrder.length); if (full > 0) sl[r] = Math.round(((sl[r] ?? 0.5) * 0.97 + 0.03 * Math.max(0, Math.min(1, (left[r] ?? 0) / full))) * 1000) / 1000; } }
   for (const r of Object.keys(left)) pool += Math.max(0, left[r] ?? 0) * 0;      // regional leftovers are not pooled: each region's purse is its own
   if (sim.stage3) { railMonthly(sim, w, total * (1 - sim.dials.roadShare)); resolveConcepts(sim); }
   for (const p of Object.values(sim.projects)) {

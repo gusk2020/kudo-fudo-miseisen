@@ -58,6 +58,7 @@ export interface SimRoute {
   endMonth?: number;        // month the designation ended (abolished); the line stays in the ledger
   mode?: Mode; op?: string; opName?: string;   // rail: operator id and the name printed on the line (国鉄 / a private operator) (key of SimState.operators)
   nick: boolean;          // 通称(酷道/険道/腐道)が付くほど荒れた区間が多い
+  deficitYears?: number;  // Stage 7: consecutive years a railway line ran under the loss-making density (railecon.ts)
   oldEdges: string[];     // 旧道区間: バイパス開通後も当面この路線の管理下に残る区間
 }
 export type ProjectKind = "new" | "upgrade" | "access" | "improve" | "bypass" | "restore" | "electrify" | "convert";
@@ -87,6 +88,7 @@ export interface SimState {
   cities: Record<string, CityState>;
   settlements: Record<string, Settlement>; links: SimLink[]; snaps: Snapshot[]; regionShare: Record<string, number>;
   macro: { mood: number; budgetBu: number; maintCoverage: number };
+  regionSlack?: Record<string, number>;   // Stage 7: per region, the smoothed share of its monthly road purse left unspent (0..1); room to plan more when money sits idle
   routeCounters: Record<string, number>;   // `${grade}:${scope}` -> last number issued (numbers are never reused)
   events: SimEvent[]; stats: StatSample[]; skippedMonths: number; lastWallMs: number;
   ceremonyDone: boolean;

@@ -51,3 +51,9 @@ body.real #sheet { max-height: 62dvh; }
 #sheet .hist { font-size: 12px; color: #b8cde0; padding: 2px 0 0 10px; }
 #sheet .issue { cursor: default; }
 #sheet button.mini { min-height: 30px; padding: 2px 10px; margin: 4px 0 0 10px; font-size: 12px; }
+
+/* Issue #20: the terrain editor is one short row on a phone */
+#toolbar.compact { gap:4px; padding:4px; }
+#toolbar.compact .grp { gap:4px; }
+#toolbar.compact button { padding:4px 7px; font-size:13px; min-height:34px; }
+#toolbar.compact .tag { font-size:12px; color:#c9d8e4; padding:0 2px; white-space:nowrap; }
