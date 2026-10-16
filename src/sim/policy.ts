@@ -118,11 +118,11 @@ export function resolveWindow(sim: SimState, w: World, domain: Domain, spend: Re
   rec.pointsAfter = pol.points; pol.history.push(rec); if (pol.history.length > 20) pol.history.shift(); pol.pending = null;
   return rec;
 }
-/** 「選択しない」: the window is closed without adopting anything. The points granted this time stay in the pool (carried over in full). */
+/** 「点を使わず決定」(旧「選択しない」): the window is closed without adopting anything. The points granted this time stay in the pool (carried over in full). */
 export function skipWindow(sim: SimState): PolicyRecord | null {
   const pol = sim.policy; if (!pol?.pending) return null; const y = pol.pending.year;
   const rec: PolicyRecord = { none: true, year: y, domain: "politics", adopted: [], declined: [], spent: {}, pointsAfter: pol.points, auto: false };
   pol.history.push(rec); if (pol.history.length > 20) pol.history.shift(); pol.pending = null;
-  ev(sim, "policy", `${y}年: 政策介入を行わない(選択しない)`, `持ち点${pol.points}点は次回へ繰り越し`, {}); return rec;
+  ev(sim, "policy", `${y}年: 政策介入を行わない(点を使わず決定)`, `持ち点${pol.points}点は次回へ繰り越し`, {}); return rec;
 }
 export const setPolicyMode = (sim: SimState, m: PolicyMode) => { if (sim.policy) sim.policy.mode = m; };

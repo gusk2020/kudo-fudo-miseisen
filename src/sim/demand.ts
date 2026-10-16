@@ -4,6 +4,7 @@
  *  - local   (沿線): trips of the settlements along the road and village-to-city trips (these stay on an old road)
  * All figures are synthetic "vehicles/day"; they are not statistics.
  */
+import { goodsPull, paxPull } from "./sites";
 import { MinHeap } from "../core/heap";
 import { modeOf, type Mode, type Standard, type Surface, type SimEdge, type SimState } from "./types";
 import type { World } from "./world";
@@ -61,7 +62,9 @@ export function airShare(sim: SimState, w: World, i: number, j: number, railS: n
   const d = Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); if (d < AIR_MIN_KM) return 0;
   return Math.min(0.55 + 0.15 * Math.min(1, sim.dials.airBias), (0.08 + 0.5 * (1 - Math.exp(-(d - AIR_MIN_KM) / 450))) * (1 - 0.45 * railS) * (1 + 0.8 * sim.dials.airBias));
 }
-export function analyze(sim: SimState, w: World): Analysis {
+/** The whole analysis in one go (tests, tools). The game itself uses `analyzeGen` so a long pass can be cut into slices. */
+export function analyze(sim: SimState, w: World): Analysis { const g = analyzeGen(sim, w); for (;;) { const r = g.next(); if (r.done) return r.value; } }
+export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> {
   const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, string>(), N = nodeIds.length;
   for (const n of Object.values(sim.nodes)) nodeByCell.set(n.cell, n.id);
   const multi = sim.stage3 === true, dl = sim.dials;
@@ -76,6 +79,7 @@ export function analyze(sim: SimState, w: World): Analysis {
   const villagesOf = new Map<string, string[]>(); for (const s of Object.values(sim.settlements)) (villagesOf.get(s.city) ?? villagesOf.set(s.city, []).get(s.city)!).push(s.id);
   const railDeg = new Int32Array(N); if (anyRail) for (let i = 0; i < N; i++) railDeg[i] = adjRail[i].length;
   for (let i = 0; i < nc; i++) {
+    if (i > 0 && i % 6 === 0) yield;   // a slice of work per few source cities keeps each frame short
     const src = cityNodes[i]; if (!src) { for (const vid of villagesOf.get(w.cities[i].id) ?? []) reach.set(vid, false); continue; }
     const s0 = pos.get(src)!, R = dijkstra(adjRoad, N, s0), Q = anyRail && railDeg[s0] > 0 ? dijkstra(adjRail, N, s0) : null;
     for (let j = 0; j < nc; j++) if (j !== i && cityNodes[j]) { const k = pos.get(cityNodes[j]!)!; T[i * nc + j] = R.d[k]; if (Q) TT[i * nc + j] = Q.d[k]; }
@@ -89,12 +93,13 @@ export function analyze(sim: SimState, w: World): Analysis {
         continue;
       }
       const s = railShare(tr, tt, dl.carBias, dl.railBias), tmin = Math.min(tr, isFinite(tt) ? tt + RAIL_ACCESS_H : Infinity);
-      const flow = KFLOW * Math.pow(pi.pop * pj.pop, 0.6) / (1 + Math.pow(tmin, 1.2));
+      const ai = paxPull(sim, w, w.cities[i].id), aj = paxPull(sim, w, w.cities[j].id), gi = goodsPull(sim, w, w.cities[i].id), gj = goodsPull(sim, w, w.cities[j].id);   // Issue #18: seats and sights shift a city's pull on passengers (commerce, tourism) and goods (manufacturing)
+      const flow = KFLOW * Math.pow(pi.pop * ai * pj.pop * aj, 0.6) / (1 + Math.pow(tmin, 1.2));
       const air = airShare(sim, w, i, j, s), land = flow * (1 - air); airFlow += flow * air; landFlow += land;
       if (s < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.through += land * (1 - s);
       if (s > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.through += land * s * RAIL_PAX;
       // freight: industry-to-industry; trucks take it unless the railway is competitive and the era favours it
-      const f0 = KFREIGHT * Math.pow(pi.pop * pi.industry * pj.pop * pj.industry, 0.6) / (1 + Math.pow(tmin, 1.2)), sf = railShare(tr, tt, dl.carBias * 0.4 - dl.freightRail, dl.railBias * 0.4 + dl.freightRail);
+      const f0 = KFREIGHT * Math.pow(pi.pop * pi.industry * gi * pj.pop * pj.industry * gj, 0.6) / (1 + Math.pow(tmin, 1.2)), sf = railShare(tr, tt, dl.carBias * 0.4 - dl.freightRail, dl.railBias * 0.4 + dl.freightRail);
       const sea = w.cities[i].coastal && w.cities[j].coastal ? Math.min(0.6, SEA_FREIGHT * (1 + dl.seaBias)) : 0, fl = f0 * (1 - sea); seaFr += f0 * sea; landFr += fl;
       if (sf < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.freight += fl * (1 - sf);
       if (sf > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.freight += fl * sf * RAIL_PAX;

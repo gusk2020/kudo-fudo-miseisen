@@ -5,7 +5,7 @@ import { MinHeap } from "./heap";
 import { dist, pointSegDist, rot as rotv } from "./geom";
 import { fbm, hashArrays } from "./rng";
 import { featureWorldPos } from "./state";
-import { featureWorld, FUJI_RADIUS_KM } from "./validate";
+import { featureWorld, FUJI_RADIUS_KM, fujiHeightFactor } from "./validate";
 import type { IslandId, ProjectState, Vec } from "./types";
 import { ISLAND_IDS } from "./types";
 
@@ -168,8 +168,20 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   // ---- Mt. Fuji ----
   let fujiTop = -1;
   {
-    const c = featureWorldPos(s, "fuji"), a0 = s.features.fuji.rot, fk = s.features.fuji.scale ?? 1, summit = JAPAN.fuji.summitM * (s.features.fuji.height ?? 1);
+    const c = featureWorldPos(s, "fuji"), a0 = s.features.fuji.rot, fk = s.features.fuji.scale ?? 1, summit = JAPAN.fuji.summitM * fujiHeightFactor(s.features.fuji);
     const r0 = FUJI_RADIUS_KM * fk * 1.25;
+    const ff = s.features.fuji;
+    if (ff.pos || ff.scale !== undefined || ff.height !== undefined) {
+      // Issue #18: an edited Fuji leaves no relief behind at the real site -- the DEM's own cone is levelled to its surroundings
+      const o = realToWorld("honshu", s.bodies.honshu, JAPAN.fuji.center), R = FUJI_RADIUS_KM * 1.7, ring: number[] = [];
+      for (let q = 0; q < 16; q++) { const kk = idxOf([o[0] + Math.cos(q * Math.PI / 8) * R * 1.15, o[1] + Math.sin(q * Math.PI / 8) * R * 1.15]); if (kk >= 0 && land[kk] === 1) ring.push(elev[kk]); }
+      ring.sort((p, q) => p - q); const base = ring.length ? ring[Math.floor(ring.length * 0.3)] : 100;
+      for (let j = Math.max(0, Math.floor((o[1] - R - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((o[1] + R - y0) / cell)); j++)
+        for (let i = Math.max(0, Math.floor((o[0] - R - x0) / cell)); i <= Math.min(nx - 1, Math.ceil((o[0] + R - x0) / cell)); i++) {
+          const k = j * nx + i; if (land[k] !== 1 || Number.isNaN(elev[k])) continue; const d = Math.hypot(cx(i) - o[0], cy(j) - o[1]);
+          if (d < R) elev[k] = Math.min(elev[k], base + 500 * (d / R));
+        }
+    }
     for (let j = Math.max(0, Math.floor((c[1] - r0 - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((c[1] + r0 - y0) / cell)); j++)
       for (let i = Math.max(0, Math.floor((c[0] - r0 - x0) / cell)); i <= Math.min(nx - 1, Math.ceil((c[0] + r0 - x0) / cell)); i++) {
         const k = j * nx + i; if (land[k] !== 1) continue;

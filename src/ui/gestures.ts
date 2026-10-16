@@ -8,16 +8,25 @@ export interface EditHandler {
   move(world: Vec, screen: Vec): void;
   end(): void;
   cancel(): void;
+  /** Issue #18: two fingers on a selected object -- move by the midpoint, scale by the spread, rotate by the twist (world coordinates). Absent/false = the camera takes the pinch. */
+  multiBegin?(a: Vec, b: Vec): boolean;
+  multiMove?(a: Vec, b: Vec): void;
+  multiEnd?(cancelled: boolean): void;
 }
 export function attachGestures(canvas: HTMLElement, r: Renderer, h: EditHandler) {
-  const ptrs = new Map<number, Vec>(); let mode: "none" | "pan" | "edit" | "pinch" = "none";
+  const ptrs = new Map<number, Vec>(); let mode: "none" | "pan" | "edit" | "pinch" | "multi" = "none";
   let pinch = { d: 0, mid: [0, 0] as Vec }; let last: Vec = [0, 0];
   const pos = (e: { clientX: number; clientY: number }): Vec => { const b = canvas.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
   const pinchState = () => { const [a, b] = [...ptrs.values()]; return { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as Vec }; };
   canvas.addEventListener("pointerdown", (e) => {
     e.preventDefault(); canvas.setPointerCapture(e.pointerId);
     const p = pos(e); ptrs.set(e.pointerId, p);
-    if (ptrs.size >= 2) { if (mode === "edit") h.cancel(); mode = "pinch"; pinch = pinchState(); return; }
+    if (ptrs.size >= 2) {
+      if (mode === "edit") h.cancel();
+      if (mode === "multi") return;
+      if (ptrs.size === 2 && h.active() && h.multiBegin) { const [a, b] = [...ptrs.values()]; if (h.multiBegin(r.screenToWorld(a[0], a[1]), r.screenToWorld(b[0], b[1]))) { mode = "multi"; return; } }
+      mode = "pinch"; pinch = pinchState(); return;
+    }
     last = p;
     if (h.active() && h.begin(r.screenToWorld(p[0], p[1]), p)) mode = "edit"; else mode = "pan";
   });
@@ -25,7 +34,8 @@ export function attachGestures(canvas: HTMLElement, r: Renderer, h: EditHandler)
     if (!ptrs.has(e.pointerId)) return;
     e.preventDefault();
     const p = pos(e); ptrs.set(e.pointerId, p);
-    if (mode === "pinch" && ptrs.size >= 2) {
+    if (mode === "multi" && ptrs.size >= 2) { const [a, b] = [...ptrs.values()]; h.multiMove?.(r.screenToWorld(a[0], a[1]), r.screenToWorld(b[0], b[1])); }
+    else if (mode === "pinch" && ptrs.size >= 2) {
       const n = pinchState(), before = r.screenToWorld(pinch.mid[0], pinch.mid[1]);
       r.setView({ zoom: r.view.zoom * (n.d / pinch.d) }, true);
       const { w, h: hh } = r.size, z = r.view.zoom; // keep the world point under the fingers fixed
@@ -38,6 +48,7 @@ export function attachGestures(canvas: HTMLElement, r: Renderer, h: EditHandler)
     if (!ptrs.has(e.pointerId)) return;
     ptrs.delete(e.pointerId);
     if (mode === "edit") { if (e.type === "pointercancel") h.cancel(); else h.end(); }
+    if (mode === "multi") { h.multiEnd?.(e.type === "pointercancel"); mode = "pan"; }
     if (ptrs.size === 0) mode = "none";
     else if (ptrs.size === 1) { mode = "pan"; last = [...ptrs.values()][0]; } // lifting one finger of a pinch never starts an edit
   };

@@ -222,7 +222,7 @@ test("限定の地形編集: capital, Alps and Fuji can be set before the first 
   expect(errs).toEqual([]);
 });
 
-test("政策介入: 「選択しない」が最初から並び、「この選択にする」は分野の直下、持ち点は繰り越される", async ({ page }) => {
+test("政策介入: 「点を使わず決定」が最初から並び、「この選択にする」は分野の直下、持ち点は繰り越される", async ({ page }) => {
   const errs = watchErrors(page); await startReal(page, "heisei");
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "priority"; a.sim.speed = 20; });
   await page.waitForFunction(() => (window as any).__kfm.sim.policy.pending, null, { timeout: 60000 });
@@ -305,5 +305,46 @@ test("凡例の「路線名」は国道だけでなく、鉄道と途中で自�
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ zoom: 1.4 }, true); a.renderRoads(); }); const back = await stat(); expect(back.names).toBe(back.signs);
   await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = "legend"; a.buildSheet(); }); await page.locator("#lg-names").uncheck(); const off2 = await stat(); expect(off2.names).toBe(0);
+  expect(errs).toEqual([]);
+});
+
+/** Multi-touch through the browser's own input pipeline (CDP touch events) -- the closest the test can get to a finger on the Pixel 7a. */
+async function touch(page: Page, steps: { type: "touchStart" | "touchMove" | "touchEnd"; pts: { x: number; y: number; id: number }[] }[]) {
+  const cdp = await page.context().newCDPSession(page);
+  for (const s of steps) { await cdp.send("Input.dispatchTouchEvent", { type: s.type, touchPoints: s.pts.map((p) => ({ x: p.x, y: p.y, id: p.id })) }); await page.waitForTimeout(30); }
+}
+test("琵琶湖・富士山のタッチ操作: 1本指で移動、2本指で拡大縮小と回転、置けない所では元に戻り、Undo/Redo・保存で残る", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#terrain-edit-toggle"); await page.click("#tool-feature");
+  const lake = await app(page, "a => { let sx = 0, sy = 0, n = 0; for (let k = 0; k < a.world.N; k++) if (a.world.t.land[k] === 2) { const p = a.world.cellPos(k); sx += p[0]; sy += p[1]; n++; } return [sx / n, sy / n]; }") as [number, number];
+  const box = await page.locator("#app canvas, canvas").first().boundingBox(); const off = { x: box?.x ?? 0, y: box?.y ?? 0 };
+  const c = await screenOf(page, lake), P = (dx: number, dy: number, id: number) => ({ x: off.x + c[0] + dx, y: off.y + c[1] + dy, id });
+  // one finger: a small drag moves the lake (a valid spot), and it stays a valid map
+  await touch(page, [{ type: "touchStart", pts: [P(0, 0, 1)] }, { type: "touchMove", pts: [P(-1, 0, 1)] }, { type: "touchMove", pts: [P(-2, -1, 1)] }, { type: "touchEnd", pts: [] }]);
+  const pos1 = await app(page, "a => a.s.features.biwa.pos") as [number, number] | null; expect(pos1).toBeTruthy();
+  expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error' && i.step === 'features').length")).toBe(0);
+  // two fingers: pinch in (smaller) and twist -> scale and rotation change in ONE undo step
+  const rot0 = await app(page, "a => a.s.features.biwa.rot") as number, n0 = await app(page, "a => a.store.undoStack.length") as number;
+  const q = await screenOf(page, await app(page, "a => a.s.features.biwa.pos") as [number, number]), Q = (dx: number, dy: number, id: number) => ({ x: off.x + q[0] + dx, y: off.y + q[1] + dy, id });
+  const ang = 0.4, r0 = 60, r1 = 42;
+  await touch(page, [
+    { type: "touchStart", pts: [Q(-r0, 0, 1), Q(r0, 0, 2)] },
+    { type: "touchMove", pts: [Q(-r0 * 0.9, -5, 1), Q(r0 * 0.9, 5, 2)] },
+    { type: "touchMove", pts: [Q(-r1 * Math.cos(ang), -r1 * Math.sin(ang), 1), Q(r1 * Math.cos(ang), r1 * Math.sin(ang), 2)] },
+    { type: "touchEnd", pts: [] }]);
+  const sc = await app(page, "a => a.s.features.biwa.scale") as number, rot1 = await app(page, "a => a.s.features.biwa.rot") as number;
+  expect(sc).toBeLessThan(0.9); expect(sc).toBeGreaterThan(0.5);
+  expect(rot1 - rot0).toBeLessThan(-0.1); expect(rot1 - rot0).toBeGreaterThan(-0.6);   // a clockwise twist on screen is a negative turn in the map's y-up frame
+  expect(await app(page, "a => a.store.undoStack.length") as number).toBe(n0 + 1);
+  await page.click("#edit-undo"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeUndefined(); await page.click("#edit-redo"); expect(await app(page, "a => a.s.features.biwa.scale")).toBe(sc);
+  // a pose that would put the lake in the sea is refused: nothing changes
+  const before = await app(page, "a => JSON.stringify(a.s.features.biwa)") as string;
+  expect(await app(page, "a => a.applyFeaturePose('biwa', { pos: [9000, 9000], rot: 0, scale: 1 })")).toBe(false); expect(await app(page, "a => JSON.stringify(a.s.features.biwa)")).toBe(before);
+  // Fuji: its summit follows its size at half the proportion once the size is changed by hand (auto link), and a manual height stays off the link
+  await page.click("#sel-fuji"); expect(await app(page, "a => a.applyFeaturePose('fuji', { pos: a.s.features.fuji.pos ?? a.world.cellPos(a.world.t.stats.fujiTopCell), rot: 0, scale: 0.8 })")).toBe(true);
+  expect(await app(page, "a => a.s.features.fuji.auto")).toBe(true); expect(await page.textContent("#fuji-size")).toContain("高さ×0.9");
+  await page.waitForFunction(() => !(window as any).__kfm.generating && (window as any).__kfm.terrain, null, { timeout: 60000 });
+  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(await app(page, "a => a.s.features.biwa.scale === " + sc + " && a.s.features.fuji.auto === true")).toBe(true);
   expect(errs).toEqual([]);
 });

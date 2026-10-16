@@ -12,7 +12,7 @@ import { TerrainClient } from "../core/terrainClient";
 import { GeoMap } from "../core/geoid";
 import { STEPS, STEP_LABELS, type IslandId, type Issue, type Op, type Place, type StepId, type Vec } from "../core/types";
 import { clampOp } from "../core/warp";
-import { derive, errorsFor, validate } from "../core/validate";
+import { derive, errorsFor, featureWorld, fujiHeightFactor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
 import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
@@ -106,7 +106,7 @@ export class App {
     this.render(); this.buildUI();
     clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.persist(), 400);
   }
-  render() { this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+  render() { this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -190,7 +190,41 @@ export class App {
       move: (w: Vec, sc: Vec) => this.toolMove(w, sc),
       end: () => this.toolEnd(),
       cancel: () => { this.grab = null; this.pending = null; this.render(); },
+      multiBegin: (a: Vec, b: Vec) => this.featureMultiBegin(a, b),
+      multiMove: (a: Vec, b: Vec) => this.featureMultiMove(a, b),
+      multiEnd: (c: boolean) => this.featureMultiEnd(c),
     };
+  }
+  // ---- Issue #18: Lake Biwa / Mt. Fuji by touch -- one finger moves, two fingers scale and twist ----
+  private fpose: { which: "biwa" | "fuji"; a0: Vec; b0: Vec; pos0: Vec; rot0: number; k0: number; cur: { pos: Vec; rot: number; scale: number } | null } | null = null;
+  /** Would this pose be a valid map (anchor on land, whole outline on the same landmass, off the coast and off the other feature)? */
+  featureOk(which: "biwa" | "fuji", pose: { pos: Vec; rot: number; scale: number }): boolean {
+    const cand = JSON.parse(JSON.stringify(this.s)) as Store["state"]; Object.assign(cand.features[which], { pos: pose.pos, rot: pose.rot }); if (pose.scale === 1) delete cand.features[which].scale; else cand.features[which].scale = pose.scale;
+    return !validate(cand).some((i) => i.severity === "error" && i.step === "features");
+  }
+  private featureMultiBegin(a: Vec, b: Vec): boolean {
+    if (this.tool !== "feature" || !this.editable()) return false;
+    const which = this.selFeature, f = this.s.features[which]; this.grab = null; this.pending = null;
+    this.fpose = { which, a0: a, b0: b, pos0: featureWorldPos(this.s, which), rot0: f.rot, k0: f.scale ?? 1, cur: null }; return true;
+  }
+  private featureMultiMove(a: Vec, b: Vec) {
+    const g = this.fpose; if (!g) return;
+    const d0 = Math.hypot(g.b0[0] - g.a0[0], g.b0[1] - g.a0[1]) || 1, d1 = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const th = Math.atan2(b[1] - a[1], b[0] - a[0]) - Math.atan2(g.b0[1] - g.a0[1], g.b0[0] - g.a0[0]);
+    const m0: Vec = [(g.a0[0] + g.b0[0]) / 2, (g.a0[1] + g.b0[1]) / 2], m1: Vec = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const lim = FEATURE_LIMITS.scale, k = Math.round(Math.max(lim[0], Math.min(lim[1], g.k0 * d1 / d0)) * 100) / 100;
+    const pose = { pos: [g.pos0[0] + m1[0] - m0[0], g.pos0[1] + m1[1] - m0[1]] as Vec, rot: g.rot0 + th, scale: k };
+    g.cur = pose; this.pending = { feature: { which: g.which, ...pose, bad: !this.featureOk(g.which, pose) } }; this.render();
+  }
+  private featureMultiEnd(cancelled: boolean) {
+    const g = this.fpose; this.fpose = null; this.pending = null; if (!g || !g.cur || cancelled) { this.render(); return; }
+    this.applyFeaturePose(g.which, g.cur);
+  }
+  /** Commit a pose (one Undo step) if it is a valid map; otherwise say why and change nothing. Fuji's summit follows its size (half the proportion) unless a height was set by hand. */
+  applyFeaturePose(which: "biwa" | "fuji", pose: { pos: Vec; rot: number; scale: number }): boolean {
+    if (!this.featureOk(which, pose)) { this.toast(`${which === "biwa" ? "琵琶湖" : "富士山"}をそこには置けません(海・他の陸地・海岸に近すぎます)`); this.render(); return false; }
+    const ok = this.commitEdit((s) => { const f = s.features[which]; f.pos = pose.pos; f.rot = pose.rot; if (pose.scale === 1) delete f.scale; else f.scale = pose.scale; if (which === "fuji" && f.height === undefined) { if (pose.scale === 1) delete f.auto; else f.auto = true; } });
+    this.buildUI(); return ok;
   }
   toolBegin(w: Vec, sc: Vec): boolean {
     const t = this.tool, s = this.s;
@@ -205,10 +239,10 @@ export class App {
     }
     if (t === "feature") {
       let best: "biwa" | "fuji" | null = null, bd = 34 / this.r.view.zoom;
-      for (const f of ["biwa", "fuji"] as const) { const d = dist(featureWorldPos(s, f), w); if (d < bd) { bd = d; best = f; } }
+      for (const f of ["biwa", "fuji"] as const) { const d = pointInPolygon(w, featureWorld(s, f)) ? 0 : dist(featureWorldPos(s, f), w); if (d < bd) { bd = d; best = f; } }
       if (!best) return false;
       this.selFeature = best; this.grab = { t, which: best, off: [featureWorldPos(s, best)[0] - w[0], featureWorldPos(s, best)[1] - w[1]] as Vec };
-      this.buildUI(); return true;
+      this.buildUI(); this.render(); return true;
     }
     if (t === "ridge-sw" || t === "ridge-ne") { if (!this.onHonshu(w)) return false; this.grab = { t, key: t === "ridge-sw" ? "sw" : "ne", pts: [w] }; this.pending = { ridge: { key: this.grab.key, pts: [w] } }; this.render(); return true; }
     if (t === "ridge-edit") {
@@ -235,7 +269,7 @@ export class App {
       const place: Place = { ...g.place0, pos: [g.place0.pos[0] + w[0] - g.w0[0], g.place0.pos[1] + w[1] - g.w0[1]] };
       g.place = place; this.pending = { body: { id: g.id, place } }; this.render();
     } else if (g.t === "feature") {
-      g.pos = [w[0] + g.off[0], w[1] + g.off[1]]; this.pending = { feature: { which: g.which, pos: g.pos } }; this.render();
+      g.pos = [w[0] + g.off[0], w[1] + g.off[1]]; const f = this.s.features[g.which as "biwa" | "fuji"]; this.pending = { feature: { which: g.which, pos: g.pos, bad: !this.featureOk(g.which, { pos: g.pos, rot: f.rot, scale: f.scale ?? 1 }) } }; this.render();
     } else if (g.t === "ridge-sw" || g.t === "ridge-ne") {
       if (dist(g.pts[g.pts.length - 1], w) >= 10 / this.r.view.zoom && this.onHonshu(w)) { g.pts.push(w); this.pending = { ridge: { key: g.key, pts: g.pts } }; this.render(); }
     } else if (g.t === "ridge-edit") {
@@ -255,7 +289,7 @@ export class App {
       if (op && (op.t !== "pull" || Math.hypot(op.d[0], op.d[1]) > 0.5)) this.store.commit((s) => { s.bodies[g.id as IslandId].ops.push(op!); });
       else this.render();
     } else if (g.t === "move" && g.place) this.store.commit((s) => { s.bodies[g.id as IslandId].place = g.place; });
-    else if (g.t === "feature" && g.pos) this.commitEdit((s) => { s.features[g.which as "biwa" | "fuji"].pos = g.pos; });
+    else if (g.t === "feature" && g.pos) { const f = this.s.features[g.which as "biwa" | "fuji"]; this.applyFeaturePose(g.which, { pos: g.pos, rot: f.rot, scale: f.scale ?? 1 }); }
     else if ((g.t === "ridge-sw" || g.t === "ridge-ne") && g.pts.length >= 2) this.commitEdit((s) => { s.ridges[g.key as "sw" | "ne"] = simplifyLine(g.pts, 4); });
     else if (g.t === "ridge-edit" && g.pts) this.commitEdit((s) => { s.ridges[g.key as "sw" | "ne"] = g.pts; });
     else this.render();
@@ -280,11 +314,11 @@ export class App {
   }
   /** Resize Lake Biwa (outline) or Mt. Fuji (body / summit height) by a factor, within the allowed range and only if the result is still a valid map (no lake touching the coast). */
   scaleFeature(which: "biwa" | "fuji", what: "scale" | "height", factor: number) {
-    const lim = FEATURE_LIMITS[what], cur = this.s.features[which][what] ?? 1, next = Math.round(Math.max(lim[0], Math.min(lim[1], cur * factor)) * 100) / 100;
+    const lim = FEATURE_LIMITS[what], cur = what === "height" && which === "fuji" ? fujiHeightFactor(this.s.features.fuji) : (this.s.features[which][what] ?? 1), next = Math.round(Math.max(lim[0], Math.min(lim[1], cur * factor)) * 100) / 100;
     if (next === cur) { this.toast("これ以上は変えられません"); return false; }
     const cand = JSON.parse(JSON.stringify(this.s)) as Store["state"]; (cand.features[which] as any)[what] = next;
     if (validate(cand).some((i) => i.severity === "error" && i.step === "features")) { this.toast(which === "biwa" ? "琵琶湖が海岸に近づきすぎるため、これ以上大きくできません" : "富士山が海岸に近づきすぎるため、これ以上大きくできません"); return false; }
-    return this.commitEdit((s) => { if (next === 1) delete (s.features[which] as any)[what]; else (s.features[which] as any)[what] = next; });
+    return this.commitEdit((s) => { if (next === 1 && !(what === "height" && s.features[which].auto)) delete (s.features[which] as any)[what]; else (s.features[which] as any)[what] = next; if (which === "fuji" && what === "scale" && s.features.fuji.height === undefined) { if (next === 1) delete s.features.fuji.auto; else s.features.fuji.auto = true; } });
   }
   clearRanges() { this.commitEdit((s) => { s.ridges.ne = null; s.ridges.sw = null; }); }
   /**
@@ -463,7 +497,7 @@ export class App {
     this.status(); this.buildToolbar(); this.buildSheet();
   }
   private tbtn(label: string, on: boolean, f: () => void, id?: string) { return h("button", { id, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: f }, on ? "✓ " + label : label); }
-  private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); }
+  private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); this.render(); }
   buildToolbar() {
     const tb = $("toolbar"); tb.replaceChildren(); const st = this.stepId;
     const TOOL_NAMES: Record<Tool, string> = { palace: "皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
@@ -487,7 +521,7 @@ export class App {
     } else if (st === "features") {
       tools([["feature", "琵琶湖/富士山"], ["ridge-sw", "南西の山脈を描く"], ["ridge-ne", "北東の山脈を描く"], ["ridge-edit", "山脈の点を動かす"]]);
       const g = h("div", { class: "grp" });
-      g.append(this.tbtn("琵琶湖を回転対象", this.selFeature === "biwa", () => { this.selFeature = "biwa"; this.buildToolbar(); }), this.tbtn("富士山を回転対象", this.selFeature === "fuji", () => { this.selFeature = "fuji"; this.buildToolbar(); }));
+      g.append(this.tbtn("琵琶湖を回転対象", this.selFeature === "biwa", () => { this.selFeature = "biwa"; this.buildToolbar(); this.render(); }), this.tbtn("富士山を回転対象", this.selFeature === "fuji", () => { this.selFeature = "fuji"; this.buildToolbar(); this.render(); }));
       g.append(h("button", { id: "rot-l", onclick: () => this.rotateSel(1) }, "⟲5°"), h("button", { id: "rot-r", onclick: () => this.rotateSel(-1) }, "⟳5°"), h("button", { id: "suggest", onclick: () => this.suggestRanges() }, "標準の山脈"));
       tb.append(g);
     } else if (st === "terrain") {
@@ -512,9 +546,9 @@ export class App {
     const tools = (list: [Tool, string][]) => { const g = h("div", { class: "grp" }); for (const [t, l] of list) g.append(this.tbtn(l, this.tool === t, () => this.setTool(t), "tool-" + t)); tb.append(g); };
     tools([["feature", "富士山・琵琶湖を動かす"], ["ridge-ne", "北の山脈を描く"], ["ridge-sw", "南の山脈を描く"], ["ridge-edit", "山脈の点を動かす"]]);
     const g = h("div", { class: "grp" });
-    g.append(this.tbtn("琵琶湖を回転", this.selFeature === "biwa", () => { this.selFeature = "biwa"; this.buildToolbar(); }, "sel-biwa"), this.tbtn("富士山を回転", this.selFeature === "fuji", () => { this.selFeature = "fuji"; this.buildToolbar(); }, "sel-fuji"),
+    g.append(this.tbtn("琵琶湖を回転", this.selFeature === "biwa", () => { this.selFeature = "biwa"; this.buildToolbar(); this.render(); }, "sel-biwa"), this.tbtn("富士山を回転", this.selFeature === "fuji", () => { this.selFeature = "fuji"; this.buildToolbar(); this.render(); }, "sel-fuji"),
       h("button", { id: "rot-l", type: "button", onclick: () => this.rotateSel(1) }, "⟲5°"), h("button", { id: "rot-r", type: "button", onclick: () => this.rotateSel(-1) }, "⟳5°"));
-    const bs = this.s.features.biwa.scale ?? 1, fs = this.s.features.fuji.scale ?? 1, fh = this.s.features.fuji.height ?? 1;
+    const bs = this.s.features.biwa.scale ?? 1, fs = this.s.features.fuji.scale ?? 1, fh = Math.round(fujiHeightFactor(this.s.features.fuji) * 100) / 100;
     const sz = h("div", { class: "grp", id: "feature-size" },
       h("span", { class: "note", id: "biwa-size" }, `琵琶湖 ×${bs}`), h("button", { id: "biwa-smaller", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1 / 1.15) }, "縮小"), h("button", { id: "biwa-bigger", type: "button", onclick: () => this.scaleFeature("biwa", "scale", 1.15) }, "拡大"),
       h("span", { class: "note", id: "fuji-size" }, `富士山 山体×${fs} 高さ×${fh}(約${Math.round(JAPAN.fuji.summitM * fh)}m)`), h("button", { id: "fuji-narrower", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1 / 1.15) }, "山体縮小"), h("button", { id: "fuji-wider", type: "button", onclick: () => this.scaleFeature("fuji", "scale", 1.15) }, "山体拡大"),
