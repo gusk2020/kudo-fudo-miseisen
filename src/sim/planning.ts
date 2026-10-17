@@ -7,13 +7,18 @@ import { refBias, referenceGrids } from "./reference";
 import { buildIndex, facilitySplit, layPath, newId, nodeAtCell } from "./network";
 import { HARD_ROCK_M, crossingEase, facilityCostMult, techAt } from "./tech";
 import { ev, projLabel, rand } from "./engine";
-import { CAPACITY, RAIL_CAPACITY as RAIL_CAP, type Analysis } from "./demand";
+import { CAPACITY, RAIL_CAPACITY as RAIL_CAP, edgeSpeed, type Analysis } from "./demand";
+const edgeKmh = (e: SimEdge) => edgeSpeed(e);
 import { KIND_LABEL, modeOf, type Operator, type ProjectKind, type SimEdge, type SimProject, type SimState, type Standard } from "./types";
 import { pathfind, type World } from "./world";
 
 /** A long tunnel or bridge costs several times as much per km as the open line. */
 export const facCost = (e: SimEdge, sim?: Pick<SimState, "tech" | "startYear" | "month">) => (e.facility === "tunnel" ? 3 : e.facility === "bridge" ? 2.2 : 1) * (e.facility && sim?.tech ? facilityCostMult(sim.tech, sim.startYear + Math.floor(sim.month / 12)) : 1) * (1 + Math.min(0.5, (e.curv ?? 0) * 0.3));
 export const MAX_TUNNEL_PROJECTS = 3;
+/** Stage 7: a new road is laid beside an existing connection only when it cuts the way to at most this share of the cells (a real shortcut). */
+export const DETOUR_CUT = 0.75;
+/** Stage 7 地方道: villages of at least this many people may get a link of their own when it cuts the way to the neighbour to LINK_CUT of the cells. */
+export const LINK_MIN_POP = 1200, LINK_CUT = 0.75;
 /** Counters for tests and tools only (not saved): how often the tunnelling limit or the tunnel-project cap held a project back, and how many hard-rock rolls went wrong. */
 export const techStats = { tooLong: 0, capped: 0, checked: 0, hard: 0, trouble: 0 };
 /**
@@ -44,7 +49,7 @@ export function competeWeight(dl: { carBias: number; railBias: number }, other: 
   const lean = other === "road" ? dl.carBias - dl.railBias : dl.railBias - dl.carBias;   // >0: the world prefers the mode that is already there
   return Math.max(0.25, Math.min(0.9, 0.55 + 0.2 * lean));
 }
-export const MAX_PATHFINDS = 12, REGIONS_PER_YEAR = 14, MAX_ACTIVE_PER_REGION = 2;
+export const MAX_PATHFINDS = 12, REGIONS_PER_YEAR = 14, MAX_PATHFINDS_S3 = 16, REGIONS_PER_YEAR_S3 = 18, MAX_ACTIVE_PER_REGION = 2;
 export const UNIT: Record<Standard, number> = { rural: 1, standard: 1.8, highgrade: 4 };
 interface Cand { score: number; kind: ProjectKind; edge?: SimEdge; vid?: string; a?: number; b?: number; reason: string; toCell?: number; toName?: string; local?: boolean; fromCell?: number; fromName?: string }
 /** Projects born as local branch lines/connectors carry this prefix in their reason (no new save field needed). */
@@ -59,16 +64,17 @@ export function createProject(sim: SimState, kind: ProjectKind, region: string, 
 const nodeName = (sim: SimState, id: string) => sim.nodes[id]?.name ?? "地点";
 
 export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
-  const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; let pf = MAX_PATHFINDS;
-  const start = ((y - sim.startYear) * REGIONS_PER_YEAR) % n, slice = Array.from({ length: REGIONS_PER_YEAR }, (_, i) => regions[(start + i) % n]);
+  const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; let pf = sim.stage3 ? MAX_PATHFINDS_S3 : MAX_PATHFINDS; const RPY = sim.stage3 ? REGIONS_PER_YEAR_S3 : REGIONS_PER_YEAR;
+  const start = ((y - sim.startYear) * RPY) % n, slice = Array.from({ length: Math.min(n, RPY) }, (_, i) => regions[(start + i) % n]);
   const live = activeProjects(sim).filter((p) => modeOf(p) === "road"), busy = new Set(live.flatMap((p) => p.edgeIds)), perRegion = new Map<string, number>();
   for (const p of live) if (p.status !== "suspended") perRegion.set(p.region, (perRegion.get(p.region) ?? 0) + 1);
   const edgesBy = new Map<string, SimEdge[]>(); for (const e of Object.values(sim.edges)) if (modeOf(e) === "road" && e.facility !== "ferry") (edgesBy.get(e.region) ?? edgesBy.set(e.region, []).get(e.region)!).push(e);
   const vilBy = new Map<string, string[]>(); for (const v of Object.values(sim.settlements)) if (!v.gone) { const r = w.prefOf(v.cell) ?? "JP-13"; (vilBy.get(r) ?? vilBy.set(r, []).get(r)!).push(v.id); }
   const cityBy = new Map<string, number[]>(); w.cities.forEach((c, i) => { const r = c.pref ?? "JP-13"; (cityBy.get(r) ?? cityBy.set(r, []).get(r)!).push(i); });
-  const nc = w.cities.length;
+  const nc = w.cities.length, others: { cell: number; pos: [number, number]; name: string; pop: number; isl: number }[] = [];
+  if (sim.stage3) { for (const v of Object.values(sim.settlements)) if (!v.gone && v.pop >= 300) others.push({ cell: v.cell, pos: w.cellPos(v.cell) as [number, number], name: v.name, pop: v.pop, isl: w.t.island[v.cell] }); for (const c of w.cities) others.push({ cell: c.cell, pos: c.pos as [number, number], name: c.name, pop: sim.cities[c.id].pop, isl: w.t.island[c.cell] }); }
   for (const r of slice) {
-    if ((perRegion.get(r) ?? 0) >= MAX_ACTIVE_PER_REGION) continue;
+    if ((perRegion.get(r) ?? 0) >= MAX_ACTIVE_PER_REGION + ((sim.regionSlack?.[r] ?? 0) > 0.5 ? 1 : 0) + ((sim.regionSlack?.[r] ?? 0) > 0.75 ? 1 : 0)) continue;
     const purse = Math.max(8, B * 0.8 * (sim.regionShare[r] ?? 1 / n) * 48), cands: Cand[] = [];
     for (const vid of vilBy.get(r) ?? []) if (an.reach.get(vid) === false) cands.push({ score: 6 + sim.settlements[vid].pop / 2000, kind: "access", vid, reason: `${sim.settlements[vid].name}が道路網から孤立している` });
     for (const e of edgesBy.get(r) ?? []) {
@@ -78,6 +84,18 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
       else if (e.state === "open" && e.surface !== "paved" && d >= 150 && e.quality < 80) cands.push({ score: 1 + d / 400, kind: "upgrade", edge: e, reason: `需要${Math.round(d)}台/日で未舗装・砂利のため舗装化` });
       else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && e.region === r) cands.push({ score: 2.5 + (an.potential.get(e.id) ?? 0) / 60, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}台/日が${e.reviveYears}年続いている` });
     }
+    // Stage 7: 地方道 -- a sizeable village whose way to its neighbour runs a long way round gets a link of its own (farm, forest and pass roads). Built while
+    // the countryside grows and the era builds roads; once the village empties the link falls idle and the ordinary review closes it (廃道).
+    if (sim.stage3) {
+      const vs = (vilBy.get(r) ?? []).map((id) => sim.settlements[id]).filter((v) => v.pop >= LINK_MIN_POP).sort((p, q) => q.pop - p.pop || (p.id < q.id ? -1 : 1)).slice(0, 3);
+      for (const v of vs) {
+        const vp = w.cellPos(v.cell); let best: { cell: number; name: string; pop: number; d: number } | null = null;
+        for (const u of others) { if (u.cell === v.cell || u.isl !== w.t.island[v.cell]) continue; const d = dist(vp, u.pos); if (d >= 6 && d <= 25 && (!best || d < best.d)) best = { cell: u.cell, name: u.name, pop: u.pop, d }; }
+        if (!best) continue;
+        const score = 0.8 + Math.log10(1 + Math.sqrt(v.pop * best.pop) / 2000) * (0.5 + sim.dials.hwyBuild) * (0.6 + 0.4 * sim.dials.growth);
+        cands.push({ score, kind: "access", vid: v.id, toCell: best.cell, toName: best.name, local: true, reason: `${LOCAL_TAG}${v.name}から${best.name}まで直線${Math.round(best.d)}kmだが道が遠回り` });
+      }
+    }
     for (const i of cityBy.get(r) ?? []) for (let j = 0; j < nc; j++) {
       const a = w.cities[i], b = w.cities[j]; if (j === i || a.island !== b.island) continue; const d = dist(a.pos, b.pos); if (d < 12 || d > 160) continue;
       const t = an.T[i * nc + j], roadSvc = isFinite(t) ? Math.min(1, d / (t * 40)) : 0, tt = an.TT[i * nc + j], railSvc = sim.stage3 && isFinite(tt) ? Math.min(1, d / (tt * 60)) : 0;
@@ -86,9 +104,19 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
       const unmet = (Math.pow(sim.cities[a.id].pop * sim.cities[b.id].pop, 0.7) / Math.pow(d, 1.2)) * (1 - service) / (d * 1.3 + 10);
       cands.push({ score: Math.log10(1 + unmet) * 1.2 * (d < 30 ? 1.3 : 1), kind: "new", a: i, b: j, local: d < 30, reason: `${a.name}〜${b.name}間の需要に対し${isFinite(t) ? `所要時間${t.toFixed(1)}h` : "未接続"}` });
     }
-    cands.sort((p, q) => q.score - p.score || (p.kind < q.kind ? -1 : 1)); let made = 0;
-    // one project per visit, plus a second if it is a small local one (a village access road or a short local link): local work must not wait behind trunk work
-    for (const c of cands.slice(0, 8)) { if (made >= 2 || (made === 1 && !(c.kind === "access" || c.local || c.kind === "improve"))) continue; if (tryPlan(sim, w, c, r, purse, () => pf-- > 0, () => pf > 0, y)) made++; }
+    cands.sort((p, q) => q.score - p.score || (p.kind < q.kind ? -1 : 1));
+    // Stage 7: work on the roads that exist (improve, bypass, pave, restore) and new roads (new links, village access) have SEPARATE turns. Before, both
+    // competed in one ranking and a congested road (score 3+) always beat a missing link (score ~1-2), so in 150 years barely twenty new roads were laid.
+    if (!sim.stage3) {   // the Stage 2 (roads only) world keeps its original single ranking
+      let made = 0; for (const c of cands.slice(0, 8)) { if (made >= 2 || (made === 1 && !(c.kind === "access" || c.local || c.kind === "improve"))) continue; if (tryPlan(sim, w, c, r, purse, () => pf-- > 0, () => pf > 0, y)) made++; }
+      yield; if (pf <= 0) break; continue;
+    }
+    const isNew = (c: Cand) => c.kind === "new" || c.kind === "access", slack = sim.regionSlack?.[r] ?? 0, room = MAX_ACTIVE_PER_REGION + (slack > 0.5 ? 1 : 0) + (slack > 0.75 ? 1 : 0) - (perRegion.get(r) ?? 0);   // a region whose money sits idle takes on more work
+    let made = 0, madeNew = 0, madeOld = 0;
+    for (const c of [...cands.filter(isNew).slice(0, 5), ...cands.filter((x) => !isNew(x)).slice(0, 5)].sort((p, q) => q.score - p.score)) {
+      if (made >= room) break; if (isNew(c) ? madeNew >= 1 : madeOld >= 2) continue;
+      if (tryPlan(sim, w, c, r, purse, () => pf-- > 0, () => pf > 0, y)) { made++; if (isNew(c)) madeNew++; else madeOld++; }
+    }
     yield;   // one region per slice: keeps every main-thread task short
     if (pf <= 0) break;
   }
@@ -104,6 +132,8 @@ export function planConvert(sim: SimState, y: number) {
   ev(sim, "project", `廃線跡の転用計画: ${sim.nodes[e.a]?.name ?? "地点"}〜${sim.nodes[e.b]?.name ?? "地点"}(道路へ)`, p.reason, { project: p.id, edge: e.id }); void y;
 }
 export const MAX_RAIL_PATHFINDS = 5;
+/** Stage 7: a corridor between two cities of at least this size and at most this far apart may be built by a private company even in the national railway's era (was 250,000 / 110 km). */
+export const PRIVATE_MIN_POP = 150000, PRIVATE_MAX_KM = 130;
 export const RAIL_UNIT: Record<Standard, number> = { rural: 1.6, standard: 2.8, highgrade: 6 };
 const baseName = (n: string) => n.replace(/市$/, "");
 /** Railway planning, once a year: new lines where the demand is not served by rail, electrification/high-speed where lines are full, revival where demand returned. */
@@ -168,7 +198,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
       const path = pathfind(w, aCell, bCell, { rail: true, ease: crossingEase(sim.tech, y), bias: (k) => refBias(ref.rail)(k) * (idx.roadCells.has(k) ? 1.6 : 1), margin: 16 }); yield; if (!path) continue;   // a new line is a direct one: existing track is not discounted
       const newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) continue;
       const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) continue;   // not buildable with this year's tunnelling (yet)
-      const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > 250000 && dist(a.pos, b.pos) < 110, localPrivate = !!c.local && !jnrEra;
+      const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > PRIVATE_MIN_POP && dist(a.pos, b.pos) < PRIVATE_MAX_KM,   /* Stage 7: private companies enter the busier corridors the national railway serves poorly, so the two compete */ localPrivate = !!c.local && !jnrEra;
       let op = "jnr"; if (c.local && !localPrivate) op = "jnr"; else if (!jnrEra || privateOk) { const anchorIsA = !b || a.pop0 >= b.pop0, id = `p.${anchorIsA ? a.id : b!.id}`, anchor = anchorIsA ? a : b!; if (!sim.operators[id]) sim.operators[id] = { id, name: `${baseName(anchor.name)}${jnrEra ? "電鉄" : "鉄道"}`, kind: "private", since: y, note: "新規参入の鉄道事業者(架空の事業者名)" } as Operator; op = id; }
       const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 88, built: 0, month: sim.month, standard: std, mode: "rail", op }); if (!l.created.length) continue;
       const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s2, x) => s2 + x.lengthKm * RAIL_UNIT[std] * (1 + x.maxGradePct * 0.08) * facCost(x, sim), 0);
@@ -203,6 +233,17 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
     }
     return planImprove(sim, e, region, purse, c);
   }
+  if (c.kind === "access" && c.vid && c.toCell !== undefined && canSpend()) {
+    const v = sim.settlements[c.vid]; if (!spend()) return false;
+    const idx = buildIndex(sim), now = pathfind(w, v.cell, c.toCell, { roadCells: idx.roadCells, margin: 10 }), direct = pathfind(w, v.cell, c.toCell, { margin: 10, ease: crossingEase(sim.tech, y), bias: (k) => (idx.roadCells.has(k) ? 1.25 : 1) });
+    if (!direct) return false; const nowKm = now ? now.length : Infinity; if (direct.length > nowKm * LINK_CUT) return false;   // the way that exists is already about as short
+    if (!techCheck(sim, w, "road", direct, y).ok) return false;
+    const newKm = direct.filter((k, q) => q > 0 && !idx.step.has(`${direct[q - 1]}:${k}`)).length * w.cell; if (newKm < 4) return false; if (newKm > purse) return false; 
+    const l = layPath(sim, w, direct, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 70, built: 0, month: sim.month, standard: "rural" }); if (!l.created.length) return false;
+    const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * 0.9 * (1 + x.maxGradePct * 0.03) * facCost(x, sim), 0);
+    const p = createProject(sim, "access", region, nodeAtCell(sim, w, idx, v.cell, "village"), nodeAtCell(sim, w, idx, c.toCell, "junction"), l.created, l.chain, cost, c.reason, c.score);
+    ev(sim, "project", `地方道の計画: ${v.name}〜${c.toName ?? "隣の集落"}(${Math.round(es.reduce((s, x) => s + x.lengthKm, 0))}km)`, c.reason, { project: p.id }); return true;
+  }
   if (c.kind === "access" && c.vid && canSpend()) {
     const v = sim.settlements[c.vid], city = w.cityById.get(v.city)!; if (!spend()) return false;
     const idx = buildIndex(sim), path = pathfind(w, v.cell, city.cell, { roadCells: idx.roadCells, margin: 12 }); if (!path) return false;
@@ -216,7 +257,24 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
     const a = w.cities[c.a], b = w.cities[c.b]; if (!spend()) return false;
     const idx = buildIndex(sim), path = pathfind(w, a.cell, b.cell, { roadCells: idx.roadCells, ease: crossingEase(sim.tech, y) }); if (!path) return false;
     const tcN = techCheck(sim, w, "road", path, y); if (!tcN.ok) return false;
-    const newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell; if (newKm < (c.local ? 5 : 15) || newKm * 1.3 > Math.max(30, purse)) return false;
+    let newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell;
+    if (newKm < (c.local ? 5 : 15)) {
+      if (!sim.stage3) return false;
+      // Stage 7: the pair is already joined, only slowly. Either a genuinely shorter new road is worth laying (a pass road or a tunnel that cuts a long
+      // detour), or the slowest piece of the road that exists is improved. Before, both cases were simply dropped (9 candidates in 10).
+      if (!canSpend() || !spend()) return false;
+      const direct = pathfind(w, a.cell, b.cell, { ease: crossingEase(sim.tech, y), bias: (k) => (idx.roadCells.has(k) ? 1.25 : 1) });
+      const dk = direct ? direct.filter((k, q) => q > 0 && !idx.step.has(`${direct[q - 1]}:${k}`)).length * w.cell : 0;
+      if (direct && dk >= (c.local ? 5 : 12) && direct.length <= path.length * DETOUR_CUT && techCheck(sim, w, "road", direct, y).ok) { path.splice(0, path.length, ...direct); newKm = dk; }
+      else {
+        const busy = new Set(activeProjects(sim).flatMap((p) => p.edgeIds)), along = new Set<string>(); for (let q = 1; q < path.length; q++) { const st = idx.step.get(`${path[q - 1]}:${path[q]}`); if (st) along.add(st.edge); }
+        const slow = [...along].map((id) => sim.edges[id]).filter((e) => e && e.state === "open" && e.built >= 1 && modeOf(e) === "road" && e.facility !== "ferry" && !busy.has(e.id) && (e.standard === "rural" || e.surface !== "paved")).sort((p, q) => edgeKmh(p) - edgeKmh(q) || (p.id < q.id ? -1 : 1))[0];
+        if (!slow) return false; 
+        if (slow.surface !== "paved") { const cost = slow.lengthKm * 0.5; if (cost > purse) return false; const p = createProject(sim, "upgrade", region, slow.a, slow.b, [slow.id], [{ edgeId: slow.id, dir: 1 }], cost, `${c.reason}。経路上の未舗装区間を舗装`, c.score); ev(sim, "project", `舗装化計画: ${projLabel(sim, p)}`, p.reason, { project: p.id, edge: slow.id }); return true; }
+        return planImprove(sim, slow, region, purse, { ...c, reason: `${c.reason}。経路上で最も遅い区間を改良` });
+      }
+    }
+    if (newKm * 1.3 > Math.max(30, purse)) return false; 
     const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 80, built: 0, month: sim.month, standard: std }); if (!l.created.length) return false;
     const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[std] * (1 + x.maxGradePct * 0.03) * facCost(x, sim), 0);
     const reg = a.pref === b.pref ? region : "JP";

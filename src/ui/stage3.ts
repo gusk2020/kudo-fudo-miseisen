@@ -111,9 +111,36 @@ export function buildAtlas(app: App, body: HTMLElement) {
     for (const e of Object.values(sim.edges)) { const c = codes[e.id]; if (c === undefined) continue; const st = c >> 4, rail = modeOf(e) === "rail"; if (st === 0) rail ? (rl += e.lengthKm) : (rk += e.lengthKm); else if (st === 4) plan++; else if (st === 3) lost++; else sk += rail ? 0 : 0; void sl; }
     body.append(h("div", { class: "issue", id: "atlas-summary" }, `${cur ?? "現在"}年: 道路${Math.round(rk).toLocaleString()}km・鉄道${Math.round(rl).toLocaleString()}km(供用中) ／ 計画・工事中${plan}区間 ／ 廃道・廃線跡${lost}区間`));
   }
+  buildTrends(sim, body);
   if (cur !== null) body.append(h("div", { class: "issue warn", id: "atlas-readonly" }, `${cur}年を閲覧中(読み取り専用・時間は停止)。操作したい場合は「現在に戻る」を押してください。`));
 }
 
+/**
+ * Stage 7: 交通の移り変わり -- the network's length and the railway's share of travel, year by year, from what the game already records each year
+ * (sim.stats). Two small line charts drawn as inline SVG, plus the latest turning points (lines given up, works frozen, new links) so the curves have reasons.
+ */
+const SVGNS = "http://www.w3.org/2000/svg";
+function lineChart(id: string, title: string, series: { label: string; color: string; pts: [number, number][] }[], max: number, fmt: (v: number) => string): HTMLElement {
+  const W = 340, H = 120, L = 34, R = 6, T = 8, B = 18, x0 = Math.min(...series.flatMap((s) => s.pts.map((p) => p[0]))), x1 = Math.max(...series.flatMap((s) => s.pts.map((p) => p[0])));
+  const X = (x: number) => L + ((x - x0) / Math.max(1, x1 - x0)) * (W - L - R), Y = (v: number) => T + (1 - v / (max || 1)) * (H - T - B);
+  const svg = document.createElementNS(SVGNS, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", "100%"); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", title); svg.id = id;
+  const el = (tag: string, a: Record<string, string | number>, text?: string) => { const n = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(a)) n.setAttribute(k, String(v)); if (text) n.textContent = text; svg.appendChild(n); return n; };
+  for (const f of [0, 0.5, 1]) { el("line", { x1: L, x2: W - R, y1: Y(max * f), y2: Y(max * f), stroke: "#5a6b78", "stroke-width": 0.5 }); el("text", { x: L - 3, y: Y(max * f) + 3, "text-anchor": "end", "font-size": 9, fill: "#c9d8e4" }, fmt(max * f)); }
+  for (const yr of [x0, Math.round((x0 + x1) / 2), x1]) el("text", { x: X(yr), y: H - 4, "text-anchor": "middle", "font-size": 9, fill: "#c9d8e4" }, String(yr));
+  for (const s of series) if (s.pts.length > 1) el("polyline", { points: s.pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" "), fill: "none", stroke: s.color, "stroke-width": 2 });
+  const legend = h("div", { class: "row" }, h("b", {}, title), ...series.map((s) => h("small", { style: `color:${s.color}` }, `■ ${s.label} ${s.pts.length ? fmt(s.pts[s.pts.length - 1][1]) : "-"}`)));
+  return h("div", { class: "trend" }, legend, svg);
+}
+export function buildTrends(sim: NonNullable<App["sim"]>, body: HTMLElement) {
+  const st = sim.stats.filter((s) => s.roadKm !== undefined && s.railKm !== undefined); body.append(h("h3", { id: "trends" }, "交通の移り変わり"));
+  if (st.length < 2) { body.append(h("small", {}, "1年ごとに記録されます。しばらく進めてから開いてください。")); return; }
+  const km = Math.max(...st.map((s) => Math.max(s.roadKm!, s.railKm!))) * 1.1;
+  body.append(lineChart("trend-km", "延長(km)", [{ label: "道路", color: "#e8a33d", pts: st.map((s) => [s.year, s.roadKm!]) }, { label: "鉄道", color: "#4ea1ff", pts: st.map((s) => [s.year, s.railKm!]) }], km, (v) => (v >= 1000 ? `${Math.round(v / 100) / 10}千` : `${Math.round(v)}`)));
+  const sh = st.filter((s) => s.paxRail !== undefined);
+  if (sh.length > 1) body.append(lineChart("trend-share", "鉄道の分担", [{ label: "旅客", color: "#4ea1ff", pts: sh.map((s) => [s.year, s.paxRail!]) }, { label: "貨物", color: "#9ad17a", pts: sh.map((s) => [s.year, s.frRail!]) }, { label: "空路", color: "#d18ad1", pts: sh.map((s) => [s.year, s.airShare ?? 0]) }], 1, (v) => `${Math.round(v * 100)}%`));
+  const turns = sim.events.filter((e) => /赤字ローカル線の廃止|工事凍結|工事再開|国鉄を分割|海峡連絡が開通|開業:|地方道の計画/.test(e.text)).slice(-6).reverse();
+  if (turns.length) body.append(h("div", { class: "issue", id: "trend-turns" }, h("b", {}, "最近の転機"), ...turns.map((e) => h("div", {}, h("small", {}, `${sim.startYear + Math.floor(e.month / 12)}年 ${e.text}`)))));
+}
 export function buildPolicy(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "政策介入(10年ごと)")); const sim = app.sim, pol = sim?.policy; if (!sim || !pol) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
   body.append(h("div", { class: "issue", id: "pol-points" }, `共通の持ち点: ${pol.points}点(毎回+${POINTS_PER_WINDOW}点。使わなかった分は全額繰り越し、無制限)`, h("br"), h("small", {}, "同じ政策に点を足すほど効果は逓減します(1点目が最も効き、10点目はごくわずか)。")));

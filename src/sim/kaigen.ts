@@ -134,18 +134,19 @@ export function eraAt(eras: EraEntry[], year: number): { name: string; n: number
 export const eraText = (eras: EraEntry[], year: number): string => { const e = eraAt(eras, year); return e ? `${e.name}${e.n === 1 ? "元" : e.n}年` : `${year}年`; };
 
 /**
- * How much each past choice still weighs in `year` (sums to 1). A new era phases in over RAMP years; every earlier era keeps a share (MEMORY of what it
- * had, per era step), so the first choice still matters in 2100. Returns one weight per era, oldest first.
+ * How much each past choice still weighs in `year` (sums to 1). Stage 7: policy direction ACCUMULATES. Every era weighs by how long it was in force
+ * (its years so far), and the era in force counts CURRENT_WEIGHT times, so a new era phases in by itself as its years add up (no separate ramp) and an
+ * era that lasted 44 years still carries about a fifth of the direction in 2100. Before, every new era halved what came before (MEMORY = 0.5 per step),
+ * so two era changes erased three quarters of the first choice whatever its length -- which is why the ten-yearly policy window could outweigh it.
+ * Returns one weight per era, oldest first.
  */
-export const RAMP_YEARS = 6, MEMORY = 0.5;
+export const CURRENT_WEIGHT = 2, RAMP_YEARS = 6, MEMORY = 0.5;   // RAMP_YEARS / MEMORY: kept for the documentation of the old rule only
 export function eraWeights(eras: EraEntry[], year: number): number[] {
-  let w: number[] = [1];
-  for (let m = 1; m < eras.length; m++) {
-    if (year < eras[m].start) break;
-    const t = Math.max(0, Math.min(1, (year - eras[m].start) / RAMP_YEARS)), f = MEMORY + (1 - MEMORY) * (1 - t), next = [...w.map((x) => x * f), t], sum = next.reduce((p, q) => p + q, 0);
-    w = next.map((x) => x / sum);
-  }
-  return [...w, ...new Array(Math.max(0, eras.length - w.length)).fill(0)];
+  const w = eras.map(() => 0); let cur = 0;
+  for (let i = 0; i < eras.length; i++) if (eras[i].start <= year) cur = i;
+  for (let i = 0; i <= cur; i++) { const end = i < cur ? eras[i + 1].start : year, d = Math.max(0, end - eras[i].start); w[i] = d * (i === cur ? CURRENT_WEIGHT : 1); }
+  const sum = w.reduce((p, q) => p + q, 0); if (sum <= 0) { w.fill(0); w[cur] = 1; return w; }
+  return w.map((x) => x / sum);
 }
 
 /** The stance (and so the dial profile) in force in `year`: the era entry in force for a timeline game, the one fixed era otherwise. */

@@ -48,6 +48,8 @@ export interface Dials {
 export const DIAL_KEYS = ["roadShare", "carBias", "railBias", "freightRail", "jnrSubsidy", "jnrFare", "railBuild", "hwyBuild", "hsr", "growth", "austerity", "privatize", "airBias", "seaBias"] as const;
 export const DIAL_LABEL: Record<keyof Dials, string> = { roadShare: "道路への配分", carBias: "自動車の選好", railBias: "鉄道の選好", freightRail: "貨物の鉄道選好", jnrSubsidy: "国鉄への補助", jnrFare: "国鉄の運賃収入", railBuild: "鉄道建設の意欲", hwyBuild: "道路建設の意欲", hsr: "高速交通の意欲", growth: "経済成長", austerity: "維持費の余裕", privatize: "国鉄民営化の進度", airBias: "空路の選好", seaBias: "海路の選好" };
 export const DIAL_RANGE: Record<keyof Dials, [number, number]> = { roadShare: [0.1, 0.9], carBias: [-1, 2], railBias: [-1, 1.5], freightRail: [-1, 1], jnrSubsidy: [0, 1], jnrFare: [0.25, 1.3], railBuild: [0, 1.5], hwyBuild: [0, 1.5], hsr: [0, 1.5], growth: [0.5, 1.6], austerity: [0.5, 1.3], privatize: [0, 1], airBias: [0, 1.5], seaBias: [0, 1.5] };
+/** Stage 7: the most the policies in force may move one dial, as a share of the dial's range. */
+export const POLICY_CAP = 0.12;
 export const clampDial = (k: keyof Dials, v: number) => Math.max(DIAL_RANGE[k][0], Math.min(DIAL_RANGE[k][1], v));
 
 type Key = [number, number][];   // [year, value] keyframes, linear between them, flat outside
@@ -126,7 +128,9 @@ export interface Mod { id: string; kind: "event" | "policy"; label: string; from
 /** Baseline + every active mod, clamped. The only place dials are composed. */
 export function composeDials(sim: Pick<SimState, "era" | "mods" | "kaigen">, year: number): Dials {
   const d = sim.kaigen ? blendedDials(sim.kaigen.eras, year) : baseDials(eraKeyOf(sim.era), year);
-  for (const m of sim.mods) if (year >= m.from && year < m.until) for (const k of DIAL_KEYS) { const v = m.d[k]; if (v) d[k] += v; }
-  for (const k of DIAL_KEYS) d[k] = clampDial(k, d[k]);
+  const pol = {} as Record<keyof Dials, number>; for (const k of DIAL_KEYS) pol[k] = 0;
+  for (const m of sim.mods) if (year >= m.from && year < m.until) for (const k of DIAL_KEYS) { const v = m.d[k]; if (!v) continue; if (m.kind === "policy") pol[k] += v; else d[k] += v; }
+  // Stage 7: the ten-yearly policies together may move a dial by at most POLICY_CAP of its range, so a policy steers within the world line and never replaces it
+  for (const k of DIAL_KEYS) { const cap = POLICY_CAP * (DIAL_RANGE[k][1] - DIAL_RANGE[k][0]); d[k] += Math.max(-cap, Math.min(cap, pol[k])); d[k] = clampDial(k, d[k]); }
   return d;
 }

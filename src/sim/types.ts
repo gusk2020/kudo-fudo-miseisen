@@ -58,6 +58,7 @@ export interface SimRoute {
   endMonth?: number;        // month the designation ended (abolished); the line stays in the ledger
   mode?: Mode; op?: string; opName?: string;   // rail: operator id and the name printed on the line (国鉄 / a private operator) (key of SimState.operators)
   nick: boolean;          // 通称(酷道/険道/腐道)が付くほど荒れた区間が多い
+  deficitYears?: number;  // Stage 7: consecutive years a railway line ran under the loss-making density (railecon.ts)
   oldEdges: string[];     // 旧道区間: バイパス開通後も当面この路線の管理下に残る区間
 }
 export type ProjectKind = "new" | "upgrade" | "access" | "improve" | "bypass" | "restore" | "electrify" | "convert";
@@ -77,7 +78,7 @@ export interface Settlement { id: string; name: string; cell: number; city: stri
 export interface SimLink { id: string; kind: "bypass"; newEdges: string[]; oldEdges: string[]; month: number; routeId: string | null }
 /** Edge codes (state*16 + quality bucket). `delta`: only edges that changed since the previous snapshot (Stage 3; fold with codesAt). */
 export interface Snapshot { year: number; edges: Record<string, number>; delta?: true }
-export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number }
+export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number; paxRail?: number; frRail?: number }   // paxRail / frRail (Stage 7): the railway's share of passenger-km and of freight on land
 
 export interface SimState {
   schemaVersion: 1 | 2 | 3; mapHash: string; terrainHash: string; seed: number; era: string; startYear: number;
@@ -87,6 +88,7 @@ export interface SimState {
   cities: Record<string, CityState>;
   settlements: Record<string, Settlement>; links: SimLink[]; snaps: Snapshot[]; regionShare: Record<string, number>;
   macro: { mood: number; budgetBu: number; maintCoverage: number };
+  regionSlack?: Record<string, number>;   // Stage 7: per region, the smoothed share of its monthly road purse left unspent (0..1); room to plan more when money sits idle
   routeCounters: Record<string, number>;   // `${grade}:${scope}` -> last number issued (numbers are never reused)
   events: SimEvent[]; stats: StatSample[]; skippedMonths: number; lastWallMs: number;
   ceremonyDone: boolean;

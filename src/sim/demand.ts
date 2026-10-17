@@ -50,6 +50,15 @@ function dijkstra(adj: Adj[][], n: number, s0: number): Tree {
   while (h.size) { const { key, val } = h.pop(); if (key > d[val]) continue; for (const a of adj[val]) { const nd = key + a.t; if (nd < d[a.to]) { d[a.to] = nd; pn[a.to] = val; pe[a.to] = a.edge; h.push(nd, a.to); } } }
   return { d, pn, pe };
 }
+/**
+ * Stage 7: the trips of a village beside a railway are split between the train and the car like any other trip -- by the era's car and rail preference
+ * (the same dials the city-to-city split reads). Before this the railway kept every village's trips whatever happened to the car, so a rural line could
+ * never lose its riders to the road and the road-minded world lines kept their branch lines open for ever. 1 = the old fixed amount; the factor runs
+ * from about 1.3 (1950, few cars) to 0.15 (a car society), never zero (school and elderly riders).
+ */
+export const LOCAL_CAR_TILT = 0.3, LOCAL_RAIL_MIN = 0.15, LOCAL_RAIL_MAX = 1.4;
+export function localCarShare(dl: { carBias: number; railBias: number }): number { return 1 / (1 + Math.exp(-LOGIT_S * (BIAS_K * (dl.carBias - dl.railBias) + LOCAL_CAR_TILT))); }
+export function localRailFactor(dl: { carBias: number; railBias: number }): number { return Math.max(LOCAL_RAIL_MIN, Math.min(LOCAL_RAIL_MAX, 2 * (1 - localCarShare(dl)))); }
 /** Share of a trip that takes the train, from the two travel times and the era's biases. 0 when there is no railway, 1 when there is no road. */
 export function railShare(tRoad: number, tRail: number, carBias: number, railBias: number): number {
   const road = isFinite(tRoad), rail = isFinite(tRail); if (!rail) return 0; if (!road) return 1;
@@ -118,7 +127,7 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
     if (!hit.size) continue;
     const road = [...hit].filter((e) => modeOf(e) === "road"), rail = [...hit].filter((e) => modeOf(e) === "rail");
     if (road.length) { const share = (KLOC * v.pop) / road.length; for (const e of road) { potential.set(e.id, (potential.get(e.id) ?? 0) + share); if (passable(e)) e.local += share; } }
-    if (rail.length) { const share = (KRAIL_LOC * v.pop) / rail.length; for (const e of rail) { potential.set(e.id, (potential.get(e.id) ?? 0) + share); if (passable(e)) e.local += share; } }
+    if (rail.length) { const share = (KRAIL_LOC * v.pop * (multi ? localRailFactor(dl) : 1)) / rail.length; for (const e of rail) { potential.set(e.id, (potential.get(e.id) ?? 0) + share); if (passable(e)) e.local += share; } }
   }
   for (const e of edges) {
     if (!passable(e)) { e.through = 0; e.local = 0; e.freight = 0; }
