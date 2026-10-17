@@ -6,7 +6,8 @@ import { generateTerrain } from "../../src/core/terrain";
 import type { Vec } from "../../src/core/types";
 import { homeCity, lakeHops, performNational, previewNational, subCity } from "../../src/sim/ceremony";
 import { createSim } from "../../src/sim/engine";
-import { isLakeFerry } from "../../src/sim/ferry";
+import { LAKE_BRIDGE_TAG, isLakeFerry, lakeCrossings, maxLakeRoutes, reviewLakeFerries } from "../../src/sim/ferry";
+import { advance } from "../../src/sim/engine";
 import { checkIntegrity } from "../../src/sim/network";
 import { buildWorld, type World } from "../../src/sim/world";
 import { loadDem } from "./helpers";
@@ -46,3 +47,34 @@ describe("Stage 8: 国道1号 across Lake Biwa", () => {
     const old = lakeCentre(base.w); for (const k of lk.cells) { const q = moved.w.cellPos(k); expect(Math.hypot(q[0] - old[0], q[1] - old[1])).toBeGreaterThan(20); }
   });
 });
+
+const lakeCells = (w: World) => { let n = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 2) n++; return n; };
+const openLakes = (sim: ReturnType<typeof createSim>) => Object.values(sim.edges).filter((e) => isLakeFerry(e) && e.state === "open");
+describe("Stage 8: the lake's services grow with demand, within what the lake's size allows", () => {
+  const mk = (mut?: (s: ReturnType<typeof defaultState>) => void) => { const b = worldOf(mut), sim = createSim(b.w, "m", b.hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27" }); return { ...b, sim }; };
+  it("a small lake keeps one service; a big one may get more, never beyond its cap", () => {
+    expect(maxLakeRoutes(10)).toBe(1); expect(maxLakeRoutes(1000)).toBe(4);
+    const small = worldOf((s) => { s.features.biwa.scale = 0.4; }); expect(lakeCrossings(small.w).length).toBeLessThanOrEqual(maxLakeRoutes(lakeCells(small.w)));
+    expect(lakeCrossings(worldOf().w).length).toBeGreaterThan(1);
+  });
+  it("with no traffic and small shore towns nothing opens; a busy lake (or big shore towns) opens new crossings up to the cap", () => {
+    const a = mk(); a.sim.dials.hwyBuild = 0.6; a.sim.macro.budgetBu = 50; for (const c of Object.values(a.sim.cities)) c.pop = 1000;
+    for (const e of openLakes(a.sim)) { e.through = 0; e.local = 0; e.freight = 0; }
+    const n0 = openLakes(a.sim).length; for (let y = 1966; y < 1990; y++) reviewLakeFerries(a.sim, a.w, y); expect(openLakes(a.sim).length).toBe(n0);
+    const b = mk(); b.sim.dials.hwyBuild = 0.6; b.sim.macro.budgetBu = 50; let opened = 0;
+    for (let y = 1966; y < 2000; y++) { for (const e of openLakes(b.sim)) { e.through = 1e6; } opened += reviewLakeFerries(b.sim, b.w, Math.min(y, 1969)); expect(openLakes(b.sim).length).toBeLessThanOrEqual(maxLakeRoutes(lakeCells(b.w))); }
+    expect(openLakes(b.sim).length).toBeGreaterThan(n0); expect(b.sim.events.some((x) => x.text.startsWith("湖上フェリー新設"))).toBe(true); void opened;
+  });
+  it("a busy lake ferry within the year's bridge span is replaced by a bridge; when it opens, 国道1号 moves onto the bridge and the ferry closes", () => {
+    const t = mk(), p = previewNational(t.w, across(t.w), "JP-13", "JP-27"); expect(performNational(t.sim, t.w, p)).toBe(true);
+    const r = Object.values(t.sim.routes).find((x) => x.grade === "national" && x.number === 1)!, fe = r.edges.map((x) => t.sim.edges[x.edgeId]).find(isLakeFerry)!;
+    for (const e of openLakes(t.sim)) { e.through = 0; e.local = 0; } fe.through = 1e6; t.sim.dials.hwyBuild = 0.6; t.sim.macro.budgetBu = 50;
+    expect(reviewLakeFerries(t.sim, t.w, 1950)).toBe(0);                                  // 1950: open water far beyond a 1.5 km span
+    reviewLakeFerries(t.sim, t.w, 2060); const proj = Object.values(t.sim.projects).find((x) => x.reason.startsWith(LAKE_BRIDGE_TAG))!; expect(proj).toBeTruthy();
+    const be = t.sim.edges[proj.edgeIds[0]]; expect(be.facility).toBe("bridge"); expect(be.built).toBe(0); expect(r.edges.some((x) => x.edgeId === fe.id)).toBe(true);
+    proj.status = "building"; proj.priority = 9; let g = 0; while (proj.status !== "open" && g++ < 240) advance(t.sim, t.w, 1);
+    expect(proj.status).toBe("open"); expect(fe.state).toBe("closed"); expect(r.edges.some((x) => x.edgeId === be.id)).toBe(true); expect(r.edges.some((x) => x.edgeId === fe.id)).toBe(false);
+    expect(checkIntegrity(t.sim)).toEqual([]);
+  }, 120000);
+});
+

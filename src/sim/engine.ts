@@ -15,10 +15,10 @@ import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./r
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
 import { techAt, TECH_K } from "./tech";
-import { reviewLakeFerries } from "./ferry";
+import { LAKE_BRIDGE_TAG, reviewLakeFerries } from "./ferry";
 import { reviewRailLines } from "./railecon";
 import { reviewWorks } from "./freeze";
-import { finishCrossing, isCrossingProject, planCrossings } from "./crossing";
+import { carryOver, finishCrossing, isCrossingProject, planCrossings } from "./crossing";
 import { homeCity, subCity, tokyoCity } from "./ceremony";
 import { prefOfSeat } from "../core/seat";
 import type { Vec } from "../core/types";
@@ -436,6 +436,7 @@ function completeRailProject(sim: SimState, w: World, p: SimProject, es: SimEdge
 }
 function completeProject(sim: SimState, w: World, p: SimProject) {
   const es = p.edgeIds.map((id) => sim.edges[id]).filter(Boolean);
+  if (p.reason.startsWith(LAKE_BRIDGE_TAG)) { const moved = es[0] ? carryOver(sim, w, es[0]) : 0; ev(sim, "open", `湖上大橋が開通: ${projLabel(sim, p)}`, `${p.reason}${moved ? `。湖上フェリーの${moved}路線を橋へ付け替えた` : ""}`, { project: p.id }); return; }
   if (isCrossingProject(p)) { const moved = finishCrossing(sim, w, p); ev(sim, "open", `海峡連絡が開通: ${projLabel(sim, p)}(${es[0]?.facility === "tunnel" ? "海底トンネル" : "橋"})`, `${p.reason}${moved ? "。航路の路線は新しい連絡へ付け替えた" : ""}`, { project: p.id }); if (moved) return; }
   if (p.kind === "convert") {
     const re = es[0]; if (!re || re.convertedTo) return;
