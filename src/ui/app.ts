@@ -50,6 +50,8 @@ function toControlPoints(pts: Vec[]): Vec[] {
   return dense;
 }
 const stateKey = (s: Store["state"]) => JSON.stringify([s.seed, s.bodies, s.features, s.ridges, s.ridgeExtra ?? null, s.islands ? 1 : 0]);
+/** Stage 9: how close (screen px) a finger must come to a range's end to continue it, or to a point to grab it -- a fingertip, not a mouse pointer. */
+const RIDGE_TOUCH_PX = 40;
 /** Stage 9: write one stroke of a range: 0 = the first, -1 = a new one appended, n = the n-th added. */
 function setRidgeStroke(s: Store["state"], key: "sw" | "ne", si: number, line: Vec[]) {
   if (si === 0 || (si < 0 && !s.ridges[key])) { s.ridges[key] = line; return; }
@@ -212,7 +214,9 @@ export class App {
 
   // ---------- editing tools ----------
   private bodyForTool(): IslandId { return this.s.step === 1 ? "honshu" : this.activeBody; }
-  private editable() { return this.tool !== "view" && !this.generating && !this.catching && (this.s.step === 6 || !this.store.locked); }
+  // Stage 9 (Pixel 7a report): drawing a range starts a terrain rebuild that takes seconds on a phone; the range tools must keep working meanwhile (each new
+  // edit simply restarts the rebuild), or the next stroke turns into a pan of the map and seems to do nothing
+  private editable() { const ridgeTool = this.tool === "ridge-ne" || this.tool === "ridge-sw" || this.tool === "ridge-edit"; return this.tool !== "view" && (!this.generating || ridgeTool) && !this.catching && (this.s.step === 6 || !this.store.locked); }
   handler() {
     return {
       active: () => this.editable(),
@@ -287,13 +291,13 @@ export class App {
       this.buildUI(); this.render(); return true;
     }
     if (t === "ridge-sw" || t === "ridge-ne") {   // Stage 9: a new stroke -- the first of the range, or one more (continuing a stroke when started at its end)
-      if (!this.onHonshu(w)) return false; const key = t === "ridge-sw" ? "sw" : "ne", lines = [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])], tol = 25 / this.r.view.zoom;
+      if (!this.onHonshu(w)) return false; const key = t === "ridge-sw" ? "sw" : "ne", lines = [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])], tol = RIDGE_TOUCH_PX / this.r.view.zoom;
       let si = s.ridges[key] ? -1 : 0, join: "end" | "start" | null = null;
       lines.forEach((l, i) => { if (!l || l.length < 2 || join) return; if (dist(l[l.length - 1], w) <= tol) { si = i; join = "end"; } else if (dist(l[0], w) <= tol) { si = i; join = "start"; } });
       this.grab = { t, key, pts: [w], si, join }; this.pending = { ridge: { key, pts: [w], si: si >= 0 && join ? si : si } }; this.render(); return true;
     }
     if (t === "ridge-edit") {   // any point of any stroke
-      let best: { key: "sw" | "ne"; si: number; i: number } | null = null, bd = 30 / this.r.view.zoom;
+      let best: { key: "sw" | "ne"; si: number; i: number } | null = null, bd = RIDGE_TOUCH_PX / this.r.view.zoom;
       for (const key of ["sw", "ne"] as const) [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])].forEach((l, si) => (l ?? []).forEach((q, i) => { const d = dist(q, w); if (d < bd) { bd = d; best = { key, si, i }; } }));
       if (!best) return false;
       this.grab = { t, ...(best as { key: "sw" | "ne"; si: number; i: number }) }; return true;
@@ -629,6 +633,7 @@ export class App {
       tb.append(row);
     }
     if (ridges) tb.append(h("div", { class: "grp", id: "edit-more-row" }, tool("ridge-ne", "北"), tool("ridge-sw", "南"), tool("ridge-edit", "点"), h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実アルプス"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "消去"), h("small", { class: "tag", id: "terrain-edit-note" }, "海岸線は固定")));
+    if (ridgeOn) tb.append(h("div", { class: "note", id: "ridge-hint" }, this.tool === "ridge-edit" ? "点をつかんで動かします(線の上の白丸)" : "大きい丸(線の端)から描くと続き、ほかの場所から描くと新しい線を足します。地形の作り直し中でも続けて描けます"));
     const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
   }
   /** Issue #20: the start-of-game settings (the first era, the capital, the sub-capital, the palace) in a sheet of their own, off the terrain menu. */

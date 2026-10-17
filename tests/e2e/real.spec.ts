@@ -550,3 +550,33 @@ test("Stage 9: 山脈は何本でも継ぎ足せて、点を動かせる。Undo/
   for (const r of rows) { expect(r.sameLine).toBe(true); expect(r.h).toBeLessThan(60); }
   expect(errs).toEqual([]);
 });
+
+test("Stage 9 (実機指摘): 山脈は地形の再生成を待たずに続けて描き足せる。端点から描くと続き、別の場所なら新しい線、点は指で掴める", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#terrain-edit-toggle"); await page.click("#edit-more");
+  const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市", "岐阜市"]);
+  for (const key of ["ne", "sw"] as const) {
+    await page.click(`#tool-ridge-${key}`);
+    const base = key === "ne" ? [P[0], P[2]] : [P[4], P[1]];
+    await stroke(page, base);                                   // 1st stroke: the range itself
+    // immediately (terrain is regenerating): continue from its end, then a separate stroke elsewhere
+    const end = await page.evaluate((k) => { const a = (window as any).__kfm, l = a.s.ridges[k]; return a.r.worldToScreen(l[l.length - 1]); }, key) as [number, number];
+    await page.waitForFunction(() => (window as any).__kfm.generating, null, { timeout: 10000 });   // the map is being remade (several seconds on a phone): drawing must still work
+    await stroke(page, [[end[0] + 3, end[1] + 3], [end[0] + 40, end[1] - 30]]);
+    expect(await app(page, `a => (a.s.ridgeExtra?.${key} || []).length`)).toBe(0);   // a continuation: still one stroke, longer
+    const n1 = await app(page, `a => a.s.ridges.${key}.length`) as number; expect(n1).toBeGreaterThan(2);
+    await stroke(page, key === "ne" ? [P[1], P[3]] : [[P[4][0] - 30, P[4][1] + 30], [P[4][0] - 60, P[4][1] + 60]]);
+    expect(await app(page, `a => (a.s.ridgeExtra?.${key} || []).length`)).toBe(1);   // a new, separate stroke
+    await page.click(`#tool-ridge-${key}`);   // tool off
+  }
+  // points can be grabbed with a finger-sized miss (about 30 px off) while the terrain is still being made
+  await page.click("#tool-ridge-edit"); const q = await page.evaluate(() => { const a = (window as any).__kfm, p = a.s.ridgeExtra.ne[0][1]; return [a.r.worldToScreen(p), p]; }) as [[number, number], [number, number]];
+  await page.mouse.move(q[0][0] + 22, q[0][1] + 18); await page.mouse.down(); await page.mouse.move(q[0][0] + 40, q[0][1] - 10, { steps: 4 }); await page.mouse.up();
+  expect(await app(page, `a => a.s.ridgeExtra.ne[0][1][0] !== ${q[1][0]}`)).toBe(true);
+  // undo walks back each edit; the terrain is made for the final map
+  const pastNe = await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne)");
+  await page.click("#edit-undo"); expect(await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne)")).not.toBe(pastNe); await page.click("#edit-redo"); expect(await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne)")).toBe(pastNe);
+  await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });
+  expect(await app(page, "a => { let n = 0; for (let k = 0; k < a.terrain.ridge.length; k++) if (a.terrain.ridge[k] > 0.5) n++; return n; }")).toBeGreaterThan(30);
+  expect(errs).toEqual([]);
+});

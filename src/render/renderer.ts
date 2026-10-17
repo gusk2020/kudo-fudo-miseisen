@@ -151,7 +151,7 @@ export class Renderer {
         if (pr) { const si = pr.si ?? (s.ridges[key] ? -1 : 0); if (si >= 0) lines[si] = pr.pts; else lines.push(pr.pts); }
         for (const line of lines) {
           if (line && line.length > 1) { rg.moveTo(...P(line[0])); for (const q of line.slice(1)) rg.lineTo(...P(q)); rg.stroke({ width: px(5), color: key === "sw" ? 0x7a4a2a : 0x8a3a5a, alpha: 0.85, cap: "round", join: "round" }); }
-          if (line && (s.step === 3 || this.ridgeHandles)) for (const q of line) rg.circle(...P(q), px(3.5)).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x333333 });
+          if (line && (s.step === 3 || this.ridgeHandles)) line.forEach((q, i) => { const end = this.ridgeHandles && (i === 0 || i === line.length - 1); rg.circle(...P(q), px(end ? 8 : 4.5)).fill({ color: end ? 0xffe14a : 0xffffff }).stroke({ width: px(end ? 2 : 1), color: 0x333333 }); });   // Stage 9: the ends (where a stroke can be continued) are big and yellow
         }
       }
       this.overlay.addChild(rg);
