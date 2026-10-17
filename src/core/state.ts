@@ -6,7 +6,7 @@ import { ISLAND_IDS } from "./types";
 export const SCHEMA_VERSION = 1;
 export const LAYER_KEYS = ["coast", "elevation", "rivers", "lakes", "borders", "cities", "ridges"] as const;
 export const ROAD_LAYER_KEYS = ["roads", "rail", "plans", "abandoned", "ports", "airports", "lanes", "signs"] as const;
-export const LAYER_LABELS: Record<string, string> = { coast: "海岸線", elevation: "標高", rivers: "河川", lakes: "湖", borders: "府県境", cities: "都市", ridges: "山脈", roads: "道路", plans: "建設計画・未成線", signs: "路線番号標識", rail: "鉄道", abandoned: "廃止・廃墟跡", ports: "港湾", airports: "空港", lanes: "国際航路・空路" };
+export const LAYER_LABELS: Record<string, string> = { coast: "海岸線", elevation: "標高", rivers: "河川", lakes: "湖", borders: "府県境", cities: "都市", ridges: "山脈", roads: "道路", plans: "建設計画・未成線", signs: "路線番号標識", rail: "鉄道", abandoned: "廃止・廃墟跡", ports: "港湾", airports: "空港", lanes: "国内空路" };
 
 export function defaultBody(id: IslandId): BodyState { return { ops: [], place: { pos: [BODY_DEFS[id].origin[0], BODY_DEFS[id].origin[1]], rot: 0, scale: 1 } }; }
 export function defaultState(seed = 20260101): ProjectState {
@@ -20,6 +20,8 @@ export function defaultState(seed = 20260101): ProjectState {
   };
 }
 /** Stage 3 start: real geography, nothing deformed, already finalised, at the roads step. */
+/** Stage 9: every stroke of one range (the first, then any added). */
+export function ridgeLines(s: Pick<ProjectState, "ridges" | "ridgeExtra">, key: "sw" | "ne"): Vec[][] { return [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])].filter((l): l is Vec[] => !!l && l.length >= 2); }
 export function realState(seed = 20260101): ProjectState { const s = defaultState(seed); s.finalized = true; s.step = 6; s.real = true; s.islands = true; return s; }
 export const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 

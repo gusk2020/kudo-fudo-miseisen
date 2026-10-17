@@ -46,7 +46,8 @@ export interface SimEdge {
   // ---- v3 (Stage 3). Absent on older saves: sanitizeSim fills mode "road", freight 0 ----
   mode?: Mode; op?: string; freight: number; deficitYears?: number;
   curv?: number;   // curvature: total heading change per km of ground (radians/km), from the grid path; absent = straight
-  facility?: "tunnel" | "bridge" | "ferry"; facilityName?: string; convertedTo?: string;   // long tunnels/bridges are edges of their own; a closed railway can be converted into a road
+  facility?: "tunnel" | "bridge" | "ferry"; facilityName?: string; convertedTo?: string;
+  maglev?: true;   // Stage 9: a high-speed railway built as a maglev (リニア); only ever on highgrade rail   // long tunnels/bridges are edges of their own; a closed railway can be converted into a road
 }
 export const modeOf = (x: { mode?: Mode }): Mode => x.mode ?? "road";
 export interface RouteEdgeRef { edgeId: string; dir: 1 | -1 }

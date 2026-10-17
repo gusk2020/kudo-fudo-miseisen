@@ -93,6 +93,7 @@ export function validate(s: ProjectState): Issue[] {
   if (!s.real) for (const k of ["sw", "ne"] as const) {
     const r = s.ridges[k], nm = k === "sw" ? "南西側の山脈" : "北東側の山脈";
     if (!r || r.length < 2) { add("features", "error", `ridge.${k}.missing`, `${nm}が未描画です`); continue; }
+    if ((s.ridgeExtra?.[k] ?? []).some((l) => l.some((p) => !pointInPolygon(p, d.parts.honshu[0])))) add("features", "error", `ridge.${k}.outside`, `${nm}が本州の外に出ています`);
     if (r.some((p) => !pointInPolygon(p, d.parts.honshu[0]))) add("features", "error", `ridge.${k}.outside`, `${nm}が本州の外に出ています`);
     const mt = r.reduce((a, p) => a + tOf(d.frame, p), 0) / r.length;
     if (k === "sw" ? mt > 0.5 : mt < 0.5) add("features", "error", `ridge.${k}.half`, `${nm}が本州の${k === "sw" ? "南西" : "北東"}半分にありません`);

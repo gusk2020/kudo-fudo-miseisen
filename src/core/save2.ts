@@ -13,7 +13,7 @@ import { ISLAND_IDS } from "./types";
 export const SAVE_VERSION = 2;
 /** Hash of everything that defines the finished map (not view prefs or step). Changes whenever the map is edited. */
 export function mapStateHash(s: ProjectState): string {
-  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne, ...(s.islands ? ["islands"] : []), ...(s.capital ? ["capital", s.capital] : []), ...(s.subCapital ? ["sub", s.subCapital] : []), ...(s.palace ? ["palace", s.palace] : []), ...(s.palacePos ? ["palacePos", s.palacePos] : [])]));   // the extras are appended only when set, so a save made before them hashes exactly as it did
+  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne, ...(s.ridgeExtra && (s.ridgeExtra.sw.length || s.ridgeExtra.ne.length) ? [["ridgeExtra", s.ridgeExtra]] : []), ...(s.islands ? ["islands"] : []), ...(s.capital ? ["capital", s.capital] : []), ...(s.subCapital ? ["sub", s.subCapital] : []), ...(s.palace ? ["palace", s.palace] : []), ...(s.palacePos ? ["palacePos", s.palacePos] : [])]));   // the extras are appended only when set, so a save made before them hashes exactly as it did
 }
 export interface GameSave { format: "kudo-fudo-miseisen"; schemaVersion: 2; savedAt: number; map: ProjectState; mapHash: string; sim: SimState | null }
 export function makeSave(map: ProjectState, sim: SimState | null): GameSave {
@@ -43,6 +43,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   for (const e of Object.values<any>(raw.edges)) {
     e.standard = ["rural", "standard", "highgrade"].includes(e.standard) ? e.standard : "rural"; e.state = ["open", "dormant", "closed", "lost"].includes(e.state) ? e.state : e.lost ? "lost" : e.open ? "open" : "closed";
     for (const f of ["through", "local", "peakThrough", "zeroYears", "reviveYears", "congYears", "throughDropYears"]) if (!fin(e[f])) e[f] = 0;
+    if (e.maglev !== undefined && e.maglev !== true) delete e.maglev;
     if (!fin(e.freight)) e.freight = 0; if (e.mode !== "rail") delete e.mode; if (e.op !== undefined && typeof e.op !== "string") delete e.op;
     if (typeof e.nick !== "boolean") e.nick = false; if (typeof e.region !== "string") e.region = ""; if (!Array.isArray(e.hist)) e.hist = []; if (!Array.isArray(e.bypassOf)) e.bypassOf = []; if (!Array.isArray(e.bypassedBy)) e.bypassedBy = [];
   }

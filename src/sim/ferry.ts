@@ -11,7 +11,7 @@ import { dist } from "../core/geom";
 import { pathfind } from "./world";
 import type { Vec } from "../core/types";
 import { capacityOf } from "./demand";
-import { buildIndex, layPath, newEdgeDefaults, newId, nodeAtCell, pushHist, setEdgeState } from "./network";
+import { buildIndex, layPath, newEdgeDefaults, newId, nodeAtCell, nodeSplitAt, pushHist, setEdgeState } from "./network";
 import { ev } from "./engine";
 import { createProject } from "./planning";
 import { techAt } from "./tech";
@@ -78,7 +78,7 @@ export function makeFerry(sim: SimState, w: World, ca: WCity, cb: WCity, mode: M
 }
 /** The same for any two end points that have a cell and a position (a lakeshore port is not a city). */
 export function makeFerryAt(sim: SimState, w: World, ca: { cell: number; pos: Vec }, cb: { cell: number; pos: Vec }, mode: Mode, reason: string, facilityName: string): SimEdge {
-  const idx = buildIndex(sim, mode), a = nodeAtCell(sim, w, idx, ca.cell, "junction"), b = nodeAtCell(sim, w, idx, cb.cell, "junction"), id = newId(sim, "edge");
+  const idx = buildIndex(sim, mode), a = nodeSplitAt(sim, w, idx, ca.cell), b = nodeSplitAt(sim, w, idx, cb.cell), id = newId(sim, "edge");
   const km = Math.round(dist(ca.pos, cb.pos) * 10) / 10, rail = mode === "rail";
   const e: SimEdge = {
     ...newEdgeDefaults(), id, a, b, cells: [ca.cell, cb.cell], lengthKm: km, surface: "paved", quality: 90, built: 1, open: true, state: "open", standard: "rural", maxGradePct: 0, builtMonth: sim.month,
@@ -170,7 +170,7 @@ export function lakeCrossings(w: World): LakeCrossing[] {
 export function nearTown(w: World, k: number): string { let best = w.cities[0], bd = Infinity; for (const c of w.cities) { const d = dist(c.pos, w.cellPos(k)); if (d < bd) { bd = d; best = c; } } return best.name.replace(/市$/, ""); }
 /** Stage 8: a road bridge straight across a lake between two shore cells (drawn as a bridge across the water, never as a road on land). */
 export function makeLakeBridgeAt(sim: SimState, w: World, ca: { cell: number; pos: Vec }, cb: { cell: number; pos: Vec }, facilityName: string, reason: string, mode: Mode = "road"): SimEdge {
-  const idx = buildIndex(sim, mode), a = nodeAtCell(sim, w, idx, ca.cell, "junction"), b = nodeAtCell(sim, w, idx, cb.cell, "junction"), id = newId(sim, "edge"), km = Math.round(dist(ca.pos, cb.pos) * 10) / 10;
+  const idx = buildIndex(sim, mode), a = nodeSplitAt(sim, w, idx, ca.cell), b = nodeSplitAt(sim, w, idx, cb.cell), id = newId(sim, "edge"), km = Math.round(dist(ca.pos, cb.pos) * 10) / 10;
   const cells = [ca.cell, cb.cell];   // like a ferry or a strait link, only its two shore ends are cells (every road cell is land); it is drawn straight across
   const e: SimEdge = { ...newEdgeDefaults(), id, a, b, cells, lengthKm: km, surface: "paved", quality: 90, built: 1, open: true, state: "open", standard: "rural", maxGradePct: 0, builtMonth: sim.month, region: w.prefOf(ca.cell) ?? "JP-13", facility: "bridge", facilityName, ...(mode === "rail" ? { mode: "rail" as const, op: "jnr" } : {}) };
   sim.edges[id] = e; pushHist(sim, e, reason); return e;

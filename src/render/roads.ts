@@ -5,11 +5,12 @@ import { GRADE_MODE, GRADE_SHORT, NICK_SHORT, modeOf, type EdgeState, type Grade
 import { routeLabel, routeOfficial } from "../sim/engine";
 import { routeAtYear, type RouteView } from "../sim/ledger";
 import type { World } from "../sim/world";
-import { FOREIGN, hubsAt } from "../sim/hubs";
+import { hubsAt } from "../sim/hubs";
+import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
 
-export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[] }   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
+export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[]; strokes?: Vec[][]; handles?: boolean; sel?: number | null }   // Stage 9: strokes with their control points (handles) and the selected stroke   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
 export interface PastView { year: number; codes: Record<string, number> }
 export interface RoadArgs {
   sim: SimState | null; w: World | null;
@@ -29,6 +30,11 @@ export const condColour = (q: number) => COND.find((c) => q >= c.min)!.col;
 /** Railways read as dark lines whose shade lightens as they decay, so they never get mistaken for the colour-coded roads. */
 export const RCOND = [{ min: 70, col: 0x12284d, label: "良" }, { min: 40, col: 0x3a4f78, label: "可" }, { min: 15, col: 0x7a869c, label: "悪" }, { min: 0, col: 0xa9a9a9, label: "荒廃" }];
 export const railColour = (q: number) => RCOND.find((c) => q >= c.min)!.col;
+/** Stage 9: the map shows kinds, not administrative grades (those stay in the ledger, the route details and the history). */
+export type EdgeKind = "road" | "hwy" | "rail" | "hsr" | "maglev";
+export const kindOf = (e: Pick<SimEdge, "standard" | "maglev" | "mode">): EdgeKind => (modeOf(e) === "rail" ? (e.maglev ? "maglev" : e.standard === "highgrade" ? "hsr" : "rail") : e.standard === "highgrade" ? "hwy" : "road");
+export const KIND_LABEL9: Record<EdgeKind, string> = { road: "道路", hwy: "高速道路", rail: "鉄道", hsr: "新幹線", maglev: "リニア" };
+export const ROAD_CASING = 0x3d3d3d, HWY_CASING = 0x0b7a3e, HSR_COL = 0x1e6fd9, MAGLEV_COL = 0xa52fd0;
 export const CASING: Record<Grade | "none", number> = { national: 0x8e1b1b, ken: 0x1b6b3a, fu: 0x5a2a8a, jnr: 0x0b2a55, priv: 0x2a2a6a, none: 0x3a3a3a };
 export const WIDTH = { rural: 1.6, standard: 2.8, highgrade: 4.6 } as const;
 export const RAIL_WIDTH = { rural: 1.7, standard: 2.5, highgrade: 4 } as const;
@@ -50,7 +56,7 @@ const opColour = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++
 /** An airport mark (a small plane cross), u = one screen pixel in world units. */
 function plane(g: Graphics, x: number, y: number, u: number, col: number) { g.poly([x - 7 * u, -y - 3 * u, x - 2 * u, -y - 3 * u, x - 2 * u, -y - 8 * u, x, -y - 8 * u, x, -y - 3 * u, x + 4 * u, -y - 3 * u, x + 4 * u, -y - 1 * u, x, -y - 1 * u, x, -y + 4 * u, x - 2 * u, -y + 4 * u, x - 2 * u, -y - 1 * u, x - 7 * u, -y - 1 * u]).fill({ color: col }).stroke({ width: u * 0.8, color: 0x222222 }); }
 /** Port colours by tier (地方港湾 → 国際戦略港湾) and the line colours of the routes; the legend repeats them in words. */
-export const PORT_COL = [0, 0x7fb4e0, 0x2a7fd0, 0x1450a0, 0x0a2e6e], SEA_LANE_COL = 0x1aa3a3, AIR_LANE_COL = 0xd9822b, AIR_DOM_COL = 0xf4f4f4;
+export const PORT_COL2 = [0x4f95d6, 0x0f3f8c], PORT_SIZE = [6, 11], AIR_DOM_COL = 0xf4f4f4;
 export class RoadLayer {
   container = new Container(); private last: RoadArgs | null = null; private sig = "";
   // Everything below is created once and reused: creating and destroying Graphics/Text on every redraw leaked ~130 KB each time (Issue #7).
@@ -73,27 +79,20 @@ export class RoadLayer {
       if (s.hubs) { for (const p of Object.values(s.hubs.ports)) h = (h * 31 + p.tier + (p.until ? 5 : 0)) >>> 0; for (const x of Object.values(s.hubs.airports)) h = (h * 31 + x.runwayM + (x.kind === "hub" ? 3 : 0) + (x.until ? 5 : 0)) >>> 0; for (const r of s.hubs.routes) h = (h * 31 + r.state.length + r.since) >>> 0; }
     }
     const L = a.layers;
-    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
+    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => (c.strokes ? c.strokes.map((st) => st.map((q) => q[0].toFixed(1) + q[1].toFixed(1)).join()).join("/") + (c.sel ?? "") + (c.handles ? "h" : "") : "") + c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
   }
-  /** Stage 8: ports (squares sized by tier), airports (a plane; a hub is bigger and gold) and their routes; in the past view, those of that year. */
+  /** Stage 8/9: ports and airports, each in two sizes only (large: 国際拠点港湾以上 / 国際ハブ空港; small: the rest), and the busiest domestic flights.
+   *  International routes are kept in the simulation but not drawn. In the past view, those of that year. */
   private drawHubs(a: RoadArgs, sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
     const at = hubsAt(sim, year ?? Number.POSITIVE_INFINITY), nodes = this.g.nodes, lanes = this.g.lanes, pos = (id: string) => w.cityById.get(id)?.pos;
-    const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && !lite && zoom >= 0.22;
-    // level of detail: the whole country shows only the big ports' and the hubs' foreign routes and the busiest domestic flights; everything appears as you zoom in
-    const far = zoom < 0.5, big = (r: { mode: string; a: string }) => (r.mode === "sea" ? (sim.hubs!.ports[r.a]?.tier ?? 0) >= 3 : sim.hubs!.airports[r.a]?.kind === "hub");
-    if (showL) {
-      const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol).slice(0, far ? 12 : 30);
-      for (const r of dom) { if (!showA) break; const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; line(lanes, [p, q]); lanes.stroke({ width: px(1.2), color: AIR_DOM_COL, alpha: 0.4 }); }
-      for (const r of at.routes) {
-        if (!r.intl || (r.mode === "sea" ? !showP : !showA) || (far && !big(r))) continue; const p = pos(r.a); if (!p) continue; const off = r.state === "suspended";
-        const d = FOREIGN.find((f) => f.id === r.b); if (!d) continue; const L = (far ? 60 : 35) + (far ? 50 : 35) * Math.min(1, r.vol / 3000), e: Vec = [p[0] + d.dir[0] * L, p[1] + d.dir[1] * L], col = r.mode === "sea" ? SEA_LANE_COL : AIR_LANE_COL;
-        pattern(lanes, [p, e], r.mode === "sea" ? [px(6), px(4)] : [px(2), px(4)]); lanes.stroke({ width: px(r.mode === "sea" ? 2.4 : 1.8), color: col, alpha: off ? 0.3 : 0.9 });
-        lanes.circle(e[0], -e[1], px(3)).fill({ color: col, alpha: off ? 0.3 : 0.95 });
-      }
+    const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && !lite && zoom >= 0.3, far = zoom < 0.5;
+    if (showL && showA) {
+      const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol).slice(0, far ? 10 : 25);
+      for (const r of dom) { const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; line(lanes, [p, q]); lanes.stroke({ width: px(1.1), color: AIR_DOM_COL, alpha: 0.35 }); }
     }
     if (zoom < (lite ? 0.5 : 0.22)) return;
-    if (showP) for (const p of at.ports) { if (far && p.tier < 3) continue; const c = pos(p.city); if (!c) continue; const s = px(4 + 2 * p.tier); nodes.rect(c[0] + px(5), -c[1] + px(2), s, s).fill({ color: PORT_COL[p.tier] }).stroke({ width: px(1.2), color: 0xffffff }); }
-    if (showA) for (const x of at.airports) { const hub = x.kind === "hub" && (year === null || !x.build); if (far && !hub) continue; const c = pos(x.city); if (!c) continue; const s = hub && x.site !== w.cityById.get(x.city)?.cell ? w.cellPos(x.site) : c; plane(nodes, s[0], s[1], px(hub ? 2 : 1.3), hub ? 0xffc83a : 0xffffff); }
+    if (showP) for (const p of at.ports) { const big = p.tier >= 3; if (far && !big) continue; const c = pos(p.city); if (!c) continue; const s = px(big ? PORT_SIZE[1] : PORT_SIZE[0]); nodes.rect(c[0] + px(5), -c[1] + px(2), s, s).fill({ color: big ? PORT_COL2[1] : PORT_COL2[0] }).stroke({ width: px(1.2), color: 0xffffff }); }
+    if (showA) for (const x of at.airports) { const hub = x.kind === "hub" && (year === null || !x.build); if (far && !hub) continue; const c = pos(x.city); if (!c) continue; const s = hub && x.site !== w.cityById.get(x.city)?.cell ? w.cellPos(x.site) : c; plane(nodes, s[0], s[1], px(hub ? 2 : 1.2), hub ? 0xffc83a : 0xffffff); }
   }
   set(a: RoadArgs, zoom: number) { this.last = a; const sg = RoadLayer.signature(a, zoom); if (sg === this.sig) return false; this.sig = sg; this.draw(a, zoom); return true; }
   redraw(zoom: number) { if (this.last) { this.sig = ""; this.set(this.last, zoom); } }
@@ -123,8 +122,8 @@ export class RoadLayer {
         if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
         if (isAband && !showAband) continue;
         if (e.facility === "ferry" && (isLakeFerry(e) ? hide.has("fac:lake") : hide.has("fac:ferry"))) continue;
-        if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (past ? "planned" : planned.get(e.id) ?? "planned")))) continue; }
-        const pts = edgeShape(w, sim, e); shapes.set(e.id, pts);
+        if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("k:" + kindOf(e)) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (past ? "planned" : planned.get(e.id) ?? "planned")))) continue; }
+        const pts = e.facility === "ferry" ? seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)) : edgeShape(w, sim, e); shapes.set(e.id, pts);
         const thin = zoom < 0.35 ? 0.6 : 1, wd = (rail ? RAIL_WIDTH[e.standard] : g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8) * thin, col = rail ? railColour(eff.q) : condColour(eff.q), isOld = e.bypassedBy.length > 0 && !past;
         if (g && e.nick && !past) nickGrade.set(e.id, g);
         if (a.compare) { // halo = what changed since the chosen year
@@ -133,6 +132,7 @@ export class RoadLayer {
           if (c) { line(halo, pts); halo.stroke({ width: px(wd + 7), color: c, alpha: 0.6, cap: "round", join: "round" }); }
         }
         if (e.facility === "ferry") {   // a sea route: a dashed line in its own colour, never the road's casing and fill
+          if (eff.built >= 1 && zoom >= 0.35) for (const q of quays(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e))) { line(fer, q); fer.stroke({ width: px(1.4), color: 0x6b6b6b, alpha: 0.8 }); }
           if (eff.built >= 1) { const on = eff.state === "open"; pat(fer, pts, [px(7), px(5)]); fer.stroke({ width: px(rail ? 2.4 : 3), color: rail ? 0x1b3f8f : 0x2f8fd8, alpha: on ? 0.95 : eff.state === "dormant" ? 0.6 : 0.35 }); }
           continue;
         }
@@ -140,14 +140,19 @@ export class RoadLayer {
           if (e.facility === "bridge") { line(facb, pts); facb.stroke({ width: px(wd + 4), color: 0xffffff, alpha: 0.85, cap: "butt" }); }
           else if (e.facility === "tunnel" && zoom >= 0.5) { pat(fac, pts, [px(3), px(3)]); fac.stroke({ width: px(wd * 1.3), color: 0x2a1f14, alpha: 0.9 }); }
           if (rail) {
+            // Stage 9: one style for every ordinary railway (national or private alike); 新幹線 blue with a white centre line, リニア purple with a dashed one
+            const k = kindOf(e), fc = k === "maglev" ? MAGLEV_COL : k === "hsr" ? HSR_COL : col;
             line(rcas, pts); rcas.stroke({ width: px(wd + (thin < 1 ? 1.2 : 2.2)), color: 0xffffff, alpha: thin < 1 ? 0.7 : 0.92, cap: "round", join: "round" });
-            line(rfill, pts); rfill.stroke({ width: px(wd), color: col, cap: "round", join: "round" });
-            if (e.standard !== "highgrade") { if (zoom >= 0.8) { pat(rtie, pts, [px(4), px(5)]); rtie.stroke({ width: px(wd * 0.7), color: 0xffffff, alpha: 0.95 }); } } else { line(mid, pts); mid.stroke({ width: px(1.2), color: 0xffd23a, alpha: 0.95 }); }
+            line(rfill, pts); rfill.stroke({ width: px(k === "rail" ? wd : wd * 1.15), color: fc, cap: "round", join: "round" });
+            if (k === "rail") { if (zoom >= 0.8) { pat(rtie, pts, [px(4), px(5)]); rtie.stroke({ width: px(wd * 0.7), color: 0xffffff, alpha: 0.95 }); } }
+            else if (k === "hsr") { line(mid, pts); mid.stroke({ width: px(1.2), color: 0xffffff, alpha: 0.95 }); }
+            else { pat(mid, pts, [px(6), px(4)]); mid.stroke({ width: px(1.6), color: 0xffffff, alpha: 0.95 }); }
           } else {
-            line(cas, pts); cas.stroke({ width: px(wd + 2.4), color: CASING[g ?? "none"], alpha: 0.95, cap: "round", join: "round" });
+            const hwy = e.standard === "highgrade";   // Stage 9: one style for every road whatever its administrative grade; a 高速道路 has a green casing and a white centre line
+            line(cas, pts); cas.stroke({ width: px(wd + (hwy ? 3.4 : 2.4)), color: hwy ? HWY_CASING : ROAD_CASING, alpha: 0.95, cap: "round", join: "round" });
             if (isOld) { pat(old, pts, [px(9), px(3), px(2), px(3)]); old.stroke({ width: px(wd), color: col, cap: "butt" }); }
             else { line(fill, pts); fill.stroke({ width: px(wd), color: col, cap: "round", join: "round" }); }
-            if (e.bypassOf.length && !past) { line(mid, pts); mid.stroke({ width: px(1), color: 0xffffff, alpha: 0.9 }); }
+            if (hwy || (e.bypassOf.length && !past)) { line(mid, pts); mid.stroke({ width: px(1), color: 0xffffff, alpha: 0.9 }); }
           }
         } else if (eff.built >= 1 && eff.state === "dormant") {
           if (rail) { pat(rdash, pts, [px(10), px(6)]); rdash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.9 }); } else { pat(fillDash, pts, [px(10), px(6)]); fillDash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.85 }); }
@@ -205,7 +210,9 @@ export class RoadLayer {
     for (const c of a.cer) {
       if (c.segs?.length) for (const sg of c.segs) { if (sg.pts.length < 2) continue; if (sg.ferry) pattern(ov, sg.pts, [px(8), px(6)]); else line(ov, sg.pts); ov.stroke({ width: px(sg.ferry ? 4 : 5), color: sg.ferry ? 0x2f9bff : c.ok ? 0x45e06f : 0xff5252, alpha: 0.85, cap: "round", join: "round" }); }
       else if (c.path && c.path.length > 1) { line(ov, c.path); ov.stroke({ width: px(5), color: c.ok ? 0x45e06f : 0xff5252, alpha: 0.8, cap: "round", join: "round" }); }
-      if (c.pts.length > 1) { line(ov, c.pts); ov.stroke({ width: px(2), color: 0xffffff, alpha: 0.95 }); }
+      if (c.strokes?.length) c.strokes.forEach((st, i) => { if (st.length < 2) return; line(ov, st); ov.stroke({ width: px(c.sel === i ? 4 : 2), color: c.sel === i ? 0xffd23a : 0xffffff, alpha: 0.95 }); });
+      else if (c.pts.length > 1) { line(ov, c.pts); ov.stroke({ width: px(2), color: 0xffffff, alpha: 0.95 }); }
+      if (c.handles && c.strokes) c.strokes.forEach((st, i) => { for (const q of st) ov.circle(q[0], -q[1], px(c.sel === i ? 5 : 4)).fill({ color: c.sel === i ? 0xffd23a : 0xffffff }).stroke({ width: px(1.5), color: 0x1b1b1b }); });
     }
     if (a.pin) { ov.circle(a.pin[0], -a.pin[1], px(7)).fill({ color: 0xff3b6b }).stroke({ width: px(2), color: 0xffffff }); }
   }

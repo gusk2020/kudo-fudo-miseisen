@@ -57,3 +57,7 @@ body.real #sheet { max-height: 62dvh; }
 #toolbar.compact .grp { gap:4px; }
 #toolbar.compact button { padding:3px 5px; font-size:12.5px; min-height:34px; min-width:34px; }
 #toolbar.compact .tag { font-size:12px; color:#c9d8e4; padding:0 2px; white-space:nowrap; }
+/* Stage 9: 首都 / 副首都 / 皇居 each on a row of its own (label then select), never wrapping mid-way on a phone */
+#seats { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+#seats label.seat { display: grid; grid-template-columns: 4.5em 1fr; align-items: center; gap: 8px; white-space: nowrap; width: 100%; }
+#seats label.seat select { min-width: 0; width: 100%; }

@@ -82,6 +82,12 @@ export function nodeAtCell(sim: SimState, w: World, idx: NetIndex, cell: number,
   idx.nodeByCell.set(cell, id); idx.anyNode.set(cell, id); return id;
 }
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+/** Stage 9: a node at this cell that every edge passing through it is actually split at (a ferry or bridge end placed on an existing road must join it, not float on it). */
+export function nodeSplitAt(sim: SimState, w: World, idx: NetIndex, cell: number): string {
+  const id = nodeAtCell(sim, w, idx, cell);
+  for (const e of Object.values(sim.edges)) { const at = e.cells.indexOf(cell); if (at > 0 && at < e.cells.length - 1 && e.a !== id && e.b !== id) splitEdge(sim, w, e.id, at, id); }
+  return id;
+}
 
 /** Split an edge at an interior cell index; routes and projects that reference it are rewritten in place. */
 export function splitEdge(sim: SimState, w: World, edgeId: string, at: number, nodeId: string): string {

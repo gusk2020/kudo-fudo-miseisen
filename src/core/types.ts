@@ -25,6 +25,8 @@ export interface ProjectState {
   bodies: Record<IslandId, BodyState>;
   features: { biwa: FeatureState; fuji: FeatureState };
   ridges: { sw: Vec[] | null; ne: Vec[] | null };
+  /** Stage 9: further strokes of each range (a range may be drawn in several strokes; `ridges` keeps the first). Absent on older saves. */
+  ridgeExtra?: { sw: Vec[][]; ne: Vec[][] };
   finalized: boolean;
   /** Stage 3: the real Japan (no deformation, no drawn ridges). Set only by realState(); the hand-edited map flow never sets it. */
   real?: boolean;

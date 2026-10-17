@@ -14,7 +14,7 @@ import { openStraits } from "./straits";
 import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./reform";
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
-import { techAt, TECH_K } from "./tech";
+import { techAt, techYear, TECH_K } from "./tech";
 import { LAKE_BRIDGE_TAG, reviewLakeFerries } from "./ferry";
 import { ensureHubs, hubBoost, hubStats, reviewHubs } from "./hubs";
 import { reviewRailLines } from "./railecon";
@@ -36,6 +36,8 @@ export const EVENT_CAP = 600, EVENT_CAP_S3 = 1000;
 /** Everyday noise is dropped first when the timeline is full, so the history that matters (world, policy, reforms, openings, closures) survives a century. */
 const MINOR_EVENTS = new Set(["village", "boom", "city", "dormant", "reopen", "lost", "skip", "project", "lane"]);
 export const CAPITAL_BONUS = 1.35, CAPITAL_LOSS = 0.85, SUB_CAPITAL_BONUS = 1.15;   // pop multipliers for a capital that is not Tokyo (provisional)
+/** Stage 9: リニア -- not before this calendar year, nor before the technology clock reaches MAGLEV_TECH_YEAR, and only for long new high-speed lines. */
+export const MAGLEV_YEAR = 2000, MAGLEV_TECH_YEAR = 2030, MAGLEV_MIN_KM = 120;
 export const BUDGET_K = 2.6e-6, NATIONAL_POOL = 0.2, EQUAL_SHARE = 0.45;
 /** Railways add this much on top of the road budget (Stage 3 only); the dials then decide the split. */
 export const RAIL_BUDGET_SCALE = 0.9, RAIL_FARE = 2.2e-6, RAIL_MAINT = { rural: 0.04, standard: 0.07, highgrade: 0.18 } as const, RAIL_DECAY = 0.25;
@@ -71,6 +73,7 @@ export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).yea
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
 export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
+  w.barrier = !!opts.stage3;   // Stage 9: the mountain barrier is part of the real-map game
   const firstCand = opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
   const sim: SimState = {
     schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
@@ -146,7 +149,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, y); }
   const an = yield* analyzeGen(sim, w); yield;
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
-  updatePopulation(sim, w, an, y); updateRegionShares(sim, w); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield;
+  updatePopulation(sim, w, an, y); updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield;
   yield* evaluateEdgesGen(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
@@ -238,12 +241,22 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     }
   }
 }
-export function updateRegionShares(sim: SimState, w: World) {
+/** Stage 9: a share of the road purse follows NEED -- the people of a region weighted by how poorly they are reached (access below the national median) -- rather than wealth (地方交付・格差是正). */
+export const NEED_SHARE = 0.15;
+/** Stage 9: how far below the national median each city's access is (0 = at or above it, 1 = no access). Read by the budget split and the planners. */
+export function accessDeficit(w: World, an: Pick<Analysis, "acc">): Float64Array {
+  const xs = [...an.acc].sort((a, b) => a - b), med = xs[Math.floor(xs.length / 2)] || 1e-9, out = new Float64Array(w.cities.length);
+  for (let i = 0; i < out.length; i++) out[i] = Math.max(0, Math.min(1, (med - (an.acc[i] ?? 0)) / med)); return out;
+}
+export function updateRegionShares(sim: SimState, w: World, an?: Pick<Analysis, "acc">) {
   const econ: Record<string, number> = {}; let tot = 0;
   for (const c of w.cities) { const r = c.pref ?? "JP-13", bo = cityBoost(sim, w, c.id), v = sim.cities[c.id].pop * (1 + bo.commerce) * sim.cities[c.id].industry * (1 + bo.manufacturing); econ[r] = (econ[r] ?? 0) + v; tot += v; }
   for (const v of Object.values(sim.settlements)) { const r = w.prefOf(v.cell) ?? "JP-13", e = v.pop * 0.15; econ[r] = (econ[r] ?? 0) + e; tot += e; }
   const n = w.t.prefOrder.length, share: Record<string, number> = {};
-  for (const r of w.t.prefOrder) share[r] = EQUAL_SHARE / n + (1 - EQUAL_SHARE) * ((econ[r] ?? 0) / (tot || 1));
+  const need: Record<string, number> = {}; let needTot = 0;
+  if (an) { const d = accessDeficit(w, an); w.cities.forEach((c, i) => { const r = c.pref ?? "JP-13", v = sim.cities[c.id].pop * d[i]; need[r] = (need[r] ?? 0) + v; needTot += v; }); }
+  const ns = needTot > 0 ? NEED_SHARE : 0;
+  for (const r of w.t.prefOrder) share[r] = EQUAL_SHARE / n + (1 - EQUAL_SHARE - ns) * ((econ[r] ?? 0) / (tot || 1)) + ns * ((need[r] ?? 0) / (needTot || 1));
   sim.regionShare = share;
 }
 function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
@@ -436,8 +449,11 @@ function completeRailProject(sim: SimState, w: World, p: SimProject, es: SimEdge
   if (p.kind === "restore") { const e = es[0]; if (e) { e.state = "closed"; setEdgeState(sim, e, "open", `沿線需要の回復で復旧(${p.reason})`); e.quality = 55; e.weathering = 0; e.lost = false; e.zeroYears = 0; reviveRoutes(sim, w, e.id); } ev(sim, "reopen", `復活開業: ${label}`, p.reason, { project: p.id }); return; }
   let op = p.op ?? "jnr";
   if (op === "jnr" && sim.operators.jnr?.until !== undefined && es.length) { op = successorOperator(sim, w, es[0], yearOf(sim)); for (const e of es) e.op = op; }   // the national railway no longer exists: the line opens under the successor of its area
+  // Stage 9: a new high-speed line opened when the technology allows it is a maglev (リニア): faster, and drawn differently from a 新幹線
+  const y9 = yearOf(sim), km9 = es.reduce((t, e) => t + e.lengthKm, 0), maglev = es.length > 0 && es.every((e) => e.standard === "highgrade") && y9 >= MAGLEV_YEAR && (!sim.tech || techYear(sim.tech.k, y9) >= MAGLEV_TECH_YEAR) && km9 >= MAGLEV_MIN_KM && sim.dials.hsr > 0.45;
+  if (maglev) for (const e of es) { e.maglev = true; pushHist(sim, e, "超電導リニアとして開業"); }
   const grade: Grade = op === "jnr" ? "jnr" : "priv", r = designate(sim, p.chain, grade, op === "jnr" ? "JP" : op, label, "新線の開業");
-  p.routeId = r?.id ?? null; ev(sim, "open", `開業: ${r ? routeOfficial(r) : label}(${label}、${Math.round(es.reduce((t, e) => t + e.lengthKm, 0))}km)`, `工事費${p.costBu.toFixed(1)}を投入。${p.reason}`, { project: p.id });
+  p.routeId = r?.id ?? null; ev(sim, "open", `開業: ${r ? routeOfficial(r) : label}${maglev ? "(リニア)" : ""}(${label}、${Math.round(es.reduce((t, e) => t + e.lengthKm, 0))}km)`, `工事費${p.costBu.toFixed(1)}を投入。${p.reason}`, { project: p.id });
 }
 function completeProject(sim: SimState, w: World, p: SimProject) {
   const es = p.edgeIds.map((id) => sim.edges[id]).filter(Boolean);
