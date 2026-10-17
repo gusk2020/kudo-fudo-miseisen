@@ -204,7 +204,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     if (c.local) { if (nLocal >= 1 || liveLocal + nLocal >= maxLocal) continue; }
     else if (c.kind === "new" ? nNew >= wantNew || liveNew + nNew >= maxNew : nUp >= wantUp || liveUp + nUp >= maxUp) continue;   // new lines and upgrades each get their own quota, so upgrades cannot crowd out new lines for ever
     if (c.edge && (c.kind === "electrify" || c.kind === "restore")) {
-      const e = c.edge, cost = e.lengthKm * (c.kind === "restore" ? (e.state === "lost" ? 2.4 : 1.2) : e.standard === "rural" ? 1.3 : 3.2);
+      const e = c.edge, cost = e.lengthKm * (c.kind === "restore" ? (e.state === "lost" ? 2.4 : 1.2) : e.standard === "rural" ? 1.3 : 3.2) * mountainCost(w, e.cells);   // Stage 9: upgrading a line through drawn mountains costs as much more as building it
       const p = createProject(sim, c.kind, "JP", e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], cost, c.reason, c.score); p.mode = "rail"; p.op = e.op ?? "jnr";
       ev(sim, "project", `${c.kind === "restore" ? "復活計画" : e.standard === "rural" ? "電化・複線化計画" : "高速化計画"}: ${projLabel(sim, p)}`, c.reason, { project: p.id, edge: e.id }); made++; nUp++; yield; continue;
     }
@@ -236,8 +236,8 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
       const path = pathfind(w, e.cells[0], e.cells[e.cells.length - 1], { bias: (k) => (near.has(k) ? 3 : 1), margin: 12, ease: crossingEase(sim.tech, y) });
       const shared = path ? path.filter((k) => old.has(k)).length : 99;
       if (path && shared === 0 && path.length >= 3) {
-        const idx = buildIndex(sim); if (path.slice(1, -1).some((k) => idx.nodeByCell.has(k) || idx.cellEdge.has(k))) return planImprove(sim, e, region, purse, c);
-        const tcB = techCheck(sim, w, "road", path, y); if (!tcB.ok) return planImprove(sim, e, region, purse, c);   // would cut another road: improve in place instead
+        const idx = buildIndex(sim); if (path.slice(1, -1).some((k) => idx.nodeByCell.has(k) || idx.cellEdge.has(k))) return planImprove(sim, w, e, region, purse, c);
+        const tcB = techCheck(sim, w, "road", path, y); if (!tcB.ok) return planImprove(sim, w, e, region, purse, c);   // would cut another road: improve in place instead
         const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 90, built: 0, month: sim.month, standard: target });
         if (l.created.length) {
           const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[target] * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * mountainCost(w, x.cells), 0);
@@ -247,7 +247,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
         }
       }
     }
-    return planImprove(sim, e, region, purse, c);
+    return planImprove(sim, w, e, region, purse, c);
   }
   if (c.kind === "access" && c.vid && c.toCell !== undefined && canSpend()) {
     const v = sim.settlements[c.vid]; if (!spend()) return false;
@@ -287,7 +287,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
         const slow = [...along].map((id) => sim.edges[id]).filter((e) => e && e.state === "open" && e.built >= 1 && modeOf(e) === "road" && e.facility !== "ferry" && !busy.has(e.id) && (e.standard === "rural" || e.surface !== "paved")).sort((p, q) => edgeKmh(p) - edgeKmh(q) || (p.id < q.id ? -1 : 1))[0];
         if (!slow) return false; 
         if (slow.surface !== "paved") { const cost = slow.lengthKm * 0.5; if (cost > purse) return false; const p = createProject(sim, "upgrade", region, slow.a, slow.b, [slow.id], [{ edgeId: slow.id, dir: 1 }], cost, `${c.reason}。経路上の未舗装区間を舗装`, c.score); ev(sim, "project", `舗装化計画: ${projLabel(sim, p)}`, p.reason, { project: p.id, edge: slow.id }); return true; }
-        return planImprove(sim, slow, region, purse, { ...c, reason: `${c.reason}。経路上で最も遅い区間を改良` });
+        return planImprove(sim, w, slow, region, purse, { ...c, reason: `${c.reason}。経路上で最も遅い区間を改良` });
       }
     }
     if (newKm * 1.3 > Math.max(30, purse)) return false; 
@@ -299,8 +299,8 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
   }
   return false;
 }
-function planImprove(sim: SimState, e: SimEdge, region: string, purse: number, c: Cand): boolean {
-  const target: Standard = e.standard === "rural" ? "standard" : "highgrade", cost = e.lengthKm * UNIT[target] * 0.6; if (cost > purse * 1.5) return false;
+function planImprove(sim: SimState, w: World, e: SimEdge, region: string, purse: number, c: Cand): boolean {
+  const target: Standard = e.standard === "rural" ? "standard" : "highgrade", cost = e.lengthKm * UNIT[target] * 0.6 * mountainCost(w, e.cells); if (cost > purse * 1.5) return false;
   const p = createProject(sim, "improve", region, e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], cost, c.reason, c.score);
   ev(sim, "project", `改良計画: ${nodeName(sim, e.a)}〜${nodeName(sim, e.b)}(${target === "standard" ? "2車線化" : "高規格化"})`, c.reason, { project: p.id, edge: e.id }); return true;
 }

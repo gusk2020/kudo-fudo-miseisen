@@ -7,7 +7,10 @@ import { createSim } from "../../src/sim/engine";
 import { checkIntegrity } from "../../src/sim/network";
 import { buildWorld, type World } from "../../src/sim/world";
 import { loadDem } from "./helpers";
-import { city, line, viaShikoku } from "./simhelp";
+import { city, line, realWorld, ridgeWorld, stage3SimOn, viaShikoku } from "./simhelp";
+import { MTN_RAIL_PASS_M, mountainBarrier, mountainCost, pathfind } from "../../src/sim/world";
+import { analyze } from "../../src/sim/demand";
+import { advance } from "../../src/sim/engine";
 
 const worldOf = (mut: (s: ReturnType<typeof defaultState>) => void = () => {}) => { const s = defaultState(); s.islands = true; mut(s); const t = generateTerrain(s, loadDem()); return { w: buildWorld(t, s.seed), hash: t.hash, s }; };
 describe("Stage 9: 国道1号 keeps the land masses the player drew", () => {
@@ -26,4 +29,31 @@ describe("Stage 9: 国道1号 keeps the land masses the player drew", () => {
     const w = base.w, p = previewNational(w, line([homeCity(w)!.pos, city(w, "名古屋市").pos, subCity(w, "JP-27")!.pos]), "JP-13", "JP-27"); expect(p.ok, p.reasons.join()).toBe(true);
     expect(p.ferries.length).toBe(0);
   });
+});
+
+describe("Stage 9: a drawn mountain range is a real barrier", () => {
+  const NE: [number, number][] = [[138.35, 34.95], [138.4, 35.4], [138.5, 35.9], [138.6, 36.4]], SW: [number, number][] = [[133.75, 34.45], [133.65, 34.8], [133.55, 35.15], [133.45, 35.45]];
+  it("path-finding goes round or over the lowest pass, a railway never climbs over the high crest, and the cost of a line through it is several times higher", () => {
+    const flat = realWorld(true).w, mtn = ridgeWorld({ ne: NE }).w, a = city(flat, "東京").cell, b = city(flat, "名古屋市").cell;
+    const crest: number[] = []; for (let k = 0; k < mtn.N; k++) if (mtn.t.ridge[k] > 0.85) crest.push(mtn.t.elev[k]); crest.sort((x, y) => x - y); const median = crest[Math.floor(crest.length / 2)];
+    const p0 = pathfind(flat, a, b)!, p1 = pathfind(mtn, a, b)!, r1 = pathfind(mtn, a, b, { rail: true })!;
+    expect(p1.length).toBeGreaterThan(p0.length);
+    const highOn = (p: number[]) => Math.max(...p.filter((k) => mtn.t.ridge[k] > 0.5).map((k) => mtn.t.elev[k]), 0);
+    expect(highOn(p1)).toBeLessThan(median);                     // over the lowest pass, never the crest
+    expect(highOn(r1)).toBeLessThanOrEqual(MTN_RAIL_PASS_M);     // a railway does not climb over the range at all in 1950
+    expect(mountainCost(mtn, p0)).toBeGreaterThan(1.5); expect(mountainCost(flat, p0)).toBe(1);
+    expect(mountainBarrier(0.9, 2400)).toBeGreaterThan(3 * mountainBarrier(0.9, 1500)); expect(mountainBarrier(0.1, 3000)).toBe(0);
+  });
+  it("1950-1975: a range across the Tokaido makes Tokyo-Nagoya clearly slower by road and by rail (until tunnels come); one across the Sanyo lengthens the Okayama-Hiroshima way", () => {
+    const run = (base: ReturnType<typeof realWorld>, y1: number) => { const { sim, w } = stage3SimOn(base); advance(sim, w, 12 * (y1 - 1950)); return { an: analyze(sim, w), w }; };
+    const t = (r: ReturnType<typeof run>, x: string, y: string, rail = false) => { const nc = r.w.cities.length, i = r.w.cities.findIndex((c) => c.name === x), j = r.w.cities.findIndex((c) => c.name === y); return (rail ? r.an.TT : r.an.T)[i * nc + j]; };
+    for (const y of [1960, 1975]) {
+      const none = run(realWorld(true), y), ne = run(ridgeWorld({ ne: NE }), y);
+      expect(t(ne, "東京", "名古屋市"), `road ${y}`).toBeGreaterThan(1.3 * t(none, "東京", "名古屋市"));
+      expect(t(ne, "東京", "名古屋市", true), `rail ${y}`).toBeGreaterThan(1.3 * t(none, "東京", "名古屋市", true));
+    }
+    const flat = realWorld(true).w, mtn = ridgeWorld({ sw: SW }).w, a = city(flat, "岡山市").cell, b = city(flat, "広島市").cell;
+    expect(pathfind(mtn, a, b, { rail: true })!.length).toBeGreaterThan(pathfind(flat, a, b, { rail: true })!.length);
+    expect(mountainCost(mtn, pathfind(flat, a, b)!)).toBeGreaterThan(1.5);
+  }, 600000);
 });
