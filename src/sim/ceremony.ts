@@ -2,8 +2,8 @@
 import { dist, pointSegDist } from "../core/geom";
 import type { Vec } from "../core/types";
 import { designate, ev, routeOfficial } from "./engine";
-import { layPath } from "./network";
-import { LAKE_TAG, crossingPorts, findFerry, makeFerry, makeFerryAt, makeLakeBridgeAt, massRoute, nearTown } from "./ferry";
+import { buildIndex, layPath, nodeSplitAt } from "./network";
+import { LAKE_TAG, MAX_FERRY_KM, crossingPorts, findFerry, makeFerry, makeFerryAt, makeLakeBridgeAt, massRoute, nearTown, servedMasses } from "./ferry";
 import { techAt } from "./tech";
 import { prefOfSeat } from "../core/seat";
 import { ERA, eraLabel, type SimState } from "./types";
@@ -103,7 +103,7 @@ export function performCeremony(sim: SimState, w: World, kokudo: CerPreview, fud
 
 
 // ---------------------------------------------------------------- Issue #15: the one national road, capital -> sub-capital ----------
-export interface CerSeg { cells: number[]; ferry: boolean; lake?: "ferry" | "bridge" }
+export interface CerSeg { cells: number[]; ferry: boolean; lake?: "ferry" | "bridge"; port?: true /* Stage 9: a crossing where the player drew it (shore cells, not port cities) */ }
 export interface LakeHop { a: number; b: number; waterKm: number; kind: "ferry" | "bridge"; tIn: number; tOut: number; from: string; to: string }
 export interface NatPreview extends CerPreview { segments: CerSeg[]; ferries: { from: string; to: string; km: number }[]; lakes?: { from: string; to: string; km: number; kind: "ferry" | "bridge" }[]; from: string; to: string }
 /**
@@ -128,6 +128,16 @@ export function lakeHops(w: World, drawn: Vec[], techK = 2, year = 1950): LakeHo
   }
   return out;
 }
+/** Stage 9: the closest pair of coastal cells between two land masses, near where the drawing leaves one (pa) and reaches the other (pb). */
+function nearestPair(w: World, la: number, lb: number, pa: Vec, pb: Vec): { a: number; b: number; km: number } | null {
+  const coast = (lm: number) => { const out: number[] = []; for (let k = 0; k < w.N; k++) { if (w.lm[k] !== lm) continue; const i = k % w.nx, j = (k / w.nx) | 0; if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([di, dj]) => { const x = i + di, y = j + dj; return x < 0 || y < 0 || x >= w.nx || y >= w.ny || w.t.land[y * w.nx + x] === 0; })) out.push(k); } return out; };
+  const A = coast(la), B = coast(lb); if (!A.length || !B.length) return null;
+  // score: the crossing itself, plus how far its ends are from where the line was drawn (so the crossing sits where the player crossed)
+  const mid: Vec = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], pick = (C: number[]) => C.map((k) => ({ k, d: dist(w.cellPos(k), mid) })).sort((p, q) => p.d - q.d).slice(0, 60);
+  let best: { a: number; b: number; km: number } | null = null, bs = Infinity;
+  for (const x of pick(A)) for (const y of pick(B)) { const km = dist(w.cellPos(x.k), w.cellPos(y.k)), sc = km + 0.5 * (x.d + y.d); if (sc < bs) { bs = sc; best = { a: x.k, b: y.k, km: Math.round(km * 10) / 10 }; } }
+  return best;
+}
 /**
  * 国道1号: from the capital's 県庁所在地 to the sub-capital's. The player draws strokes (several are fine); the program snaps them to land, joins them, and where the way
  * leaves a land mass it adds the ferry by itself (never a road over water), chaining masses when it must (Okinawa -> Kyushu -> Honshu -> Hokkaido ...).
@@ -144,17 +154,31 @@ export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: 
   if (!near(drawn[0], home, 45)) reasons.push(`起点が首都(${home.name})の府県にありません。${home.name}の近くから描き始めてください`);
   if (!near(drawn[drawn.length - 1], dest, 50)) reasons.push(`終点が副首都(${dest.name})に届いていません。${dest.name}の近く50km以内で止めてください`);
   if (reasons.length) return bad(reasons);
-  const route = massRoute(w, w.lm[home.cell], w.lm[dest.cell]); if (!route) return bad([`${home.name}から${dest.name}へ、航路でも結べません`]);
-  // waypoints: the drawn line, resampled, each tied to the land mass it lies on (those on masses the way does not use are ignored)
+  // waypoints: the drawn line, resampled and snapped to the nearest land (the only correction made to it)
   const hops = lakeHops(w, drawn, opts.techK ?? 2, opts.year ?? 1950), inHop = (t: number) => hops.some((hp) => t > hp.tIn - w.cell && t < hp.tOut + w.cell);
-  const bias = (k: number) => 1 + Math.pow(lineDist(w.cellPos(k), drawn) / 25, 2), vias = resampleT(drawn, 35).slice(1, -1).filter((v) => !inHop(v.t)).map((v) => ({ ...v, k: nearestLandCell(w, v.p, () => true) })).filter((v) => v.k >= 0 && dist(w.cellPos(v.k), v.p) <= 40);
+  const bias = (k: number) => 1 + Math.pow(lineDist(w.cellPos(k), drawn) / 25, 2), served = new Set(servedMasses(w));
+  const vias = resampleT(drawn, 35).slice(1, -1).filter((v) => !inHop(v.t)).map((v) => ({ ...v, k: nearestLandCell(w, v.p, () => true) })).filter((v) => v.k >= 0 && dist(w.cellPos(v.k), v.p) <= 40)
+    .filter((v) => served.has(w.lm[v.k]) || (w.cellOf(v.p) >= 0 && w.t.land[w.cellOf(v.p)] === 1));
+  // Stage 9: the land masses are visited in the order they were DRAWN (a 国道1号 drawn through Shikoku goes through Shikoku); only a gap the drawing leaves
+  // (no ferry possible between two drawn masses) is filled with the shortest chain of crossings
+  const visits: { lm: number; t0: number; vias: { t: number; k: number }[] }[] = [{ lm: w.lm[home.cell], t0: 0, vias: [] }];
+  for (const v of vias) { const last = visits[visits.length - 1]; if (w.lm[v.k] === last.lm) last.vias.push({ t: v.t, k: v.k }); else visits.push({ lm: w.lm[v.k], t0: v.t, vias: [{ t: v.t, k: v.k }] }); }
+  if (visits[visits.length - 1].lm !== w.lm[dest.cell]) visits.push({ lm: w.lm[dest.cell], t0: len, vias: [] });
+  const legs: { lm: number; vias: { t: number; k: number }[]; t0: number; t1: number; out: { a: number; b: number; drawn: boolean; km: number } | null }[] = [];
+  for (let i = 0; i < visits.length; i++) {
+    const v = visits[i], nx = visits[i + 1], t1 = nx ? nx.t0 : len + 1;
+    if (!nx) { legs.push({ lm: v.lm, vias: v.vias, t0: v.t0, t1, out: null }); break; }
+    const near = nearestPair(w, v.lm, nx.lm, v.vias.length ? w.cellPos(v.vias[v.vias.length - 1].k) : w.cellPos(home.cell), nx.vias.length ? w.cellPos(nx.vias[0].k) : w.cellPos(dest.cell));
+    if (near && near.km <= MAX_FERRY_KM) { legs.push({ lm: v.lm, vias: v.vias, t0: v.t0, t1, out: { a: near.a, b: near.b, drawn: true, km: near.km } }); continue; }
+    const chain = massRoute(w, v.lm, nx.lm); if (!chain) return bad(["航路でも結べない陸地をまたいでいます"]);
+    for (let m = 0; m < chain.length - 1; m++) { const cx = crossingPorts(w, chain[m], chain[m + 1])!, ea = cx.la === chain[m] ? cx.a : cx.b, eb = cx.la === chain[m] ? cx.b : cx.a; legs.push({ lm: chain[m], vias: m === 0 ? v.vias : [], t0: m === 0 ? v.t0 : t1, t1, out: { a: ea.cell, b: eb.cell, drawn: false, km: cx.km } }); }
+  }
   const segments: CerSeg[] = [], ferries: NatPreview["ferries"] = [], lakes: NonNullable<NatPreview["lakes"]> = []; let entry = home.cell;
   const dedupe = (cells: number[]) => { const seen = new Map<number, number>(), flat: number[] = []; for (const k of cells) { const at = seen.get(k); if (at !== undefined) { for (const d of flat.splice(at + 1)) seen.delete(d); } else { seen.set(k, flat.length); flat.push(k); } } return flat; };
-  for (let m = 0; m < route.length; m++) {
-    const lm = route[m], cx = m < route.length - 1 ? crossingPorts(w, lm, route[m + 1]) : null; if (m < route.length - 1 && !cx) return bad(["航路の港が見つかりません"]);
-    const exitCity = cx ? (cx.la === lm ? cx.a : cx.b) : dest, nextCity = cx ? (cx.la === lm ? cx.b : cx.a) : null;
-    // the stops on this land mass in the order they were drawn: waypoints, and lake crossings (shore -> far shore)
-    const items: ({ t: number; k: number } | { t: number; hop: LakeHop })[] = [...vias.filter((v) => w.lm[v.k] === lm).map((v) => ({ t: v.t, k: v.k })), ...hops.filter((hp) => w.lm[hp.a] === lm).map((hp) => ({ t: hp.tIn, hop: hp }))].sort((p, q) => p.t - q.t);
+  for (const leg of legs) {
+    const lm = leg.lm, exitCell = leg.out ? leg.out.a : dest.cell;
+    // the stops on this visit, in the order they were drawn: waypoints, and lake crossings (shore -> far shore)
+    const items: ({ t: number; k: number } | { t: number; hop: LakeHop })[] = [...leg.vias.map((v) => ({ t: v.t, k: v.k })), ...hops.filter((hp) => w.lm[hp.a] === lm && hp.tIn >= leg.t0 - w.cell && hp.tIn < leg.t1).map((hp) => ({ t: hp.tIn, hop: hp }))].sort((p, q) => p.t - q.t);
     let cur = entry, cells: number[] = [entry];
     const go = (to: number): boolean => { if (to === cur) return true; const seg = pathfind(w, cur, to, { bias, margin: 18 }); if (!seg) return false; for (const k of seg) if (cells[cells.length - 1] !== k) cells.push(k); cur = to; return true; };
     for (const it of items) {
@@ -165,9 +189,9 @@ export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: 
         cur = it.hop.b; cells = [cur];
       } else if (!go(it.k)) return bad(["経路を作れません。途中が海・湖で分断されています(陸地どうしは自動でフェリーを使いますが、陸の途中は描き直してください)"]);
     }
-    if (!go(exitCity.cell)) return bad(["経路を作れません。途中が海・湖で分断されています(陸地どうしは自動でフェリーを使いますが、陸の途中は描き直してください)"]);
+    if (!go(exitCell)) return bad(["経路を作れません。途中が海・湖で分断されています(陸地どうしは自動でフェリーを使いますが、陸の途中は描き直してください)"]);
     const flat = dedupe(cells); if (flat.length >= 2) segments.push({ cells: flat, ferry: false });
-    if (cx && nextCity) { segments.push({ cells: [exitCity.cell, nextCity.cell], ferry: true }); ferries.push({ from: exitCity.name, to: nextCity.name, km: cx.km }); entry = nextCity.cell; }
+    if (leg.out) { segments.push({ cells: [leg.out.a, leg.out.b], ferry: true, ...(leg.out.drawn ? { port: true as const } : {}) }); ferries.push({ from: nearTown(w, leg.out.a), to: nearTown(w, leg.out.b), km: leg.out.km }); entry = leg.out.b; }
   }
   let length = 0, maxG = 0; const all: number[] = [];
   for (const s of segments) { if (s.ferry || s.lake) { length += dist(w.cellPos(s.cells[0]), w.cellPos(s.cells[1])); continue; } for (let i = 1; i < s.cells.length; i++) { const dk = cellDistKm(w, s.cells[i - 1], s.cells[i]); length += dk; maxG = Math.max(maxG, Math.abs(w.elevM(s.cells[i]) - w.elevM(s.cells[i - 1])) / (dk * 1000) * 100); } all.push(...s.cells); }
@@ -180,6 +204,10 @@ export function performNational(sim: SimState, w: World, prev: NatPreview): bool
   if (sim.ceremonyDone || !prev.ok) return false;
   ev(sim, "ceremony", sim.stage3 ? `開通の儀。${eraLabel(1950, eraKeyOf(sim.era))}(1950年)。${ERAS[eraKeyOf(sim.era)].summary}` : `開通の儀。${ERA.name}6年(1950)、${ERA.note}`, `プレイヤーが国道1号(${prev.from}→${prev.to})を描いた`, {});
   const chain: { edgeId: string; dir: 1 | -1 }[] = [];
+  // Stage 9: while it is being laid, the chain is registered as a placeholder route so that any edge split later (the line may pass a place twice) is rewritten in it too
+  const TMP = "r.__national"; sim.routes[TMP] = { id: TMP, edges: chain, active: false, oldEdges: [] } as unknown as SimState["routes"][string];
+  // Stage 9: the ends of every crossing are made real nodes first, so no edge laid into the chain below is split afterwards
+  { const idx = buildIndex(sim, "road"); for (const s of prev.segments) if (s.ferry || s.lake) for (const k of s.cells) nodeSplitAt(sim, w, idx, k); }
   for (const s of prev.segments) {
     if (s.lake) {   // Stage 8: a lake crossing of 国道1号 -- a lake ferry, or a bridge where 1950's technology could span the water
       const [a, b] = s.cells, A = { cell: a, pos: w.cellPos(a) }, B = { cell: b, pos: w.cellPos(b) }, na = nearTown(w, a), nb = nearTown(w, b);
@@ -187,12 +215,17 @@ export function performNational(sim: SimState, w: World, prev: NatPreview): bool
         : makeFerryAt(sim, w, A, B, "road", "国道1号が湖を渡るため、開通の儀で湖上航路を設けた", `ferry:${LAKE_TAG}${na}〜${nb}湖上フェリー(国道1号)`);
       const nid = Object.values(sim.nodes).find((n) => n.cell === a)?.id; chain.push({ edgeId: e.id, dir: e.a === nid ? 1 : -1 }); continue;
     }
+    if (s.ferry && s.port) {   // Stage 9: the crossing the player drew, between the shores where they drew it
+      const [a, b] = s.cells, na = nearTown(w, a), nb = nearTown(w, b), e = makeFerryAt(sim, w, { cell: a, pos: w.cellPos(a) }, { cell: b, pos: w.cellPos(b) }, "road", "国道1号を描かれた経路のとおり結ぶため、開通の儀で航路を設けた", `ferry:${na}〜${nb === na ? `${nb}対岸` : nb}フェリー(国道1号)`);
+      const nid = Object.values(sim.nodes).find((n) => n.cell === a)?.id; chain.push({ edgeId: e.id, dir: e.a === nid ? 1 : -1 }); continue;
+    }
     if (s.ferry) {
-      const ca = w.cityByCell.get(s.cells[0]), cb = w.cityByCell.get(s.cells[1]); if (!ca || !cb) return false;
+      const ca = w.cityByCell.get(s.cells[0]), cb = w.cityByCell.get(s.cells[1]); if (!ca || !cb) { delete sim.routes[TMP]; return false; }
       const e = findFerry(sim, w, ca, cb, "road") ?? makeFerry(sim, w, ca, cb, "road", "国道1号を結ぶため、開通の儀で航路を設けた");
       const na = Object.values(sim.nodes).find((n) => n.cell === ca.cell)?.id; chain.push({ edgeId: e.id, dir: e.a === na ? 1 : -1 });
     } else { const l = layPath(sim, w, s.cells, { open: true, surface: "gravel", quality: 55, built: 1, month: 0 }); chain.push(...l.chain); }
   }
+  delete sim.routes[TMP];
   const r = designate(sim, chain, "national", "JP", `${prev.from.replace(/市$/, "")}〜${prev.to.replace(/市$/, "")}`, "開通の儀", false, 1); if (!r) return false;
   const lk = prev.lakes ?? [];
   ev(sim, "ceremony", `${routeOfficial(r)}が象徴の道として開通${prev.ferries.length ? `(海をまたぐ区間はフェリー${prev.ferries.length}本)` : ""}${lk.length ? `(湖は${lk.map((l) => (l.kind === "bridge" ? `${l.from}〜${l.to}の橋` : `${l.from}〜${l.to}の湖上フェリー`)).join("・")}で渡る)` : ""}`, "開通の儀", { route: r.id });
