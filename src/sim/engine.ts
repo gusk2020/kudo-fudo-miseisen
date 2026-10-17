@@ -73,6 +73,7 @@ export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).yea
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
 export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
+  w.barrier = !!opts.stage3;   // Stage 9: the mountain barrier is part of the real-map game
   const firstCand = opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
   const sim: SimState = {
     schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,

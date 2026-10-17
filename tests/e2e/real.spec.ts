@@ -475,3 +475,78 @@ test("Stage 8: 港湾・空港・航路がレイヤーで切り替わり(シミ�
   await expect(page.locator("#sheet-body .issue").filter({ hasText: /空港|港|便|航路/ }).first()).toBeVisible();
   expect(errs).toEqual([]);
 });
+
+/** Stage 9: fit the given world points into the map area above the toolbar and return their screen positions. */
+async function fitPts(page: Page, names: string[]): Promise<[number, number][]> {
+  return page.evaluate((ns) => {
+    const a = (window as any).__kfm, w = a.world, P = ns.map((n: string) => w.cities.find((x: any) => x.name === n).pos) as [number, number][];
+    const x0 = Math.min(...P.map((p) => p[0])), x1 = Math.max(...P.map((p) => p[0])), y0 = Math.min(...P.map((p) => p[1])), y1 = Math.max(...P.map((p) => p[1])), W = window.innerWidth, H = window.innerHeight;
+    const zoom = Math.min((W - 80) / (x1 - x0), (H * 0.42) / (y1 - y0)); a.r.setView({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 + (Math.min(300, H * 0.37) - H / 2) / zoom, zoom }, true);
+    return P.map((p) => a.r.worldToScreen(p));
+  }, names);
+}
+async function stroke(page: Page, pts: [number, number][]) { await page.mouse.move(pts[0][0], pts[0][1]); await page.mouse.down(); for (let i = 1; i < pts.length; i++) await page.mouse.move(pts[i][0], pts[i][1], { steps: 8 }); await page.mouse.up(); }
+
+test("Stage 9: 四国を通る国道1号は四国経由のまま。制御点を動かせ、区間を選んで消す・描き直すと前後につながり、Undo/Redo・再読み込みで残る", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page); await pickEra(page, "heisei");
+  const P = await fitPts(page, ["東京", "名古屋市", "大阪市", "徳島市", "高松市", "松山市", "広島市", "岡山市", "大阪市"]);
+  await page.click("#tool-cer-kokudo1");
+  await stroke(page, P.slice(0, 4)); await stroke(page, P.slice(3, 7)); await stroke(page, P.slice(6));
+  expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(3);
+  expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true);
+  const shikoku = "a => { const w = a.world, lm = w.lm[w.cities.find((c) => c.name === '高松市').cell]; return a.cerDraft.kokudo1.prev.cells.some((k) => w.lm[k] === lm); }";
+  expect(await app(page, shikoku)).toBe(true);
+  // move a control point: the draft changes, one Undo step
+  await page.click("#cer-mode-move"); const n0 = await app(page, "a => a.cerDraft.kokudo1.past.length") as number;
+  const cp = await page.evaluate(() => { const a = (window as any).__kfm, q = a.cerDraft.kokudo1.strokes[1][1]; return [a.r.worldToScreen(q), q]; }) as [[number, number], [number, number]];
+  await page.mouse.move(cp[0][0], cp[0][1]); await page.mouse.down(); await page.mouse.move(cp[0][0] + 12, cp[0][1] + 10, { steps: 5 }); await page.mouse.up();
+  expect(await app(page, "a => a.cerDraft.kokudo1.past.length")).toBe(n0 + 1);
+  expect(await app(page, `a => { const q = a.cerDraft.kokudo1.strokes[1][1]; return q[0] !== ${cp[1][0]} || q[1] !== ${cp[1][1]}; }`)).toBe(true);
+  expect(await app(page, shikoku)).toBe(true);
+  // pick the middle stroke, delete it, undo; then redraw it: its ends join the neighbours
+  await page.click("#cer-mode-pick");
+  const mid = await page.evaluate(() => { const a = (window as any).__kfm, st = a.cerDraft.kokudo1.strokes[1]; return a.r.worldToScreen(st[Math.floor(st.length / 2)]); }) as [number, number];
+  await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => a.cerSel")).toBe(1);
+  await page.click("#cer-del"); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
+  await page.click("#cer-undo"); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(3);
+  await page.click("#cer-redo"); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
+  await page.click("#cer-undo");
+  await page.mouse.click(mid[0], mid[1]); await page.click("#cer-redraw"); expect(await app(page, "a => a.cerMode")).toBe("draw");
+  await stroke(page, [P[3], P[4], P[5]].map((p) => [p[0] + 4, p[1] + 4] as [number, number]));
+  expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(3);
+  expect(await app(page, "a => { const s = a.cerDraft.kokudo1.strokes; return s[1][0][0] === s[0][s[0].length - 1][0] && s[1][s[1].length - 1][0] === s[2][0][0]; }")).toBe(true);
+  expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true); expect(await app(page, shikoku)).toBe(true);
+  await page.waitForTimeout(500); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.cerDraft?.kokudo1, null, { timeout: 90000 });
+  expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(3); expect(await app(page, shikoku)).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo1.past.length")).toBeGreaterThan(0);
+  await page.click("#tool-cer-kokudo1"); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => { const w = a.world, lm = w.lm[w.cities.find((c) => c.name === '高松市').cell], r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.some((e) => a.sim.edges[e.edgeId].cells.some((k) => w.lm[k] === lm)); }")).toBe(true);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 9: 山脈は何本でも継ぎ足せて、点を動かせる。Undo/Redo・再読み込みで残り、地形に反映される。首都・副首都・皇居は1行ずつ", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#terrain-edit-toggle"); await page.click("#edit-more");
+  const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市"]);
+  const hash0 = await app(page, "a => a.terrain.hash") as string;
+  await page.click("#tool-ridge-ne"); await stroke(page, [P[0], P[2]]);
+  await page.waitForFunction((h) => { const t = (window as any).__kfm.terrain; return !!t && t.hash !== h; }, hash0, { timeout: 60000 });
+  expect(await app(page, "a => (a.s.ridges.ne || []).length")).toBeGreaterThan(1);
+  const hash1 = await app(page, "a => a.terrain.hash") as string;
+  await stroke(page, [P[1], P[3]]);   // a second, separate stroke of the same range
+  expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1);
+  await page.waitForFunction((h) => { const t = (window as any).__kfm.terrain; return !!t && t.hash !== h; }, hash1, { timeout: 60000 });
+  await page.click("#edit-undo"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(0);
+  await page.click("#edit-redo"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1);
+  // move a point of the added stroke
+  await page.click("#tool-ridge-edit"); const q = await page.evaluate(() => { const a = (window as any).__kfm, p = a.s.ridgeExtra.ne[0][0]; return [a.r.worldToScreen(p), p]; }) as [[number, number], [number, number]];
+  await page.mouse.move(q[0][0], q[0][1]); await page.mouse.down(); await page.mouse.move(q[0][0] + 10, q[0][1] - 8, { steps: 4 }); await page.mouse.up();
+  expect(await app(page, `a => a.s.ridgeExtra.ne[0][0][0] !== ${q[1][0]}`)).toBe(true);
+  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1);
+  // the setup sheet: three rows, each label and select on one line
+  await page.click("#terrain-edit-toggle").catch(() => {}); await openSetup(page);
+  const rows = await page.evaluate(() => ["seat-capital", "seat-sub", "seat-palace"].map((id) => { const s = document.getElementById(id)!, l = s.closest("label")!; const rl = l.getBoundingClientRect(), rs = s.getBoundingClientRect(); return { top: rl.top, h: rl.height, sameLine: Math.abs(rs.top + rs.height / 2 - (rl.top + rl.height / 2)) < 6 }; }));
+  expect(rows[0].top).toBeLessThan(rows[1].top); expect(rows[1].top).toBeLessThan(rows[2].top);
+  for (const r of rows) { expect(r.sameLine).toBe(true); expect(r.h).toBeLessThan(60); }
+  expect(errs).toEqual([]);
+});

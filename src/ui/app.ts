@@ -40,7 +40,21 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<s
   return e;
 }
 const ROT_STEP = Math.PI / 36; // 5 degrees
-const stateKey = (s: Store["state"]) => JSON.stringify([s.seed, s.bodies, s.features, s.ridges, s.islands ? 1 : 0]);
+/** A 国道1号 being drawn: its strokes (each simplified to control points), and the history of edits as whole snapshots (Undo/Redo). */
+interface CerDraft { pts: Vec[]; prev: CerPreview; strokes: Vec[][]; past: Vec[][][]; redo: Vec[][][] }
+/** Stage 9: a drawn stroke is kept as control points at most this far apart (km of world), so each can be grabbed and moved. */
+const CER_SIMPLIFY_KM = 6, CER_MAX_GAP_KM = 30;
+function toControlPoints(pts: Vec[]): Vec[] {
+  const out = simplifyLine(pts, CER_SIMPLIFY_KM), dense: Vec[] = [out[0]];
+  for (let i = 1; i < out.length; i++) { const a = out[i - 1], b = out[i], n = Math.max(1, Math.ceil(dist(a, b) / CER_MAX_GAP_KM)); for (let k = 1; k <= n; k++) dense.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]); }
+  return dense;
+}
+const stateKey = (s: Store["state"]) => JSON.stringify([s.seed, s.bodies, s.features, s.ridges, s.ridgeExtra ?? null, s.islands ? 1 : 0]);
+/** Stage 9: write one stroke of a range: 0 = the first, -1 = a new one appended, n = the n-th added. */
+function setRidgeStroke(s: Store["state"], key: "sw" | "ne", si: number, line: Vec[]) {
+  if (si === 0 || (si < 0 && !s.ridges[key])) { s.ridges[key] = line; return; }
+  const ex = (s.ridgeExtra ??= { sw: [], ne: [] }); if (si < 0) ex[key].push(line); else ex[key][si - 1] = line;
+}
 
 export class App {
   store = new Store(); r!: Renderer;
@@ -51,7 +65,9 @@ export class App {
   private genTimer: any = 0; private saveTimer: any = 0; private grab: any = null;
   // ---- Stage 2 ----
   sim: SimState | null = null; world: World | null = null; private worldRef: TerrainResult | null = null; pendingSim: SimState | null = null;
-  cerDraft: Partial<Record<CerKind, { pts: Vec[]; prev: CerPreview; strokes: Vec[][]; redo: Vec[][] }>> = {}; private cerLive: Vec[] | null = null; pin: Vec | null = null; scenery: any = null;
+  cerDraft: Partial<Record<CerKind, CerDraft>> = {};
+  /** Stage 9: how the 国道1号 tool acts -- draw a stroke, move a control point, or pick a stroke (then delete or redraw it). */
+  cerMode: "draw" | "move" | "pick" = "draw"; cerSel: number | null = null; cerRedraw: number | null = null; private cerLive: Vec[] | null = null; pin: Vec | null = null; scenery: any = null;
   compareYear: number | null = null; selEdge: string | null = null;
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
   lite = false; private slowTicks = 0;
@@ -120,7 +136,7 @@ export class App {
     if (validate(cand).some((i) => i.severity === "error" && i.step === "features" && /^(biwa|fuji|features)\./.test(i.code))) which.add("biwa").add("fuji");
     this.store.set((s) => fix(s, which)); this.toast(`置けない位置にあった${[...which].map((f) => (f === "biwa" ? "琵琶湖" : "富士山")).join("・")}を元の位置に戻しました`); return true;
   }
-  render() { this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+  render() { this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = this.tool === "ridge-ne" || this.tool === "ridge-sw" || this.tool === "ridge-edit"; this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -135,10 +151,10 @@ export class App {
     if (this.saveLocked && !this.sim && !this.pendingSim) return Promise.resolve(false);
     if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now();
     if (this.real && this.sim && performance.now() - this.lastBackup > 120000) { this.lastBackup = performance.now(); void saveGame(this.saveKey + ":backup", makeSave(this.s, this.sim)); }   /* a second copy every two minutes; a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
-  ensureWorld(): World | null { if (!this.terrain) return null; if (this.worldRef !== this.terrain) { this.world = buildWorld(this.terrain, this.s.seed); this.worldRef = this.terrain; } return this.world; }
+  ensureWorld(): World | null { if (!this.terrain) return null; if (this.worldRef !== this.terrain) { this.world = buildWorld(this.terrain, this.s.seed); this.world.barrier = !!this.real; this.worldRef = this.terrain; } return this.world; }
   renderRoads() {
-    const w0 = this.world, cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok, segs: (d!.prev as NatPreview).segments && w0 ? (d!.prev as NatPreview).segments.map((sg) => ({ pts: sg.cells.map((c) => w0.cellPos(c)), ferry: sg.ferry })) : undefined }));
-    if (this.cerLive) cer.push({ pts: this.cerLive, path: undefined as any, ok: true, segs: undefined });
+    const w0 = this.world, cerTool = this.tool === "cer-kokudo1" || this.tool === "cer-fudo1", cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ strokes: d!.strokes, handles: cerTool && this.cerMode !== "draw", sel: cerTool ? this.cerSel : null, pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok, segs: (d!.prev as NatPreview).segments && w0 ? (d!.prev as NatPreview).segments.map((sg) => ({ pts: sg.cells.map((c) => w0.cellPos(c)), ferry: sg.ferry })) : undefined }));
+    if (this.cerLive) cer.push({ strokes: [this.cerLive], handles: false, sel: null, pts: this.cerLive, path: undefined as any, ok: true, segs: undefined });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
     if (onRoads) this.ensureWorld();
     this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports, airports: L.airports, lanes: L.lanes }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, lite: this.lite, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge, hide: [...this.hide], names: this.names });
@@ -242,7 +258,19 @@ export class App {
   }
   toolBegin(w: Vec, sc: Vec): boolean {
     const t = this.tool, s = this.s;
-    if (t === "cer-kokudo1" || t === "cer-fudo1") { this.grab = { t, kind: t === "cer-kokudo1" ? "kokudo1" : "fudo1", pts: [w] }; this.cerLive = [w]; this.renderRoads(); return true; }
+    if (t === "cer-kokudo1" || t === "cer-fudo1") {
+      const kind: CerKind = t === "cer-kokudo1" ? "kokudo1" : "fudo1", d = this.cerDraft[kind], tol = 26 / this.r.view.zoom;
+      if (this.cerMode === "move" && d) {   // grab the nearest control point of any stroke
+        let best: { si: number; i: number } | null = null, bd = tol; d.strokes.forEach((st, si) => st.forEach((q, i) => { const dd = dist(q, w); if (dd < bd) { bd = dd; best = { si, i }; } }));
+        if (!best) return false; const b = best as { si: number; i: number };
+        this.grab = { t: "cer-move", kind, si: b.si, i: b.i, before: d.strokes.map((x) => x.slice()), strokes: d.strokes.map((x) => x.slice()), moved: false }; this.cerSel = b.si; return true;
+      }
+      if (this.cerMode === "pick") {   // a tap selects the nearest stroke
+        let best = -1, bd = tol; (d?.strokes ?? []).forEach((st, si) => { for (let i = 0; i + 1 < st.length; i++) { const dd = pointSegDist(w, st[i], st[i + 1]); if (dd < bd) { bd = dd; best = si; } } });
+        this.cerSel = best >= 0 ? best : null; this.renderRoads(); this.buildUI(); return true;
+      }
+      this.grab = { t, kind, pts: [w] }; this.cerLive = [w]; this.renderRoads(); return true;
+    }
     if (t === "palace") { this.grab = { t, w }; return true; }
     if (t === "pick" || t === "why") { this.grab = { t, w }; return true; }
     if (t === "pull" || t === "bulge" || t === "dent" || t === "move") {
@@ -258,12 +286,17 @@ export class App {
       this.selFeature = best; this.grab = { t, which: best, off: [featureWorldPos(s, best)[0] - w[0], featureWorldPos(s, best)[1] - w[1]] as Vec };
       this.buildUI(); this.render(); return true;
     }
-    if (t === "ridge-sw" || t === "ridge-ne") { if (!this.onHonshu(w)) return false; this.grab = { t, key: t === "ridge-sw" ? "sw" : "ne", pts: [w] }; this.pending = { ridge: { key: this.grab.key, pts: [w] } }; this.render(); return true; }
-    if (t === "ridge-edit") {
-      let best: { key: "sw" | "ne"; i: number } | null = null, bd = 30 / this.r.view.zoom;
-      for (const key of ["sw", "ne"] as const) (s.ridges[key] ?? []).forEach((q, i) => { const d = dist(q, w); if (d < bd) { bd = d; best = { key, i }; } });
+    if (t === "ridge-sw" || t === "ridge-ne") {   // Stage 9: a new stroke -- the first of the range, or one more (continuing a stroke when started at its end)
+      if (!this.onHonshu(w)) return false; const key = t === "ridge-sw" ? "sw" : "ne", lines = [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])], tol = 25 / this.r.view.zoom;
+      let si = s.ridges[key] ? -1 : 0, join: "end" | "start" | null = null;
+      lines.forEach((l, i) => { if (!l || l.length < 2 || join) return; if (dist(l[l.length - 1], w) <= tol) { si = i; join = "end"; } else if (dist(l[0], w) <= tol) { si = i; join = "start"; } });
+      this.grab = { t, key, pts: [w], si, join }; this.pending = { ridge: { key, pts: [w], si: si >= 0 && join ? si : si } }; this.render(); return true;
+    }
+    if (t === "ridge-edit") {   // any point of any stroke
+      let best: { key: "sw" | "ne"; si: number; i: number } | null = null, bd = 30 / this.r.view.zoom;
+      for (const key of ["sw", "ne"] as const) [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])].forEach((l, si) => (l ?? []).forEach((q, i) => { const d = dist(q, w); if (d < bd) { bd = d; best = { key, si, i }; } }));
       if (!best) return false;
-      this.grab = { t, ...(best as { key: "sw" | "ne"; i: number }) }; return true;
+      this.grab = { t, ...(best as { key: "sw" | "ne"; si: number; i: number }) }; return true;
     }
     return false;
   }
@@ -272,6 +305,7 @@ export class App {
   toolMove(w: Vec, sc: Vec) {
     const g = this.grab; if (!g) return;
     if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { if (dist(g.pts[g.pts.length - 1], w) >= 8 / this.r.view.zoom) { g.pts.push(w); this.cerLive = g.pts; this.renderRoads(); } return; }
+    if (g.t === "cer-move") { g.strokes[g.si][g.i] = w; g.moved = true; const d = this.cerDraft[g.kind as CerKind]; if (d) { d.strokes = g.strokes; d.pts = d.strokes.flat(); } this.renderRoads(); return; }
     if (g.t === "pick" || g.t === "why" || g.t === "palace") { g.w = w; return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
       const scl = g.place0.scale, r = this.brushKm / scl;
@@ -285,15 +319,16 @@ export class App {
     } else if (g.t === "feature") {
       g.pos = [w[0] + g.off[0], w[1] + g.off[1]]; const f = this.s.features[g.which as "biwa" | "fuji"]; this.pending = { feature: { which: g.which, pos: g.pos, bad: !this.featureOk(g.which, { pos: g.pos, rot: f.rot, scale: f.scale ?? 1 }) } }; this.render();
     } else if (g.t === "ridge-sw" || g.t === "ridge-ne") {
-      if (dist(g.pts[g.pts.length - 1], w) >= 10 / this.r.view.zoom && this.onHonshu(w)) { g.pts.push(w); this.pending = { ridge: { key: g.key, pts: g.pts } }; this.render(); }
+      if (dist(g.pts[g.pts.length - 1], w) >= 10 / this.r.view.zoom && this.onHonshu(w)) { g.pts.push(w); this.pending = { ridge: { key: g.key, pts: this.ridgeJoined(g), si: g.si } }; this.render(); }
     } else if (g.t === "ridge-edit") {
-      const pts = [...(this.s.ridges[g.key as "sw" | "ne"] ?? [])]; pts[g.i] = w; g.pts = pts; this.pending = { ridge: { key: g.key, pts } }; this.render();
+      const pts = [...(this.ridgeStroke(g.key, g.si) ?? [])]; pts[g.i] = w; g.pts = pts; this.pending = { ridge: { key: g.key, pts, si: g.si } }; this.render();
     }
   }
   toolEnd() {
     const g = this.grab; this.grab = null; if (!g) return;
     this.pending = null; this.cerLive = null;
     if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { this.finishDraw(g.kind, g.pts); return; }
+    if (g.t === "cer-move") { if (g.moved) this.cerCommit(g.kind, g.strokes, g.before); else this.renderRoads(); return; }
     if (g.t === "palace") { this.placePalace(g.w); return; }
     if (g.t === "pick") { this.pickScenery(g.w); return; }
     if (g.t === "why") { this.whyAt(g.w); return; }
@@ -304,8 +339,8 @@ export class App {
       else this.render();
     } else if (g.t === "move" && g.place) this.store.commit((s) => { s.bodies[g.id as IslandId].place = g.place; });
     else if (g.t === "feature" && g.pos) { const f = this.s.features[g.which as "biwa" | "fuji"]; this.applyFeaturePose(g.which, { pos: g.pos, rot: f.rot, scale: f.scale ?? 1 }); }
-    else if ((g.t === "ridge-sw" || g.t === "ridge-ne") && g.pts.length >= 2) this.commitEdit((s) => { s.ridges[g.key as "sw" | "ne"] = simplifyLine(g.pts, 4); });
-    else if (g.t === "ridge-edit" && g.pts) this.commitEdit((s) => { s.ridges[g.key as "sw" | "ne"] = g.pts; });
+    else if ((g.t === "ridge-sw" || g.t === "ridge-ne") && g.pts.length >= 2) { const line = simplifyLine(this.ridgeJoined(g), 4); this.commitEdit((s) => setRidgeStroke(s, g.key, g.si, line)); }
+    else if (g.t === "ridge-edit" && g.pts) this.commitEdit((s) => setRidgeStroke(s, g.key, g.si, g.pts));
     else this.render();
   }
   rotateSel(dir: number) {
@@ -330,7 +365,7 @@ export class App {
   realAlps() {
     const to = (lon: number, lat: number): Vec => realToWorld("honshu", this.s.bodies.honshu, lonLatToReal(lon, lat));
     const north = [[137.76, 36.76], [137.62, 36.58], [137.65, 36.34], [137.65, 36.29], [137.55, 36.11]].map(([a, b]) => to(a, b)), south = [[138.23, 35.78], [138.24, 35.67], [138.10, 35.60], [138.14, 35.45], [138.10, 35.33]].map(([a, b]) => to(a, b));
-    this.commitEdit((s) => { s.ridges.ne = north; s.ridges.sw = south; });
+    this.commitEdit((s) => { s.ridges.ne = north; s.ridges.sw = south; delete s.ridgeExtra; });
   }
   /** Resize Lake Biwa (outline) or Mt. Fuji (body / summit height) by a factor, within the allowed range and only if the result is still a valid map (no lake touching the coast). */
   scaleFeature(which: "biwa" | "fuji", what: "scale" | "height", factor: number) {
@@ -340,7 +375,11 @@ export class App {
     if (validate(cand).some((i) => i.severity === "error" && i.step === "features")) { this.toast(which === "biwa" ? "琵琶湖が海岸に近づきすぎるため、これ以上大きくできません" : "富士山が海岸に近づきすぎるため、これ以上大きくできません"); return false; }
     return this.commitEdit((s) => { if (next === 1 && !(what === "height" && s.features[which].auto)) delete (s.features[which] as any)[what]; else (s.features[which] as any)[what] = next; if (which === "fuji" && what === "scale" && s.features.fuji.height === undefined) { if (next === 1) delete s.features.fuji.auto; else s.features.fuji.auto = true; } });
   }
-  clearRanges() { this.commitEdit((s) => { s.ridges.ne = null; s.ridges.sw = null; }); }
+  clearRanges() { this.commitEdit((s) => { s.ridges.ne = null; s.ridges.sw = null; delete s.ridgeExtra; }); }
+  /** Stage 9: one stroke of a range (0 = the first). */
+  private ridgeStroke(key: "sw" | "ne", si: number): Vec[] | null { return si === 0 ? this.s.ridges[key] : this.s.ridgeExtra?.[key]?.[si - 1] ?? null; }
+  /** The stroke being drawn, joined to the stroke it continues (at its end or its start). */
+  private ridgeJoined(g: { key: "sw" | "ne"; si: number; join: "end" | "start" | null; pts: Vec[] }): Vec[] { if (!g.join || g.si < 0) return g.pts; const base = this.ridgeStroke(g.key, g.si) ?? []; return g.join === "end" ? [...base, ...g.pts.slice(1)] : [...[...g.pts].reverse(), ...base.slice(1)]; }
   /**
    * Set one of the three seats (the capital, the sub-capital, the Imperial Palace) to a prefecture. They are independent, except that the capital and the
    * sub-capital must be different prefectures (refused with a message); the palace may share a prefecture with either. Choosing a palace prefecture
@@ -370,28 +409,47 @@ export class App {
   private finishDraw(kind: CerKind, pts: Vec[]) {
     const w = this.ensureWorld(); if (!w) return;
     if (pts.length < 2 || pathLen(pts) < 6 / this.r.view.zoom) { this.renderRoads(); return; }   // a tap or a twitch is not a stroke
-    const d = this.cerDraft[kind] ?? { pts: [] as Vec[], prev: null as any, strokes: [] as Vec[][], redo: [] as Vec[][] }, last = d.strokes[d.strokes.length - 1];
-    const stroke = pts.slice(); if (last && dist(last[last.length - 1], stroke[0]) < 40 / this.r.view.zoom) stroke[0] = last[last.length - 1];
-    d.strokes.push(stroke); d.redo = []; this.cerDraft[kind] = d; this.replanCer(kind);
-    if (!d.prev.ok) this.toast(d.prev.reasons[0]);
-    this.renderRoads(); this.buildUI();
+    const d = this.cerDraft[kind], strokes = (d?.strokes ?? []).map((x) => x.slice()), ri = this.cerRedraw, tol = 40 / this.r.view.zoom;
+    let stroke = toControlPoints(pts);
+    if (ri !== null && ri < strokes.length) {
+      // Stage 9: a redrawn stroke takes the old one's place and is joined to its neighbours' ends, so the rest of the line (and any strait or lake crossing in it) is kept
+      const prevS = strokes[ri - 1], nextS = strokes[ri + 1];
+      if (prevS) stroke = [prevS[prevS.length - 1], ...stroke]; if (nextS) stroke = [...stroke, nextS[0]];
+      strokes[ri] = stroke; this.cerRedraw = null; this.cerSel = ri;
+    } else {
+      const last = strokes[strokes.length - 1]; if (last && dist(last[last.length - 1], stroke[0]) < tol) stroke[0] = last[last.length - 1];
+      strokes.push(stroke);
+    }
+    this.cerCommit(kind, strokes);
+    const nd = this.cerDraft[kind]; if (nd && !nd.prev.ok) this.toast(nd.prev.reasons[0]);
   }
+  /** One edit of the drawn 国道1号 (a stroke added, moved, deleted or redrawn): one Undo step. */
+  cerCommit(kind: CerKind, strokes: Vec[][], before?: Vec[][]) {
+    const d = this.cerDraft[kind] ?? { pts: [] as Vec[], prev: null as any, strokes: [] as Vec[][], past: [] as Vec[][][], redo: [] as Vec[][][] };
+    d.past.push((before ?? d.strokes).map((x) => x.slice())); if (d.past.length > 60) d.past.shift(); d.redo = []; d.strokes = strokes; this.cerDraft[kind] = d; this.replanCer(kind); this.renderRoads(); this.buildUI();
+  }
+  cerDeleteSel(kind: CerKind) { const d = this.cerDraft[kind], i = this.cerSel; if (!d || i === null || i >= d.strokes.length) return; const next = d.strokes.filter((_, k) => k !== i).map((x) => x.slice()); this.cerSel = null; this.cerCommit(kind, next); }
+  cerRedrawSel() { if (this.cerSel === null) return; this.cerRedraw = this.cerSel; this.cerMode = "draw"; this.toast("選んだ区間を描き直してください。両端は前後の区間に自動でつながります"); this.buildUI(); this.renderRoads(); }
   private replanCer(kind: CerKind) {
     const w = this.ensureWorld(), d = this.cerDraft[kind]; if (!w || !d) return;
-    if (!d.strokes.length) { delete this.cerDraft[kind]; this.saveCer(); return; }
+    if (!d.strokes.length && !d.past.length && !d.redo.length) { delete this.cerDraft[kind]; this.saveCer(); return; }
+    if (!d.strokes.length) { d.pts = []; d.prev = { ok: false, reasons: ["線がありません。描いてください"], cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "" }; this.saveCer(); return; }
     d.pts = d.strokes.flat(); const st = seatsOf(this.s);
     d.prev = this.real ? previewNational(w, d.pts, st.capital, st.sub) : previewCeremony(w, kind, d.pts, this.s.capital); this.saveCer();
   }
-  cerUndo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.strokes.length) return; d.redo.push(d.strokes.pop()!); this.replanCer(kind); this.renderRoads(); this.buildUI(); }
-  cerRedo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.redo.length) return; d.strokes.push(d.redo.pop()!); this.replanCer(kind); this.renderRoads(); this.buildUI(); }
-  cerRestart(kind: CerKind) { delete this.cerDraft[kind]; this.saveCer(); this.renderRoads(); this.buildUI(); }
+  cerUndo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.past.length) return; d.redo.push(d.strokes); d.strokes = d.past.pop()!; this.cerSel = null; this.replanCer(kind); this.renderRoads(); this.buildUI(); }
+  cerRedo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.redo.length) return; d.past.push(d.strokes); d.strokes = d.redo.pop()!; this.cerSel = null; this.replanCer(kind); this.renderRoads(); this.buildUI(); }
+  cerRestart(kind: CerKind) { delete this.cerDraft[kind]; this.cerSel = null; this.cerRedraw = null; this.saveCer(); this.renderRoads(); this.buildUI(); }
   /** A ceremony in progress survives a reload (strokes only; the preview is recomputed from them). */
-  saveCer() { try { const o: Record<string, { strokes: Vec[][]; redo: Vec[][] }> = {}; for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const d = this.cerDraft[k]; if (d) o[k] = { strokes: d.strokes, redo: d.redo }; } if (Object.keys(o).length) localStorage.setItem("kfm.cer", JSON.stringify(o)); else localStorage.removeItem("kfm.cer"); } catch { /* ignore */ } }
+  saveCer() { try { const o: Record<string, { strokes: Vec[][]; past: Vec[][][]; future: Vec[][][] }> = {}; for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const d = this.cerDraft[k]; if (d) o[k] = { strokes: d.strokes, past: d.past.slice(-30), future: d.redo.slice(-30) }; } if (Object.keys(o).length) localStorage.setItem("kfm.cer", JSON.stringify(o)); else localStorage.removeItem("kfm.cer"); } catch { /* ignore */ } }
   private restoreCer() {
     if (this.sim || Object.keys(this.cerDraft).length) return; const w = this.ensureWorld(); if (!w) return;
     try {
       const o = JSON.parse(localStorage.getItem("kfm.cer") || "{}"), okPt = (p: unknown) => Array.isArray(p) && p.length === 2 && p.every((x) => typeof x === "number" && Number.isFinite(x)), okS = (s: unknown): s is Vec[] => Array.isArray(s) && s.length >= 2 && s.length < 5000 && s.every(okPt);
-      for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const e = o[k]; if (!e || !Array.isArray(e.strokes)) continue; const strokes = e.strokes.filter(okS), redo = (Array.isArray(e.redo) ? e.redo : []).filter(okS); if (!strokes.length) continue; this.cerDraft[k] = { pts: [], prev: null as any, strokes, redo }; this.replanCer(k); }
+      for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const e = o[k]; if (!e || !Array.isArray(e.strokes)) continue; const strokes = e.strokes.filter(okS), snaps = (x: unknown) => (Array.isArray(x) ? x : []).filter((sn: unknown) => Array.isArray(sn) && sn.every(okS)) as Vec[][][];
+        // older drafts kept a redo list of single strokes; each becomes one future snapshot (the strokes plus it)
+        const legacy: Vec[][] = Array.isArray(e.redo) ? e.redo.filter(okS) : [], redo = Array.isArray(e.future) ? snaps(e.future) : legacy.map((_: Vec[], i: number) => [...strokes, ...legacy.slice(i).reverse()]), past = snaps(e.past);
+        if (!strokes.length) continue; this.cerDraft[k] = { pts: [], prev: null as any, strokes, past: past.length ? past : strokes.map((_: Vec[], i: number) => strokes.slice(0, i)), redo }; this.replanCer(k); }
     } catch { /* ignore */ }
   }
   cerReady() { return this.real ? !!this.cerDraft.kokudo1?.prev.ok : !!(this.cerDraft.kokudo1?.prev.ok && this.cerDraft.fudo1?.prev.ok); }
@@ -608,7 +666,14 @@ export class App {
       const ak = this.tool === "cer-kokudo1" ? "kokudo1" : this.tool === "cer-fudo1" ? "fudo1" : null;
       // one compact row: [stroke count] undo / redo / restart / go -- the panel must stay short, or it covers the map being drawn on
       const dd = ak ? this.cerDraft[ak] : undefined, row = h("div", { class: "grp", id: "cer-controls" });
-      if (ak) row.append(h("span", { class: "note", id: "cer-count" }, `線${dd?.strokes.length ?? 0}本`), h("button", { id: "cer-undo", type: "button", disabled: !dd?.strokes.length, onclick: () => this.cerUndo(ak) }, "↶ 戻す"), h("button", { id: "cer-redo", type: "button", disabled: !dd?.redo.length, onclick: () => this.cerRedo(ak) }, "↷ やり直す"), h("button", { id: "cer-restart", type: "button", disabled: !dd, onclick: () => this.cerRestart(ak) }, "最初から"));
+      if (ak) {   // Stage 9: draw / move control points / pick a stroke (then delete or redraw it)
+        const mode = (m: "draw" | "move" | "pick", label: string) => h("button", { id: "cer-mode-" + m, type: "button", class: this.cerMode === m ? "mode on" : "mode", "aria-pressed": this.cerMode === m ? "true" : "false", onclick: () => { this.cerMode = m; if (m === "draw") this.cerSel = null; this.cerRedraw = null; this.buildUI(); this.renderRoads(); } }, label);
+        const mrow = h("div", { class: "grp", id: "cer-modes" }, mode("draw", "描く"), mode("move", "点を動かす"), mode("pick", "区間を選ぶ"));
+        if (this.cerMode === "pick" && this.cerSel !== null && dd) mrow.append(h("button", { id: "cer-del", type: "button", onclick: () => this.cerDeleteSel(ak) }, `区間${this.cerSel + 1}を消す`), h("button", { id: "cer-redraw", type: "button", onclick: () => this.cerRedrawSel() }, `区間${this.cerSel + 1}を描き直す`));
+        if (this.cerRedraw !== null) mrow.append(h("span", { class: "note", id: "cer-redraw-note" }, `区間${this.cerRedraw + 1}を描き直し中`));
+        tb.append(mrow);
+      }
+      if (ak) row.append(h("span", { class: "note", id: "cer-count" }, `線${dd?.strokes.length ?? 0}本`), h("button", { id: "cer-undo", type: "button", disabled: !dd?.past.length, onclick: () => this.cerUndo(ak) }, "↶ 戻す"), h("button", { id: "cer-redo", type: "button", disabled: !dd?.redo.length, onclick: () => this.cerRedo(ak) }, "↷ やり直す"), h("button", { id: "cer-restart", type: "button", disabled: !dd, onclick: () => this.cerRestart(ak) }, "最初から"));
       row.append(h("button", { id: "cer-go", type: "button", disabled: !this.cerReady(), onclick: () => void this.doCeremony() }, "開通の儀を行う")); tb.append(row);
       return;
     }

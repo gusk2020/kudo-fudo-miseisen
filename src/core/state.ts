@@ -20,6 +20,8 @@ export function defaultState(seed = 20260101): ProjectState {
   };
 }
 /** Stage 3 start: real geography, nothing deformed, already finalised, at the roads step. */
+/** Stage 9: every stroke of one range (the first, then any added). */
+export function ridgeLines(s: Pick<ProjectState, "ridges" | "ridgeExtra">, key: "sw" | "ne"): Vec[][] { return [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])].filter((l): l is Vec[] => !!l && l.length >= 2); }
 export function realState(seed = 20260101): ProjectState { const s = defaultState(seed); s.finalized = true; s.step = 6; s.real = true; s.islands = true; return s; }
 export const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 

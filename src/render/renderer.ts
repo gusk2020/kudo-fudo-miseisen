@@ -9,7 +9,7 @@ import { ISLAND_IDS } from "../core/types";
 import { featureWorld } from "../core/validate";
 import { RoadLayer, type RoadArgs } from "./roads";
 
-export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[] }; feature?: { which: "biwa" | "fuji"; pos: Vec; rot?: number; scale?: number; bad?: boolean } }
+export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[]; si?: number /* Stage 9: which stroke (0 = first, -1 = a new one) */ }; feature?: { which: "biwa" | "fuji"; pos: Vec; rot?: number; scale?: number; bad?: boolean } }
 export interface View { cx: number; cy: number; zoom: number } // centre in world km (y up), zoom = px per km
 
 const RAMP: [number, number[]][] = [[0, [92, 148, 76]], [150, [134, 170, 86]], [450, [196, 192, 112]], [900, [170, 136, 88]], [1600, [138, 108, 84]], [2400, [196, 190, 184]], [3400, [250, 250, 250]]];
@@ -39,6 +39,8 @@ export class Renderer {
   app!: Application;
   view: View = { cx: 0, cy: 0, zoom: 0.3 };
   private root = new Container(); private base = new Container(); private overlay = new Container(); private labels = new Container();
+  /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
+  ridgeHandles = false;
   roads = new RoadLayer(); private roadArgs: RoadArgs | null = null;
   private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
   private lastArgs: [ProjectState, TerrainResult | null, Issue[], Pending | null] | null = null;
@@ -144,9 +146,13 @@ export class Renderer {
     if (s.layers.ridges) {
       const rg = new Graphics();
       for (const key of ["sw", "ne"] as const) {
-        const line = pending?.ridge?.key === key ? pending.ridge.pts : s.ridges[key];
-        if (line && line.length > 1) { rg.moveTo(...P(line[0])); for (const q of line.slice(1)) rg.lineTo(...P(q)); rg.stroke({ width: px(5), color: key === "sw" ? 0x7a4a2a : 0x8a3a5a, alpha: 0.85, cap: "round", join: "round" }); }
-        if (line && s.step === 3) for (const q of line) rg.circle(...P(q), px(3.5)).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x333333 });
+        // Stage 9: every stroke of the range; the one being drawn or edited is shown as it is now
+        const lines: (Vec[] | null)[] = [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])], pr = pending?.ridge?.key === key ? pending.ridge : null;
+        if (pr) { const si = pr.si ?? (s.ridges[key] ? -1 : 0); if (si >= 0) lines[si] = pr.pts; else lines.push(pr.pts); }
+        for (const line of lines) {
+          if (line && line.length > 1) { rg.moveTo(...P(line[0])); for (const q of line.slice(1)) rg.lineTo(...P(q)); rg.stroke({ width: px(5), color: key === "sw" ? 0x7a4a2a : 0x8a3a5a, alpha: 0.85, cap: "round", join: "round" }); }
+          if (line && (s.step === 3 || this.ridgeHandles)) for (const q of line) rg.circle(...P(q), px(3.5)).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x333333 });
+        }
       }
       this.overlay.addChild(rg);
     }

@@ -148,7 +148,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   const ridge = new Float32Array(N);
   const W = 18;
   for (const key of ["sw", "ne"] as const) {
-    const line = s.ridges[key]; if (!line || line.length < 2) continue;
+    for (const line of [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])]) { if (!line || line.length < 2) continue;
     for (let sg = 0; sg + 1 < line.length; sg++) {
       const a = line[sg], b = line[sg + 1];
       const i0 = Math.max(0, Math.floor((Math.min(a[0], b[0]) - 3 * W - x0) / cell)), i1 = Math.min(nx - 1, Math.ceil((Math.max(a[0], b[0]) + 3 * W - x0) / cell));
@@ -158,6 +158,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
         const d = pointSegDist([cx(i), cy(j)], a, b), f = Math.exp(-((d / W) ** 2));
         if (f > ridge[k]) ridge[k] = f;
       }
+    }
     }
   }
   for (let k = 0; k < N; k++) if (ridge[k] > 0.01 && land[k]) {

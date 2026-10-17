@@ -53,6 +53,7 @@ export function parseState(input: unknown): { state: ProjectState; problems: str
     bodies: Object.fromEntries(ISLAND_IDS.map((id) => [id, cleanBody(raw.bodies?.[id], id, problems)])) as ProjectState["bodies"],
     features: { biwa: cleanFeature(raw.features?.biwa), fuji: cleanFeature(raw.features?.fuji) },
     ridges: { sw: cleanLine(raw.ridges?.sw, problems, "南西山脈"), ne: cleanLine(raw.ridges?.ne, problems, "北東山脈") },
+    ...(raw.ridgeExtra && typeof raw.ridgeExtra === "object" ? { ridgeExtra: { sw: (Array.isArray(raw.ridgeExtra.sw) ? raw.ridgeExtra.sw : []).map((l: unknown) => cleanLine(l, problems, "南西山脈")).filter((l: Vec[] | null): l is Vec[] => !!l && l.length >= 2), ne: (Array.isArray(raw.ridgeExtra.ne) ? raw.ridgeExtra.ne : []).map((l: unknown) => cleanLine(l, problems, "北東山脈")).filter((l: Vec[] | null): l is Vec[] => !!l && l.length >= 2) } } : {}),
     finalized: raw.finalized === true,
     ...(raw.real === true ? { real: true } : {}),
     ...(raw.islands === true ? { islands: true } : {}),

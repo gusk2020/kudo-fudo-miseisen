@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultState } from "../../src/core/state";
+import { realToWorld } from "../../src/core/body";
+import { lonLatToReal } from "../../src/core/data";
 import { generateTerrain } from "../../src/core/terrain";
 import type { Vec } from "../../src/core/types";
 import { homeCity, performNational, previewNational, subCity } from "../../src/sim/ceremony";
@@ -37,7 +39,7 @@ describe("Stage 9: 国道1号 keeps the land masses the player drew", () => {
 describe("Stage 9: a drawn mountain range is a real barrier", () => {
   const NE: [number, number][] = [[138.35, 34.95], [138.4, 35.4], [138.5, 35.9], [138.6, 36.4]], SW: [number, number][] = [[133.75, 34.45], [133.65, 34.8], [133.55, 35.15], [133.45, 35.45]];
   it("path-finding goes round or over the lowest pass, a railway never climbs over the high crest, and the cost of a line through it is several times higher", () => {
-    const flat = realWorld(true).w, mtn = ridgeWorld({ ne: NE }).w, a = city(flat, "東京").cell, b = city(flat, "名古屋市").cell;
+    const flat = realWorld(true).w, mtn = ridgeWorld({ ne: NE }).w, a = city(flat, "東京").cell, b = city(flat, "名古屋市").cell; flat.barrier = true; mtn.barrier = true;
     const crest: number[] = []; for (let k = 0; k < mtn.N; k++) if (mtn.t.ridge[k] > 0.85) crest.push(mtn.t.elev[k]); crest.sort((x, y) => x - y); const median = crest[Math.floor(crest.length / 2)];
     const p0 = pathfind(flat, a, b)!, p1 = pathfind(mtn, a, b)!, r1 = pathfind(mtn, a, b, { rail: true })!;
     expect(p1.length).toBeGreaterThan(p0.length);
@@ -55,7 +57,7 @@ describe("Stage 9: a drawn mountain range is a real barrier", () => {
       expect(t(ne, "東京", "名古屋市"), `road ${y}`).toBeGreaterThan(1.3 * t(none, "東京", "名古屋市"));
       expect(t(ne, "東京", "名古屋市", true), `rail ${y}`).toBeGreaterThan(1.3 * t(none, "東京", "名古屋市", true));
     }
-    const flat = realWorld(true).w, mtn = ridgeWorld({ sw: SW }).w, a = city(flat, "岡山市").cell, b = city(flat, "広島市").cell;
+    const flat = realWorld(true).w, mtn = ridgeWorld({ sw: SW }).w, a = city(flat, "岡山市").cell, b = city(flat, "広島市").cell; flat.barrier = true; mtn.barrier = true;
     expect(pathfind(mtn, a, b, { rail: true })!.length).toBeGreaterThan(pathfind(flat, a, b, { rail: true })!.length);
     expect(mountainCost(mtn, pathfind(flat, a, b)!)).toBeGreaterThan(1.5);
   }, 600000);
@@ -69,5 +71,18 @@ describe("Stage 9: the map shows kinds, and ferries are drawn over the water", (
   it("every domestic ferry of the 1950 network is drawn over water: no drawn point (away from its two ports) falls on land", () => {
     const { sim, w } = stage3SimOn(realWorld(true)); const fs = Object.values(sim.edges).filter((e) => e.facility === "ferry"); expect(fs.length).toBeGreaterThan(5);
     for (const e of fs) { const pts = seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)); expect(landShare(w, pts), e.facilityName).toBeLessThanOrEqual(0.05); }
+  });
+});
+
+describe("Stage 9: a range drawn in several strokes", () => {
+  it("every stroke raises the terrain (and makes it a barrier); the strokes survive saving", async () => {
+    const { parseState } = await import("../../src/core/save");
+    const base = defaultState(); base.islands = true; const to = ([lon, lat]: [number, number]): Vec => realToWorld("honshu", base.bodies.honshu, lonLatToReal(lon, lat));
+    const one = JSON.parse(JSON.stringify(base)); one.ridges.ne = [[138.35, 34.95], [138.4, 35.4]].map((p) => to(p as [number, number]));
+    const two = JSON.parse(JSON.stringify(one)); two.ridgeExtra = { ne: [[[138.5, 35.9], [138.6, 36.4]].map((p) => to(p as [number, number]))], sw: [] };
+    const cells = (s: typeof base) => { const t = generateTerrain(s, loadDem()); let n = 0; for (let k = 0; k < t.ridge.length; k++) if (t.ridge[k] > 0.5) n++; return n; };
+    expect(cells(two)).toBeGreaterThan(cells(one) * 1.3);
+    const back = parseState(JSON.parse(JSON.stringify(two))).state; expect(back.ridgeExtra?.ne.length).toBe(1); expect(back.ridgeExtra?.ne[0].length).toBe(2);
+    expect(parseState(JSON.parse(JSON.stringify(one))).state.ridgeExtra).toBeUndefined();   // an older save has none, and gets none
   });
 });

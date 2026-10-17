@@ -10,7 +10,7 @@ import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
 
-export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[] }   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
+export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[]; strokes?: Vec[][]; handles?: boolean; sel?: number | null }   // Stage 9: strokes with their control points (handles) and the selected stroke   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
 export interface PastView { year: number; codes: Record<string, number> }
 export interface RoadArgs {
   sim: SimState | null; w: World | null;
@@ -79,7 +79,7 @@ export class RoadLayer {
       if (s.hubs) { for (const p of Object.values(s.hubs.ports)) h = (h * 31 + p.tier + (p.until ? 5 : 0)) >>> 0; for (const x of Object.values(s.hubs.airports)) h = (h * 31 + x.runwayM + (x.kind === "hub" ? 3 : 0) + (x.until ? 5 : 0)) >>> 0; for (const r of s.hubs.routes) h = (h * 31 + r.state.length + r.since) >>> 0; }
     }
     const L = a.layers;
-    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
+    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => (c.strokes ? c.strokes.map((st) => st.map((q) => q[0].toFixed(1) + q[1].toFixed(1)).join()).join("/") + (c.sel ?? "") + (c.handles ? "h" : "") : "") + c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
   }
   /** Stage 8/9: ports and airports, each in two sizes only (large: 国際拠点港湾以上 / 国際ハブ空港; small: the rest), and the busiest domestic flights.
    *  International routes are kept in the simulation but not drawn. In the past view, those of that year. */
@@ -210,7 +210,9 @@ export class RoadLayer {
     for (const c of a.cer) {
       if (c.segs?.length) for (const sg of c.segs) { if (sg.pts.length < 2) continue; if (sg.ferry) pattern(ov, sg.pts, [px(8), px(6)]); else line(ov, sg.pts); ov.stroke({ width: px(sg.ferry ? 4 : 5), color: sg.ferry ? 0x2f9bff : c.ok ? 0x45e06f : 0xff5252, alpha: 0.85, cap: "round", join: "round" }); }
       else if (c.path && c.path.length > 1) { line(ov, c.path); ov.stroke({ width: px(5), color: c.ok ? 0x45e06f : 0xff5252, alpha: 0.8, cap: "round", join: "round" }); }
-      if (c.pts.length > 1) { line(ov, c.pts); ov.stroke({ width: px(2), color: 0xffffff, alpha: 0.95 }); }
+      if (c.strokes?.length) c.strokes.forEach((st, i) => { if (st.length < 2) return; line(ov, st); ov.stroke({ width: px(c.sel === i ? 4 : 2), color: c.sel === i ? 0xffd23a : 0xffffff, alpha: 0.95 }); });
+      else if (c.pts.length > 1) { line(ov, c.pts); ov.stroke({ width: px(2), color: 0xffffff, alpha: 0.95 }); }
+      if (c.handles && c.strokes) c.strokes.forEach((st, i) => { for (const q of st) ov.circle(q[0], -q[1], px(c.sel === i ? 5 : 4)).fill({ color: c.sel === i ? 0xffd23a : 0xffffff }).stroke({ width: px(1.5), color: 0x1b1b1b }); });
     }
     if (a.pin) { ov.circle(a.pin[0], -a.pin[1], px(7)).fill({ color: 0xff3b6b }).stroke({ width: px(2), color: 0xffffff }); }
   }
