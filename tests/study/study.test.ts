@@ -43,7 +43,7 @@ export function measure(sim: SimState, w: World) {
     paxRailShare: Math.round((railPkm / Math.max(1, railPkm + roadPkm)) * 1000) / 1000, frRailShare: Math.round((railFr / Math.max(1, railFr + roadFr)) * 1000) / 1000, airShare: Math.round(an.airShare * 1000) / 1000,
     lostRoadKm: Math.round(es.filter((e) => modeOf(e) === "road" && e.state === "lost").reduce((s, e) => s + e.lengthKm, 0)), closedRailKm: Math.round(es.filter((e) => modeOf(e) === "rail" && e.built >= 1 && (e.state === "closed" || e.state === "lost")).reduce((s, e) => s + e.lengthKm, 0)),
     bypass: sim.links.length, unbuilt: Object.values(sim.projects).filter((p) => p.status === "unbuilt").length, pop: Math.round(Object.values(sim.cities).reduce((s, c) => s + c.pop, 0) / 1e5) / 10,
-    budget: Math.round(sim.macro.budgetBu * 100) / 100, railDensP10: q(0.1), maxGrowth: Math.round(Math.max(...w.cities.map((c) => sim.cities[c.id].pop / Math.max(1, c.pop0))) * 100) / 100, top1: Math.round(Math.max(...w.cities.map((c) => sim.cities[c.id].pop)) / Math.max(1, w.cities.reduce((s, c) => s + sim.cities[c.id].pop, 0)) * 1000) / 1000, railDensP25: q(0.25), railDensP50: q(0.5),
+    budget: Math.round(sim.macro.budgetBu * 100) / 100, deficitLines: Object.values(sim.routes).filter((r) => r.history.some((h) => h.text === "赤字のため廃止")).length, railDensP10: q(0.1), maxGrowth: Math.round(Math.max(...w.cities.map((c) => sim.cities[c.id].pop / Math.max(1, c.pop0))) * 100) / 100, top1: Math.round(Math.max(...w.cities.map((c) => sim.cities[c.id].pop)) / Math.max(1, w.cities.reduce((s, c) => s + sim.cities[c.id].pop, 0)) * 1000) / 1000, railDensP25: q(0.25), railDensP50: q(0.5),
   };
 }
 export function runScenario(name: string, sc: Scenario) {

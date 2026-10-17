@@ -55,5 +55,5 @@ body.real #sheet { max-height: 62dvh; }
 /* Issue #20: the terrain editor is one short row on a phone */
 #toolbar.compact { gap:4px; padding:4px; }
 #toolbar.compact .grp { gap:4px; }
-#toolbar.compact button { padding:4px 7px; font-size:13px; min-height:34px; }
+#toolbar.compact button { padding:3px 5px; font-size:12.5px; min-height:34px; min-width:34px; }
 #toolbar.compact .tag { font-size:12px; color:#c9d8e4; padding:0 2px; white-space:nowrap; }

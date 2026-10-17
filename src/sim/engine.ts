@@ -145,7 +145,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   const an = yield* analyzeGen(sim, w); yield;
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
   updatePopulation(sim, w, an, y); updateRegionShares(sim, w); yield;
-  evaluateEdges(sim, w, an, y); yield;
+  yield* evaluateEdgesGen(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
   if (sim.crossings) { planCrossings(sim, w, y); reviewLakeFerries(sim, w, y); }
@@ -180,6 +180,8 @@ function compactSim(sim: SimState, y: number) {
  * wide plain) loses growth in proportion to how far past it is. Explainable, gentle, and only in the new economy.
  */
 /** Stage 7: only projects at least this urgent get national top-up money; minor local works stay at the mercy of their own region (and may stall into 未成). */
+/** Stage 7: edges reviewed per slice of the yearly evaluation (keeps each main-thread task short on a phone). */
+export const EDGE_SLICE = 400;
 export const TOPUP_MIN_PRIORITY = 3, TOPUP_SHARE = 0.5;
 export const CROWD_ROOM = 3, CROWD_PLAINS = 5, CROWD_K = 0.02;
 export const crowding = (pop: number, pop0: number, plains: number) => CROWD_K * Math.max(0, pop / (Math.max(1, pop0) * (CROWD_ROOM + CROWD_PLAINS * plains)) - 1);
@@ -233,8 +235,10 @@ export function updateRegionShares(sim: SimState, w: World) {
   for (const r of w.t.prefOrder) share[r] = EQUAL_SHARE / n + (1 - EQUAL_SHARE) * ((econ[r] ?? 0) / (tot || 1));
   sim.regionShare = share;
 }
-function evaluateEdges(sim: SimState, w: World, an: Analysis, y: number) {
+function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
+  let n = 0;
   for (const e of Object.values(sim.edges)) {
+    if (++n % EDGE_SLICE === 0) yield;   // Stage 7: a slice of edges at a time (closure checks search the network and are not cheap)
     if (e.built < 1) continue; const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
     if (e.state === "open" || e.state === "dormant") {
       if (e.through > e.peakThrough) e.peakThrough = e.through;
@@ -297,7 +301,7 @@ function evaluateRailRoute(sim: SimState, r: SimRoute) {
 }
 
 // ---- monthly ----
-function monthly(sim: SimState, w: World) {
+function* monthlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
   if (sim.month % 12 === 0) sim.macro.mood = Math.max(-1, Math.min(1, sim.macro.mood * 0.6 + (rand(sim) - 0.5) * 0.8));
   let econ = 0; for (const c of Object.values(sim.cities)) econ += c.pop * c.industry; for (const v of Object.values(sim.settlements)) econ += v.pop * 0.15;
@@ -324,6 +328,7 @@ function monthly(sim: SimState, w: World) {
     left[r] = purse;
   }
   sim.macro.maintCoverage = need > 0 ? funded / need : 1;
+  yield;   // Stage 7: upkeep, construction and the railways are separate slices of the month
   for (const e of Object.values(sim.edges)) if (e.state === "closed" && e.built >= 1) { e.weathering = Math.min(100, e.weathering + 0.3); if (e.weathering >= 100) { setEdgeState(sim, e, "lost", "閉鎖後に放置され風化"); ev(sim, "lost", `${edgeName(sim, e)}が廃道化`, "閉鎖後に維持されず風化(復旧には再整備が必要)", { edge: e.id }); } }
   // construction: each region funds its own queue; leftovers and the national pool fund the rest
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "road").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
@@ -336,7 +341,7 @@ function monthly(sim: SimState, w: World) {
   for (const s of short) { const g = s.p.priority >= TOPUP_MIN_PRIORITY ? Math.min((s.req - s.f) * TOPUP_SHARE, Math.max(0, pool)) : 0; pool -= g; const f = s.f + g; if (f > 0 || s.p.status === "building") progressProject(sim, w, s.p, f, s.req, s.totLen); }
   if (sim.stage3) { const sl = (sim.regionSlack ??= {}); for (const r of w.t.prefOrder) { const full = regional * (sim.regionShare[r] ?? 1 / w.t.prefOrder.length); if (full > 0) sl[r] = Math.round(((sl[r] ?? 0.5) * 0.97 + 0.03 * Math.max(0, Math.min(1, (left[r] ?? 0) / full))) * 1000) / 1000; } }
   for (const r of Object.keys(left)) pool += Math.max(0, left[r] ?? 0) * 0;      // regional leftovers are not pooled: each region's purse is its own
-  if (sim.stage3) { railMonthly(sim, w, total * (1 - sim.dials.roadShare)); resolveConcepts(sim); }
+  if (sim.stage3) { yield; railMonthly(sim, w, total * (1 - sim.dials.roadShare)); yield; resolveConcepts(sim); }
   for (const p of Object.values(sim.projects)) {
     if (p.status === "suspended" && sim.month - p.statusSince >= 96) { p.status = "unbuilt"; p.statusSince = sim.month; ev(sim, "project", `未成線化: ${projLabel(sim, p)}`, "中断から8年経過しても再開されない", { project: p.id }); }
     if (p.status === "suspended" || p.status === "unbuilt") for (const id of p.edgeIds) { const e = sim.edges[id]; if (e && e.built < 1) e.weathering = Math.min(100, e.weathering + 0.03); }
@@ -477,7 +482,7 @@ export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
     if (windowDue(sim, yearOf(sim))) { openWindow(sim, w, yearOf(sim)); if (sim.policy!.pending) return; }
     yield* yearlyGen(sim, w);
   }
-  monthly(sim, w); yield; sim.month++;
+  yield* monthlyGen(sim, w); yield; sim.month++;
 }
 /** An era change is due: open it; if nobody is there to choose (or the setting says so) the first candidate (the real one for 1989/2019, else fewest strokes) is taken. */
 export function startKaigen(sim: SimState, year: number) {

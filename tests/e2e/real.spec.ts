@@ -13,7 +13,9 @@ async function bootReal(page: Page) {
 }
 /** The first era is chosen from the 14 candidates of 1926; index 0/1/2 carry the balanced / road / rail stance. */
 /** Issue #20: the era and the seats live in their own sheet (⚙ 元号・首都), not in the terrain menu. */
-async function openSetup(page: Page) { if (!(await page.isVisible("#era-first"))) await page.click("#open-setup"); await page.waitForSelector("#era-first"); }
+/** Stage 7: the terrain editor takes the whole toolbar while it is open, so it is closed first (the settings button lives outside it). */
+async function editor(page: Page, open: boolean) { const on = (await page.getAttribute("#terrain-edit-toggle", "aria-pressed")) === "true"; if (on !== open) await page.click("#terrain-edit-toggle"); }
+async function openSetup(page: Page) { if (!(await page.isVisible("#era-first"))) { if (!(await page.isVisible("#open-setup"))) await editor(page, false); await page.click("#open-setup"); } await page.waitForSelector("#era-first"); }
 async function closeSheet(page: Page) { if (await page.isVisible("#sheet-close")) await page.click("#sheet-close"); }
 async function pickEra(page: Page, stance: string) { await openSetup(page); await page.selectOption("#era-first", String({ heisei: 0, shubun: 1, shoka: 2 }[stance as "heisei"]));  await closeSheet(page); }
 async function startReal(page: Page, era = "heisei") {
@@ -206,7 +208,7 @@ test("改元: time stops at 1989, the sheet opens by itself, the choice is kept 
 
 test("限定の地形編集: capital, Alps and Fuji can be set before the first road, undo/redo work, edits survive a reload, and the ceremony locks them", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle"); await expect(page.locator("#terrain-edit-note")).toContainText("海岸線");
+  await page.click("#terrain-edit-toggle"); await page.click("#edit-more"); await expect(page.locator("#terrain-edit-note")).toContainText("海岸線");
   const hash0 = await app(page, "a => a.terrain.hash") as string;
   await page.click("#alps-real"); expect(await app(page, "a => !!a.s.ridges.ne && !!a.s.ridges.sw")).toBe(true);
   await page.waitForFunction((h) => (window as any).__kfm.terrain?.hash && (window as any).__kfm.terrain.hash !== h, hash0, { timeout: 60000 });
@@ -250,7 +252,7 @@ test("沖縄を首都、札幌を副首都にしても国道1号が成立し、�
   const errs = watchErrors(page); await bootReal(page);
   await page.click("#terrain-edit-toggle");
   await openSetup(page); await page.selectOption("#seat-capital", "JP-47"); await page.selectOption("#seat-sub", "HK-SAP"); await closeSheet(page);
-  await page.click("#terrain-edit-toggle");   // fold the panel so it does not cover the map
+  await editor(page, false);   // fold the panel so it does not cover the map
   expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇"); expect(await page.locator("#tool-cer-fudo1").count()).toBe(0);   // no 府道1号 to draw any more
   // fit the seven cities into the part of the screen above the toolbar
   const pts = await page.evaluate(() => {
@@ -283,7 +285,7 @@ test("皇居: 49府県から選べ、首都と同じ府県でもよく、地図�
   await page.evaluate((p) => { (window as any).__kfm.placePalace([p[0] + 5, p[1] + 5]); }, k);
   const pp = await app(page, "a => a.s.palacePos") as [number, number]; expect(pp).toBeTruthy();
   expect(await app(page, "a => a.placePalace([0, -9999])")).toBe(false);   // outside its prefecture / on the sea is refused
-  await closeSheet(page); await page.click("#sel-biwa"); await page.click("#biwa-bigger"); await page.click("#biwa-bigger"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeGreaterThan(1.2);
+  await closeSheet(page); await editor(page, true); await page.click("#sel-biwa"); await page.click("#biwa-bigger"); await page.click("#biwa-bigger"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeGreaterThan(1.2);
   await page.click("#sel-fuji"); await page.click("#fuji-higher"); expect(await app(page, "a => a.s.features.fuji.height")).toBeGreaterThan(1); await page.click("#fuji-narrower"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeLessThan(1);
   await page.click("#edit-undo"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeUndefined(); await page.click("#edit-redo"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeLessThan(1);
   for (let i = 0; i < 12; i++) await page.click("#fuji-wider");   // widening is refused once the mountain would touch the coast: the map stays valid
@@ -380,6 +382,7 @@ test("Issue #20: 置けない所で指を離しても止まらない(直前の�
   expect(await app(page, "a => a.s.features.fuji.pos")).toBeNull(); await healthy();
   // 6) toggles: pressing the active tool again turns it off and the map pans again; one-shot buttons stay one-shot
   if (await app(page, "a => a.tool") !== "view") await page.click("#sel-biwa");
+  await page.click("#edit-more");   // Stage 7: the three ridge tools sit in the 山脈 group
   for (const id of ["#sel-biwa", "#sel-fuji", "#tool-ridge-ne", "#tool-ridge-sw", "#tool-ridge-edit"]) {
     await page.click(id); expect(await app(page, "a => a.tool"), id).not.toBe("view"); await page.click(id); expect(await app(page, "a => a.tool"), id).toBe("view");
   }
@@ -394,5 +397,19 @@ test("Issue #20: 置けない所で指を離しても止まらない(直前の�
   const tbH = await page.evaluate(() => document.getElementById("toolbar")!.getBoundingClientRect().height), vh = await page.evaluate(() => innerHeight); expect(tbH).toBeLessThan(vh * 0.45);
   await openSetup(page); const ids = await page.locator("#seat-capital option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
   expect(ids).toHaveLength(49); expect(ids.slice(0, 3).every((x) => x.startsWith("HK-"))).toBe(true); expect(ids[ids.length - 1]).toBe("JP-47");
+  expect(errs).toEqual([]);
+});
+
+test("Stage 7: 地形編集は1行の小さなメニュー(対象を選んだ時だけ2行目)。地図の見える範囲が広い", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  const tbH = () => page.evaluate(() => Math.round(document.getElementById("toolbar")!.getBoundingClientRect().height));
+  const closed = await tbH(); await page.click("#terrain-edit-toggle"); const open = await tbH(); const rows = await page.evaluate(() => new Set([...document.querySelectorAll("#toolbar button")].map((b) => Math.round(b.getBoundingClientRect().y))).size);
+  await page.click("#sel-biwa"); const biwa = await tbH(); await page.click("#sel-fuji"); const fuji = await tbH(); await page.click("#edit-more"); const more = await tbH();
+  console.log("toolbar heights", JSON.stringify({ closed, open, rows, biwa, fuji, more }));
+  expect(rows).toBe(1); expect(open).toBeLessThan(closed * 0.5); expect(fuji).toBeLessThan(100); expect(more).toBeLessThan(140);
+  expect(await page.locator("#toolbar #era-first, #toolbar #seat-capital, #toolbar #tool-cer-kokudo1, #toolbar #cer-go").count()).toBe(0);   // nothing but the editor while it is open
+  // the editor still does everything: undo / redo, rotate, size, close returns the ceremony controls
+  await page.click("#rot-l"); expect(await app(page, "a => a.s.features.fuji.rot")).not.toBe(0); await page.click("#edit-undo"); expect(await app(page, "a => a.s.features.fuji.rot")).toBe(0); await page.click("#edit-redo"); expect(await app(page, "a => a.s.features.fuji.rot")).not.toBe(0);
+  await page.click("#terrain-edit-toggle"); expect(await app(page, "a => a.tool")).toBe("view"); expect(await page.isVisible("#tool-cer-kokudo1")).toBe(true);
   expect(errs).toEqual([]);
 });

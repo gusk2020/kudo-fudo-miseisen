@@ -50,3 +50,5 @@
 
 ## Issue #15（Stage 5 追加改修）
 `docs/STAGE5_ISSUE15.md` に記録。ブランチ `claude/stage5-issue15`。
+
+- Stage 7(交通シミュレーションの定量分析と改善、地形編集メニューの小型化): [STAGE7_SIM.md](STAGE7_SIM.md)
