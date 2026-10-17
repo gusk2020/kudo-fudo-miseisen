@@ -153,13 +153,13 @@ test("defaults to the road map with route-name text hidden; legend toggles filte
   const before = await hashOf();
   await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = "legend"; a.buildSheet(); });
   await expect(page.locator("#legend-ops")).toBeVisible();
-  await page.locator("#lg-s-lost").uncheck(); await page.locator("#lg-g-national").uncheck(); await page.locator("#lg-names").check();
-  expect(await app(page, "a => [...a.hide].sort().join()")).toContain("g:national:road"); expect(await app(page, "a => a.names")).toBe(true);
+  await page.locator("#lg-s-lost").uncheck(); await page.locator("#lg-k-hwy").uncheck(); await page.locator("#lg-names").check();
+  expect(await app(page, "a => [...a.hide].sort().join()")).toContain("k:hwy"); expect(await app(page, "a => a.names")).toBe(true);
   await page.locator("#lg-rail").uncheck(); expect(await app(page, "a => a.s.layers.rail")).toBe(false);
   expect(await hashOf()).toBe(before);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); });
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
-  expect(await app(page, "a => a.hide.has('st:lost') && a.hide.has('g:national:road') && a.names && !a.s.layers.rail")).toBe(true);
+  expect(await app(page, "a => a.hide.has('st:lost') && a.hide.has('k:hwy') && a.names && !a.s.layers.rail")).toBe(true);
   expect(errs).toEqual([]);
 });
 

@@ -10,6 +10,9 @@ import { loadDem } from "./helpers";
 import { city, line, realWorld, ridgeWorld, stage3SimOn, viaShikoku } from "./simhelp";
 import { MTN_RAIL_PASS_M, mountainBarrier, mountainCost, pathfind } from "../../src/sim/world";
 import { analyze } from "../../src/sim/demand";
+import { kindOf } from "../../src/render/roads";
+import { landShare, seaPath } from "../../src/render/seaPath";
+import { isLakeFerry } from "../../src/sim/ferry";
 import { advance } from "../../src/sim/engine";
 
 const worldOf = (mut: (s: ReturnType<typeof defaultState>) => void = () => {}) => { const s = defaultState(); s.islands = true; mut(s); const t = generateTerrain(s, loadDem()); return { w: buildWorld(t, s.seed), hash: t.hash, s }; };
@@ -56,4 +59,15 @@ describe("Stage 9: a drawn mountain range is a real barrier", () => {
     expect(pathfind(mtn, a, b, { rail: true })!.length).toBeGreaterThan(pathfind(flat, a, b, { rail: true })!.length);
     expect(mountainCost(mtn, pathfind(flat, a, b)!)).toBeGreaterThan(1.5);
   }, 600000);
+});
+
+describe("Stage 9: the map shows kinds, and ferries are drawn over the water", () => {
+  it("roads and railways are drawn by kind (道路/高速道路/鉄道/新幹線/リニア), never by administrative grade or operator", () => {
+    expect(kindOf({ standard: "rural" } as never)).toBe("road"); expect(kindOf({ standard: "highgrade" } as never)).toBe("hwy");
+    expect(kindOf({ standard: "standard", mode: "rail" } as never)).toBe("rail"); expect(kindOf({ standard: "highgrade", mode: "rail" } as never)).toBe("hsr"); expect(kindOf({ standard: "highgrade", mode: "rail", maglev: true } as never)).toBe("maglev");
+  });
+  it("every domestic ferry of the 1950 network is drawn over water: no drawn point (away from its two ports) falls on land", () => {
+    const { sim, w } = stage3SimOn(realWorld(true)); const fs = Object.values(sim.edges).filter((e) => e.facility === "ferry"); expect(fs.length).toBeGreaterThan(5);
+    for (const e of fs) { const pts = seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)); expect(landShare(w, pts), e.facilityName).toBeLessThanOrEqual(0.05); }
+  });
 });

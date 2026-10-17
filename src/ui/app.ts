@@ -680,9 +680,10 @@ export class App {
       const chk = (id: string, label: string, on: boolean, fn: (v: boolean) => void) => h("label", { class: "layer" }, h("input", { type: "checkbox", id, checked: on, onchange: (e: Event) => fn((e.target as HTMLInputElement).checked) }), label);
       const grp = (title: string, items: HTMLElement[]) => det.append(h("div", { class: "legend-group" }, h("b", {}, title), ...items));
       grp("種類", [chk("lg-roads", "道路", this.s.layers.roads, (v) => this.store.set((s) => { s.layers.roads = v; })), chk("lg-rail", "鉄道", this.s.layers.rail, (v) => this.store.set((s) => { s.layers.rail = v; })), chk("lg-ferry", "フェリー航路", !this.hide.has("fac:ferry"), () => this.toggleHide("fac:ferry")), chk("lg-names", "路線名の文字(全路線)", this.names, (v) => { this.names = v; this.saveUi(); this.renderRoads(); })]);
-      grp("港湾・空港・航路", [chk("lg-ports", "港湾", this.s.layers.ports, (v) => this.store.set((s) => { s.layers.ports = v; })), chk("lg-airports", "空港", this.s.layers.airports, (v) => this.store.set((s) => { s.layers.airports = v; })), chk("lg-lanes", "国際航路・空路", this.s.layers.lanes, (v) => this.store.set((s) => { s.layers.lanes = v; })), chk("lg-lake", "湖上フェリー", !this.hide.has("fac:lake"), () => this.toggleHide("fac:lake"))]);
-      const G: [string, string][] = [["national", "国道"], ["fu", "府県道(府道)"], ["ken", "県道"], ["jnr", "国鉄"], ["priv", "私鉄"], ["none", "指定なし"]];
-      grp("規格・行政区分", G.map(([k, l]) => { const key = (k === "jnr" || k === "priv") ? `g:${k}:rail` : `g:${k}:road`; return chk("lg-g-" + k, l, !this.hide.has(key), () => this.toggleHide(key)); }));
+      grp("港湾・空港・航路", [chk("lg-ports", "港湾", this.s.layers.ports, (v) => this.store.set((s) => { s.layers.ports = v; })), chk("lg-airports", "空港", this.s.layers.airports, (v) => this.store.set((s) => { s.layers.airports = v; })), chk("lg-lanes", "国内空路", this.s.layers.lanes, (v) => this.store.set((s) => { s.layers.lanes = v; })), chk("lg-lake", "湖上フェリー", !this.hide.has("fac:lake"), () => this.toggleHide("fac:lake"))]);
+      // Stage 9: the map shows kinds; the administrative grades stay in the ledger, the route details and the history
+      const K: [string, string][] = [["road", "道路"], ["hwy", "高速道路"], ["rail", "鉄道"], ["hsr", "新幹線"], ["maglev", "リニア"]];
+      grp("道路・鉄道の種類", K.map(([k, l]) => chk("lg-k-" + k, l, !this.hide.has("k:" + k), () => this.toggleHide("k:" + k))));
       const ST: [string, string][] = [["open", "供用中"], ["building", "工事中"], ["planned", "計画"], ["unbuilt", "未成"], ["closed", "廃止(閉鎖)"], ["lost", "廃道・遺構"], ["dormant", "休止"]];
       grp("状態", ST.map(([k, l]) => chk("lg-s-" + k, l, !this.hide.has("st:" + k), () => this.toggleHide("st:" + k))));
       body.append(det);
@@ -703,11 +704,16 @@ export class App {
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#bbb" stroke-width="2"/>`, `細い: ${STANDARD_LABEL.rural}`); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#bbb" stroke-width="4"/>`, `中: ${STANDARD_LABEL.standard}`); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#bbb" stroke-width="7"/>`, `太い: ${STANDARD_LABEL.highgrade}`);
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.national)}" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4"/>`, "赤茶の縁: 国道"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.ken)}" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4"/>`, "緑の縁: 県道"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.fu)}" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4"/>`, "紫の縁: 府道"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.none)}" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="3"/>`, "灰の縁・細め: 市町村道(指定なし)");
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#2f8fd8" stroke-width="3" stroke-dasharray="7 5"/>`, "青の破線: フェリー航路(海の上。道路ではありません)"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#1b3f8f" stroke-width="2.4" stroke-dasharray="7 5"/>`, "紺の破線: 鉄道連絡船");
-    body.append(h("h3", {}, "港湾・空港・航路(Stage 8)"));
-    row(`<rect x="4" y="4" width="6" height="6" fill="#7fb4e0" stroke="#fff"/><rect x="16" y="3" width="8" height="8" fill="#2a7fd0" stroke="#fff"/><rect x="30" y="2" width="9" height="9" fill="#1450a0" stroke="#fff"/><rect x="45" y="1" width="11" height="11" fill="#0a2e6e" stroke="#fff"/>`, "四角: 港湾(小さく淡い順に 地方港湾・重要港湾・国際拠点港湾・国際戦略港湾)");
-    row(`<text x="6" y="12" font-size="12" fill="#fff" stroke="#222" stroke-width="0.5">✈</text><text x="32" y="13" font-size="15" fill="#ffc83a" stroke="#222" stroke-width="0.5">✈</text>`, "白い飛行機: 地方空港 / 大きな金色: 国際ハブ空港");
-    row(`<line x1="2" y1="7" x2="56" y2="7" stroke="#1aa3a3" stroke-width="2.2" stroke-dasharray="6 4"/><circle cx="58" cy="7" r="2.5" fill="#1aa3a3"/>`, "青緑の破線: 国際航路(港から海外の方面へ。行き先は方面名)");
-    row(`<line x1="2" y1="7" x2="56" y2="7" stroke="#d9822b" stroke-width="1.6" stroke-dasharray="2 4"/><circle cx="58" cy="7" r="2.5" fill="#d9822b"/>`, "橙の点線: 国際線 / 白い細線: 国内線(淡い線は休止中)");
+    body.append(h("h3", {}, "道路・鉄道の種類"));
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#3d3d3d" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#5bd66b" stroke-width="3.5"/>`, "道路(国道・府県道などの区分は台帳と路線の詳細に記録)");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#0b7a3e" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#5bd66b" stroke-width="4.5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="1"/>`, "高速道路(緑の縁取り＋白い中心線)");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#12284d" stroke-width="3.5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="2.5" stroke-dasharray="4 5"/>`, "鉄道(国鉄・私鉄の区別は台帳と路線の詳細に記録)");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="7"/><line x1="2" y1="7" x2="62" y2="7" stroke="#1e6fd9" stroke-width="5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="1.2"/>`, "新幹線(青＋白い中心線)");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="7"/><line x1="2" y1="7" x2="62" y2="7" stroke="#a52fd0" stroke-width="5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="1.6" stroke-dasharray="6 4"/>`, "リニア(紫＋白い破線。2000年以降、技術が追いつけば)");
+    body.append(h("h3", {}, "港湾・空港・航路"));
+    row(`<rect x="6" y="4" width="6" height="6" fill="#4f95d6" stroke="#fff"/><rect x="26" y="1" width="11" height="11" fill="#0f3f8c" stroke="#fff"/>`, "四角: 港(小=地方・重要港湾、大=国際拠点港湾以上)");
+    row(`<text x="6" y="12" font-size="11" fill="#fff" stroke="#222" stroke-width="0.5">✈</text><text x="30" y="13" font-size="16" fill="#ffc83a" stroke="#222" stroke-width="0.5">✈</text>`, "飛行機: 空港(小=地方空港、大＝金色=国際ハブ空港)");
+    row(`<path d="M2 10 Q20 2 34 8 T62 6" fill="none" stroke="#2f8fd8" stroke-width="3" stroke-dasharray="7 5"/>`, "青の破線: 国内のフェリー航路(海岸から離れた海の上を通る)。国際航路は計算だけで、地図には描きません");
     body.append(h("h3", {}, "建設計画"));
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#39d6c8" stroke-width="3" stroke-dasharray="2 4"/>`, "水色の点線: 計画"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#3aa0ff" stroke-width="3" stroke-dasharray="7 4"/>`, "青の破線: 工事中"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#ff8f1f" stroke-width="3" stroke-dasharray="7 4"/>`, "橙の破線: 中断"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#b04bff" stroke-width="3" stroke-dasharray="7 4"/>`, "紫の破線: 未成線");
     body.append(h("h3", {}, "比較表示の縁取り"));
@@ -715,11 +721,9 @@ export class App {
     if (this.real) {
       body.append(h("h3", {}, "鉄道(紺の線＋白い点線)"));
       row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#12284d" stroke-width="3.5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="2.5" stroke-dasharray="4 5"/>`, "紺: 供用中(状態が悪いほど灰色に近づく)");
-      row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#12284d" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffd23a" stroke-width="1.5"/>`, "太い紺＋黄の中心線: 高速新線・高規格化");
       row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#3a4f78" stroke-width="3.5" stroke-dasharray="10 6"/>`, "紺の長い破線: 運休(利用がほぼゼロ)");
       row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#9aa4ad" stroke-width="2" stroke-dasharray="5 4"/>`, "灰色の破線: 廃止 ／ 極細の点線: 廃線跡");
       body.append(h("small", {}, "鉄道の標識: 紺の四角=国鉄「鉄N」、白地に枠=私鉄(事業者名の頭文字＋番号)。通称「酷鉄」(国鉄)・「死鉄」(私鉄)は、利用が少なく保守が行き届かない線に後から付く呼び名で、正式名称ではありません。"));
-      body.append(h("small", {}, "青い四角=港(沿岸の都市)、白い十字=空港(開港後)。港と空港は補助的な役割で、貨物と長距離旅客の一部を引き受けます。"));
     }
     body.append(h("small", {}, "標識: 国=丸(赤)・県=角丸(緑)・府=五角形(紫)。通称(酷・険・腐)は荒れた細い道に後から付く呼び名で、行政指定ではありません。"));
   }
