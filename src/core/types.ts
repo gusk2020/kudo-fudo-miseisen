@@ -27,6 +27,8 @@ export interface ProjectState {
   ridges: { sw: Vec[] | null; ne: Vec[] | null };
   /** Stage 9: further strokes of each range (a range may be drawn in several strokes; `ridges` keeps the first). Absent on older saves. */
   ridgeExtra?: { sw: Vec[][]; ne: Vec[][] };
+  /** Stage 10: the real Alps (北 = ne: 飛騨山脈, 南 = sw: 赤石山脈) levelled from the DEM, set the first time that range's tool is chosen. Absent on older saves. */
+  alpsRemoved?: { ne?: true; sw?: true };
   finalized: boolean;
   /** Stage 3: the real Japan (no deformation, no drawn ridges). Set only by realState(); the hand-edited map flow never sets it. */
   real?: boolean;

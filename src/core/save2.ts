@@ -13,7 +13,7 @@ import { ISLAND_IDS } from "./types";
 export const SAVE_VERSION = 2;
 /** Hash of everything that defines the finished map (not view prefs or step). Changes whenever the map is edited. */
 export function mapStateHash(s: ProjectState): string {
-  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne, ...(s.ridgeExtra && (s.ridgeExtra.sw.length || s.ridgeExtra.ne.length) ? [["ridgeExtra", s.ridgeExtra]] : []), ...(s.islands ? ["islands"] : []), ...(s.capital ? ["capital", s.capital] : []), ...(s.subCapital ? ["sub", s.subCapital] : []), ...(s.palace ? ["palace", s.palace] : []), ...(s.palacePos ? ["palacePos", s.palacePos] : [])]));   // the extras are appended only when set, so a save made before them hashes exactly as it did
+  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne, ...(s.ridgeExtra && (s.ridgeExtra.sw.length || s.ridgeExtra.ne.length) ? [["ridgeExtra", s.ridgeExtra]] : []), ...(s.alpsRemoved && (s.alpsRemoved.ne || s.alpsRemoved.sw) ? [["alps", !!s.alpsRemoved.ne, !!s.alpsRemoved.sw]] : []), ...(s.islands ? ["islands"] : []), ...(s.capital ? ["capital", s.capital] : []), ...(s.subCapital ? ["sub", s.subCapital] : []), ...(s.palace ? ["palace", s.palace] : []), ...(s.palacePos ? ["palacePos", s.palacePos] : [])]));   // the extras are appended only when set, so a save made before them hashes exactly as it did
 }
 export interface GameSave { format: "kudo-fudo-miseisen"; schemaVersion: 2; savedAt: number; map: ProjectState; mapHash: string; sim: SimState | null }
 export function makeSave(map: ProjectState, sim: SimState | null): GameSave {
@@ -64,6 +64,9 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
     const k = raw.kaigen, okE = (e: any) => isRec(e) && typeof e.name === "string" && e.name.length > 0 && e.name.length < 12 && Number.isInteger(e.start) && STANCES.includes(e.stance);
     if (!(isRec(k) && Array.isArray(k.eras) && k.eras.length >= 1 && k.eras.length < 40 && k.eras.every(okE) && Number.isInteger(k.next) && Number.isInteger(k.nextIdx) && (k.pending === null || (isRec(k.pending) && Number.isInteger(k.pending.year) && Array.isArray(k.pending.cands) && k.pending.cands.length > 0 && k.pending.cands.every((c: any) => isRec(c) && typeof c.name === "string" && STANCES.includes(c.stance)))))) delete raw.kaigen;
   }
+  // Stage 10: the role assignment is kept only if well formed (a damaged one is dropped: the game then reads the real 1950 sizes, never refused)
+  if (raw.roles !== undefined) { const r = raw.roles, str = (x: any) => typeof x === "string" && x.length < 12; if (!(isRec(r) && isRec(r.prof) && Object.entries(r.prof).every(([k, v]) => str(k) && str(v)) && Array.isArray(r.capMetro) && r.capMetro.every(str) && Array.isArray(r.subMetro) && r.subMetro.every(str) && str(r.culture))) delete raw.roles; }
+  if (isRec(raw.kaigen) && raw.kaigen.recon !== undefined && !(isRec(raw.kaigen.recon) && ["pacific", "japansea"].includes(raw.kaigen.recon.coast) && ["concentrate", "disperse"].includes(raw.kaigen.recon.focus))) delete raw.kaigen.recon;
   // Stage 8: a lake bridge keeps only its two shore cells (an early Stage 8 build stored the water cells too, which the land check would refuse)
   for (const e of Object.values<any>(raw.edges)) if (e.facility === "bridge" && typeof e.facilityName === "string" && e.facilityName.includes("湖上大橋") && e.cells.length > 2) e.cells = [e.cells[0], e.cells[e.cells.length - 1]];
   // Stage 8: ports, airports and routes are kept only if well formed; otherwise they are rebuilt from the cities at the next yearly step (never refused)

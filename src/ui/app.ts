@@ -369,7 +369,7 @@ export class App {
   realAlps() {
     const to = (lon: number, lat: number): Vec => realToWorld("honshu", this.s.bodies.honshu, lonLatToReal(lon, lat));
     const north = [[137.76, 36.76], [137.62, 36.58], [137.65, 36.34], [137.65, 36.29], [137.55, 36.11]].map(([a, b]) => to(a, b)), south = [[138.23, 35.78], [138.24, 35.67], [138.10, 35.60], [138.14, 35.45], [138.10, 35.33]].map(([a, b]) => to(a, b));
-    this.commitEdit((s) => { s.ridges.ne = north; s.ridges.sw = south; delete s.ridgeExtra; });
+    this.commitEdit((s) => { s.ridges.ne = north; s.ridges.sw = south; delete s.ridgeExtra; s.alpsRemoved = { ne: true, sw: true }; });
   }
   /** Resize Lake Biwa (outline) or Mt. Fuji (body / summit height) by a factor, within the allowed range and only if the result is still a valid map (no lake touching the coast). */
   scaleFeature(which: "biwa" | "fuji", what: "scale" | "height", factor: number) {
@@ -579,7 +579,12 @@ export class App {
     this.status(); this.buildToolbar(); this.buildSheet();
   }
   private tbtn(label: string, on: boolean, f: () => void, id?: string, mark = true) { return h("button", { id, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: f }, on && mark ? "✓ " + label : label); }
-  private setTool(t: Tool) { this.tool = this.tool === t ? "view" : t; this.pending = null; this.buildToolbar(); this.render(); }
+  private setTool(t: Tool) {
+    this.tool = this.tool === t ? "view" : t; this.pending = null;
+    // Stage 10: choosing 北 / 南 for the first time takes the real Alps of that side out of the DEM (one Undo step brings them back; the other side is left alone)
+    if ((this.tool === "ridge-ne" || this.tool === "ridge-sw") && !this.sim && !this.pendingSim) { const key = this.tool === "ridge-ne" ? "ne" : "sw"; if (!this.s.alpsRemoved?.[key] && this.commitEdit((s) => { s.alpsRemoved = { ...s.alpsRemoved, [key]: true }; })) this.toast(`${key === "ne" ? "北アルプス(飛騨山脈)" : "南アルプス(赤石山脈)"}の元の山体を地形から取り除きました。描いた山脈だけが障壁になります(元に戻すで復元)`); }
+    this.buildToolbar(); this.render();
+  }
   buildToolbar() {
     const tb = $("toolbar"); tb.replaceChildren(); tb.classList.remove("compact"); const st = this.stepId;
     const TOOL_NAMES: Record<Tool, string> = { palace: "皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };

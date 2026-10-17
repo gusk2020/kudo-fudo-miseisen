@@ -15,17 +15,19 @@
 import { dist } from "../core/geom";
 import type { Vec } from "../core/types";
 import { homeCity, subCity } from "./ceremony";
+import { basePop } from "./roles";
 import type { SimState } from "./types";
 import type { World } from "./world";
 
 export type Dim = "commerce" | "industry" | "manufacturing" | "tourism";
-export type SiteKind = "capital" | "sub" | "palace" | "fuji" | "biwa";
+export type SiteKind = "capital" | "sub" | "palace" | "culture" | "fuji" | "biwa";
 export interface Site { kind: SiteKind; pos: Vec; pref: string | null }
 export type Boost = Record<Dim, number>;
 export const SITE_WEIGHTS: Record<SiteKind, Partial<Boost>> = {
   capital: { commerce: 0.15, industry: 0.10, manufacturing: 0.10, tourism: 0.08 },
   sub: { commerce: 0.08, industry: 0.05, manufacturing: 0.05, tourism: 0.04 },
   palace: { tourism: 0.10 },
+  culture: { tourism: 0.12, commerce: 0.02 },   // Stage 10: the historic-cultural role real Kyoto has; moves with the palace (roles.ts)
   fuji: { tourism: 0.12 },
   biwa: { tourism: 0.10 },
 };
@@ -38,6 +40,8 @@ export function sitesOf(sim: SimState, w: World): Site[] {
   if (hc) out.push({ kind: "capital", pos: hc.pos, pref: hc.pref });
   if (sc) out.push({ kind: "sub", pos: sc.pos, pref: sc.pref });
   if (sim.palace) out.push({ kind: "palace", pos: sim.palace.pos, pref: sim.palace.pref });
+  // Stage 10: the cultural role sits at the palace when the palace was moved, else at real Kyoto's seat (games created before Stage 10 have none)
+  if (sim.roles) { const at = sim.palace && sim.palace.pref === sim.roles.culture ? { pos: sim.palace.pos, pref: sim.palace.pref } : (() => { const c = w.cities.find((x) => x.pref === sim.roles!.culture && x.kind === "capital"); return c ? { pos: c.pos, pref: c.pref } : null; })(); if (at) out.push({ kind: "culture", ...at }); }
   const top = w.t.stats.fujiTopCell; if (top >= 0) out.push({ kind: "fuji", pos: w.cellPos(top), pref: w.prefOf(top) });
   let sx = 0, sy = 0, n = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 2) { const p = w.cellPos(k); sx += p[0]; sy += p[1]; n++; }
   if (n) { const p: Vec = [sx / n, sy / n], k = w.cellOf(p); out.push({ kind: "biwa", pos: p, pref: k >= 0 ? w.prefOf(k) : null }); }
@@ -62,7 +66,7 @@ function entry(sim: SimState, w: World) {
   // a quarter and the railways stopped starving, which is a different claim from "the capital pulls traffic".)
   const pax = new Map<string, number>(), goods = new Map<string, number>();
   const norm = (dim: (b: Boost) => number, out: Map<string, number>) => {
-    const m = w.cities.map((c) => ({ id: c.id, p: c.pop0, a: dim(city.get(c.id)!) })); let base = 0, boosted = 0;
+    const m = w.cities.map((c) => ({ id: c.id, p: basePop(sim, w, c), a: dim(city.get(c.id)!) })); let base = 0, boosted = 0;
     for (let i = 0; i < m.length; i++) for (let j = i + 1; j < m.length; j++) { base += Math.pow(m[i].p * m[j].p, 0.6); boosted += Math.pow(m[i].p * m[i].a * m[j].p * m[j].a, 0.6); }
     const k = boosted > 0 ? Math.pow(base / boosted, 1 / 1.2) : 1; for (const x of m) out.set(x.id, x.a * k);
   };

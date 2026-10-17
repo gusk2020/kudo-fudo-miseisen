@@ -6,6 +6,7 @@
  * are model choices: large city pairs close together get a private commuter railway, a few rural short lines are private, the rest is
  * the national railway. None of that is a claim about who really owned which line.
  */
+import { basePop, capitalPref } from "./roles";
 import { dist } from "../core/geom";
 import { layPath } from "./network";
 import { designate, ev, prefName, rand } from "./engine";
@@ -62,9 +63,9 @@ export function* seedRailGen(sim: SimState, w: World): Generator<number> {
   yield 0.05;
   const links: Link[] = [], operators = new Map<string, Operator>(), railCells = new Set<number>();
   const opFor = (a: WCity, b: WCity, len: number, r: number): string => {
-    const big = Math.min(a.pop0, b.pop0) > 250000, anchor = a.pop0 >= b.pop0 ? a : b;
+    const big = Math.min(basePop(sim, w, a), basePop(sim, w, b)) > 250000, anchor = basePop(sim, w, a) >= basePop(sim, w, b) ? a : b;
     if (big && len < 110 && r < 0.55) { const id = `p.${anchor.id}`; if (!operators.has(id)) operators.set(id, { id, name: `${baseName(anchor)}電鉄`, kind: "private", since: 1950, note: "大都市圏の私鉄(架空の事業者名)" }); return id; }
-    if (len < 75 && Math.min(a.pop0, b.pop0) < 200000 && r < 0.22) { const id = `p.${anchor.id}.r`; if (!operators.has(id)) operators.set(id, { id, name: `${prefName(anchor.pref ?? "JP-13")}${baseName(anchor)}鉄道`, kind: "private", since: 1950, note: "地方の私鉄(架空の事業者名)" }); return id; }
+    if (len < 75 && Math.min(basePop(sim, w, a), basePop(sim, w, b)) < 200000 && r < 0.22) { const id = `p.${anchor.id}.r`; if (!operators.has(id)) operators.set(id, { id, name: `${prefName(anchor.pref ?? capitalPref(sim))}${baseName(anchor)}鉄道`, kind: "private", since: 1950, note: "地方の私鉄(架空の事業者名)" }); return id; }
     return "jnr";
   };
   let tried = 0;
@@ -76,7 +77,7 @@ export function* seedRailGen(sim: SimState, w: World): Generator<number> {
     if (cov < (structural ? 0.3 : 0.55)) continue;
     const len = path.length * w.cell, op = opFor(a, b, len, r);
     const elec = path.filter((k) => ref.railElectric[k]).length / path.length, multi = path.filter((k) => ref.railMulti[k]).length / path.length;
-    const std: Standard = (elec > 0.5 || multi > 0.5) && a.pop0 + b.pop0 > 500000 && r2 < 0.8 ? "standard" : "rural";
+    const std: Standard = (elec > 0.5 || multi > 0.5) && basePop(sim, w, a) + basePop(sim, w, b) > 500000 && r2 < 0.8 ? "standard" : "rural";
     for (const k of path) railCells.add(k);
     links.push({ a, b, path, op, std });
   }

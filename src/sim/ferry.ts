@@ -7,6 +7,7 @@
  *
  * Everything here is a pure function of the world plus the sim's own edges: no place names, no coordinates.
  */
+import { capitalPref } from "./roles";
 import { dist } from "../core/geom";
 import { pathfind } from "./world";
 import type { Vec } from "../core/types";
@@ -82,7 +83,7 @@ export function makeFerryAt(sim: SimState, w: World, ca: { cell: number; pos: Ve
   const km = Math.round(dist(ca.pos, cb.pos) * 10) / 10, rail = mode === "rail";
   const e: SimEdge = {
     ...newEdgeDefaults(), id, a, b, cells: [ca.cell, cb.cell], lengthKm: km, surface: "paved", quality: 90, built: 1, open: true, state: "open", standard: "rural", maxGradePct: 0, builtMonth: sim.month,
-    region: w.prefOf(ca.cell) ?? "JP-13", facility: "ferry", facilityName, ...(rail ? { mode: "rail" as const, op: "jnr" } : {}),
+    region: w.prefOf(ca.cell) ?? capitalPref(sim), facility: "ferry", facilityName, ...(rail ? { mode: "rail" as const, op: "jnr" } : {}),
   };
   sim.edges[id] = e; pushHist(sim, e, `${reason}`); return e;
 }
@@ -172,7 +173,7 @@ export function nearTown(w: World, k: number): string { let best = w.cities[0], 
 export function makeLakeBridgeAt(sim: SimState, w: World, ca: { cell: number; pos: Vec }, cb: { cell: number; pos: Vec }, facilityName: string, reason: string, mode: Mode = "road"): SimEdge {
   const idx = buildIndex(sim, mode), a = nodeSplitAt(sim, w, idx, ca.cell), b = nodeSplitAt(sim, w, idx, cb.cell), id = newId(sim, "edge"), km = Math.round(dist(ca.pos, cb.pos) * 10) / 10;
   const cells = [ca.cell, cb.cell];   // like a ferry or a strait link, only its two shore ends are cells (every road cell is land); it is drawn straight across
-  const e: SimEdge = { ...newEdgeDefaults(), id, a, b, cells, lengthKm: km, surface: "paved", quality: 90, built: 1, open: true, state: "open", standard: "rural", maxGradePct: 0, builtMonth: sim.month, region: w.prefOf(ca.cell) ?? "JP-13", facility: "bridge", facilityName, ...(mode === "rail" ? { mode: "rail" as const, op: "jnr" } : {}) };
+  const e: SimEdge = { ...newEdgeDefaults(), id, a, b, cells, lengthKm: km, surface: "paved", quality: 90, built: 1, open: true, state: "open", standard: "rural", maxGradePct: 0, builtMonth: sim.month, region: w.prefOf(ca.cell) ?? capitalPref(sim), facility: "bridge", facilityName, ...(mode === "rail" ? { mode: "rail" as const, op: "jnr" } : {}) };
   sim.edges[id] = e; pushHist(sim, e, reason); return e;
 }
 /** What the port works cost (budget units, a rough proportional figure). */
