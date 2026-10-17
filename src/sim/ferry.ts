@@ -147,6 +147,15 @@ export function lakeCrossings(w: World): LakeCrossing[] {
   if (lake.length >= LAKE_CROSS_CELLS) { const c = pick(n, [0, 0]); if (c && (!l || c.portA !== l.portA || c.portB !== l.portB)) out.push(c); }
   return out;
 }
+/** The nearest city's name, without 市 (a port or a shore is named after its town). */
+export function nearTown(w: World, k: number): string { let best = w.cities[0], bd = Infinity; for (const c of w.cities) { const d = dist(c.pos, w.cellPos(k)); if (d < bd) { bd = d; best = c; } } return best.name.replace(/市$/, ""); }
+/** Stage 8: a road bridge straight across a lake between two shore cells (its cells run over the water; it is drawn as a bridge, never as a road on land). */
+export function makeLakeBridgeAt(sim: SimState, w: World, ca: { cell: number; pos: Vec }, cb: { cell: number; pos: Vec }, facilityName: string, reason: string, mode: Mode = "road"): SimEdge {
+  const idx = buildIndex(sim, mode), a = nodeAtCell(sim, w, idx, ca.cell, "junction"), b = nodeAtCell(sim, w, idx, cb.cell, "junction"), id = newId(sim, "edge"), km = Math.round(dist(ca.pos, cb.pos) * 10) / 10;
+  const cells: number[] = [ca.cell]; const n = Math.max(1, Math.ceil(km / (w.cell / 2))); for (let s = 1; s < n; s++) { const k = w.cellOf([ca.pos[0] + ((cb.pos[0] - ca.pos[0]) * s) / n, ca.pos[1] + ((cb.pos[1] - ca.pos[1]) * s) / n]); if (k >= 0 && k !== cells[cells.length - 1] && k !== cb.cell) cells.push(k); } cells.push(cb.cell);
+  const e: SimEdge = { ...newEdgeDefaults(), id, a, b, cells, lengthKm: km, surface: "paved", quality: 90, built: 1, open: true, state: "open", standard: "rural", maxGradePct: 0, builtMonth: sim.month, region: w.prefOf(ca.cell) ?? "JP-13", facility: "bridge", facilityName, ...(mode === "rail" ? { mode: "rail" as const, op: "jnr" } : {}) };
+  sim.edges[id] = e; pushHist(sim, e, reason); return e;
+}
 /** What the port works cost (budget units, a rough proportional figure). */
 export const lakePortCost = (c: LakeCrossing) => Math.round((0.05 + LAKE_PORT_COST_PER_KM * c.km) * 1000) / 1000;
 export const lakeFerryName = (c: LakeCrossing) => `ferry:${LAKE_TAG}${c.nameA}港〜${c.nameB}港湖上フェリー${c.id === "cross" ? "(横断)" : ""}`;
