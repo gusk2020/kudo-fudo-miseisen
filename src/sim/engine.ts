@@ -7,7 +7,7 @@ import { cityBoost, settlementBoost } from "./sites";
 import { dist } from "../core/geom";
 import { JAPAN } from "../core/data";
 import { buildIndex, checkIntegrity, edgePoints, layPath, newEdgeDefaults, newId, pushHist, setEdgeState } from "./network";
-import { analyze, analyzeGen, capacityOf, passable, strandedWithout, zeroDemand, type Analysis } from "./demand";
+import { analyze, analyzeGen, capacityOf, RAIL_PAX, passable, strandedWithout, zeroDemand, type Analysis } from "./demand";
 import { ERAS, composeDials, eraKeyOf, type EraKey } from "./eras";
 import { applyYearEvents } from "./events";
 import { openStraits } from "./straits";
@@ -161,7 +161,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
     pop: Math.round(Object.values(sim.cities).reduce((s, c) => s + c.pop, 0)), villagePop: Math.round(Object.values(sim.settlements).reduce((s, v) => s + v.pop, 0)),
     dormant: edges.filter((e) => e.state === "dormant").length, closed: edges.filter((e) => e.state === "closed" && e.built >= 1).length, bypass: sim.links.length,
     regionsBuilding: new Set(pr.filter((p) => p.status === "building").map((p) => p.region)).size, prefsWithRoad: prefs.size,
-    ...(sim.stage3 ? { airShare: Math.round(an.airShare * 1000) / 1000, seaShare: Math.round(an.seaShare * 1000) / 1000, railKm: Math.round(live.filter((e) => modeOf(e) === "rail").reduce((s, e) => s + e.lengthKm, 0)), roadKm: Math.round(live.filter((e) => modeOf(e) === "road").reduce((s, e) => s + e.lengthKm, 0)) } : {}),
+    ...(sim.stage3 ? { ...landShares(live), airShare: Math.round(an.airShare * 1000) / 1000, seaShare: Math.round(an.seaShare * 1000) / 1000, railKm: Math.round(live.filter((e) => modeOf(e) === "rail").reduce((s, e) => s + e.lengthKm, 0)), roadKm: Math.round(live.filter((e) => modeOf(e) === "road").reduce((s, e) => s + e.lengthKm, 0)) } : {}),
   });
   if (sim.stats.length > 160) sim.stats.shift();
 }
@@ -182,6 +182,12 @@ function compactSim(sim: SimState, y: number) {
 /** Stage 7: only projects at least this urgent get national top-up money; minor local works stay at the mercy of their own region (and may stall into 未成). */
 /** Stage 7: edges reviewed per slice of the yearly evaluation (keeps each main-thread task short on a phone). */
 export const EDGE_SLICE = 400;
+/** Stage 7: the railway's share of passenger-km (rail figures are riders, a road vehicle stands for RAIL_PAX of them) and of freight, on the open land network. */
+export function landShares(live: SimEdge[]): { paxRail: number; frRail: number } {
+  let rp = 0, dp = 0, rf = 0, df = 0;
+  for (const e of live) { if (e.facility === "ferry") continue; if (modeOf(e) === "rail") { rp += (e.through / RAIL_PAX + e.local) * e.lengthKm; rf += e.freight * e.lengthKm; } else { dp += (e.through + e.local) * e.lengthKm; df += e.freight * e.lengthKm; } }
+  return { paxRail: Math.round((rp / Math.max(1e-9, rp + dp)) * 1000) / 1000, frRail: Math.round((rf / Math.max(1e-9, rf + df)) * 1000) / 1000 };
+}
 export const TOPUP_MIN_PRIORITY = 3, TOPUP_SHARE = 0.5;
 export const CROWD_ROOM = 3, CROWD_PLAINS = 5, CROWD_K = 0.02;
 export const crowding = (pop: number, pop0: number, plains: number) => CROWD_K * Math.max(0, pop / (Math.max(1, pop0) * (CROWD_ROOM + CROWD_PLAINS * plains)) - 1);

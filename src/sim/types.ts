@@ -78,7 +78,7 @@ export interface Settlement { id: string; name: string; cell: number; city: stri
 export interface SimLink { id: string; kind: "bypass"; newEdges: string[]; oldEdges: string[]; month: number; routeId: string | null }
 /** Edge codes (state*16 + quality bucket). `delta`: only edges that changed since the previous snapshot (Stage 3; fold with codesAt). */
 export interface Snapshot { year: number; edges: Record<string, number>; delta?: true }
-export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number }
+export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number; paxRail?: number; frRail?: number }   // paxRail / frRail (Stage 7): the railway's share of passenger-km and of freight on land
 
 export interface SimState {
   schemaVersion: 1 | 2 | 3; mapHash: string; terrainHash: string; seed: number; era: string; startYear: number;

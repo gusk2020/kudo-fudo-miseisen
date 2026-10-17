@@ -413,3 +413,15 @@ test("Stage 7: 地形編集は1行の小さなメニュー(対象を選んだ時
   await page.click("#terrain-edit-toggle"); expect(await app(page, "a => a.tool")).toBe("view"); expect(await page.isVisible("#tool-cer-kokudo1")).toBe(true);
   expect(errs).toEqual([]);
 });
+
+test("Stage 7: 地図帳に交通の移り変わり(道路・鉄道の延長と鉄道の分担のグラフ、最近の転機)が出る", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "shubun");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "auto"; a.ffYears(40); });
+  await page.click("#dock-atlas");
+  await expect(page.locator("#trends")).toBeVisible();
+  expect(await page.locator("#trend-km polyline").count()).toBe(2); expect(await page.locator("#trend-share polyline").count()).toBe(3);
+  const pts = await page.locator("#trend-km polyline").first().getAttribute("points"); expect((pts ?? "").split(" ").length).toBeGreaterThan(30);
+  expect(await app(page, "a => a.sim.stats.filter((s) => s.paxRail !== undefined).length")).toBeGreaterThan(30);
+  expect(await app(page, "a => a.sim.stats[a.sim.stats.length - 1].paxRail < 0.5")).toBe(true);   // the road-minded line: the railway carries a minority of passenger-km by 1990
+  expect(errs).toEqual([]);
+});
