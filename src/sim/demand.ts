@@ -5,7 +5,7 @@
  * All figures are synthetic "vehicles/day"; they are not statistics.
  */
 import { goodsPull, paxPull } from "./sites";
-import { hubDemand, JET_YEAR, type HubTotals } from "./hubs";
+import { airportMap, hubDemand, JET_YEAR, type HubTotals } from "./hubs";
 import { MinHeap } from "../core/heap";
 import { modeOf, type Mode, type Standard, type Surface, type SimEdge, type SimState } from "./types";
 import type { World } from "./world";
@@ -69,14 +69,16 @@ export function railShare(tRoad: number, tRail: number, carBias: number, railBia
   return 1 / (1 + Math.exp(LOGIT_S * x));
 }
 /** Share of a long trip taken by air: both ends need an airport, it grows with distance, and a good railway takes some of it back. */
-export function airShare(sim: SimState, w: World, i: number, j: number, railS: number): number {
-  const a = sim.cities[w.cities[i].id], b = sim.cities[w.cities[j].id]; if (a.airport === undefined || b.airport === undefined) return 0;
+export function airShare(sim: SimState, w: World, i: number, j: number, railS: number, ap: (string | null)[] | null = null): number {
+  const h = sim.hubs, m = h ? ap ?? airportMap(sim, w) : null, ai = m ? m[i] : null, aj = m ? m[j] : null;
+  if (h ? !ai || !aj || ai === aj : sim.cities[w.cities[i].id].airport === undefined || sim.cities[w.cities[j].id].airport === undefined) return 0;
   const d = Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); if (d < AIR_MIN_KM) return 0;
   const base = Math.min(0.55 + 0.15 * Math.min(1, sim.dials.airBias), (0.08 + 0.5 * (1 - Math.exp(-(d - AIR_MIN_KM) / 450))) * (1 - 0.45 * railS) * (1 + 0.8 * sim.dials.airBias));
-  const h = sim.hubs; if (!h) return base;
-  // Stage 8: the plane competes on time and price as well as distance -- slow propeller years, cheaper fares later -- and a full airport turns trips away
-  const y = sim.startYear + Math.floor(sim.month / 12), A = h.airports[w.cities[i].id], B = h.airports[w.cities[j].id], full = Math.max(A?.load ?? 0, B?.load ?? 0);
-  return base * (y < JET_YEAR ? 0.55 : y < 1970 ? 0.8 : y >= 2012 ? 1.1 : 1) * (full > 1 ? 1 / full : 1);
+  if (!h) return base;
+  // Stage 8: the plane competes on time and price as well as distance -- slow propeller years, cheaper fares later -- a full airport turns trips away,
+  // and a city without its own airport flies from its neighbour's (a longer trip to the airport)
+  const y = sim.startYear + Math.floor(sim.month / 12), A = h.airports[ai!], B = h.airports[aj!], full = Math.max(A?.load ?? 0, B?.load ?? 0), borrow = (ai === w.cities[i].id ? 1 : 0.75) * (aj === w.cities[j].id ? 1 : 0.75);
+  return base * borrow * (y < JET_YEAR ? 0.55 : y < 1970 ? 0.8 : y >= 2012 ? 1.1 : 1) * (full > 1 ? 1 / full : 1);
 }
 /** Stage 8: the share of a domestic freight trip between two coastal cities that goes by ship: both need a port, short hauls stay on land, a full port turns cargo away. */
 export function seaShareOf(sim: SimState, w: World, i: number, j: number): number {
@@ -103,6 +105,7 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
   const villagesOf = new Map<string, string[]>(); for (const s of Object.values(sim.settlements)) (villagesOf.get(s.city) ?? villagesOf.set(s.city, []).get(s.city)!).push(s.id);
   const railDeg = new Int32Array(N); if (anyRail) for (let i = 0; i < N; i++) railDeg[i] = adjRail[i].length;
   // Stage 8: the trees from port and airport cities are kept, so the trips to them can be put on the network once every travel time is known
+  const apMap = multi && sim.hubs ? airportMap(sim, w) : null;
   const hubCity = new Set<number>(), trees = new Map<number, { R: Tree; Q: Tree | null }>(), pairs = new Map<string, number>(), domSea = new Map<string, number>(), domAir = new Map<string, number>();
   if (multi && sim.hubs) w.cities.forEach((c, i) => { if (sim.hubs!.ports[c.id] || sim.hubs!.airports[c.id]) hubCity.add(i); });
   for (let i = 0; i < nc; i++) {
@@ -123,8 +126,8 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
       const s = railShare(tr, tt, dl.carBias, dl.railBias), tmin = Math.min(tr, isFinite(tt) ? tt + RAIL_ACCESS_H : Infinity);
       const ai = paxPull(sim, w, w.cities[i].id), aj = paxPull(sim, w, w.cities[j].id), gi = goodsPull(sim, w, w.cities[i].id), gj = goodsPull(sim, w, w.cities[j].id);   // Issue #18: seats and sights shift a city's pull on passengers (commerce, tourism) and goods (manufacturing)
       const flow = KFLOW * Math.pow(pi.pop * ai * pj.pop * aj, 0.6) / (1 + Math.pow(tmin, 1.2));
-      const air = airShare(sim, w, i, j, s), land = flow * (1 - air); airFlow += flow * air; landFlow += land;
-      if (air > 0 && sim.hubs) { const a = w.cities[i].id, b = w.cities[j].id, p = flow * air * RAIL_PAX; airPkm += p * Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); pairs.set(a < b ? `${a}|${b}` : `${b}|${a}`, p); domAir.set(a, (domAir.get(a) ?? 0) + p); domAir.set(b, (domAir.get(b) ?? 0) + p); }
+      const air = airShare(sim, w, i, j, s, apMap), land = flow * (1 - air); airFlow += flow * air; landFlow += land;
+      if (air > 0 && sim.hubs) { const a = apMap![i]!, b = apMap![j]!, p = flow * air * RAIL_PAX; airPkm += p * Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); pairs.set(a < b ? `${a}|${b}` : `${b}|${a}`, p); domAir.set(a, (domAir.get(a) ?? 0) + p); domAir.set(b, (domAir.get(b) ?? 0) + p); }
       if (s < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.through += land * (1 - s);
       if (s > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.through += land * s * RAIL_PAX;
       // freight: industry-to-industry; trucks take it unless the railway is competitive and the era favours it
@@ -146,14 +149,18 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
   const hf = multi ? hubDemand(sim, w, T, TT) : null;
   if (hf) {
     hub = { port: new Map(), air: new Map(), pairs, unmet: hf.unmet };
-    const load = (p: number, j: number, cargo: number, pax: number) => {
-      const tr = trees.get(p), cn = cityNodes[j]; if (!tr || !cn || p === j) return; const k0 = pos.get(cn)!, tr0 = tr.R.d[k0], tt0 = tr.Q ? tr.Q.d[k0] : Infinity;
+    const load = (p: number, j: number, cargo: number, pax: number) => {   // a trickle is not worth a walk of the tree
+      const tr = trees.get(p), cn = cityNodes[j]; if (!tr || !cn || p === j || (cargo < 1 && pax < 2)) return; const k0 = pos.get(cn)!, tr0 = tr.R.d[k0], tt0 = tr.Q ? tr.Q.d[k0] : Infinity;
       const s = railShare(tr0, tt0, dl.carBias, dl.railBias), sf = railShare(tr0, tt0, dl.carBias * 0.4 - dl.freightRail, dl.railBias * 0.4 + dl.freightRail), roadP = (pax / RAIL_PAX) * (1 - (isFinite(tt0) ? s : 0));
       if (isFinite(tr0)) for (let k = k0; tr.R.pn[k] >= 0; k = tr.R.pn[k]) { const e = tr.R.pe[k]!; e.through += roadP; e.freight += cargo * (1 - (isFinite(tt0) ? sf : 0)); }
       if (tr.Q && isFinite(tt0)) for (let k = k0; tr.Q.pn[k] >= 0; k = tr.Q.pn[k]) { const e = tr.Q.pe[k]!; e.through += pax * s; e.freight += cargo * sf * RAIL_PAX; }
     };
     for (const p of hf.ports) { let c = 0, x = 0; for (let j = 0; j < nc; j++) { c += p.cargo[j]; x += p.pax[j]; load(p.i, j, p.cargo[j], p.pax[j]); } hub.port.set(p.id, { cargo: c, pax: x, dom: 0 }); }
-    for (const a of hf.airs) { let c = 0, x = 0; for (let j = 0; j < nc; j++) { c += a.cargo[j]; x += a.pax[j]; load(a.i, j, a.cargo[j], a.pax[j]); } hub.air.set(a.id, { intl: x, cargo: c, dom: 0 }); }
+    for (const a of hf.airs) {
+      let c = 0, x = 0; for (let j = 0; j < nc; j++) { c += a.cargo[j]; x += a.pax[j] + a.feed[j]; load(a.i, j, a.cargo[j], a.pax[j]); }
+      hub.air.set(a.id, { intl: x, cargo: c, dom: 0 });
+      for (let j = 0; j < nc; j++) if (a.feed[j] > 0) { const id = w.cities[j].id; domAir.set(id, (domAir.get(id) ?? 0) + a.feed[j]); }   // the connecting flight fills the home airport too
+    }
     for (const [id, v] of domSea) { const t = hub.port.get(id) ?? { cargo: 0, pax: 0, dom: 0 }; t.dom = v; hub.port.set(id, t); }
     for (const [id, v] of domAir) { const t = hub.air.get(id) ?? { intl: 0, cargo: 0, dom: 0 }; t.dom = v; hub.air.set(id, t); }
     // the last leg, city to airport site, on the airport's own access road and railway

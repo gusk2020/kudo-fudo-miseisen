@@ -50,7 +50,7 @@ export const foreignShares = (y: number) => { const s = FOREIGN.map((f) => at(f.
 /** Era indices (1973 = 1 for trade, 1990 = 1 for travel). Model curves in the spirit of the real record. */
 export const TRADE: Key = [[1950, 0.25], [1960, 0.45], [1973, 1], [1990, 1.4], [2008, 1.8], [2050, 1.9], [2100, 1.7]];
 export const INTL_TRAVEL: Key = [[1950, 0.02], [1964, 0.08], [1975, 0.3], [1990, 1], [2008, 1.4], [2019, 2.2], [2050, 2.3], [2100, 2]];
-export const KTRADE = 1.2e-3, KINTL = 4e-3, CATCH_H = 2.5, ACCESS_H = 0.4;
+export const KTRADE = 1.2e-3, KINTL = 4e-3, CATCH_H = 2.5, ACCESS_H = 0.4, FEEDER_H = 2.5;
 export const seaPaxShare = (y: number, seaBias: number) => Math.min(0.95, (0.03 + 0.9 / (1 + Math.exp((y - 1962) / 3.5))) * (1 + 0.6 * seaBias));
 export const airCargoShare = (y: number, airBias: number) => (y < 1958 ? 0 : Math.min(0.18, Math.min(0.1, 0.0015 * (y - 1958)) * (1 + 0.6 * airBias)));
 
@@ -61,8 +61,8 @@ export const PORT_MAX_LANES = [0, 0, 2, 4, 7];
 export const CONTAINER_YEAR = 1968;
 /** Airports: a regional airport and an international hub differ by an order of magnitude (travellers a day). */
 export const AIR_KIND_LABEL = { regional: "地方空港", hub: "国際ハブ空港" } as const;
-export const RUNWAY_CAP: [number, number][] = [[1200, 2000], [2000, 6000], [2500, 12000], [3000, 20000]];
-export const HUB_CAP = 40000, HUB_GROW = 1.7, HUB_MAX_STEPS = 4, JET_YEAR = 1960;
+export const RUNWAY_CAP: [number, number][] = [[1200, 2000], [2000, 8000], [2500, 15000], [3000, 25000]];
+export const HUB_CAP = 50000, HUB_GROW = 1.7, HUB_MAX_STEPS = 4, JET_YEAR = 1960;
 export const AIR_LANE_MIN = 300, SEA_LANE_MIN = 250, AIR_INTL_LANE_MIN = 400;
 export const AIR_MAX_LANES = { regional: 8, hub: 40 } as const, AIR_INTL_MAX = { regional: 2, hub: 7 } as const;
 const runwayCap = (m: number) => { let c = RUNWAY_CAP[0][1]; for (const [r, v] of RUNWAY_CAP) if (m >= r) c = v; return c; };
@@ -86,7 +86,7 @@ export const cityIndex = (w: World) => { let m = idxMemo.get(w); if (!m) { m = n
 // ---- demand (called from the analysis; pure) ----
 export interface HubFlows {
   ports: { i: number; id: string; cargo: Float64Array; pax: Float64Array }[];   // per port (tier >= 2): foreign cargo and sea travellers from each city
-  airs: { i: number; id: string; pax: Float64Array; cargo: Float64Array }[];    // per international airport
+  airs: { i: number; id: string; pax: Float64Array; cargo: Float64Array; feed: Float64Array }[];   // per international airport; `feed`: travellers arriving on a domestic connection
   unmet: number;                                                                // foreign trade with no port in reach (freight units)
 }
 const capF = (load: number) => (load > 1 ? 1 / load : 1);
@@ -97,7 +97,8 @@ export function hubDemand(sim: SimState, w: World, T: Float64Array, TT: Float64A
   const time = (p: number, j: number) => (p === j ? 0 : Math.min(T[p * nc + j], TT[p * nc + j] + ACCESS_H));
   const ports = Object.values(h.ports).filter((p) => p.until === undefined && p.tier >= 2).map((p) => ({ p, i: ix.get(p.city)!, S: Math.sqrt(PORT_CAP[p.tier] * capF(p.load)) })).filter((x) => x.i !== undefined);
   const airs = Object.values(h.airports).filter((a) => intlCapable(a, y)).map((a) => ({ a, i: ix.get(a.city)!, S: Math.pow(a.cap * capF(a.load), 0.7) * (a.railAccess ? 1.15 : 1) })).filter((x) => x.i !== undefined);
-  const out: HubFlows = { ports: ports.map((x) => ({ i: x.i, id: x.p.city, cargo: new Float64Array(nc), pax: new Float64Array(nc) })), airs: airs.map((x) => ({ i: x.i, id: x.a.city, pax: new Float64Array(nc), cargo: new Float64Array(nc) })), unmet: 0 };
+  const out: HubFlows = { ports: ports.map((x) => ({ i: x.i, id: x.p.city, cargo: new Float64Array(nc), pax: new Float64Array(nc) })), airs: airs.map((x) => ({ i: x.i, id: x.a.city, pax: new Float64Array(nc), cargo: new Float64Array(nc), feed: new Float64Array(nc) })), unmet: 0 };
+  const own = new Set(Object.values(h.airports).filter((a) => a.until === undefined).map((a) => ix.get(a.city)!));
   const sp = seaPaxShare(y, dl.seaBias), ac = airCargoShare(y, dl.airBias), wp = new Float64Array(ports.length), wa = new Float64Array(airs.length);
   for (let j = 0; j < nc; j++) {
     const c = w.cities[j], st = sim.cities[c.id]; if (!st) continue;
@@ -108,7 +109,9 @@ export function hubDemand(sim: SimState, w: World, T: Float64Array, TT: Float64A
     const airC = sA > 0 ? V * ac : 0, seaC = V - airC, airP = sA > 0 ? P * (1 - sp) : 0, seaP = P - airP;
     if (sP > 0) for (let k = 0; k < ports.length; k++) { const f = wp[k] / sP; out.ports[k].cargo[j] = seaC * f; out.ports[k].pax[j] = seaP * f; }
     else { out.unmet += seaC; if (sA > 0) for (let k = 0; k < airs.length; k++) out.airs[k].pax[j] += (seaP * wa[k]) / sA; }
-    if (sA > 0) for (let k = 0; k < airs.length; k++) { const f = wa[k] / sA; out.airs[k].pax[j] += airP * f; out.airs[k].cargo[j] = airC * f; }
+    // a traveller far from every international airport flies there from the home airport (a domestic connection), not across the country by road or rail
+    let feed = false; if (sA > 0 && own.has(j)) { let tb = Infinity; for (let k = 0; k < airs.length; k++) tb = Math.min(tb, time(airs[k].i, j)); feed = tb > FEEDER_H; }
+    if (sA > 0) for (let k = 0; k < airs.length; k++) { const f = wa[k] / sA; (feed ? out.airs[k].feed : out.airs[k].pax)[j] += airP * f; out.airs[k].cargo[j] = airC * f; }
   }
   return out;
 }
@@ -274,3 +277,11 @@ export function hubStats(sim: SimState, an: { hub?: HubTotals }): Partial<Record
   const t = an.hub; let sea = 0, air = 0, intl = 0; if (t) { for (const x of t.port.values()) sea += x.cargo + x.dom; for (const x of t.air.values()) { air += x.intl + x.dom; intl += x.intl; } }
   return { ports: P.length, airports: A.length, hubs: A.filter((a) => a.kind === "hub").length, seaCargo: Math.round(sea), airPax: Math.round(air), airIntl: Math.round(intl), seaLanes: R.filter((r) => r.mode === "sea").length, airLanes: R.filter((r) => r.mode === "air").length };
 }
+
+/** Stage 8: the airport each city's travellers use -- its own, else the nearest open one within AIR_SPACING_KM on the same land (a neighbouring city's).
+ *  Built once per analysis (`airportMap`) and read per city pair; `airportOf` is the single-city form for callers outside the analysis. */
+export function airportMap(sim: SimState, w: World): (string | null)[] {
+  const h = sim.hubs; if (!h) return w.cities.map(() => null); const open = Object.values(h.airports).filter((a) => a.until === undefined);
+  return w.cities.map((c) => { if (h.airports[c.id] && h.airports[c.id].until === undefined) return c.id; let best: string | null = null, bd = AIR_SPACING_KM; for (const a of open) { const q = w.cityById.get(a.city); if (!q || w.lm[q.cell] !== w.lm[c.cell]) continue; const d = dist(c.pos, q.pos); if (d < bd) { bd = d; best = a.city; } } return best; });
+}
+export const airportOf = (sim: SimState, w: World, i: number): string | null => airportMap(sim, w)[i] ?? null;

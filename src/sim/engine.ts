@@ -410,7 +410,7 @@ function progressProject(sim: SimState, w: World, p: SimProject, f: number, req:
   }
   let amt = f;
   const totW = p.edgeIds.reduce((s, id) => s + (sim.edges[id] ? sim.edges[id].lengthKm * facCost(sim.edges[id], sim) : 0), 0) || 1;
-  for (const id of p.edgeIds) { const e = sim.edges[id]; if (!e || e.built >= 1) continue; const ec = p.costBu * e.lengthKm * facCost(e, sim) / totW, add = Math.min(amt / ec, 1 - e.built); e.built = Math.min(1, e.built + add); amt -= add * ec; if (e.built >= 1) { e.built = 1; e.state = "open"; e.open = true; e.builtMonth = sim.month; if (e.facility) ev(sim, "facility", `${e.facilityName}が開通(${e.facility === "tunnel" ? "トンネル" : "橋"}・${Math.round(e.lengthKm)}km)`, `${projLabel(sim, p)}の一部として`, { edge: e.id, project: p.id }); pushHist(sim, e, `${modeOf(p) === "rail" ? "新線として開業" : p.kind === "bypass" ? "バイパスとして供用開始" : "新設として供用開始"}`); if (modeOf(p) === "rail") { e.quality = 88; e.surface = "paved"; } else { if (y >= 1965 && e.standard === "rural") e.standard = "standard"; if (y >= 1965) { e.surface = "paved"; e.quality = 90; } } } if (amt <= 1e-9) break; }
+  for (const id of p.edgeIds) { const e = sim.edges[id]; if (!e || e.built >= 1) continue; const ec = p.costBu * e.lengthKm * facCost(e, sim) / totW, add = Math.min(amt / ec, 1 - e.built); e.built = Math.min(1, e.built + add); amt -= add * ec; if (e.built >= 1) { e.built = 1; e.state = "open"; e.open = true; e.builtMonth = sim.month; if (e.facility) ev(sim, "facility", `${(e.facilityName ?? "").replace(/^[a-z-]+:/, "")}が開通(${e.facility === "tunnel" ? "トンネル" : "橋"}・${Math.round(e.lengthKm)}km)`, `${projLabel(sim, p)}の一部として`, { edge: e.id, project: p.id }); pushHist(sim, e, `${modeOf(p) === "rail" ? "新線として開業" : p.kind === "bypass" ? "バイパスとして供用開始" : "新設として供用開始"}`); if (modeOf(p) === "rail") { e.quality = 88; e.surface = "paved"; } else { if (y >= 1965 && e.standard === "rural") e.standard = "standard"; if (y >= 1965) { e.surface = "paved"; e.quality = 90; } } } if (amt <= 1e-9) break; }
   if (p.edgeIds.every((id) => (sim.edges[id]?.built ?? 1) >= 1)) { p.status = "open"; p.statusSince = sim.month; completeProject(sim, w, p); }
   else if (p.stallMonths >= 36) { p.status = "suspended"; p.statusSince = sim.month; ev(sim, "project", `工事中断: ${projLabel(sim, p)}`, `予算不足が36か月続いた(地域の予算${Math.round((sim.regionShare[p.region] ?? 0) * 1000) / 10}%)`, { project: p.id }); }
 }
@@ -441,7 +441,7 @@ function completeRailProject(sim: SimState, w: World, p: SimProject, es: SimEdge
 }
 function completeProject(sim: SimState, w: World, p: SimProject) {
   const es = p.edgeIds.map((id) => sim.edges[id]).filter(Boolean);
-  if (p.reason.startsWith(LAKE_BRIDGE_TAG)) { const moved = es[0] ? carryOver(sim, w, es[0]) : 0; ev(sim, "open", `湖上大橋が開通: ${projLabel(sim, p)}`, `${p.reason}${moved ? `。湖上フェリーの${moved}路線を橋へ付け替えた` : ""}`, { project: p.id }); return; }
+  if (p.reason.startsWith(LAKE_BRIDGE_TAG)) { const moved = es[0] ? carryOver(sim, w, es[0]) : 0; ev(sim, "open", `湖上大橋が開通: ${(es[0]?.facilityName ?? projLabel(sim, p)).replace(/^bridge:/, "")}`, `${p.reason}${moved ? `。湖上フェリーの${moved}路線を橋へ付け替えた` : ""}`, { project: p.id }); return; }
   if (isCrossingProject(p)) { const moved = finishCrossing(sim, w, p); ev(sim, "open", `海峡連絡が開通: ${projLabel(sim, p)}(${es[0]?.facility === "tunnel" ? "海底トンネル" : "橋"})`, `${p.reason}${moved ? "。航路の路線は新しい連絡へ付け替えた" : ""}`, { project: p.id }); if (moved) return; }
   if (p.kind === "convert") {
     const re = es[0]; if (!re || re.convertedTo) return;

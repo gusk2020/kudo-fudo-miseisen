@@ -65,6 +65,14 @@ describe("Stage 8: the lake's services grow with demand, within what the lake's 
     for (let y = 1966; y < 2000; y++) { for (const e of openLakes(b.sim)) { e.through = 1e6; } opened += reviewLakeFerries(b.sim, b.w, Math.min(y, 1969)); expect(openLakes(b.sim).length).toBeLessThanOrEqual(maxLakeRoutes(lakeCells(b.w))); }
     expect(openLakes(b.sim).length).toBeGreaterThan(n0); expect(b.sim.events.some((x) => x.text.startsWith("湖上フェリー新設"))).toBe(true); void opened;
   });
+  it("the narrows are a crossing of their own; when the lake's services are busy and the span reaches them, the narrows get a bridge (not in 1950)", () => {
+    const W0 = worldOf().w, cs = lakeCrossings(W0), nar = cs.find((c) => c.id === "narrow")!; expect(nar).toBeTruthy(); expect(nar.km).toBeLessThan(Math.min(...cs.filter((c) => c.id !== "narrow").map((c) => c.km)));
+    const t = mk(); t.sim.dials.hwyBuild = 0.6; t.sim.macro.budgetBu = 50; for (const e of openLakes(t.sim)) e.through = 1e5;
+    reviewLakeFerries(t.sim, t.w, 1950); expect(Object.values(t.sim.projects).some((x) => x.reason.startsWith(LAKE_BRIDGE_TAG))).toBe(false);
+    reviewLakeFerries(t.sim, t.w, 1990); const p = Object.values(t.sim.projects).find((x) => x.reason.startsWith(LAKE_BRIDGE_TAG))!; expect(p).toBeTruthy();
+    const be = t.sim.edges[p.edgeIds[0]], ends = [t.sim.nodes[be.a].cell, t.sim.nodes[be.b].cell];
+    for (const k of ends) expect(t.w.t.land[k]).toBe(1); expect(be.lengthKm).toBeLessThanOrEqual(nar.km + 1);
+  });
   it("a busy lake ferry within the year's bridge span is replaced by a bridge; when it opens, 国道1号 moves onto the bridge and the ferry closes", () => {
     const t = mk(), p = previewNational(t.w, across(t.w), "JP-13", "JP-27"); expect(performNational(t.sim, t.w, p)).toBe(true);
     const r = Object.values(t.sim.routes).find((x) => x.grade === "national" && x.number === 1)!, fe = r.edges.map((x) => t.sim.edges[x.edgeId]).find(isLakeFerry)!;
