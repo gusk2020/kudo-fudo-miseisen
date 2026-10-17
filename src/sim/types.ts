@@ -78,7 +78,19 @@ export interface Settlement { id: string; name: string; cell: number; city: stri
 export interface SimLink { id: string; kind: "bypass"; newEdges: string[]; oldEdges: string[]; month: number; routeId: string | null }
 /** Edge codes (state*16 + quality bucket). `delta`: only edges that changed since the previous snapshot (Stage 3; fold with codesAt). */
 export interface Snapshot { year: number; edges: Record<string, number>; delta?: true }
-export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number; paxRail?: number; frRail?: number }   // paxRail / frRail (Stage 7): the railway's share of passenger-km and of freight on land
+export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number; paxRail?: number; frRail?: number; ports?: number; airports?: number; hubs?: number; seaCargo?: number; airPax?: number; airIntl?: number; seaLanes?: number; airLanes?: number }   // paxRail / frRail (Stage 7): the railway's share of passenger-km and of freight on land
+
+/** Stage 8 (hubs.ts): a trade port. tier 1..4 (地方港湾 → 国際戦略港湾); cargo/pax are the last year's figures; hi/lo count years running full/nearly empty. */
+export interface PortState { city: string; tier: number; since: number; until?: number; cargo: number; pax: number; load: number; hi: number; lo: number; build?: { to: number; done: number }; hist: { y: number; t: string }[] }
+/** Stage 8: an airport. A regional airport (runway 1,200-2,500 m) or an international hub (3,000 m+, expanded step by step). `site` is the cell it stands on. */
+export interface AirportState {
+  city: string; kind: "regional" | "hub"; since: number; until?: number; runwayM: number; cap: number; pax: number; intl: number; cargo: number; load: number; hi: number; lo: number;
+  site: number; access: string[]; railIds?: string[]; railAccess?: number; steps?: number;
+  build?: { cap: number; runwayM: number; kind: "regional" | "hub"; done: number; what: string }; hist: { y: number; t: string }[];
+}
+/** Stage 8: a regular sea or air route. `b` is a foreign destination id when `intl`, else a city id. */
+export interface HubRoute { id: string; mode: "sea" | "air"; a: string; b: string; intl: boolean; since: number; until?: number; state: "open" | "suspended" | "closed"; vol: number; lo: number }
+export interface HubsState { ports: Record<string, PortState>; airports: Record<string, AirportState>; routes: HubRoute[]; seq: number }
 
 export interface SimState {
   schemaVersion: 1 | 2 | 3; mapHash: string; terrainHash: string; seed: number; era: string; startYear: number;
@@ -103,6 +115,7 @@ export interface SimState {
   subCapital?: string;        // Issue #15: prefecture ids of the sub-capital and the palace (administrative settings; the palace point is where it is drawn)
   palace?: { pref: string; pos: Vec };
   tech?: { k: number };       // Issue #13: bridge/tunnel technology rule (see tech.ts). Absent = older games, which keep the old fixed facility rules
+  hubs?: HubsState;          // Stage 8: ports, airports and their routes (hubs.ts). Absent = older saves; created at the next yearly step
   kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
 }
 export const SIM_VERSION = 3;

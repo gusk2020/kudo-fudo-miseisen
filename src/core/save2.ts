@@ -63,6 +63,17 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
     const k = raw.kaigen, okE = (e: any) => isRec(e) && typeof e.name === "string" && e.name.length > 0 && e.name.length < 12 && Number.isInteger(e.start) && STANCES.includes(e.stance);
     if (!(isRec(k) && Array.isArray(k.eras) && k.eras.length >= 1 && k.eras.length < 40 && k.eras.every(okE) && Number.isInteger(k.next) && Number.isInteger(k.nextIdx) && (k.pending === null || (isRec(k.pending) && Number.isInteger(k.pending.year) && Array.isArray(k.pending.cands) && k.pending.cands.length > 0 && k.pending.cands.every((c: any) => isRec(c) && typeof c.name === "string" && STANCES.includes(c.stance)))))) delete raw.kaigen;
   }
+  // Stage 8: a lake bridge keeps only its two shore cells (an early Stage 8 build stored the water cells too, which the land check would refuse)
+  for (const e of Object.values<any>(raw.edges)) if (e.facility === "bridge" && typeof e.facilityName === "string" && e.facilityName.includes("湖上大橋") && e.cells.length > 2) e.cells = [e.cells[0], e.cells[e.cells.length - 1]];
+  // Stage 8: ports, airports and routes are kept only if well formed; otherwise they are rebuilt from the cities at the next yearly step (never refused)
+  if (raw.hubs !== undefined) {
+    const h = raw.hubs, fac = (x: any) => isRec(x) && typeof x.city === "string" && fin(x.since) && Array.isArray(x.hist) && ["cargo", "pax", "load", "hi", "lo"].every((f) => fin(x[f]));
+    const ok = isRec(h) && isRec(h.ports) && isRec(h.airports) && Array.isArray(h.routes) && Number.isInteger(h.seq)
+      && Object.values<any>(h.ports).every((p) => fac(p) && Number.isInteger(p.tier) && p.tier >= 1 && p.tier <= 4)
+      && Object.values<any>(h.airports).every((a) => fac(a) && ["regional", "hub"].includes(a.kind) && fin(a.cap) && a.cap > 0 && fin(a.runwayM) && Number.isInteger(a.site) && Array.isArray(a.access) && fin(a.intl))
+      && h.routes.every((r: any) => isRec(r) && typeof r.id === "string" && ["sea", "air"].includes(r.mode) && typeof r.a === "string" && typeof r.b === "string" && ["open", "suspended", "closed"].includes(r.state) && fin(r.since) && fin(r.vol) && fin(r.lo));
+    if (!ok) delete raw.hubs;
+  }
   raw.schemaVersion = 3;
   const sim = { ...raw, events: Array.isArray(raw.events) ? raw.events : [], stats: Array.isArray(raw.stats) ? raw.stats : [], skippedMonths: fin(raw.skippedMonths) ? raw.skippedMonths : 0, lastWallMs: fin(raw.lastWallMs) ? raw.lastWallMs : 0, speed: [0, 1, 5, 20].includes(raw.speed) ? raw.speed : 0, ceremonyDone: raw.ceremonyDone === true } as unknown as SimState;
   const bad = checkIntegrity(sim); if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
