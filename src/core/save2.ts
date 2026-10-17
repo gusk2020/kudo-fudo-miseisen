@@ -63,6 +63,8 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
     const k = raw.kaigen, okE = (e: any) => isRec(e) && typeof e.name === "string" && e.name.length > 0 && e.name.length < 12 && Number.isInteger(e.start) && STANCES.includes(e.stance);
     if (!(isRec(k) && Array.isArray(k.eras) && k.eras.length >= 1 && k.eras.length < 40 && k.eras.every(okE) && Number.isInteger(k.next) && Number.isInteger(k.nextIdx) && (k.pending === null || (isRec(k.pending) && Number.isInteger(k.pending.year) && Array.isArray(k.pending.cands) && k.pending.cands.length > 0 && k.pending.cands.every((c: any) => isRec(c) && typeof c.name === "string" && STANCES.includes(c.stance)))))) delete raw.kaigen;
   }
+  // Stage 8: a lake bridge keeps only its two shore cells (an early Stage 8 build stored the water cells too, which the land check would refuse)
+  for (const e of Object.values<any>(raw.edges)) if (e.facility === "bridge" && typeof e.facilityName === "string" && e.facilityName.includes("湖上大橋") && e.cells.length > 2) e.cells = [e.cells[0], e.cells[e.cells.length - 1]];
   // Stage 8: ports, airports and routes are kept only if well formed; otherwise they are rebuilt from the cities at the next yearly step (never refused)
   if (raw.hubs !== undefined) {
     const h = raw.hubs, fac = (x: any) => isRec(x) && typeof x.city === "string" && fin(x.since) && Array.isArray(x.hist) && ["cargo", "pax", "load", "hi", "lo"].every((f) => fin(x[f]));

@@ -9,6 +9,7 @@ import { createSim } from "../../src/sim/engine";
 import { LAKE_BRIDGE_TAG, isLakeFerry, lakeCrossings, maxLakeRoutes, reviewLakeFerries } from "../../src/sim/ferry";
 import { advance } from "../../src/sim/engine";
 import { checkIntegrity } from "../../src/sim/network";
+import { validateSimAgainstWorld } from "../../src/core/save2";
 import { buildWorld, type World } from "../../src/sim/world";
 import { loadDem } from "./helpers";
 
@@ -82,7 +83,7 @@ describe("Stage 8: the lake's services grow with demand, within what the lake's 
     const be = t.sim.edges[proj.edgeIds[0]]; expect(be.facility).toBe("bridge"); expect(be.built).toBe(0); expect(r.edges.some((x) => x.edgeId === fe.id)).toBe(true);
     proj.status = "building"; proj.priority = 9; let g = 0; while ((proj.status as string) !== "open" && g++ < 240) advance(t.sim, t.w, 1);
     expect(proj.status).toBe("open"); expect(fe.state).toBe("closed"); expect(r.edges.some((x) => x.edgeId === be.id)).toBe(true); expect(r.edges.some((x) => x.edgeId === fe.id)).toBe(false);
-    expect(checkIntegrity(t.sim)).toEqual([]);
+    expect(checkIntegrity(t.sim)).toEqual([]); expect(validateSimAgainstWorld(t.sim, t.w, t.sim.terrainHash)).toBeNull();   // every road cell is land: the bridge is drawn over the water, not stored on it
   }, 120000);
 });
 
