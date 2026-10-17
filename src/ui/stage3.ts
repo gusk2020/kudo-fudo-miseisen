@@ -7,6 +7,7 @@ import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
 import { CAND_1945, STANCE_LABEL } from "../sim/kaigen";
 import { displayName } from "../sim/straits";
+import { AIR_KIND_LABEL, PORT_CAP, PORT_TIER_LABEL, airName, foreignName, hubsAt, portName } from "../sim/hubs";
 import { DOMAIN_LABEL, POLICIES, skipWindow, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
 
@@ -36,9 +37,9 @@ export function buildKaigen(app: App, body: HTMLElement) {
 
 const KIND_FILTER: Record<string, (k: string) => boolean> = {
   all: () => true, world: (k) => k === "world", domestic: (k) => k === "domestic" || k === "reform", policy: (k) => k === "policy",
-  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), city: (k) => k === "city" || k === "village" || k === "boom",
+  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), hub: (k) => ["port", "air", "lane", "ferry"].includes(k), city: (k) => k === "city" || k === "village" || k === "boom",
 };
-const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", city: "人口" };
+const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", hub: "港湾・空港", city: "人口" };
 export function buildTimeline(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "年表(新しい順・原因つき)")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
   if (sim.kaigen) body.append(h("div", { class: "issue", id: "era-line" }, "元号: " + sim.kaigen.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → "), h("br"), h("small", {}, sim.kaigen.pending ? "改元の選択待ち" : `次の改元: ${sim.kaigen.next}年ごろ`)));
@@ -111,7 +112,7 @@ export function buildAtlas(app: App, body: HTMLElement) {
     for (const e of Object.values(sim.edges)) { const c = codes[e.id]; if (c === undefined) continue; const st = c >> 4, rail = modeOf(e) === "rail"; if (st === 0) rail ? (rl += e.lengthKm) : (rk += e.lengthKm); else if (st === 4) plan++; else if (st === 3) lost++; else sk += rail ? 0 : 0; void sl; }
     body.append(h("div", { class: "issue", id: "atlas-summary" }, `${cur ?? "現在"}年: 道路${Math.round(rk).toLocaleString()}km・鉄道${Math.round(rl).toLocaleString()}km(供用中) ／ 計画・工事中${plan}区間 ／ 廃道・廃線跡${lost}区間`));
   }
-  buildTrends(sim, body);
+  buildTrends(sim, body); buildHubAtlas(app, sim, body, cur);
   if (cur !== null) body.append(h("div", { class: "issue warn", id: "atlas-readonly" }, `${cur}年を閲覧中(読み取り専用・時間は停止)。操作したい場合は「現在に戻る」を押してください。`));
 }
 
@@ -138,7 +139,7 @@ export function buildTrends(sim: NonNullable<App["sim"]>, body: HTMLElement) {
   body.append(lineChart("trend-km", "延長(km)", [{ label: "道路", color: "#e8a33d", pts: st.map((s) => [s.year, s.roadKm!]) }, { label: "鉄道", color: "#4ea1ff", pts: st.map((s) => [s.year, s.railKm!]) }], km, (v) => (v >= 1000 ? `${Math.round(v / 100) / 10}千` : `${Math.round(v)}`)));
   const sh = st.filter((s) => s.paxRail !== undefined);
   if (sh.length > 1) body.append(lineChart("trend-share", "鉄道の分担", [{ label: "旅客", color: "#4ea1ff", pts: sh.map((s) => [s.year, s.paxRail!]) }, { label: "貨物", color: "#9ad17a", pts: sh.map((s) => [s.year, s.frRail!]) }, { label: "空路", color: "#d18ad1", pts: sh.map((s) => [s.year, s.airShare ?? 0]) }], 1, (v) => `${Math.round(v * 100)}%`));
-  const turns = sim.events.filter((e) => /赤字ローカル線の廃止|工事凍結|工事再開|国鉄を分割|海峡連絡が開通|開業:|地方道の計画/.test(e.text)).slice(-6).reverse();
+  const turns = sim.events.filter((e) => /赤字ローカル線の廃止|工事凍結|工事再開|国鉄を分割|海峡連絡が開通|開業:|地方道の計画|国際ハブ空港|港の拡張が完成|開港|閉港|廃港|湖上大橋/.test(e.text)).slice(-6).reverse();
   if (turns.length) body.append(h("div", { class: "issue", id: "trend-turns" }, h("b", {}, "最近の転機"), ...turns.map((e) => h("div", {}, h("small", {}, `${sim.startYear + Math.floor(e.month / 12)}年 ${e.text}`)))));
 }
 export function buildPolicy(app: App, body: HTMLElement) {
@@ -170,4 +171,31 @@ export function buildPolicy(app: App, body: HTMLElement) {
   }
   if (pol.history.length) { body.append(h("h3", {}, "これまでの決定")); for (const r of [...pol.history].reverse()) body.append(h("div", { class: "issue" }, `${r.year}年 ${r.none ? "点を使わず決定" : DOMAIN_LABEL[r.domain]}${r.auto ? "(自動)" : ""}: 採用 ${r.adopted.map((a) => a.label).join("・") || "なし"}`, h("br"), h("small", {}, [...r.adopted.map((a) => `${a.label}: ${a.reason}`), ...r.declined.map((d) => `見送り ${d.label}: ${d.reason}`)].join(" ／ ")))); }
   const now = sim.dials; body.append(h("h3", {}, "現在の世界の傾向(参考)")); body.append(h("small", {}, DIAL_KEYS.map((k) => `${DIAL_LABEL[k]} ${now[k].toFixed(2)}`).join(" ／ "))); void composeDials; void GRADE_MODE; void STATE_LABEL;
+}
+
+/**
+ * Stage 8: 港湾・空港 -- the facilities as they stood in the year being viewed (or now): each port's tier and handling, each airport's kind, runway and
+ * travellers, their routes, and their own history (opening, expansions, cut-backs, closure). A chart of the sea and the air from sim.stats.
+ */
+export function buildHubAtlas(app: App, sim: SimState, body: HTMLElement, year: number | null) {
+  const w = app.world; if (!sim.hubs || !w) return;
+  const y = year ?? sim.startYear + Math.floor(sim.month / 12), at = hubsAt(sim, year ?? Number.POSITIVE_INFINITY), now = year === null;
+  body.append(h("h3", { id: "hubs" }, `港湾・空港(${now ? "現在" : `${year}年`})`));
+  const st = sim.stats.filter((s) => s.airPax !== undefined);
+  if (st.length > 1) {
+    const mx = Math.max(...st.map((s) => Math.max(s.seaCargo ?? 0, s.airPax ?? 0))) * 1.1;
+    body.append(lineChart("trend-hubs", "海と空の取扱(/日)", [{ label: "港の貨物", color: "#1aa3a3", pts: st.map((s) => [s.year, s.seaCargo ?? 0]) }, { label: "空港の旅客", color: "#d9822b", pts: st.map((s) => [s.year, s.airPax ?? 0]) }, { label: "うち国際", color: "#ffc83a", pts: st.map((s) => [s.year, s.airIntl ?? 0]) }], mx, (v) => (v >= 1e4 ? `${Math.round(v / 1000)}千` : `${Math.round(v)}`)));
+  }
+  const tiers = [4, 3, 2, 1].map((t) => `${PORT_TIER_LABEL[t]}${at.ports.filter((p) => p.tier === t).length}`).join("・"), hubs = at.airports.filter((a) => a.kind === "hub");
+  const open = at.routes.filter((r) => r.state === "open");
+  body.append(h("div", { class: "issue", id: "hub-summary" }, `港湾${at.ports.length}(${tiers}) ／ 空港${at.airports.length}(うち国際ハブ${hubs.length}) ／ 国際航路${open.filter((r) => r.mode === "sea").length}・国際線${open.filter((r) => r.mode === "air" && r.intl).length}・国内線${open.filter((r) => r.mode === "air" && !r.intl).length}`));
+  const routesOf = (id: string, mode: "sea" | "air") => open.filter((r) => r.mode === mode && (r.a === id || r.b === id));
+  const hist = (x: { hist: { y: number; t: string }[] }) => x.hist.filter((e) => e.y <= y).map((e) => `${e.y}年 ${e.t}`).join(" ／ ");
+  const det = (id: string, title: string, lines: (string | HTMLElement)[]) => { const d = h("details", { id, ...(ui3.open.has(id) ? { open: "" } : {}) }, h("summary", {}, title), ...lines.map((l) => (typeof l === "string" ? h("div", {}, h("small", {}, l)) : l))) as HTMLDetailsElement; d.addEventListener("toggle", () => { if (d.open) ui3.open.add(id); else ui3.open.delete(id); }); return d; };
+  const ports = [...at.ports].sort((p, q) => q.tier - p.tier || q.cargo - p.cargo).slice(0, 14), airs = [...at.airports].sort((p, q) => (q.kind === "hub" ? 1 : 0) - (p.kind === "hub" ? 1 : 0) || q.pax - p.pax).slice(0, 14);
+  body.append(det("hub-ports", `港湾(上位${ports.length})`, ports.map((p) => { const r = routesOf(p.city, "sea"); return `${portName(w, p.city)} ${PORT_TIER_LABEL[p.tier]}${now ? ` 取扱${p.cargo.toLocaleString()}/日(能力の${Math.round(p.load * 100)}%)${p.build ? `・拡張工事中(${p.build.done}年完成予定)` : ""}` : ""}${r.length ? ` 航路: ${r.map((x) => foreignName(x.b)).join("、")}` : ""} — ${hist(p)}`; })));
+  body.append(det("hub-airports", `空港(上位${airs.length})`, airs.map((a) => { const r = routesOf(a.city, "air"); return `${airName(w, a.city)} ${AIR_KIND_LABEL[a.kind]}・滑走路${a.runwayM}m${now ? ` 旅客${a.pax.toLocaleString()}人/日(国際${a.intl.toLocaleString()})・能力の${Math.round(a.load * 100)}%${a.railAccess ? "・アクセス鉄道あり" : ""}${a.build ? `・${a.build.what}(${a.build.done}年完成予定)` : ""}` : ""} 便: 国内${r.filter((x) => !x.intl).length}・国際${r.filter((x) => x.intl).length} — ${hist(a)}`; })));
+  const closed = [...Object.values(sim.hubs.ports), ...Object.values(sim.hubs.airports)].filter((x) => x.until !== undefined && x.until <= y);
+  if (closed.length) body.append(det("hub-closed", `閉港・廃港(${closed.length})`, closed.map((x) => `${"tier" in x ? portName(w, x.city) : airName(w, x.city)} ${x.since}〜${x.until}年`)));
+  void PORT_CAP;
 }

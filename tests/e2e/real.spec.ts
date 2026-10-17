@@ -425,3 +425,53 @@ test("Stage 7: 地図帳に交通の移り変わり(道路・鉄道の延長と�
   expect(await app(page, "a => a.sim.stats[a.sim.stats.length - 1].paxRail < 0.5")).toBe(true);   // the road-minded line: the railway carries a minority of passenger-km by 1990
   expect(errs).toEqual([]);
 });
+
+test("Stage 8: 国道1号を琵琶湖の上に引くと湖岸で止まり湖上フェリーで渡る。Undo/Redo・保存で残る", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page); await pickEra(page, "heisei");
+  const pts = await page.evaluate(() => {
+    const a = (window as any).__kfm, w = a.world; let x = 0, y = 0, n = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 2) { const p = w.cellPos(k); x += p[0]; y += p[1]; n++; }
+    const c = [x / n, y / n], t = w.cities.find((q: any) => q.name === "東京").pos, o = w.cities.find((q: any) => q.name === "大阪市").pos, P = [t, [c[0] + 30, c[1]], [c[0] - 30, c[1]], o] as [number, number][];
+    const x0 = Math.min(...P.map((p) => p[0])), x1 = Math.max(...P.map((p) => p[0])), y0 = Math.min(...P.map((p) => p[1])), y1 = Math.max(...P.map((p) => p[1])), W = window.innerWidth, H = window.innerHeight;
+    const zoom = Math.min((W - 80) / (x1 - x0), (H * 0.45) / (y1 - y0)); a.r.setView({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 + (Math.min(300, H * 0.37) - H / 2) / zoom, zoom }, true);
+    return P.map((p) => a.r.worldToScreen(p)) as [number, number][];
+  });
+  await page.click("#tool-cer-kokudo1");
+  for (let i = 0; i + 1 < pts.length; i++) { await page.mouse.move(pts[i][0], pts[i][1]); await page.mouse.down(); await page.mouse.move(pts[i + 1][0], pts[i + 1][1], { steps: 10 }); await page.mouse.up(); }
+  expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true);
+  expect(await app(page, "a => (a.cerDraft.kokudo1.prev.lakes || []).length")).toBe(1);
+  expect(await app(page, "a => a.cerDraft.kokudo1.prev.lakes[0].kind")).toBe("ferry");
+  expect(await page.textContent("#cer-status-kokudo1")).toContain("湖上フェリー");
+  await page.click("#cer-undo"); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
+  await page.click("#cer-redo"); expect(await app(page, "a => (a.cerDraft.kokudo1.prev.lakes || []).length")).toBe(1);
+  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  const lakeOnR1 = "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.some((e) => (a.sim.edges[e.edgeId].facilityName || '').includes('【湖】')); }";
+  expect(await app(page, lakeOnR1)).toBe(true);
+  // no road cell of 国道1号 lies on the lake
+  expect(await app(page, "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.map((e) => a.sim.edges[e.edgeId]).filter((e) => !e.facility).every((e) => e.cells.every((k) => a.world.t.land[k] === 1)); }")).toBe(true);
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, lakeOnR1)).toBe(true);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 8: 港湾・空港・航路がレイヤーで切り替わり(シミュレーションは不変)、地図帳と年表に開設・拡張が載り、過去の年の網も見られる", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "heisei");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "auto"; a.ffYears(35); });
+  expect(await app(page, "a => Object.values(a.sim.hubs.airports).some((x) => x.kind === 'hub')")).toBe(true);
+  expect(await app(page, "a => a.sim.hubs.routes.filter((r) => r.state === 'open').length")).toBeGreaterThan(10);
+  const h0 = await app(page, "a => JSON.stringify(a.sim.hubs).length + ':' + a.sim.month");
+  await page.click("#dock-layers"); for (const k of ["ports", "airports", "lanes"]) { await page.uncheck("#layer-" + k); expect(await app(page, `a => a.s.layers.${k}`)).toBe(false); }
+  for (const k of ["ports", "airports", "lanes"]) await page.check("#layer-" + k);
+  expect(await app(page, "a => JSON.stringify(a.sim.hubs).length + ':' + a.sim.month")).toBe(h0);
+  await closeSheet(page);
+  await page.click("#dock-atlas"); await expect(page.locator("#hubs")).toBeVisible(); await expect(page.locator("#hub-summary")).toContainText("国際ハブ");
+  expect(await page.locator("#trend-hubs polyline").count()).toBe(3);
+  await page.click("#hub-airports summary"); await expect(page.locator("#hub-airports")).toContainText("国際ハブ空港");
+  // a past year: fewer airports than now, and the atlas says which year it shows
+  await page.evaluate(() => (window as any).__kfm.setViewYear(1960)); await page.waitForTimeout(200); if (!(await page.isVisible("#hubs"))) await page.click("#dock-atlas");
+  await expect(page.locator("#hubs")).toContainText("1960年");
+  expect(await app(page, "a => a.viewYear")).toBe(1960);
+  await page.evaluate(() => (window as any).__kfm.setViewYear(null));
+  await page.click("#dock-timeline"); await page.click("#tl-hub");
+  await expect(page.locator("#sheet-body .issue").filter({ hasText: /空港|港|便|航路/ }).first()).toBeVisible();
+  expect(errs).toEqual([]);
+});

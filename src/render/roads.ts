@@ -5,13 +5,15 @@ import { GRADE_MODE, GRADE_SHORT, NICK_SHORT, modeOf, type EdgeState, type Grade
 import { routeLabel, routeOfficial } from "../sim/engine";
 import { routeAtYear, type RouteView } from "../sim/ledger";
 import type { World } from "../sim/world";
+import { FOREIGN, hubsAt } from "../sim/hubs";
+import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
 
 export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[] }   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
 export interface PastView { year: number; codes: Record<string, number> }
 export interface RoadArgs {
   sim: SimState | null; w: World | null;
-  layers: { roads: boolean; rail?: boolean; plans: boolean; signs: boolean; abandoned?: boolean; ports?: boolean };
+  layers: { roads: boolean; rail?: boolean; plans: boolean; signs: boolean; abandoned?: boolean; ports?: boolean; airports?: boolean; lanes?: boolean };
   cer: CerOverlay[]; pin: Vec | null;
   compare?: Record<string, number> | null; compareYear?: number | null;   // absolute edge codes of the chosen base year
   past?: PastView | null;                                                // looking at the past: draw that year, read-only
@@ -41,10 +43,14 @@ function pattern(g: Graphics, pts: Vec[], dash: number[]) {
     while (seg > 1e-6) { const step = Math.min(left, seg); if (draw) { g.moveTo(x, -y); g.lineTo(x + ux * step, -(y + uy * step)); } x += ux * step; y += uy * step; seg -= step; left -= step; if (left <= 1e-9) { i = (i + 1) % dash.length; draw = i % 2 === 0; left = dash[i]; } }
   }
 }
-const KEYS = ["halo", "facb", "ghost", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "sel", "ov"];
+const KEYS = ["halo", "facb", "ghost", "lanes", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "sel", "ov"];
 const line = (g: Graphics, pts: Vec[]) => { g.moveTo(pts[0][0], -pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], -pts[i][1]); };
 const opColour = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return [0x7a1f3d, 0x1f5f7a, 0x6b4a14, 0x3b6b1f, 0x5a2a8a, 0x8a3a1a, 0x1f3f8a][h % 7]; };
 
+/** An airport mark (a small plane cross), u = one screen pixel in world units. */
+function plane(g: Graphics, x: number, y: number, u: number, col: number) { g.poly([x - 7 * u, -y - 3 * u, x - 2 * u, -y - 3 * u, x - 2 * u, -y - 8 * u, x, -y - 8 * u, x, -y - 3 * u, x + 4 * u, -y - 3 * u, x + 4 * u, -y - 1 * u, x, -y - 1 * u, x, -y + 4 * u, x - 2 * u, -y + 4 * u, x - 2 * u, -y - 1 * u, x - 7 * u, -y - 1 * u]).fill({ color: col }).stroke({ width: u * 0.8, color: 0x222222 }); }
+/** Port colours by tier (地方港湾 → 国際戦略港湾) and the line colours of the routes; the legend repeats them in words. */
+export const PORT_COL = [0, 0x7fb4e0, 0x2a7fd0, 0x1450a0, 0x0a2e6e], SEA_LANE_COL = 0x1aa3a3, AIR_LANE_COL = 0xd9822b, AIR_DOM_COL = 0xf4f4f4;
 export class RoadLayer {
   container = new Container(); private last: RoadArgs | null = null; private sig = "";
   // Everything below is created once and reused: creating and destroying Graphics/Text on every redraw leaked ~130 KB each time (Issue #7).
@@ -64,9 +70,30 @@ export class RoadLayer {
       for (const r of Object.values(s.routes)) h = (h * 31 + r.number + (r.active ? 1 : 0) + r.edges.length * 7 + r.oldEdges.length * 3 + (r.grade === "national" ? 3 : r.grade === "fu" ? 5 : r.grade === "jnr" ? 13 : r.grade === "priv" ? 17 : 11) + (r.nick ? 19 : 0)) >>> 0;
       for (const p of Object.values(s.projects)) h = (h * 31 + p.status.length + p.edgeIds.length) >>> 0;
       for (const c of Object.values(s.cities)) if (c.airport !== undefined) h = (h * 31 + 7) >>> 0;
+      if (s.hubs) { for (const p of Object.values(s.hubs.ports)) h = (h * 31 + p.tier + (p.until ? 5 : 0)) >>> 0; for (const x of Object.values(s.hubs.airports)) h = (h * 31 + x.runwayM + (x.kind === "hub" ? 3 : 0) + (x.until ? 5 : 0)) >>> 0; for (const r of s.hubs.routes) h = (h * 31 + r.state.length + r.since) >>> 0; }
     }
     const L = a.layers;
-    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
+    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
+  }
+  /** Stage 8: ports (squares sized by tier), airports (a plane; a hub is bigger and gold) and their routes; in the past view, those of that year. */
+  private drawHubs(a: RoadArgs, sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
+    const at = hubsAt(sim, year ?? Number.POSITIVE_INFINITY), nodes = this.g.nodes, lanes = this.g.lanes, pos = (id: string) => w.cityById.get(id)?.pos;
+    const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && !lite && zoom >= 0.22;
+    // level of detail: the whole country shows only the big ports' and the hubs' foreign routes and the busiest domestic flights; everything appears as you zoom in
+    const far = zoom < 0.5, big = (r: { mode: string; a: string }) => (r.mode === "sea" ? (sim.hubs!.ports[r.a]?.tier ?? 0) >= 3 : sim.hubs!.airports[r.a]?.kind === "hub");
+    if (showL) {
+      const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol).slice(0, far ? 12 : 30);
+      for (const r of dom) { if (!showA) break; const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; line(lanes, [p, q]); lanes.stroke({ width: px(1.2), color: AIR_DOM_COL, alpha: 0.4 }); }
+      for (const r of at.routes) {
+        if (!r.intl || (r.mode === "sea" ? !showP : !showA) || (far && !big(r))) continue; const p = pos(r.a); if (!p) continue; const off = r.state === "suspended";
+        const d = FOREIGN.find((f) => f.id === r.b); if (!d) continue; const L = (far ? 60 : 35) + (far ? 50 : 35) * Math.min(1, r.vol / 3000), e: Vec = [p[0] + d.dir[0] * L, p[1] + d.dir[1] * L], col = r.mode === "sea" ? SEA_LANE_COL : AIR_LANE_COL;
+        pattern(lanes, [p, e], r.mode === "sea" ? [px(6), px(4)] : [px(2), px(4)]); lanes.stroke({ width: px(r.mode === "sea" ? 2.4 : 1.8), color: col, alpha: off ? 0.3 : 0.9 });
+        lanes.circle(e[0], -e[1], px(3)).fill({ color: col, alpha: off ? 0.3 : 0.95 });
+      }
+    }
+    if (zoom < (lite ? 0.5 : 0.22)) return;
+    if (showP) for (const p of at.ports) { if (far && p.tier < 3) continue; const c = pos(p.city); if (!c) continue; const s = px(4 + 2 * p.tier); nodes.rect(c[0] + px(5), -c[1] + px(2), s, s).fill({ color: PORT_COL[p.tier] }).stroke({ width: px(1.2), color: 0xffffff }); }
+    if (showA) for (const x of at.airports) { const hub = x.kind === "hub" && (year === null || !x.build); if (far && !hub) continue; const c = pos(x.city); if (!c) continue; const s = hub && x.site !== w.cityById.get(x.city)?.cell ? w.cellPos(x.site) : c; plane(nodes, s[0], s[1], px(hub ? 2 : 1.3), hub ? 0xffc83a : 0xffffff); }
   }
   set(a: RoadArgs, zoom: number) { this.last = a; const sg = RoadLayer.signature(a, zoom); if (sg === this.sig) return false; this.sig = sg; this.draw(a, zoom); return true; }
   redraw(zoom: number) { if (this.last) { this.sig = ""; this.set(this.last, zoom); } }
@@ -95,7 +122,7 @@ export class RoadLayer {
         if (rank < minRank && !(a.compare && zoom >= 0.35)) { if (!(isPlan && zoom >= 0.35 && a.layers.plans)) continue; }
         if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
         if (isAband && !showAband) continue;
-        if (e.facility === "ferry" && a.hide?.includes("fac:ferry")) continue;
+        if (e.facility === "ferry" && (isLakeFerry(e) ? hide.has("fac:lake") : hide.has("fac:ferry"))) continue;
         if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (past ? "planned" : planned.get(e.id) ?? "planned")))) continue; }
         const pts = edgeShape(w, sim, e); shapes.set(e.id, pts);
         const thin = zoom < 0.35 ? 0.6 : 1, wd = (rail ? RAIL_WIDTH[e.standard] : g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8) * thin, col = rail ? railColour(eff.q) : condColour(eff.q), isOld = e.bypassedBy.length > 0 && !past;
@@ -138,12 +165,13 @@ export class RoadLayer {
         if (n.kind === "pass" && showRoads && zoom >= 0.35) nodes.poly([n.pos[0], -n.pos[1] - px(6), n.pos[0] - px(5), -n.pos[1] + px(3), n.pos[0] + px(5), -n.pos[1] + px(3)]).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x222222 });
         else if (n.kind === "village" && zoom >= 0.5 && showRoads) nodes.circle(n.pos[0], -n.pos[1], px(2)).fill({ color: 0xf2e6c8 }).stroke({ width: px(0.8), color: 0x333333 });
       }
-      if ((a.layers.ports ?? true) && !lite && sim.stage3 && zoom >= 0.5) {
-        // supporting modes: a port (blue square) at coastal cities, an airport (white cross) once it has opened
+      if (sim.stage3 && sim.hubs) this.drawHubs(a, sim, w, zoom, past ? year : null, px, lite);
+      else if ((a.layers.ports ?? true) && !lite && sim.stage3 && zoom >= 0.5) {
+        // supporting modes (games from before Stage 8): a port (blue square) at coastal cities, an airport (white cross) once it has opened
         const yr = past ? year : Number.POSITIVE_INFINITY;
         for (const c of w.cities) {
           const [x, y] = c.pos; if (c.coastal) nodes.rect(x + px(5), -y + px(3), px(6), px(6)).fill({ color: 0x2a7fd0 }).stroke({ width: px(1), color: 0xffffff });
-          const ap = sim.cities[c.id]?.airport; if (ap !== undefined && ap <= yr) { const u = px(1); nodes.poly([x - 7 * u, -y - 3 * u, x - 2 * u, -y - 3 * u, x - 2 * u, -y - 8 * u, x, -y - 8 * u, x, -y - 3 * u, x + 4 * u, -y - 3 * u, x + 4 * u, -y - 1 * u, x, -y - 1 * u, x, -y + 4 * u, x - 2 * u, -y + 4 * u, x - 2 * u, -y - 1 * u, x - 7 * u, -y - 1 * u]).fill({ color: 0xffffff }).stroke({ width: px(0.8), color: 0x222222 }); }
+          const ap = sim.cities[c.id]?.airport; if (ap !== undefined && ap <= yr) plane(nodes, x, y, px(1), 0xffffff);
         }
       }
       if (a.layers.signs && zoom >= 0.28) {

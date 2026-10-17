@@ -72,7 +72,7 @@ describe("Stage 8: the lake's services grow with demand, within what the lake's 
     expect(reviewLakeFerries(t.sim, t.w, 1950)).toBe(0);                                  // 1950: open water far beyond a 1.5 km span
     reviewLakeFerries(t.sim, t.w, 2060); const proj = Object.values(t.sim.projects).find((x) => x.reason.startsWith(LAKE_BRIDGE_TAG))!; expect(proj).toBeTruthy();
     const be = t.sim.edges[proj.edgeIds[0]]; expect(be.facility).toBe("bridge"); expect(be.built).toBe(0); expect(r.edges.some((x) => x.edgeId === fe.id)).toBe(true);
-    proj.status = "building"; proj.priority = 9; let g = 0; while (proj.status !== "open" && g++ < 240) advance(t.sim, t.w, 1);
+    proj.status = "building"; proj.priority = 9; let g = 0; while ((proj.status as string) !== "open" && g++ < 240) advance(t.sim, t.w, 1);
     expect(proj.status).toBe("open"); expect(fe.state).toBe("closed"); expect(r.edges.some((x) => x.edgeId === be.id)).toBe(true); expect(r.edges.some((x) => x.edgeId === fe.id)).toBe(false);
     expect(checkIntegrity(t.sim)).toEqual([]);
   }, 120000);

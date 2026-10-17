@@ -2,3 +2,5 @@ node_modules
 dist
 test-results
 playwright-report
+tests/unit/zz_*
+tests/e2e/zz_*

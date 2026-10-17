@@ -5,6 +5,7 @@
  * All figures are synthetic "vehicles/day"; they are not statistics.
  */
 import { goodsPull, paxPull } from "./sites";
+import { hubDemand, JET_YEAR, type HubTotals } from "./hubs";
 import { MinHeap } from "../core/heap";
 import { modeOf, type Mode, type Standard, type Surface, type SimEdge, type SimState } from "./types";
 import type { World } from "./world";
@@ -36,6 +37,8 @@ export interface Analysis {
   T: Float64Array; TT: Float64Array; acc: number[]; cityNodes: (string | null)[];
   reach: Map<string, boolean>;               // settlement id -> can still reach its parent city
   potential: Map<string, number>;            // edge id -> local demand the settlements around it would generate (also for unused edges)
+  airPkm?: number; seaTkm?: number;          // Stage 8: domestic air traveller-km and sea freight-km this year (for the mode comparison)
+  hub?: HubTotals;                           // Stage 8: what each port and airport handled this year (hubs.ts), when the game has them
 }
 export function placeCellsNear(w: World, cell: number, r: number): number[] {
   const i = cell % w.nx, j = (cell / w.nx) | 0, out: number[] = [];
@@ -69,7 +72,19 @@ export function railShare(tRoad: number, tRail: number, carBias: number, railBia
 export function airShare(sim: SimState, w: World, i: number, j: number, railS: number): number {
   const a = sim.cities[w.cities[i].id], b = sim.cities[w.cities[j].id]; if (a.airport === undefined || b.airport === undefined) return 0;
   const d = Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); if (d < AIR_MIN_KM) return 0;
-  return Math.min(0.55 + 0.15 * Math.min(1, sim.dials.airBias), (0.08 + 0.5 * (1 - Math.exp(-(d - AIR_MIN_KM) / 450))) * (1 - 0.45 * railS) * (1 + 0.8 * sim.dials.airBias));
+  const base = Math.min(0.55 + 0.15 * Math.min(1, sim.dials.airBias), (0.08 + 0.5 * (1 - Math.exp(-(d - AIR_MIN_KM) / 450))) * (1 - 0.45 * railS) * (1 + 0.8 * sim.dials.airBias));
+  const h = sim.hubs; if (!h) return base;
+  // Stage 8: the plane competes on time and price as well as distance -- slow propeller years, cheaper fares later -- and a full airport turns trips away
+  const y = sim.startYear + Math.floor(sim.month / 12), A = h.airports[w.cities[i].id], B = h.airports[w.cities[j].id], full = Math.max(A?.load ?? 0, B?.load ?? 0);
+  return base * (y < JET_YEAR ? 0.55 : y < 1970 ? 0.8 : y >= 2012 ? 1.1 : 1) * (full > 1 ? 1 / full : 1);
+}
+/** Stage 8: the share of a domestic freight trip between two coastal cities that goes by ship: both need a port, short hauls stay on land, a full port turns cargo away. */
+export function seaShareOf(sim: SimState, w: World, i: number, j: number): number {
+  const a = w.cities[i], b = w.cities[j]; if (!a.coastal || !b.coastal) return 0;
+  const base = Math.min(0.6, SEA_FREIGHT * (1 + sim.dials.seaBias)), h = sim.hubs; if (!h) return base;
+  const P = h.ports[a.id], Q = h.ports[b.id]; if (!P || !Q || P.until !== undefined || Q.until !== undefined) return 0;
+  const d = Math.hypot(a.pos[0] - b.pos[0], a.pos[1] - b.pos[1]), full = Math.max(P.load, Q.load);
+  return Math.min(0.6, base * Math.min(1.5, Math.max(0.15, (d - 60) / 300))) * (full > 1 ? 1 / full : 1);
 }
 /** The whole analysis in one go (tests, tools). The game itself uses `analyzeGen` so a long pass can be cut into slices. */
 export function analyze(sim: SimState, w: World): Analysis { const g = analyzeGen(sim, w); for (;;) { const r = g.next(); if (r.done) return r.value; } }
@@ -79,7 +94,7 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
   const multi = sim.stage3 === true, dl = sim.dials;
   const adjRoad: Adj[][] = nodeIds.map(() => []), adjRail: Adj[][] = nodeIds.map(() => []), edges = Object.values(sim.edges);
   for (const e of edges) { e.through = 0; e.local = 0; e.freight = 0; }
-  let anyRail = false, airFlow = 0, landFlow = 0, seaFr = 0, landFr = 0;
+  let anyRail = false, airFlow = 0, landFlow = 0, seaFr = 0, landFr = 0, airPkm = 0, seaTkm = 0;
   for (const e of edges) if (passable(e)) {
     const a = pos.get(e.a)!, b = pos.get(e.b)!, t = e.lengthKm / Math.max(3, edgeSpeed(e)) + (e.facility === "ferry" ? FERRY_WAIT_H : 0), g = modeOf(e) === "rail" ? adjRail : adjRoad; if (g === adjRail) anyRail = true;
     g[a].push({ to: b, edge: e, t }); g[b].push({ to: a, edge: e, t });
@@ -87,11 +102,15 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
   const nc = w.cities.length, cityNodes = w.cities.map((c) => nodeByCell.get(c.cell) ?? null), T = new Float64Array(nc * nc).fill(Infinity), TT = new Float64Array(nc * nc).fill(Infinity), reach = new Map<string, boolean>();
   const villagesOf = new Map<string, string[]>(); for (const s of Object.values(sim.settlements)) (villagesOf.get(s.city) ?? villagesOf.set(s.city, []).get(s.city)!).push(s.id);
   const railDeg = new Int32Array(N); if (anyRail) for (let i = 0; i < N; i++) railDeg[i] = adjRail[i].length;
+  // Stage 8: the trees from port and airport cities are kept, so the trips to them can be put on the network once every travel time is known
+  const hubCity = new Set<number>(), trees = new Map<number, { R: Tree; Q: Tree | null }>(), pairs = new Map<string, number>(), domSea = new Map<string, number>(), domAir = new Map<string, number>();
+  if (multi && sim.hubs) w.cities.forEach((c, i) => { if (sim.hubs!.ports[c.id] || sim.hubs!.airports[c.id]) hubCity.add(i); });
   for (let i = 0; i < nc; i++) {
     if (i > 0 && i % 6 === 0) yield;   // a slice of work per few source cities keeps each frame short
     const src = cityNodes[i]; if (!src) { for (const vid of villagesOf.get(w.cities[i].id) ?? []) reach.set(vid, false); continue; }
     const s0 = pos.get(src)!, R = dijkstra(adjRoad, N, s0), Q = anyRail && railDeg[s0] > 0 ? dijkstra(adjRail, N, s0) : null;
     for (let j = 0; j < nc; j++) if (j !== i && cityNodes[j]) { const k = pos.get(cityNodes[j]!)!; T[i * nc + j] = R.d[k]; if (Q) TT[i * nc + j] = Q.d[k]; }
+    if (hubCity.has(i)) trees.set(i, { R, Q });
     for (let j = i + 1; j < nc; j++) {
       const cn = cityNodes[j]; if (!cn) continue; const k0 = pos.get(cn)!, tr = R.d[k0], tt = Q ? Q.d[k0] : Infinity;
       if (!isFinite(tr) && !isFinite(tt)) continue;
@@ -105,11 +124,14 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
       const ai = paxPull(sim, w, w.cities[i].id), aj = paxPull(sim, w, w.cities[j].id), gi = goodsPull(sim, w, w.cities[i].id), gj = goodsPull(sim, w, w.cities[j].id);   // Issue #18: seats and sights shift a city's pull on passengers (commerce, tourism) and goods (manufacturing)
       const flow = KFLOW * Math.pow(pi.pop * ai * pj.pop * aj, 0.6) / (1 + Math.pow(tmin, 1.2));
       const air = airShare(sim, w, i, j, s), land = flow * (1 - air); airFlow += flow * air; landFlow += land;
+      if (air > 0 && sim.hubs) { const a = w.cities[i].id, b = w.cities[j].id, p = flow * air * RAIL_PAX; airPkm += p * Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); pairs.set(a < b ? `${a}|${b}` : `${b}|${a}`, p); domAir.set(a, (domAir.get(a) ?? 0) + p); domAir.set(b, (domAir.get(b) ?? 0) + p); }
       if (s < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.through += land * (1 - s);
       if (s > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.through += land * s * RAIL_PAX;
       // freight: industry-to-industry; trucks take it unless the railway is competitive and the era favours it
       const f0 = KFREIGHT * Math.pow(pi.pop * pi.industry * gi * pj.pop * pj.industry * gj, 0.6) / (1 + Math.pow(tmin, 1.2)), sf = railShare(tr, tt, dl.carBias * 0.4 - dl.freightRail, dl.railBias * 0.4 + dl.freightRail);
-      const sea = w.cities[i].coastal && w.cities[j].coastal ? Math.min(0.6, SEA_FREIGHT * (1 + dl.seaBias)) : 0, fl = f0 * (1 - sea); seaFr += f0 * sea; landFr += fl;
+      const sea = seaShareOf(sim, w, i, j), fl = f0 * (1 - sea); seaFr += f0 * sea; landFr += fl;
+      if (sea > 0) seaTkm += f0 * sea * Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]);
+      if (sea > 0 && sim.hubs) for (const c of [w.cities[i].id, w.cities[j].id]) domSea.set(c, (domSea.get(c) ?? 0) + f0 * sea);
       if (sf < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.freight += fl * (1 - sf);
       if (sf > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.freight += fl * sf * RAIL_PAX;
     }
@@ -117,6 +139,28 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
       const v = sim.settlements[vid], vn = nodeByCell.get(v.cell); if (!vn || v.gone) { reach.set(vid, !v.gone && false); if (v.gone) reach.set(vid, true); continue; }
       const k0 = pos.get(vn)!, ok = isFinite(R.d[k0]); reach.set(vid, ok); if (!ok) continue;
       for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.local += KVIL * v.pop;
+    }
+  }
+  // Stage 8: foreign trade to the ports and travellers to the ports and airports ride the roads and railways like any other trip
+  let hub: HubTotals | undefined;
+  const hf = multi ? hubDemand(sim, w, T, TT) : null;
+  if (hf) {
+    hub = { port: new Map(), air: new Map(), pairs, unmet: hf.unmet };
+    const load = (p: number, j: number, cargo: number, pax: number) => {
+      const tr = trees.get(p), cn = cityNodes[j]; if (!tr || !cn || p === j) return; const k0 = pos.get(cn)!, tr0 = tr.R.d[k0], tt0 = tr.Q ? tr.Q.d[k0] : Infinity;
+      const s = railShare(tr0, tt0, dl.carBias, dl.railBias), sf = railShare(tr0, tt0, dl.carBias * 0.4 - dl.freightRail, dl.railBias * 0.4 + dl.freightRail), roadP = (pax / RAIL_PAX) * (1 - (isFinite(tt0) ? s : 0));
+      if (isFinite(tr0)) for (let k = k0; tr.R.pn[k] >= 0; k = tr.R.pn[k]) { const e = tr.R.pe[k]!; e.through += roadP; e.freight += cargo * (1 - (isFinite(tt0) ? sf : 0)); }
+      if (tr.Q && isFinite(tt0)) for (let k = k0; tr.Q.pn[k] >= 0; k = tr.Q.pn[k]) { const e = tr.Q.pe[k]!; e.through += pax * s; e.freight += cargo * sf * RAIL_PAX; }
+    };
+    for (const p of hf.ports) { let c = 0, x = 0; for (let j = 0; j < nc; j++) { c += p.cargo[j]; x += p.pax[j]; load(p.i, j, p.cargo[j], p.pax[j]); } hub.port.set(p.id, { cargo: c, pax: x, dom: 0 }); }
+    for (const a of hf.airs) { let c = 0, x = 0; for (let j = 0; j < nc; j++) { c += a.cargo[j]; x += a.pax[j]; load(a.i, j, a.cargo[j], a.pax[j]); } hub.air.set(a.id, { intl: x, cargo: c, dom: 0 }); }
+    for (const [id, v] of domSea) { const t = hub.port.get(id) ?? { cargo: 0, pax: 0, dom: 0 }; t.dom = v; hub.port.set(id, t); }
+    for (const [id, v] of domAir) { const t = hub.air.get(id) ?? { intl: 0, cargo: 0, dom: 0 }; t.dom = v; hub.air.set(id, t); }
+    // the last leg, city to airport site, on the airport's own access road and railway
+    for (const a of Object.values(sim.hubs!.airports)) {
+      if (a.until !== undefined) continue; const t = hub.air.get(a.city); if (!t) continue; const pax = t.intl + t.dom, rail = (a.railIds ?? []).map((id) => sim.edges[id]).filter((e) => e && passable(e)), rs = rail.length ? 0.4 : 0;
+      for (const id of a.access) { const e = sim.edges[id]; if (e && passable(e)) e.through += (pax * (1 - rs)) / RAIL_PAX; }
+      for (const e of rail) e.through += pax * rs;
     }
   }
   // settlements along a road generate local trips on it, whether or not the road is currently used
@@ -136,7 +180,7 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
   }
   const popTot = w.cities.reduce((s, c) => s + sim.cities[c.id].pop, 0), acc: number[] = [];
   for (let i = 0; i < nc; i++) { let s = 0; for (let j = 0; j < nc; j++) if (j !== i) { const t = Math.min(T[i * nc + j], TT[i * nc + j] + RAIL_ACCESS_H); if (isFinite(t)) s += sim.cities[w.cities[j].id].pop * Math.exp(-t / 3); } acc.push(popTot ? s / popTot : 0); }
-  return { T, TT, acc, cityNodes, reach, potential, airShare: airFlow + landFlow > 0 ? airFlow / (airFlow + landFlow) : 0, seaShare: seaFr + landFr > 0 ? seaFr / (seaFr + landFr) : 0 };
+  return { T, TT, acc, cityNodes, reach, potential, ...(hub ? { hub } : {}), airPkm: Math.round(airPkm), seaTkm: Math.round(seaTkm), airShare: airFlow + landFlow > 0 ? airFlow / (airFlow + landFlow) : 0, seaShare: seaFr + landFr > 0 ? seaFr / (seaFr + landFr) : 0 };
 }
 /** Settlements (and city links) that would be cut off *because of* removing `skip` (already-cut-off ones are not counted). */
 export function strandedWithout(sim: SimState, w: World, skip: SimEdge | null): { villages: number; cities: number } {
