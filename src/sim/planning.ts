@@ -6,11 +6,11 @@ import { dist } from "../core/geom";
 import { refBias, referenceGrids } from "./reference";
 import { buildIndex, facilitySplit, layPath, newId, nodeAtCell } from "./network";
 import { HARD_ROCK_M, crossingEase, facilityCostMult, techAt } from "./tech";
-import { ev, projLabel, rand } from "./engine";
+import { accessDeficit, ev, projLabel, rand } from "./engine";
 import { CAPACITY, RAIL_CAPACITY as RAIL_CAP, edgeSpeed, type Analysis } from "./demand";
 const edgeKmh = (e: SimEdge) => edgeSpeed(e);
 import { KIND_LABEL, modeOf, type Operator, type ProjectKind, type SimEdge, type SimProject, type SimState, type Standard } from "./types";
-import { pathfind, type World } from "./world";
+import { mountainCost, pathfind, type World } from "./world";
 
 /** A long tunnel or bridge costs several times as much per km as the open line. */
 export const facCost = (e: SimEdge, sim?: Pick<SimState, "tech" | "startYear" | "month">) => (e.facility === "tunnel" ? 3 : e.facility === "bridge" ? 2.2 : 1) * (e.facility && sim?.tech ? facilityCostMult(sim.tech, sim.startYear + Math.floor(sim.month / 12)) : 1) * (1 + Math.min(0.5, (e.curv ?? 0) * 0.3));
@@ -55,6 +55,19 @@ interface Cand { score: number; kind: ProjectKind; edge?: SimEdge; vid?: string;
 /** Projects born as local branch lines/connectors carry this prefix in their reason (no new save field needed). */
 export const LOCAL_TAG = "【地方】";
 
+/**
+ * Stage 9: why a corridor off the Pacific belt can still be built. Gravity alone always ranks the big belt cities first, so two explainable terms lift the rest:
+ *  - ACCESS: a pair whose cities are reached worse than the national median (accessDeficit 0..1) counts for up to BALANCE_K more -- the national plans'
+ *    "balanced development" (国土の均衡ある発展), applied by rule to whatever region is poorly reached, never by name;
+ *  - PORT: a city with a significant trade port (tier >= 2) needs its hinterland link (PORT_LINK_K per tier above 1).
+ * The factor and its causes go into the project's reason, so the timeline says why the line was built.
+ */
+export const BALANCE_K = 0.8, PORT_LINK_K = 0.12;
+export function corridorFactor(sim: SimState, w: World, def: Float64Array | null, i: number, j: number): { f: number; why: string } {
+  const d = def ? (def[i] + def[j]) / 2 : 0, tier = Math.max(sim.hubs?.ports[w.cities[i].id]?.tier ?? 0, sim.hubs?.ports[w.cities[j].id]?.tier ?? 0), port = tier >= 2 ? PORT_LINK_K * (tier - 1) : 0;
+  const f = 1 + BALANCE_K * d + port, why = [d >= 0.15 ? `交通の不便な地域を優先(到達性が全国中央値より${Math.round(d * 100)}%低い)` : "", port ? `港湾(${["", "地方", "重要", "国際拠点", "国際戦略"][tier]}港)の後背地輸送` : ""].filter(Boolean).join("・");
+  return { f, why: why ? `。${why}` : "" };
+}
 export function activeProjects(sim: SimState) { return Object.values(sim.projects).filter((p) => p.status === "concept" || p.status === "planned" || p.status === "building" || p.status === "suspended"); }
 export function createProject(sim: SimState, kind: ProjectKind, region: string, from: string, to: string, edgeIds: string[], chain: SimProject["chain"], cost: number, reason: string, priority: number, replaces: string[] = []): SimProject {
   const id = newId(sim, "project");
@@ -65,6 +78,7 @@ const nodeName = (sim: SimState, id: string) => sim.nodes[id]?.name ?? "地点";
 
 export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
   const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; let pf = sim.stage3 ? MAX_PATHFINDS_S3 : MAX_PATHFINDS; const RPY = sim.stage3 ? REGIONS_PER_YEAR_S3 : REGIONS_PER_YEAR;
+  const def = sim.stage3 ? accessDeficit(w, an) : null;
   const start = ((y - sim.startYear) * RPY) % n, slice = Array.from({ length: Math.min(n, RPY) }, (_, i) => regions[(start + i) % n]);
   const live = activeProjects(sim).filter((p) => modeOf(p) === "road"), busy = new Set(live.flatMap((p) => p.edgeIds)), perRegion = new Map<string, number>();
   for (const p of live) if (p.status !== "suspended") perRegion.set(p.region, (perRegion.get(p.region) ?? 0) + 1);
@@ -102,7 +116,8 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
       // competition: where a good railway already serves the pair and the era prefers it, a new road is less needed (and the other way round for railways below)
       const service = Math.max(roadSvc, railSvc * competeWeight(sim.dials, "rail")); if (service > 0.6) continue;
       const unmet = (Math.pow(sim.cities[a.id].pop * sim.cities[b.id].pop, 0.7) / Math.pow(d, 1.2)) * (1 - service) / (d * 1.3 + 10);
-      cands.push({ score: Math.log10(1 + unmet) * 1.2 * (d < 30 ? 1.3 : 1), kind: "new", a: i, b: j, local: d < 30, reason: `${a.name}〜${b.name}間の需要に対し${isFinite(t) ? `所要時間${t.toFixed(1)}h` : "未接続"}` });
+      const cf = corridorFactor(sim, w, def, i, j);
+      cands.push({ score: Math.log10(1 + unmet) * 1.2 * (d < 30 ? 1.3 : 1) * cf.f, kind: "new", a: i, b: j, local: d < 30, reason: `${a.name}〜${b.name}間の需要に対し${isFinite(t) ? `所要時間${t.toFixed(1)}h` : "未接続"}${cf.why}` });
     }
     cands.sort((p, q) => q.score - p.score || (p.kind < q.kind ? -1 : 1));
     // Stage 7: work on the roads that exist (improve, bypass, pave, restore) and new roads (new links, village access) have SEPARATE turns. Before, both
@@ -148,13 +163,14 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     if (e.state === "open" && e.congYears >= 2 && e.standard !== "highgrade" && (e.standard === "rural" || dl.hsr > 0.4)) cands.push({ score: 3.2 + Math.min(3, (e.through / RAIL_CAPACITY_OF(e)) * 0.3), kind: "electrify", edge: e, reason: `輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%に達し${e.congYears}年混雑(${e.standard === "rural" ? "電化・複線化" : "高速化"})` });
     else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && dl.railBuild > 0.3 && !e.convertedTo) cands.push({ score: 2 + (an.potential.get(e.id) ?? 0) / 90, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}人/日が${e.reviveYears}年続いている` });
   }
-  const dens = (c: { pop: number }) => c.pop;
+  const dens = (c: { pop: number }) => c.pop, rdef = accessDeficit(w, an);
   for (let i = 0; i < nc; i++) for (let j = i + 1; j < nc; j++) {
     const a = w.cities[i], b = w.cities[j]; if (a.island !== b.island) continue; const d = dist(a.pos, b.pos); if (d < 40 || d > 260) continue;
     const tt = an.TT[i * nc + j], tr = an.T[i * nc + j], railSvc = isFinite(tt) ? Math.min(1, d / (tt * 60)) : 0, roadSvc = isFinite(tr) ? Math.min(1, d / (tr * 40)) : 0, svc = Math.max(railSvc, roadSvc * competeWeight(dl, "road")); if (svc > 0.65) continue;
     const pa = dens(sim.cities[a.id]), pb = dens(sim.cities[b.id]), unmet = (Math.pow(pa * pb, 0.65) / Math.pow(d, 1.25)) * (1 - svc) * 1e-3;
     const big = Math.min(pa, pb) > 400000, std: Standard = dl.hsr > 0.45 && y >= 1955 && big && d >= 120 ? "highgrade" : y >= 1960 ? "standard" : "rural";
-    cands.push({ score: Math.log10(1 + unmet * 30) * (0.5 + dl.railBuild) + (std === "highgrade" ? 0.5 * dl.hsr : 0), kind: "new", a: i, b: j, std, reason: `${a.name}〜${b.name}間(${Math.round(d)}km)の鉄道が${isFinite(tt) ? `所要${tt.toFixed(1)}時間` : "未整備"}` });
+    const cf = corridorFactor(sim, w, rdef, i, j);
+    cands.push({ score: (Math.log10(1 + unmet * 30) * (0.5 + dl.railBuild) + (std === "highgrade" ? 0.5 * dl.hsr : 0)) * cf.f, kind: "new", a: i, b: j, std, reason: `${a.name}〜${b.name}間(${Math.round(d)}km)の鉄道が${isFinite(tt) ? `所要${tt.toFixed(1)}時間` : "未整備"}${cf.why}` });
   }
   // 地方支線: a city the railway does not reach is tied to the nearest existing line by a short rural branch (quota of its own below)
   const railNodes: { cell: number; pos: [number, number]; name: string; isl: number }[] = [], seenN = new Set<string>();
@@ -201,7 +217,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
       const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > PRIVATE_MIN_POP && dist(a.pos, b.pos) < PRIVATE_MAX_KM,   /* Stage 7: private companies enter the busier corridors the national railway serves poorly, so the two compete */ localPrivate = !!c.local && !jnrEra;
       let op = "jnr"; if (c.local && !localPrivate) op = "jnr"; else if (!jnrEra || privateOk) { const anchorIsA = !b || a.pop0 >= b.pop0, id = `p.${anchorIsA ? a.id : b!.id}`, anchor = anchorIsA ? a : b!; if (!sim.operators[id]) sim.operators[id] = { id, name: `${baseName(anchor.name)}${jnrEra ? "電鉄" : "鉄道"}`, kind: "private", since: y, note: "新規参入の鉄道事業者(架空の事業者名)" } as Operator; op = id; }
       const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 88, built: 0, month: sim.month, standard: std, mode: "rail", op }); if (!l.created.length) continue;
-      const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s2, x) => s2 + x.lengthKm * RAIL_UNIT[std] * (1 + x.maxGradePct * 0.08) * facCost(x, sim), 0);
+      const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s2, x) => s2 + x.lengthKm * RAIL_UNIT[std] * (1 + x.maxGradePct * 0.08) * facCost(x, sim) * mountainCost(w, x.cells), 0);
       const p = createProject(sim, "new", "JP", nodeAtCell(sim, w, idx, aCell, "junction"), nodeAtCell(sim, w, idx, bCell, "junction"), l.created, l.chain, cost, c.reason, c.score); p.mode = "rail"; p.op = op; p.status = "concept"; techRoll(sim, p, tcR.hard, y, `${aName}〜${bName}`);
       ev(sim, "project", `${std === "highgrade" ? "高速新線" : "新線"}構想: ${aName}〜${bName}(${Math.round(es.reduce((s2, x) => s2 + x.lengthKm, 0))}km・${sim.operators[op]?.name ?? "国鉄"})`, c.reason, { project: p.id }); made++; if (c.local) nLocal++; else nNew++; yield;
     }
@@ -224,7 +240,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
         const tcB = techCheck(sim, w, "road", path, y); if (!tcB.ok) return planImprove(sim, e, region, purse, c);   // would cut another road: improve in place instead
         const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 90, built: 0, month: sim.month, standard: target });
         if (l.created.length) {
-          const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[target] * (1 + x.maxGradePct * 0.03) * facCost(x, sim), 0);
+          const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[target] * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * mountainCost(w, x.cells), 0);
           if (cost > purse * 1.5) { for (const x of es) { x.built = 0; } }  // kept as a (slow) plan; the region's purse decides how long it takes
           const p = createProject(sim, "bypass", region, e.a, e.b, l.created, l.chain, cost, c.reason, c.score, [e.id]); techRoll(sim, p, tcB.hard, y, projLabel(sim, p));
           ev(sim, "project", `バイパス計画: ${projLabel(sim, p)}(${Math.round(es.reduce((s, x) => s + x.lengthKm, 0))}km・${target === "highgrade" ? "高規格" : "2車線"})`, `${c.reason}。同じ区間に新道を計画`, { project: p.id, edge: e.id }); return true;
@@ -276,7 +292,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
     }
     if (newKm * 1.3 > Math.max(30, purse)) return false; 
     const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 80, built: 0, month: sim.month, standard: std }); if (!l.created.length) return false;
-    const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[std] * (1 + x.maxGradePct * 0.03) * facCost(x, sim), 0);
+    const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[std] * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * mountainCost(w, x.cells), 0);
     const reg = a.pref === b.pref ? region : "JP";
     const p = createProject(sim, "new", reg, nodeAtCell(sim, w, idx, a.cell, "junction"), nodeAtCell(sim, w, idx, b.cell, "junction"), l.created, l.chain, cost, c.reason, c.score); if (sim.stage3) p.status = "concept"; techRoll(sim, p, tcN.hard, y, `${a.name}〜${b.name}`);
     ev(sim, "project", `${sim.stage3 ? "新規構想" : "新規計画"}: ${a.name}〜${b.name}(${Math.round(es.reduce((s, x) => s + x.lengthKm, 0))}km)`, c.reason, { project: p.id }); return true;

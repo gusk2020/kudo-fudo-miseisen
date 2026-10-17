@@ -146,7 +146,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, y); }
   const an = yield* analyzeGen(sim, w); yield;
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
-  updatePopulation(sim, w, an, y); updateRegionShares(sim, w); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield;
+  updatePopulation(sim, w, an, y); updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield;
   yield* evaluateEdgesGen(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
@@ -238,12 +238,22 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     }
   }
 }
-export function updateRegionShares(sim: SimState, w: World) {
+/** Stage 9: a share of the road purse follows NEED -- the people of a region weighted by how poorly they are reached (access below the national median) -- rather than wealth (地方交付・格差是正). */
+export const NEED_SHARE = 0.15;
+/** Stage 9: how far below the national median each city's access is (0 = at or above it, 1 = no access). Read by the budget split and the planners. */
+export function accessDeficit(w: World, an: Pick<Analysis, "acc">): Float64Array {
+  const xs = [...an.acc].sort((a, b) => a - b), med = xs[Math.floor(xs.length / 2)] || 1e-9, out = new Float64Array(w.cities.length);
+  for (let i = 0; i < out.length; i++) out[i] = Math.max(0, Math.min(1, (med - (an.acc[i] ?? 0)) / med)); return out;
+}
+export function updateRegionShares(sim: SimState, w: World, an?: Pick<Analysis, "acc">) {
   const econ: Record<string, number> = {}; let tot = 0;
   for (const c of w.cities) { const r = c.pref ?? "JP-13", bo = cityBoost(sim, w, c.id), v = sim.cities[c.id].pop * (1 + bo.commerce) * sim.cities[c.id].industry * (1 + bo.manufacturing); econ[r] = (econ[r] ?? 0) + v; tot += v; }
   for (const v of Object.values(sim.settlements)) { const r = w.prefOf(v.cell) ?? "JP-13", e = v.pop * 0.15; econ[r] = (econ[r] ?? 0) + e; tot += e; }
   const n = w.t.prefOrder.length, share: Record<string, number> = {};
-  for (const r of w.t.prefOrder) share[r] = EQUAL_SHARE / n + (1 - EQUAL_SHARE) * ((econ[r] ?? 0) / (tot || 1));
+  const need: Record<string, number> = {}; let needTot = 0;
+  if (an) { const d = accessDeficit(w, an); w.cities.forEach((c, i) => { const r = c.pref ?? "JP-13", v = sim.cities[c.id].pop * d[i]; need[r] = (need[r] ?? 0) + v; needTot += v; }); }
+  const ns = needTot > 0 ? NEED_SHARE : 0;
+  for (const r of w.t.prefOrder) share[r] = EQUAL_SHARE / n + (1 - EQUAL_SHARE - ns) * ((econ[r] ?? 0) / (tot || 1)) + ns * ((need[r] ?? 0) / (needTot || 1));
   sim.regionShare = share;
 }
 function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {

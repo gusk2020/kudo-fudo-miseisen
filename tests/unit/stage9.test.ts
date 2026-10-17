@@ -7,13 +7,9 @@ import { createSim } from "../../src/sim/engine";
 import { checkIntegrity } from "../../src/sim/network";
 import { buildWorld, type World } from "../../src/sim/world";
 import { loadDem } from "./helpers";
+import { city, line, viaShikoku } from "./simhelp";
 
 const worldOf = (mut: (s: ReturnType<typeof defaultState>) => void = () => {}) => { const s = defaultState(); s.islands = true; mut(s); const t = generateTerrain(s, loadDem()); return { w: buildWorld(t, s.seed), hash: t.hash, s }; };
-export const line = (pts: Vec[], step = 4): Vec[] => { const out: Vec[] = [pts[0]]; for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step)); for (let s = 1; s <= n; s++) out.push([a[0] + ((b[0] - a[0]) * s) / n, a[1] + ((b[1] - a[1]) * s) / n]); } return out; };
-export const city = (w: World, n: string) => w.cities.find((c) => c.name === n)!;
-/** Tokyo -> Osaka, but the player goes down through Shikoku (Takamatsu, Matsuyama) and comes back up through Hiroshima. */
-export const viaShikoku = (w: World): Vec[] => line([homeCity(w)!.pos, city(w, "名古屋市").pos, city(w, "大阪市").pos, city(w, "徳島市").pos, city(w, "高松市").pos, city(w, "松山市").pos, city(w, "広島市").pos, city(w, "岡山市").pos, subCity(w, "JP-27")!.pos]);
-
 describe("Stage 9: 国道1号 keeps the land masses the player drew", () => {
   const base = worldOf();
   it("a line drawn through Shikoku goes through Shikoku (two crossings, Shikoku cities on the road), and is laid that way", () => {

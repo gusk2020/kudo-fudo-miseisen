@@ -1,3 +1,5 @@
+import { realToWorld } from "../../src/core/body";
+import { lonLatToReal } from "../../src/core/data";
 import { axisFrame } from "../../src/core/constraints";
 import { defaultState } from "../../src/core/state";
 import { suggestRidge } from "../../src/core/suggest";
@@ -50,3 +52,25 @@ export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 
   }
   return { sim, w };
 }
+/** Stage 9: the real Japan with hand-drawn ranges (lon/lat points along each ridge line), for the mountain-barrier tests. */
+const ridgeCache: Record<string, { w: World; hash: string }> = {};
+export function ridgeWorld(ridges: { ne?: [number, number][]; sw?: [number, number][] }, islands = true) {
+  const key = JSON.stringify(ridges) + islands; if (ridgeCache[key]) return ridgeCache[key];
+  const s = defaultState(); if (islands) s.islands = true;
+  const to = ([lon, lat]: [number, number]): Vec => realToWorld("honshu", s.bodies.honshu, lonLatToReal(lon, lat));
+  s.ridges = { ne: ridges.ne ? ridges.ne.map(to) : null, sw: ridges.sw ? ridges.sw.map(to) : null };
+  const t = generateTerrain(s, loadDem()); return (ridgeCache[key] = { w: buildWorld(t, s.seed), hash: t.hash });
+}
+export function stage3SimOn(base: { w: World; hash: string }, firstEra = 0, seed = 7) {
+  const { w, hash } = base, sim = createSim(w, "m", hash, seed, { stage3: true, firstEra, techK: 2, subCapital: "JP-27" });
+  const line = (a: Vec, b: Vec, n = 20): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
+  const home = homeCity(w, sim.capital)!, dest = subCity(w, sim.subCapital)!, p = previewNational(w, line(home.pos, dest.pos), sim.capital, sim.subCapital);
+  if (!performNational(sim, w, p)) throw new Error("national ceremony failed: " + p.reasons.join());
+  return { sim, w };
+}
+
+export const line = (pts: Vec[], step = 4): Vec[] => { const out: Vec[] = [pts[0]]; for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step)); for (let s = 1; s <= n; s++) out.push([a[0] + ((b[0] - a[0]) * s) / n, a[1] + ((b[1] - a[1]) * s) / n]); } return out; };
+export const city = (w: World, n: string) => w.cities.find((c) => c.name === n)!;
+/** Tokyo -> Osaka, but the player goes down through Shikoku (Takamatsu, Matsuyama) and comes back up through Hiroshima. */
+export const viaShikoku = (w: World): Vec[] => line([homeCity(w)!.pos, city(w, "名古屋市").pos, city(w, "大阪市").pos, city(w, "徳島市").pos, city(w, "高松市").pos, city(w, "松山市").pos, city(w, "広島市").pos, city(w, "岡山市").pos, subCity(w, "JP-27")!.pos]);
+
