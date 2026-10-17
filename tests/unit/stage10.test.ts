@@ -136,3 +136,16 @@ describe("Stage 10: the 1945 reconstruction policy", () => {
     expect(share(j)).toBeGreaterThan(share(p) * 1.1);
   });
 });
+
+describe("Stage 10: the Seto Inland Sea has more services", () => {
+  it("1950: ports on the inland sea are joined across it (more than one crossing per pair of shores), none drawn over land, none of them international, older games unchanged", async () => {
+    const { innerSeaPorts, isInnerSeaFerry } = await import("../../src/sim/ferry"), { landShare, seaPath } = await import("../../src/render/seaPath");
+    const x = stage3Sim("heisei", 7, false, 0, 2, true), w = x.w, inner = Object.values(x.sim.edges).filter(isInnerSeaFerry);
+    const names = innerSeaPorts(w).map((c) => c.name); for (const n of ["岡山市", "広島市", "高松市", "松山市", "徳島市", "神戸市", "大阪市", "大分市", "北九州市"]) expect(names, n).toContain(n);
+    for (const n of ["新潟市", "東京", "高知市", "福岡市", "奈良市", "京都市", "名古屋市"]) expect(names, n).not.toContain(n);
+    expect(inner.length).toBeGreaterThanOrEqual(5);
+    const shores = new Set(inner.map((e) => [w.lm[e.cells[0]], w.lm[e.cells[e.cells.length - 1]]].sort().join("-"))); expect(shores.size).toBeGreaterThanOrEqual(2);
+    for (const e of inner) { expect(w.lm[e.cells[0]]).not.toBe(w.lm[e.cells[e.cells.length - 1]]); const p = seaPath(w, e.cells[0], e.cells[e.cells.length - 1]); expect(landShare(w, p), e.facilityName).toBe(0); }
+    const legacy = createSim(w, "m", realWorld(true).hash, 7, { stage3: true, era: "heisei" }); expect(Object.values(legacy.edges).filter(isInnerSeaFerry).length).toBe(0);
+  });
+});

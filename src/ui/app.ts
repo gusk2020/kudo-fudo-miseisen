@@ -2,7 +2,7 @@ import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL, JAPAN, lonLatToReal } from "../core/data";
 import { FEATURE_LIMITS } from "../core/save";
-import { PREF_IDS, PREF_IDS_NS, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
+import { PREF_IDS, REGION_BLOCKS, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, getRaw, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
@@ -471,6 +471,8 @@ export class App {
     }
     this.building = 0;
     if (!(this.real ? performNational(sim, w, k as NatPreview) : performCeremony(sim, w, k, f!))) { this.toast("開通の儀を行えませんでした"); this.buildUI(); return; }
+    // Stage 10: route-number signs start OFF once the roads exist, unless the player has already chosen (a stored OFF in an older save is kept as it is)
+    if (!this.s.layersSet?.includes("signs") && this.s.layers.signs) this.store.set((s) => { s.layers.signs = false; });
     sim.speed = 1; this.sim = sim; this.saveLocked = false; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.saveCer(); this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
     this.persist(); this.toast("開通の儀を終えました。時間が動き始めます"); this.onChange();
   }
@@ -649,10 +651,10 @@ export class App {
     eraPicker(this, body, this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); this.buildSheet(); });
     const sel = (id: string, label: string, val: string, which: "capital" | "sub" | "palace") => {
       const s = h("select", { id, "aria-label": label, onchange: (e: Event) => { this.setSeat(which, (e.target as HTMLSelectElement).value); } }) as HTMLSelectElement;
-      for (const pid of PREF_IDS_NS) { const dis = (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital); s.append(h("option", { value: pid, ...(pid === val ? { selected: "" } : {}), ...(dis ? { disabled: "" } : {}) }, `${seatPrefName(pid)}(${w ? seatCity(w, pid)?.name ?? "" : ""})${dis ? " ※別の府県に" : ""}`)); }
+      for (const blk of REGION_BLOCKS) { const g = h("optgroup", { label: blk.name }); for (const pid of blk.prefs) { const dis = (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital); g.append(h("option", { value: pid, ...(pid === val ? { selected: "" } : {}), ...(dis ? { disabled: "" } : {}) }, `${seatPrefName(pid)}(${w ? seatCity(w, pid)?.name ?? "" : ""})${dis ? " ※別の府県に" : ""}`)); } s.append(g); }
       return h("label", { class: "seat" }, label, s);
     };
-    body.append(h("small", {}, "49府県から別々に選べます(北から南の順)。首都と副首都は別の府県。国道1号は首都から副首都へ引きます"),
+    body.append(h("small", {}, "49府県から別々に選べます(地方ごと、北から南の順)。首都と副首都は別の府県。国道1号は首都から副首都へ引きます"),
       h("div", { class: "grp", id: "seats" }, sel("seat-capital", "首都", st.capital, "capital"), sel("seat-sub", "副首都", st.sub, "sub"), sel("seat-palace", "皇居", st.palace, "palace")),
       h("div", { class: "grp" }, this.tbtn("皇居の位置を地図で選ぶ", this.tool === "palace", () => { this.setTool("palace"); if (this.tool === "palace") this.openSheet(null); }, "tool-palace"), h("button", { id: "palace-reset", type: "button", disabled: !this.s.palacePos, onclick: () => this.resetPalace() }, "県庁所在地に戻す")));
   }
@@ -708,7 +710,7 @@ export class App {
     if (this.sheet === "layers") {
       body.append(h("h3", {}, "表示レイヤー"));
       const wrap = h("div", { class: "row" });
-      for (const k of this.s.step === 6 ? [...LAYER_KEYS, ...ROAD_LAYER_KEYS] : LAYER_KEYS) wrap.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-" + k, checked: this.s.layers[k], onchange: (e: Event) => { const v = (e.target as HTMLInputElement).checked; this.store.set((s) => { s.layers[k] = v; }); } }), LAYER_LABELS[k]));
+      for (const k of this.s.step === 6 ? [...LAYER_KEYS, ...ROAD_LAYER_KEYS] : LAYER_KEYS) wrap.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-" + k, checked: this.s.layers[k], onchange: (e: Event) => { const v = (e.target as HTMLInputElement).checked; this.store.set((s) => { s.layers[k] = v; if (!s.layersSet?.includes(k)) s.layersSet = [...(s.layersSet ?? []), k]; }); } }), LAYER_LABELS[k]));
       body.append(wrap, h("small", {}, "河川・府県境・標高は「1E 地形生成」以降に表示されます。"));
       if (this.real) body.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-lite", checked: this.lite, onchange: (e: Event) => this.setLite((e.target as HTMLInputElement).checked) }), "軽量表示(動作が重いとき。点線を実線にし、ラベルと港・空港を減らす)"));
     } else if (this.sheet === "issues") {

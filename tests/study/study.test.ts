@@ -29,7 +29,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   "H-ridgeNE": { first: 0, policy: "auto", ridges: "ne" }, "H-ridgeSW": { first: 0, policy: "auto", ridges: "sw" }, "H-ridge2": { first: 0, policy: "auto", ridges: "both" }, "H-shikoku": { first: 0, policy: "auto", route: "shikoku" },
   // Stage 10: role swaps (A-C), the 1945 reconstruction policy (D, E: candidates 0 / 5 / 10 are all 均衡; 0 = 太平洋側・一極集中, 5 = 日本海側・一極集中, 10 = 太平洋側・地方分散)
   "T-base": { first: 0, policy: "auto" }, "T-capSAP": { first: 0, policy: "auto", capital: "HK-SAP", sub: "JP-27" }, "T-sub37": { first: 0, policy: "auto", sub: "JP-37" }, "T-sub17": { first: 0, policy: "auto", sub: "JP-17" },
-  "T-pal40": { first: 0, policy: "auto", palace: "JP-40" }, "T-japansea": { first: 5, policy: "auto" }, "T-disperse": { first: 10, policy: "auto" },
+  "T-pal40": { first: 0, policy: "auto", palace: "JP-40" }, "T-alps": { first: 0, policy: "auto", alps: "both" }, "T-alpsNE": { first: 0, policy: "auto", alps: "both", ridges: "ne" }, "T-ridgeNE": { first: 0, policy: "auto", ridges: "ne" }, "T-japansea": { first: 5, policy: "auto" }, "T-disperse": { first: 10, policy: "auto" },
   "S-later1": { first: 1, policy: "auto", later: "first" }, "R-later1": { first: 2, policy: "auto", later: "first" }, "H-seed2": { first: 0, policy: "auto", seed: 11 },
 };
 const STANCE_OF = ["heisei", "shubun", "shoka", "kuuro", "kairo"];
@@ -60,7 +60,7 @@ export function measure(sim: SimState, w: World) {
     reg[`${g}Dem`] = Math.round(inG.reduce((s, e) => s + (e.through + e.local + 0.4 * e.freight) * e.lengthKm, 0) / 1e3);
   }
   const nc = w.cities.length, ix = (n: string) => w.cities.findIndex((c) => c.name === n), tt = (a: string, b: string) => { const i = ix(a), j = ix(b); if (i < 0 || j < 0) return -1; const t = Math.min(an.T[i * nc + j], an.TT[i * nc + j] + 0.4); return isFinite(t) ? Math.round(t * 100) / 100 : -1; };
-  Object.assign(reg, { tTokyoOsaka: tt("東京", "大阪市"), tOsakaFukuoka: tt("大阪市", "福岡市"), tTokyoNagoya: tt("東京", "名古屋市"), tOkayamaHiroshima: tt("岡山市", "広島市"), tNiigataKanazawa: tt("新潟市", "金沢市"), tMatsueTottori: tt("松江市", "鳥取市"), tTakamatsuMatsuyama: tt("高松市", "松山市"), tKochiMatsuyama: tt("高知市", "松山市") });
+  Object.assign(reg, { tToyamaNagano: tt("富山市", "長野市"), tKofuNagoya: tt("甲府市", "名古屋市"), tToyamaNagoya: tt("富山市", "名古屋市"), tTokyoOsaka: tt("東京", "大阪市"), tOsakaFukuoka: tt("大阪市", "福岡市"), tTokyoNagoya: tt("東京", "名古屋市"), tOkayamaHiroshima: tt("岡山市", "広島市"), tNiigataKanazawa: tt("新潟市", "金沢市"), tMatsueTottori: tt("松江市", "鳥取市"), tTakamatsuMatsuyama: tt("高松市", "松山市"), tKochiMatsuyama: tt("高知市", "松山市") });
   // Stage 10: per prefecture (the ones the role and policy comparisons read), and the two coasts / the core around the seats
   const pf: Record<string, number> = {};
   for (const p of PREFS10) {
@@ -87,20 +87,20 @@ export function measure(sim: SimState, w: World) {
     budget: Math.round(sim.macro.budgetBu * 100) / 100, deficitLines: Object.values(sim.routes).filter((r) => r.history.some((h) => h.text === "赤字のため廃止")).length, railDensP10: q(0.1), maxGrowth: Math.round(Math.max(...w.cities.map((c) => sim.cities[c.id].pop / Math.max(1, c.pop0))) * 100) / 100, top1: Math.round(Math.max(...w.cities.map((c) => sim.cities[c.id].pop)) / Math.max(1, w.cities.reduce((s, c) => s + sim.cities[c.id].pop, 0)) * 1000) / 1000, railDensP25: q(0.25), railDensP50: q(0.5),
   };
 }
-export const PREFS10 = ["JP-13", "JP-14", "JP-11", "JP-12", "HK-SAP", "HK-HAK", "HK-NEM", "JP-02", "JP-27", "JP-28", "JP-26", "JP-37", "JP-36", "JP-38", "JP-17", "JP-40", "JP-15", "JP-23", "JP-34"];
+export const PREFS10 = ["JP-13", "JP-14", "JP-11", "JP-12", "HK-SAP", "HK-HAK", "HK-NEM", "JP-02", "JP-27", "JP-28", "JP-26", "JP-37", "JP-36", "JP-38", "JP-17", "JP-40", "JP-15", "JP-23", "JP-34", "JP-16", "JP-19", "JP-20", "JP-21"];
 export const RIDGE_NE: [number, number][] = [[138.35, 34.95], [138.4, 35.4], [138.5, 35.9], [138.6, 36.4]], RIDGE_SW: [number, number][] = [[133.75, 34.45], [133.65, 34.8], [133.55, 35.15], [133.45, 35.45]];
 /** Stage 9: corridors compared in the report (prefecture groups; used only to read the results, never by the model). */
 export const GROUPS: Record<string, string[]> = { belt: ["JP-11", "JP-12", "JP-13", "JP-14", "JP-22", "JP-23", "JP-24", "JP-25", "JP-26", "JP-27", "JP-28", "JP-29", "JP-30", "JP-33", "JP-34", "JP-35"], sea: ["JP-05", "JP-06", "JP-15", "JP-16", "JP-17", "JP-18", "JP-31", "JP-32"], shikoku: ["JP-36", "JP-37", "JP-38", "JP-39"] };
 export const groupOf = (pref: string | null | undefined) => Object.keys(GROUPS).find((g) => GROUPS[g].includes(pref ?? "")) ?? null;
 function start9(sc: Scenario) {
   const ridges = sc.ridges === "ne" ? { ne: RIDGE_NE } : sc.ridges === "sw" ? { sw: RIDGE_SW } : sc.ridges === "both" ? { ne: RIDGE_NE, sw: RIDGE_SW } : null;
-  const base = ridges ? ridgeWorld(ridges) : realWorld(true);
+  const base = ridges || sc.alps ? ridgeWorld(ridges ?? {}, true, sc.alps === "ne" ? { ne: true } : sc.alps === "sw" ? { sw: true } : sc.alps === "both" ? { ne: true, sw: true } : undefined) : realWorld(true);
   if (!sc.route) return stage3SimOn(base, sc.first, sc.seed ?? 7);
   const { w, hash } = base, sim = createSim(w, "m", hash, sc.seed ?? 7, { stage3: true, firstEra: sc.first, techK: 2, subCapital: "JP-27" }), p = previewNational(w, viaShikoku(w), sim.capital, sim.subCapital);
   if (!performNational(sim, w, p)) throw new Error("shikoku ceremony failed: " + p.reasons.join()); return { sim, w };
 }
 export function runScenario(name: string, sc: Scenario) {
-  const { sim, w } = sc.ridges || sc.route ? start9(sc) : stage3Sim("heisei", sc.seed ?? 7, true, sc.first, 2, sc.islands ?? true, sc.capital || sc.sub || sc.palace ? { capital: sc.capital, sub: sc.sub, palace: sc.palace } : undefined);
+  const { sim, w } = sc.ridges || sc.route || sc.alps ? start9(sc) : stage3Sim("heisei", sc.seed ?? 7, true, sc.first, 2, sc.islands ?? true, sc.capital || sc.sub || sc.palace ? { capital: sc.capital, sub: sc.sub, palace: sc.palace } : undefined);
   sim.policy!.mode = "priority";
   const stance = STANCE_OF[sc.first], status = new Map<string, string>(), est = new Map<string, string>(), dec: Record<string, number>[] = [], rows: ReturnType<typeof measure>[] = [];
   let cur: Record<string, number> = {}; const bump = (k: string, n = 1) => { cur[k] = (cur[k] ?? 0) + n; };

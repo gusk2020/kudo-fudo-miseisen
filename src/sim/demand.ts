@@ -26,7 +26,7 @@ const RAIL_SPEED: Record<Standard, number> = { rural: 38, standard: 75, highgrad
 const SURF: Record<Surface, number> = { unpaved: 0.6, gravel: 0.8, paved: 1 };
 /** Curve penalty on speed: a railway is hurt more by tight curves than a road is; only Stage 3 edges carry a curvature. */
 const curveFactor = (e: SimEdge, k: number) => 1 - Math.min(0.35, (e.curv ?? 0) * k);
-export const FERRY_SPEED = 28, FERRY_WAIT_H = 0.7;   // a ferry is slow and waits for its sailing (the same for cars and for the rail steamer)
+export const FERRY_SPEED = 28, FERRY_WAIT_H = 0.7, FERRY_PORT_PAX = 0.3;   // Stage 10: a ferry's vehicles count this much each toward its ports' traffic (beside its freight)   // a ferry is slow and waits for its sailing (the same for cars and for the rail steamer)
 export const MAGLEV_SPEED = 420;
 export const edgeSpeed = (e: SimEdge) => e.facility === "ferry" ? FERRY_SPEED : e.maglev && modeOf(e) === "rail" ? MAGLEV_SPEED * (0.7 + 0.3 * e.quality / 100) : modeOf(e) === "rail"
   ? RAIL_SPEED[e.standard] * (0.6 + 0.4 * e.quality / 100) * (1 - Math.min(0.3, e.maxGradePct / 40)) * curveFactor(e, 0.35)
@@ -162,6 +162,8 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
       hub.air.set(a.id, { intl: x, cargo: c, dom: 0 });
       for (let j = 0; j < nc; j++) if (a.feed[j] > 0) { const id = w.cities[j].id; domAir.set(id, (domAir.get(id) ?? 0) + a.feed[j]); }   // the connecting flight fills the home airport too
     }
+    // Stage 10: what a sea ferry carries (vehicles and their goods) is handled at the ports at its two ends, so a busy ferry grows its ports
+    if (sim.roles) for (const e of Object.values(sim.edges)) { if (e.facility !== "ferry" || e.state !== "open" || (e.facilityName ?? "").startsWith("ferry:【湖】")) continue; const v = e.freight + FERRY_PORT_PAX * e.through; if (v <= 0) continue; for (const k of [e.cells[0], e.cells[e.cells.length - 1]]) { const c = w.cityByCell.get(k); if (c && sim.hubs?.ports[c.id]) domSea.set(c.id, (domSea.get(c.id) ?? 0) + v); } }
     for (const [id, v] of domSea) { const t = hub.port.get(id) ?? { cargo: 0, pax: 0, dom: 0 }; t.dom = v; hub.port.set(id, t); }
     for (const [id, v] of domAir) { const t = hub.air.get(id) ?? { intl: 0, cargo: 0, dom: 0 }; t.dom = v; hub.air.set(id, t); }
     // the last leg, city to airport site, on the airport's own access road and railway

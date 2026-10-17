@@ -580,3 +580,39 @@ test("Stage 9 (実機指摘): 山脈は地形の再生成を待たずに続け�
   expect(await app(page, "a => { let n = 0; for (let k = 0; k < a.terrain.ridge.length; k++) if (a.terrain.ridge[k] > 0.5) n++; return n; }")).toBeGreaterThan(30);
   expect(errs).toEqual([]);
 });
+
+test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興方針、北/南で元のアルプスを除去(Undo/Redo・保存)、開通の儀のあと番号標識は初期OFFでユーザー設定は保持", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  // the seat pickers: nine blocks north to south, all 49, Niigata in 中部 (not mixed by latitude), Hokkaido's three
+  await openSetup(page);
+  const groups = await page.locator("#seat-capital optgroup").evaluateAll((gs) => gs.map((g) => ({ l: (g as HTMLOptGroupElement).label, ids: [...g.querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value) })));
+  expect(groups.map((g) => g.l)).toEqual(["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州", "沖縄"]);
+  expect(groups.flatMap((g) => g.ids)).toHaveLength(49); expect(groups[0].ids.sort()).toEqual(["HK-HAK", "HK-NEM", "HK-SAP"]); expect(groups[3].ids).toContain("JP-15"); expect(groups[5].ids).toContain("JP-31");
+  expect(await page.locator("#era-first option").first().textContent()).toMatch(/太平洋側重視・一極集中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
+  await page.selectOption("#seat-capital", "HK-NEM"); expect(await app(page, "a => a.s.capital")).toBe("HK-NEM"); await page.selectOption("#seat-capital", "JP-13");
+  await closeSheet(page);
+  // 北 removes the real Hida range, and only that; one Undo brings it back
+  await page.click("#terrain-edit-toggle"); await page.click("#edit-more");
+  const h0 = await app(page, "a => a.terrain.hash") as string;
+  await page.click("#tool-ridge-ne"); expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true}');
+  await page.waitForFunction((h) => { const a = (window as any).__kfm; return !!a.terrain && !a.generating && a.terrain.hash !== h; }, h0, { timeout: 60000 });
+  await page.click("#tool-ridge-ne"); await page.click("#tool-ridge-ne"); expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true}');   // choosing it again changes nothing
+  await page.click("#edit-undo"); expect(await app(page, "a => a.s.alpsRemoved?.ne")).toBeFalsy();
+  await page.click("#edit-redo"); expect(await app(page, "a => a.s.alpsRemoved?.ne")).toBe(true);
+  if (await app(page, "a => a.tool") !== "view") await page.click(`#tool-${await app(page, "a => a.tool")}`);
+  await page.click("#tool-ridge-sw"); expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true,"sw":true}');
+  await page.waitForFunction(() => { const a = (window as any).__kfm; return !!a.terrain && !a.generating; }, null, { timeout: 60000 });
+  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true,"sw":true}');
+  // the ceremony: signs start OFF; switched on by hand they stay on through a reload
+  expect(await app(page, "a => a.s.layers.signs")).toBe(true);
+  await page.click("#terrain-edit-toggle").catch(() => {}); if (await page.isVisible("#tool-ridge-sw")) await page.click("#terrain-edit-toggle");
+  const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市");
+  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, osaka); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.s.layers.signs")).toBe(false); expect(await app(page, "a => !!a.sim.roles && !!a.sim.kaigen.recon")).toBe(true);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.openSheet("layers"); }); await page.click("#layer-signs");
+  expect(await app(page, "a => a.s.layers.signs")).toBe(true); expect(await app(page, "a => a.s.layersSet")).toContain("signs");
+  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.s.layers.signs")).toBe(true);
+  expect(errs).toEqual([]);
+});

@@ -9,6 +9,7 @@
  */
 import { capitalPref } from "./roles";
 import { dist } from "../core/geom";
+import { realToLonLat } from "../core/data";
 import { pathfind } from "./world";
 import type { Vec } from "../core/types";
 import { capacityOf } from "./demand";
@@ -116,6 +117,41 @@ export function seedFerries(sim: SimState, w: World): number {
   }
   ev(sim, "seed", `1950年の航路: フェリー・連絡船${n}本(島や海を隔てた地域をまず船でつなぐ)`, "初期条件。橋やトンネルを1950年に強制せず、まず航路で結ぶ(合成。実在の航路表ではない)", {}); return n;
 }
+
+// ---------------------------------------------------------------- Stage 10: the Seto Inland Sea ----------
+/**
+ * The inland sea is busier than the open coast: besides the one crossing per pair of land masses above, every port on it is offered services to the ports on the
+ * other shores within INNER_MAX_KM (Honshu <-> Shikoku <-> Kyushu <-> Awaji), nearest first, at most INNER_DEGREE per port, and never a near-duplicate of a
+ * service already running (both ends within INNER_DUP_KM of an existing one). Which water is the inland sea is real geography (an outline in lon/lat); which
+ * ports exist is the cities on it. Each is an ordinary ferry: it carries the year's flows, feeds its ports, joins the roads at both ends, and the ordinary edge
+ * review idles and closes the ones nobody uses (demand, not a quota, decides how many survive). Drawn on the water like every ferry; never across land.
+ */
+export const INNER_MAX_KM = 330, INNER_DEGREE = 4, INNER_DUP_KM = 40, INNER_PORT_KM = 25;
+const INNER_SEA: [number, number][] = [[130.9, 33.95], [131.6, 34.1], [132.4, 34.3], [133.3, 34.55], [134.2, 34.8], [135.0, 34.8], [135.5, 34.75], [135.45, 34.25], [135.0, 33.95], [134.6, 33.95],
+  [134.0, 34.1], [133.5, 33.95], [133.0, 33.8], [132.7, 33.7], [132.4, 33.4], [132.0, 33.3], [131.6, 33.15], [131.5, 33.3], [131.05, 33.85]];
+const inPoly = (poly: [number, number][], x: number, y: number) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; };
+/** Port cities on the inland sea: a sea cell of the inland-sea outline within INNER_PORT_KM of the city. Real-map games (world = real frame). */
+export function innerSeaPorts(w: World): WCity[] {
+  const r = Math.ceil(INNER_PORT_KM / w.cell);
+  return w.cities.filter((c) => { const i0 = c.cell % w.nx, j0 = (c.cell / w.nx) | 0; for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const i = i0 + di, j = j0 + dj; if (i < 0 || j < 0 || i >= w.nx || j >= w.ny || di * di + dj * dj > r * r) continue; const k = j * w.nx + i; if (w.t.land[k] !== 0) continue; const [lon, lat] = realToLonLat(w.cellPos(k)); if (inPoly(INNER_SEA, lon, lat)) return true; } return false; });
+}
+export function seedInnerSeaFerries(sim: SimState, w: World): number {
+  const ports = innerSeaPorts(w), deg = new Map<string, number>(), pairs: [WCity, WCity, number][] = [];
+  for (let i = 0; i < ports.length; i++) for (let j = i + 1; j < ports.length; j++) { const a = ports[i], b = ports[j], km = dist(a.pos, b.pos); if (w.lm[a.cell] !== w.lm[b.cell] && km <= INNER_MAX_KM) pairs.push([a, b, km]); }
+  pairs.sort((p, q) => p[2] - q[2] || (p[0].id + p[1].id < q[0].id + q[1].id ? -1 : 1));
+  const ends = () => Object.values(sim.edges).filter((e) => e.facility === "ferry" && modeOf(e) === "road" && !isLakeFerry(e)).map((e) => [w.cellPos(e.cells[0]), w.cellPos(e.cells[e.cells.length - 1])] as const);
+  let n = 0;
+  for (const [a, b] of pairs) {
+    if ((deg.get(a.id) ?? 0) >= INNER_DEGREE || (deg.get(b.id) ?? 0) >= INNER_DEGREE || findFerry(sim, w, a, b)) continue;
+    if (ends().some(([p, q]) => (dist(p, a.pos) < INNER_DUP_KM && dist(q, b.pos) < INNER_DUP_KM) || (dist(q, a.pos) < INNER_DUP_KM && dist(p, b.pos) < INNER_DUP_KM))) continue;
+    makeFerryAt(sim, w, a, b, "road", "瀬戸内海の航路(1950年の既存の連絡。内海の港どうしを結ぶ旅客・貨物船)", `ferry:${a.name.replace(/市$/, "")}〜${b.name.replace(/市$/, "")}${INNER_TAG}`); n++;
+    deg.set(a.id, (deg.get(a.id) ?? 0) + 1); deg.set(b.id, (deg.get(b.id) ?? 0) + 1);
+  }
+  if (n) ev(sim, "seed", `1950年の瀬戸内海航路: ${n}本(内海の港どうしを結ぶ)`, "初期条件。内海の港どうしの近い順に、1港あたり最大4本(合成。実在の航路表ではない)。使われない航路は年次の審査で休止・廃止される", {});
+  return n;
+}
+export const INNER_TAG = "瀬戸内航路";
+export const isInnerSeaFerry = (e: SimEdge) => e.facility === "ferry" && (e.facilityName ?? "").endsWith(INNER_TAG);
 
 // ---------------------------------------------------------------- Issue #18: Lake Biwa ferries ----------
 /**

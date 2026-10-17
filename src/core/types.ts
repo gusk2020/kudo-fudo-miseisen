@@ -29,6 +29,8 @@ export interface ProjectState {
   ridgeExtra?: { sw: Vec[][]; ne: Vec[][] };
   /** Stage 10: the real Alps (北 = ne: 飛騨山脈, 南 = sw: 赤石山脈) levelled from the DEM, set the first time that range's tool is chosen. Absent on older saves. */
   alpsRemoved?: { ne?: true; sw?: true };
+  /** Stage 10: the layers the player has switched by hand (their choice is never overridden by a later default, e.g. signs OFF after the ceremony). */
+  layersSet?: string[];
   finalized: boolean;
   /** Stage 3: the real Japan (no deformation, no drawn ridges). Set only by realState(); the hand-edited map flow never sets it. */
   real?: boolean;
