@@ -5,7 +5,7 @@ import { ecoYear, ECO_PARTS, exposure, mainCause } from "../../src/sim/econ";
 import { advance, createSim } from "../../src/sim/engine";
 import { H_TUNNEL, hardnessAt, routeBurden, siteCapacity, siteQuality, tunnelLimitKm, upkeepMult } from "../../src/sim/land";
 import { modeOf } from "../../src/sim/types";
-import { KANTO_RIDGE } from "../study/issue30.test";
+import { KANTO_RIDGE } from "../study/kanto";
 import { city, realWorld, ridgeWorld, stage3Sim, stage3SimOn } from "./simhelp";
 
 const kanto = () => ridgeWorld({ ne: KANTO_RIDGE }, true, undefined, { lonLat: [139.0, 35.55], scale: 1.6 });

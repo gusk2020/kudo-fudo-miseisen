@@ -37,7 +37,7 @@ export interface City12 { p: number[]; h: number[]; adv: number }
 export const MIG = 0.012, W_IND = 0.6, W_LOG = 0.6, W_TOUR = 0.6, W_CMT = 1.0, W_AGG = 0.12, W_RENT = 1.3;
 /** The people a city's land holds comfortably, as a multiple of its 1950 size (more on a plain). A city above it pays dear rent, one far below it is cheap -- which is what stops a decline. */
 export const ROOM_BASE = 2.4, ROOM_PLAIN = 1.2;
-export const ADV_MIN = -0.8, ADV_MAX = 1.2;
+export const ADV_MIN = -0.55, ADV_MAX = 1.2;
 export const COMMUTE_H = 0.9, CORE_PRESSURE_FROM = 0.9;
 export const TOUR_TAU_H = 2.5, TOUR_TRANSIT_DETOUR = 1.15, TOUR_TRANSIT_W = 0.5;
 /** Daily-commute limits for the lanes that need no land: door-to-door hours, the weather reliability, the daily volume that counts as frequent. */

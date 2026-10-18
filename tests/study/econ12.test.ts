@@ -4,7 +4,7 @@ import { describe, it } from "vitest";
 import { settleKaigen, stepMonth, yearOf } from "../../src/sim/engine";
 import { autoResolve } from "../../src/sim/policy";
 import { realWorld, ridgeWorld, stage3Sim, stage3SimOn } from "../unit/simhelp";
-import { KANTO_RIDGE } from "./issue30.test";
+import { KANTO_RIDGE } from "./kanto";
 import { modeOf } from "../../src/sim/types";
 
 export interface Sc { ridge?: boolean; fuji?: [number, number]; capital?: string; sub?: string; palace?: string; first?: number; dials?: Record<string, number> }

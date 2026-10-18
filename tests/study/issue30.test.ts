@@ -12,9 +12,8 @@ import { modeOf } from "../../src/sim/types";
 import { MTN_RIDGE_MIN, mountainBarrier } from "../../src/sim/world";
 import { realWorld, ridgeWorld, stage3SimOn } from "../unit/simhelp";
 
-export const KANTO_RIDGE: [number, number][] = [[139.15, 35.55], [139.4, 35.85], [139.55, 36.15]];
-export const KANTO_ALPS_SW: [number, number][] = [[138.6, 35.2], [138.8, 35.5], [138.9, 35.9]];
-const worldOf = (name: string) => name === "none" ? ridgeWorld({}, true) : name === "kanto" ? ridgeWorld({ ne: KANTO_RIDGE }, true, undefined, { lonLat: [139.0, 35.55], scale: 1.6 }) : name === "ridge" ? ridgeWorld({ ne: KANTO_RIDGE }, true) : name === "two" ? ridgeWorld({ ne: KANTO_RIDGE, sw: KANTO_ALPS_SW }, true, undefined, { lonLat: [139.0, 35.55], scale: 1.6 }) : realWorld(true);
+import { KANTO_ALPS_SW, KANTO_RIDGE } from "./kanto";
+const worldOf = (name: string) => name === "fuji" ? ridgeWorld({}, true, undefined, { lonLat: [139.0, 35.55], scale: 1.6 }) : name === "none" ? ridgeWorld({}, true) : name === "kanto" ? ridgeWorld({ ne: KANTO_RIDGE }, true, undefined, { lonLat: [139.0, 35.55], scale: 1.6 }) : name === "ridge" ? ridgeWorld({ ne: KANTO_RIDGE }, true) : name === "two" ? ridgeWorld({ ne: KANTO_RIDGE, sw: KANTO_ALPS_SW }, true, undefined, { lonLat: [139.0, 35.55], scale: 1.6 }) : realWorld(true);
 export function run(name: string, seed: number, until: number, first = 0) {
   const base = worldOf(name), { sim, w } = stage3SimOn(base, first, seed); sim.policy!.mode = "priority";
   const seen = new Set<string>(), rows: any[] = [], t = w.t;
