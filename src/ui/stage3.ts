@@ -7,6 +7,7 @@ import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
 import { CAND_1945, STANCE_LABEL } from "../sim/kaigen";
 import { reconText } from "../sim/recon";
+import { ECO_LABEL, ECO_PARTS, mainCause } from "../sim/econ";
 import { displayName } from "../sim/straits";
 import { AIR_KIND_LABEL, PORT_CAP, PORT_TIER_LABEL, airName, foreignName, hubsAt, portName } from "../sim/hubs";
 import { DOMAIN_LABEL, POLICIES, skipWindow, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
@@ -113,7 +114,7 @@ export function buildAtlas(app: App, body: HTMLElement) {
     for (const e of Object.values(sim.edges)) { const c = codes[e.id]; if (c === undefined) continue; const st = c >> 4, rail = modeOf(e) === "rail"; if (st === 0) rail ? (rl += e.lengthKm) : (rk += e.lengthKm); else if (st === 4) plan++; else if (st === 3) lost++; else sk += rail ? 0 : 0; void sl; }
     body.append(h("div", { class: "issue", id: "atlas-summary" }, `${cur ?? "現在"}年: 道路${Math.round(rk).toLocaleString()}km・鉄道${Math.round(rl).toLocaleString()}km(供用中) ／ 計画・工事中${plan}区間 ／ 廃道・廃線跡${lost}区間`));
   }
-  buildTrends(sim, body); buildHubAtlas(app, sim, body, cur);
+  buildTrends(sim, body); buildHubAtlas(app, sim, body, cur); buildCityEconomy(app, sim, body, cur);
   if (cur !== null) body.append(h("div", { class: "issue warn", id: "atlas-readonly" }, `${cur}年を閲覧中(読み取り専用・時間は停止)。操作したい場合は「現在に戻る」を押してください。`));
 }
 
@@ -178,6 +179,32 @@ export function buildPolicy(app: App, body: HTMLElement) {
  * Stage 8: 港湾・空港 -- the facilities as they stood in the year being viewed (or now): each port's tier and handling, each airport's kind, runway and
  * travellers, their routes, and their own history (opening, expansions, cut-backs, closure). A chart of the sea and the air from sim.stats.
  */
+/**
+ * Stage 12: 都市の栄枯盛衰 -- who gained and who lost on the nation over the last twenty years, and why. One compact block: two short lists (the five that gained most
+ * and the five that lost most, with the cause that moved them most), and a city picker that opens that city's size over time and the parts of its yearly advantage.
+ */
+export function buildCityEconomy(app: App, sim: SimState, body: HTMLElement, year: number | null) {
+  body.append(h("h3", { id: "city-eco" }, "都市の栄枯盛衰"));
+  const w = app.ensureWorld(), c12 = sim.city12; if (!w || !c12) { body.append(h("small", {}, "このデータには都市経済のしくみがありません(旧形式のセーブ)")); return; }
+  const rows: { id: string; name: string; p1: number; p0: number; rel: number }[] = []; let s0 = 0, s1 = 0;
+  for (const c of w.cities) { const hh = c12[c.id]?.h; if (!hh || hh.length < 2) continue; const k = year === null ? hh.length - 1 : Math.max(1, Math.min(hh.length - 1, Math.floor((year - sim.startYear) / 5))), p1 = hh[k], p0 = hh[Math.max(0, k - 4)]; rows.push({ id: c.id, name: c.name, p1, p0, rel: 1 }); s0 += p0; s1 += p1; }
+  if (rows.length < 5) { body.append(h("small", {}, "5年ごとに記録されます。しばらく進めてから開いてください。")); return; }
+  const nat = s0 > 0 ? s1 / s0 : 1; for (const r of rows) r.rel = r.p0 > 0 ? r.p1 / r.p0 / nat : 1;
+  const big = rows.filter((r) => r.p0 >= 100000), why = (id: string) => { const m = mainCause(c12[id]); return m ? `${ECO_LABEL[m.part]}${m.v > 0 ? "が追い風" : "が逆風"}` : "全国並み"; };
+  const line = (r: (typeof rows)[0]) => h("div", { class: "issue" }, `${r.name} ${r.rel >= 1 ? "▲" : "▼"}${Math.round(Math.abs(r.rel - 1) * 100)}% (${Math.round(r.p0 / 1000).toLocaleString()}千→${Math.round(r.p1 / 1000).toLocaleString()}千人) ${why(r.id)}`);
+  body.append(h("small", {}, `${year ?? "現在"}年までの約20年で、全国の増減(${nat >= 1 ? "+" : ""}${Math.round((nat - 1) * 100)}%)を上回った・下回った都市(人口10万以上)`));
+  body.append(h("div", { id: "eco-up" }, h("b", {}, "伸びた"), ...[...big].sort((p, q) => q.rel - p.rel).slice(0, 5).map(line)));
+  body.append(h("div", { id: "eco-down" }, h("b", {}, "縮んだ"), ...[...big].sort((p, q) => p.rel - q.rel).slice(0, 5).map(line)));
+  const det = h("details", { id: "eco-detail" }, h("summary", {}, "都市を選んで推移と原因を見る")) as HTMLDetailsElement, sel = h("select", { id: "eco-city", "aria-label": "都市" }) as HTMLSelectElement;
+  for (const r of [...rows].sort((p, q) => q.p1 - p.p1).slice(0, 40)) sel.append(h("option", { value: r.id }, `${r.name} ${Math.round(r.p1 / 1000).toLocaleString()}千人`));
+  const out = h("div", { id: "eco-out" }); const show = () => {
+    out.replaceChildren(); const id = sel.value, d = c12[id]; if (!d) return;
+    out.append(lineChart("eco-chart", "人口(千人)", [{ label: w.cityById.get(id)?.name ?? "", color: "#4ea1ff", pts: d.h.map((v, i) => [sim.startYear + 5 * i, v / 1000] as [number, number]) }], Math.max(...d.h) / 1000 * 1.1, (v) => `${Math.round(v).toLocaleString()}`));
+    out.append(h("small", {}, "今年の追い風(+)・逆風(−)の内訳(年あたりの移動の勢い。国の動きは除く)"));
+    ECO_PARTS.forEach((p, i) => { const v = d.p[i] ?? 0; out.append(h("div", { class: "row" }, h("small", {}, `${ECO_LABEL[p]} ${v >= 0 ? "+" : ""}${v.toFixed(2)}`), h("small", {}, bar(Math.min(1, Math.abs(v) / 0.6)) + (v < 0 ? " ▼" : v > 0 ? " ▲" : "")))); });
+  };
+  sel.addEventListener("change", show); det.append(sel, out); det.addEventListener("toggle", () => { if (det.open) show(); }); body.append(det);
+}
 export function buildHubAtlas(app: App, sim: SimState, body: HTMLElement, year: number | null) {
   const w = app.world; if (!sim.hubs || !w) return;
   const y = year ?? sim.startYear + Math.floor(sim.month / 12), at = hubsAt(sim, year ?? Number.POSITIVE_INFINITY), now = year === null;

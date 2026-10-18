@@ -14,7 +14,7 @@ export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pt
 export interface PastView { year: number; codes: Record<string, number> }
 export interface RoadArgs {
   sim: SimState | null; w: World | null;
-  layers: { roads: boolean; rail?: boolean; plans: boolean; signs: boolean; abandoned?: boolean; ports?: boolean; airports?: boolean; lanes?: boolean };
+  layers: { roads: boolean; rail?: boolean; plans: boolean; signs: boolean; abandoned?: boolean; ports?: boolean; airports?: boolean; lanes?: boolean; econ?: boolean };
   cer: CerOverlay[]; pin: Vec | null;
   compare?: Record<string, number> | null; compareYear?: number | null;   // absolute edge codes of the chosen base year
   past?: PastView | null;                                                // looking at the past: draw that year, read-only
@@ -49,7 +49,7 @@ function pattern(g: Graphics, pts: Vec[], dash: number[]) {
     while (seg > 1e-6) { const step = Math.min(left, seg); if (draw) { g.moveTo(x, -y); g.lineTo(x + ux * step, -(y + uy * step)); } x += ux * step; y += uy * step; seg -= step; left -= step; if (left <= 1e-9) { i = (i + 1) % dash.length; draw = i % 2 === 0; left = dash[i]; } }
   }
 }
-const KEYS = ["halo", "facb", "ghost", "lanes", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "sel", "ov"];
+const KEYS = ["city12", "halo", "facb", "ghost", "lanes", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "sel", "ov"];
 const line = (g: Graphics, pts: Vec[]) => { g.moveTo(pts[0][0], -pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], -pts[i][1]); };
 const opColour = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return [0x7a1f3d, 0x1f5f7a, 0x6b4a14, 0x3b6b1f, 0x5a2a8a, 0x8a3a1a, 0x1f3f8a][h % 7]; };
 
@@ -76,10 +76,34 @@ export class RoadLayer {
       for (const r of Object.values(s.routes)) h = (h * 31 + r.number + (r.active ? 1 : 0) + r.edges.length * 7 + r.oldEdges.length * 3 + (r.grade === "national" ? 3 : r.grade === "fu" ? 5 : r.grade === "jnr" ? 13 : r.grade === "priv" ? 17 : 11) + (r.nick ? 19 : 0)) >>> 0;
       for (const p of Object.values(s.projects)) h = (h * 31 + p.status.length + p.edgeIds.length) >>> 0;
       for (const c of Object.values(s.cities)) if (c.airport !== undefined) h = (h * 31 + 7) >>> 0;
+      if (s.city12) { for (const c of Object.values(s.city12)) h = (h * 31 + c.h.length * 7 + (c.h[c.h.length - 1] ?? 0) % 997) >>> 0; }
       if (s.hubs) { for (const p of Object.values(s.hubs.ports)) h = (h * 31 + p.tier + (p.until ? 5 : 0)) >>> 0; for (const x of Object.values(s.hubs.airports)) h = (h * 31 + x.runwayM + (x.kind === "hub" ? 3 : 0) + (x.until ? 5 : 0)) >>> 0; for (const r of s.hubs.routes) h = (h * 31 + r.state.length + r.since) >>> 0; }
     }
     const L = a.layers;
-    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => (c.strokes ? c.strokes.map((st) => st.map((q) => q[0].toFixed(1) + q[1].toFixed(1)).join()).join("/") + (c.sel ?? "") + (c.handles ? "h" : "") : "") + c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
+    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${L.econ ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => (c.strokes ? c.strokes.map((st) => st.map((q) => q[0].toFixed(1) + q[1].toFixed(1)).join()).join("/") + (c.sel ?? "") + (c.handles ? "h" : "") : "") + c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
+  }
+  /**
+   * Stage 12: how big each city is, and whether it is rising or falling -- a disc scaled by sqrt(population), green when it has gained on the nation over the last
+   * twenty years, red when it has lost, grey in between, and a small triangle for the clear movers. Only the largest cities and the biggest movers are drawn, so the
+   * map stays readable: the full list is in the atlas.
+   */
+  private drawCityEcon(sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
+    const g = this.g.city12, c12 = sim.city12!, rows: { x: number; y: number; p: number; rel: number }[] = [];
+    let s0 = 0, s1 = 0; const raw: { c: (typeof w.cities)[0]; p1: number; p0: number }[] = [];
+    for (const c of w.cities) {
+      const h = c12[c.id]?.h; if (!h || h.length < 2) continue; let k = h.length - 1; if (year !== null) k = Math.max(1, Math.min(h.length - 1, Math.floor((year - sim.startYear) / 5)));
+      const p1 = h[k], p0 = h[Math.max(0, k - 4)]; raw.push({ c, p1, p0 }); s0 += p0; s1 += p1;
+    }
+    const nat = s0 > 0 ? s1 / s0 : 1;
+    for (const r of raw) rows.push({ x: r.c.pos[0], y: r.c.pos[1], p: r.p1, rel: r.p0 > 0 ? r.p1 / r.p0 / nat : 1 });
+    const bySize = [...rows].sort((p, q) => q.p - p.p), keep = new Set(bySize.slice(0, lite ? 8 : zoom < 0.5 ? 12 : 24));
+    for (const r of [...rows].sort((p, q) => q.rel - p.rel).slice(0, 4)) if (r.rel > 1.1 && r.p > 5e4) keep.add(r);
+    for (const r of [...rows].sort((p, q) => p.rel - q.rel).slice(0, 4)) if (r.rel < 0.9 && r.p > 5e4) keep.add(r);
+    for (const r of keep) {
+      const rad = px(3 + 3.2 * Math.sqrt(r.p / 1e5)), col = r.rel > 1.08 ? 0x2fbf5f : r.rel < 0.93 ? 0xe0463c : 0x9aa4ad;
+      g.circle(r.x, -r.y, Math.min(rad, px(26))).fill({ color: col, alpha: 0.38 }).stroke({ width: px(1.4), color: col, alpha: 0.95 });
+      if (r.rel > 1.12 || r.rel < 0.88) { const u = px(1), dir = r.rel > 1 ? -1 : 1, yy = -r.y + dir * (Math.min(rad, px(26)) + 5 * u); g.poly([r.x, yy - dir * 4 * u, r.x - 4 * u, yy + dir * 3 * u, r.x + 4 * u, yy + dir * 3 * u]).fill({ color: col }).stroke({ width: px(0.8), color: 0xffffff }); }
+    }
   }
   /** Stage 8/9: ports and airports, each in two sizes only (large: 国際拠点港湾以上 / 国際ハブ空港; small: the rest), and the busiest domestic flights.
    *  International routes are kept in the simulation but not drawn. In the past view, those of that year. */
@@ -170,6 +194,7 @@ export class RoadLayer {
         if (n.kind === "pass" && showRoads && zoom >= 0.35) nodes.poly([n.pos[0], -n.pos[1] - px(6), n.pos[0] - px(5), -n.pos[1] + px(3), n.pos[0] + px(5), -n.pos[1] + px(3)]).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x222222 });
         else if (n.kind === "village" && zoom >= 0.5 && showRoads) nodes.circle(n.pos[0], -n.pos[1], px(2)).fill({ color: 0xf2e6c8 }).stroke({ width: px(0.8), color: 0x333333 });
       }
+      if (sim.city12 && (a.layers.econ ?? true)) this.drawCityEcon(sim, w, zoom, past ? year : null, px, lite);
       if (sim.stage3 && sim.hubs) this.drawHubs(a, sim, w, zoom, past ? year : null, px, lite);
       else if ((a.layers.ports ?? true) && !lite && sim.stage3 && zoom >= 0.5) {
         // supporting modes (games from before Stage 8): a port (blue square) at coastal cities, an airport (white cross) once it has opened

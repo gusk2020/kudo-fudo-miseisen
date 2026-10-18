@@ -223,7 +223,7 @@ export function performNational(sim: SimState, w: World, prev: NatPreview): bool
       const ca = w.cityByCell.get(s.cells[0]), cb = w.cityByCell.get(s.cells[1]); if (!ca || !cb) { delete sim.routes[TMP]; return false; }
       const e = findFerry(sim, w, ca, cb, "road") ?? makeFerry(sim, w, ca, cb, "road", "国道1号を結ぶため、開通の儀で航路を設けた");
       const na = Object.values(sim.nodes).find((n) => n.cell === ca.cell)?.id; chain.push({ edgeId: e.id, dir: e.a === na ? 1 : -1 });
-    } else { const l = layPath(sim, w, s.cells, { open: true, surface: "gravel", quality: 55, built: 1, month: 0 }); chain.push(...l.chain); }
+    } else { const l = layPath(sim, w, s.cells, { facilities: w.land12, open: true, surface: "gravel", quality: 55, built: 1, month: 0 }); chain.push(...l.chain); }
   }
   delete sim.routes[TMP];
   const r = designate(sim, chain, "national", "JP", `${prev.from.replace(/市$/, "")}〜${prev.to.replace(/市$/, "")}`, "開通の儀", false, 1); if (!r) return false;

@@ -1,5 +1,6 @@
 /** Road graph operations: nodes, edges, splitting, and laying a grid path onto the network. */
 import { dist } from "../core/geom";
+import { H_TUNNEL, hardnessAt } from "./land";
 import type { Vec } from "../core/types";
 import { modeOf, type EdgeState, type Mode, type RouteEdgeRef, type SimEdge, type SimNode, type SimState, type Standard, type Surface } from "./types";
 import { cellDistKm, type World } from "./world";
@@ -106,9 +107,28 @@ export function splitEdge(sim: SimState, w: World, edgeId: string, at: number, n
   return id2;
 }
 /** Splits a stretch into [before, tunnel|bridge, after]: a tunnel where the line runs far above its own ends, a bridge across a wide river floodplain. */
+/**
+ * Stage 12: every stretch too hard for open ground (land.ts H_TUNNEL) -- and every long high stretch -- becomes a tunnel of its own, however many a path has and
+ * however long (the planner already refused what this year's technology cannot dig). null = nothing to tunnel, the old rules (bridges) apply.
+ */
+function hardSplit(w: World, part: number[], thr: number, minLen: number): { cells: number[]; fac?: "tunnel" | "bridge" }[] | null {
+  const last = part.length - 1, hard = (k: number) => hardnessAt(w, part[k]) >= H_TUNNEL, high = (k: number) => w.elevM(part[k]) >= thr || hard(k);
+  const runs: [number, number][] = []; let s = -1, anyHard = false;
+  for (let k = 1; k <= last; k++) {
+    if (k < last && high(k)) { if (s < 0) { s = k; anyHard = false; } if (hard(k)) anyHard = true; }
+    else if (s >= 0) { if (k - s >= (anyHard ? 1 : minLen)) runs.push([s, k]); s = -1; }
+  }
+  if (!runs.length) return null;
+  const out: { cells: number[]; fac?: "tunnel" | "bridge" }[] = []; let from = 0;
+  for (const [a, b] of runs) { if (a - 1 > from) out.push({ cells: part.slice(from, a) }); out.push({ cells: part.slice(a - 1, b + 1), fac: "tunnel" }); from = b; }
+  if (last - from >= 1) out.push({ cells: part.slice(from) });
+  return out.filter((o) => o.cells.length >= 2);
+}
 export function facilitySplit(w: World, mode: Mode, part: number[], fine = false): { cells: number[]; fac?: "tunnel" | "bridge" }[] {
-  if (part.length < 5) return [{ cells: part }];
+  if (part.length < 3) return [{ cells: part }];
   const last = part.length - 1, ends = Math.max(w.elevM(part[0]), w.elevM(part[last])), thr = ends + (fine ? (mode === "rail" ? 400 : 600) : (mode === "rail" ? 500 : 800)), minLen = fine ? 2 : mode === "rail" ? 2 : 3;
+  if (w.land12) { const hs = hardSplit(w, part, thr, minLen); if (hs) return hs; }
+  if (part.length < 5) return [{ cells: part }];
   const longest = (pred: (k: number) => boolean, min: number): [number, number] | null => {
     let best: [number, number] | null = null, s = -1;
     for (let k = 1; k < last; k++) { if (pred(k)) { if (s < 0) s = k; } else if (s >= 0) { if (k - s >= min && (!best || k - s > best[1] - best[0])) best = [s, k]; s = -1; } }

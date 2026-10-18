@@ -9,6 +9,7 @@ import { airportMap, hubDemand, JET_YEAR, type HubTotals } from "./hubs";
 import { MinHeap } from "../core/heap";
 import { modeOf, type Mode, type Standard, type Surface, type SimEdge, type SimState } from "./types";
 import type { World } from "./world";
+import { realToLonLat } from "../core/data";
 
 export const KFLOW = 1.5e-3, KVIL = 0.04, KLOC = 0.02;
 /** Rail units are passengers/day; road units are vehicles/day. One flow unit of trip demand is a vehicle on a road or RAIL_PAX passengers on a train. */
@@ -69,6 +70,17 @@ export function railShare(tRoad: number, tRail: number, carBias: number, railBia
   const x = Math.log(((tRail + RAIL_ACCESS_H) * Math.exp(-BIAS_K * railBias)) / (tRoad * Math.exp(-BIAS_K * carBias)));   // >0: rail is the slower choice
   return 1 / (1 + Math.exp(LOGIT_S * x));
 }
+/**
+ * Stage 12: weather and the running of a service. A lane that needs no land structure still has to be flown or sailed, and weather decides how often it is:
+ * the expected share of its trips that arrive on time. It is a simple model, not a forecast -- the northern and exposed coasts lose more days to snow and rough
+ * sea, the sea more than the air, and forecasting and bigger ships claw some of it back over the decades. Games from Stage 12 on only (1 elsewhere).
+ */
+export const AIR_ONTIME = 0.93, SEA_ONTIME = 0.85;
+const exposureLat = (w: World, i: number) => Math.max(0, Math.min(1, (realToLonLat(w.cities[i].pos as [number, number])[1] - 34) / 8));
+export function weatherFactor(sim: SimState, w: World, mode: "air" | "sea", i: number, j: number): number {
+  if (!sim.econ) return 1; const y = sim.startYear + Math.floor(sim.month / 12), base = mode === "air" ? AIR_ONTIME : SEA_ONTIME, gain = 1 - 0.3 * Math.max(0, Math.min(1, (y - 1950) / 100));
+  return Math.max(0.5, 1 - (1 - base) * (1 + 0.6 * (exposureLat(w, i) + exposureLat(w, j))) * gain);
+}
 /** Share of a long trip taken by air: both ends need an airport, it grows with distance, and a good railway takes some of it back. */
 export function airShare(sim: SimState, w: World, i: number, j: number, railS: number, ap: (string | null)[] | null = null): number {
   const h = sim.hubs, m = h ? ap ?? airportMap(sim, w) : null, ai = m ? m[i] : null, aj = m ? m[j] : null;
@@ -79,7 +91,7 @@ export function airShare(sim: SimState, w: World, i: number, j: number, railS: n
   // Stage 8: the plane competes on time and price as well as distance -- slow propeller years, cheaper fares later -- a full airport turns trips away,
   // and a city without its own airport flies from its neighbour's (a longer trip to the airport)
   const y = sim.startYear + Math.floor(sim.month / 12), A = h.airports[ai!], B = h.airports[aj!], full = Math.max(A?.load ?? 0, B?.load ?? 0), borrow = (ai === w.cities[i].id ? 1 : 0.75) * (aj === w.cities[j].id ? 1 : 0.75);
-  return base * borrow * (y < JET_YEAR ? 0.55 : y < 1970 ? 0.8 : y >= 2012 ? 1.1 : 1) * (full > 1 ? 1 / full : 1);
+  return base * borrow * (y < JET_YEAR ? 0.55 : y < 1970 ? 0.8 : y >= 2012 ? 1.1 : 1) * (full > 1 ? 1 / full : 1) * weatherFactor(sim, w, "air", i, j);
 }
 /** Stage 8: the share of a domestic freight trip between two coastal cities that goes by ship: both need a port, short hauls stay on land, a full port turns cargo away. */
 export function seaShareOf(sim: SimState, w: World, i: number, j: number): number {
@@ -87,7 +99,7 @@ export function seaShareOf(sim: SimState, w: World, i: number, j: number): numbe
   const base = Math.min(0.6, SEA_FREIGHT * (1 + sim.dials.seaBias)), h = sim.hubs; if (!h) return base;
   const P = h.ports[a.id], Q = h.ports[b.id]; if (!P || !Q || P.until !== undefined || Q.until !== undefined) return 0;
   const d = Math.hypot(a.pos[0] - b.pos[0], a.pos[1] - b.pos[1]), full = Math.max(P.load, Q.load);
-  return Math.min(0.6, base * Math.min(1.5, Math.max(0.15, (d - 60) / 300))) * (full > 1 ? 1 / full : 1);
+  return Math.min(0.6, base * Math.min(1.5, Math.max(0.15, (d - 60) / 300))) * (full > 1 ? 1 / full : 1) * weatherFactor(sim, w, "sea", i, j);
 }
 /** The whole analysis in one go (tests, tools). The game itself uses `analyzeGen` so a long pass can be cut into slices. */
 export function analyze(sim: SimState, w: World): Analysis { const g = analyzeGen(sim, w); for (;;) { const r = g.next(); if (r.done) return r.value; } }

@@ -5,6 +5,7 @@ import { FU_PREFS, type Grade, type SimState } from "./types";
 import { layPath, newId, nodeAtCell, buildIndex, pad } from "./network";
 import { designate, ev, rand } from "./engine";
 import { pathfind, type World, type WCity } from "./world";
+import { terrainGate } from "./land";
 import { refBias, referenceGrids } from "./reference";
 import { seedRailGen } from "./seedRail";
 import { openStraits } from "./straits";
@@ -45,7 +46,8 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
   let nRoutes = 0;
   for (const [a, b] of links) {
     const path = pathfind(w, a.cell, b.cell, sim.stage3 ? { margin: 16, bias: refBias(referenceGrids(w).road) } : { margin: 16 }); if (!path) continue;
-    const l = layPath(sim, w, path, { open: true, surface: basePop(sim, w, a) + basePop(sim, w, b) > 400000 ? "gravel" : "unpaved", quality: 38 + rand(sim) * 27, built: 1, month: 0, standard: "rural" });
+    if (w.land12 && !terrainGate(w, sim, "road", path, sim.startYear).ok) continue;   // Stage 12: a link that would need a tunnel longer than 1950 can dig does not exist in 1950
+    const l = layPath(sim, w, path, { facilities: w.land12, open: true, surface: basePop(sim, w, a) + basePop(sim, w, b) > 400000 ? "gravel" : "unpaved", quality: 38 + rand(sim) * 27, built: 1, month: 0, standard: "rural" });
     if (!l.chain.length) continue;
     const national = a.pref !== b.pref || (basePop(sim, w, a) > 150000 && basePop(sim, w, b) > 150000), pf = a.pref ?? capitalPref(sim);
     const g: Grade = national ? "national" : FU_PREFS.has(pf) ? "fu" : "ken";
@@ -56,6 +58,7 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
   idx = buildIndex(sim);
   for (const v of Object.values(sim.settlements)) {
     const c = w.cityById.get(v.city)!, path = pathfind(w, v.cell, c.cell, { roadCells: buildIndex(sim).roadCells, margin: 10 }); if (!path) continue;
+    if (w.land12 && !terrainGate(w, sim, "road", path, sim.startYear).ok) continue;
     const l = layPath(sim, w, path, { open: true, surface: "unpaved", quality: 30 + rand(sim) * 25, built: 1, month: 0, standard: "rural" });
     if (l.chain.length && v.pop >= 3000 && rand(sim) < 0.35) { const pf = c.pref ?? capitalPref(sim); if (designate(sim, l.chain, FU_PREFS.has(pf) ? "fu" : "ken", pf, `${v.name}〜${c.name}`, "1950年の既存道路網(合成)", true)) nRoutes++; }
     else rand(sim);

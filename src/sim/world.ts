@@ -15,6 +15,8 @@ export interface World {
   lm: Uint16Array; lmCount: number;
   /** Stage 9: drawn ranges are a construction barrier (games on the real map). Older hand-drawn-map games keep the cost they always had. */
   barrier?: boolean;
+  /** Stage 12: the games that evaluate the land as the base of the economy (land.ts): tunnel limits, nonlinear costs, upkeep, city sites. */
+  land12?: boolean;
 }
 export const POP_1950_SCALE = 0.32; // reference (modern) population -> 1950 level; a synthetic scaling, not a statistic
 
