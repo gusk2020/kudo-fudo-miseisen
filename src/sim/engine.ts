@@ -222,8 +222,13 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   // Stage 10: the 1945 reconstruction policy moves growth between coasts / toward or away from the seats (zero-sum; nothing without a policy)
   const rg = reconGrowth(sim, w, y), rmc = rg.size ? reconMeanCore(sim, w) : 0;
   const eco = sim.econ ? ecoYear(sim, w, an, y) : null;   // Stage 12: where people go (econ.ts)
+  // Stage 12: the nation follows the demographic course of its 1950 make-up; the size-dependent part of the rate (big cities grow faster, small ones lose more) only
+  // moves people between cities. Otherwise the total itself drifted with how the people were spread (measured: +4..+69 % by 2100 with the migration on).
+  const realRate = sim.stage3 === true && y <= 2026; let natNum = 0, natDen = 0, curNum = 0, curDen = 0;
+  if (sim.econ) for (const c of w.cities) { const b = basePop(sim, w, c), p = sim.cities[c.id].pop; natNum += b * popRate(y, b, realRate); natDen += b; curNum += p * popRate(y, p, realRate); curDen += p; }
+  const natRate = natDen ? natNum / natDen : 0, curRate = curDen ? curNum / curDen : 0;
   w.cities.forEach((c, i) => {
-    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), hb = hubBoost(sim, c.id), before = st.pop, g = popRate(y, st.pop, sim.stage3 === true && y <= 2026) + hb.growth - hbMean + 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3 - (sim.stage3 ? crowding(st.pop, sim.econ ? basePop(sim, w, c) * siteCapacity(w, c) : basePop(sim, w, c), c.plains) : 0) + (rg.get(c.id) ?? 0) + (eco?.get(c.id) ?? 0) + (rand(sim) - 0.5) * 0.008;
+    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), hb = hubBoost(sim, c.id), before = st.pop, g = (sim.econ ? natRate + popRate(y, st.pop, realRate) - curRate : popRate(y, st.pop, sim.stage3 === true && y <= 2026)) + hb.growth - hbMean + 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3 - (sim.stage3 ? crowding(st.pop, sim.econ ? basePop(sim, w, c) * siteCapacity(w, c) : basePop(sim, w, c), c.plains) : 0) + (rg.get(c.id) ?? 0) + (eco?.get(c.id) ?? 0) + (rand(sim) - 0.5) * 0.008;
     st.pop = Math.max(2000, Math.round(st.pop * (1 + g)));
     const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + roleIndustry(sim, w, c) + 0.9 * an.acc[i] + 0.5 * bo.industry + hb.industry + (rg.size ? reconIndustry(sim, w, c.id, y, rmc) : 0) + (sim.econ ? ecoIndustry(w, c) : 0)); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
     st.lowAccessYears = an.acc[i] < 0.02 ? st.lowAccessYears + 1 : 0; const base = basePop(sim, w, c);
