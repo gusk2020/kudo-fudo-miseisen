@@ -6,6 +6,7 @@ import { effectText } from "../sim/events";
 import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
 import { CAND_1945, STANCE_LABEL } from "../sim/kaigen";
+import { reconText } from "../sim/recon";
 import { displayName } from "../sim/straits";
 import { AIR_KIND_LABEL, PORT_CAP, PORT_TIER_LABEL, airName, foreignName, hubsAt, portName } from "../sim/hubs";
 import { DOMAIN_LABEL, POLICIES, skipWindow, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
@@ -18,16 +19,16 @@ const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) *
 export function eraPicker(app: App, tb: HTMLElement, current: number, pick: (i: number) => void) {
   tb.append(h("div", { id: "era-pick", class: "note" }, "最初の元号(1926年の昭和改元で実際に挙がった案)"));
   const sel = h("select", { id: "era-first", "aria-label": "最初の元号", onchange: (e: Event) => pick(+(e.target as HTMLSelectElement).value) }) as HTMLSelectElement;
-  CAND_1945.forEach((c, i) => sel.append(h("option", { value: String(i), ...(i === current ? { selected: "" } : {}) }, `${c.name}(${STANCE_LABEL[c.stance]})`)));
+  CAND_1945.forEach((c, i) => sel.append(h("option", { value: String(i), ...(i === current ? { selected: "" } : {}) }, `${c.name}(${STANCE_LABEL[c.stance]}${c.recon ? "・" + reconText(c.recon) : ""})`)));
   const c = CAND_1945[current] ?? CAND_1945[0];
-  tb.append(h("div", { class: "grp" }, sel), h("div", { id: "era-desc", class: "note" }, `${c.note}／方針: ${STANCE_LABEL[c.stance]}(割り当てはゲーム上の仮のもの。1989・2019年にも改元があります)`));
+  tb.append(h("div", { class: "grp" }, sel), h("div", { id: "era-desc", class: "note" }, `${c.note}／方針: ${STANCE_LABEL[c.stance]}${c.recon ? `／復興方針: ${reconText(c.recon)}(1945年の最初の元号だけが持ち、1950年以降の人口・産業・予算・建設の優先度に長く効く。太平洋側・日本海側は実際の海の位置で決まる)` : ""}(割り当てはゲーム上の仮のもの。1989・2019年にも改元があります)`));
   void app;
 }
 /** The era-change sheet: opens by itself when a kaigen is due; time is stopped until a name is chosen. */
 export function buildKaigen(app: App, body: HTMLElement) {
   const sim = app.sim, k = sim?.kaigen; if (!sim || !k) { body.append(h("small", {}, "このデータには改元の仕組みがありません(旧形式のセーブ)")); return; }
   body.append(h("h3", {}, "改元"));
-  body.append(h("div", { class: "issue", id: "kaigen-history" }, "元号の履歴: " + k.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → ")));
+  body.append(h("div", { class: "issue", id: "kaigen-history" }, "元号の履歴: " + k.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → "), ...(k.recon ? [h("br"), h("small", { id: "kaigen-recon" }, `復興方針(1945年に決定・以後も持続): ${reconText(k.recon)}`)] : [])));
   if (!k.pending) { body.append(h("div", { class: "issue" }, `次の改元: ${k.next}年ごろ(27〜33年間隔の暫定規則)`)); return; }
   const p = k.pending, real = p.year === 1989 || p.year === 2019;
   body.append(h("div", { class: "issue warn", id: "kaigen-window" }, `${p.year}年: 新しい元号を選んでください。時間は止まっています。`, h("br"), h("small", {}, real ? "候補は史実でこの年に挙がった案です(最初が実際に選ばれた元号)。方針の割り当てはゲーム上の仮のものです。" : "候補は暫定の生成規則による名前です(いろは順の漢字化+改元年の干支、画数の少ない順)。実在の元号ではありません。")));

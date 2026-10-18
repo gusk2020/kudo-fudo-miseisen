@@ -36,8 +36,9 @@ export function realWorld(islands = false) {
   const s = defaultState(); if (islands) s.islands = true; const t = generateTerrain(s, loadDem()); return (realCache[key] = { w: buildWorld(t, s.seed), hash: t.hash });
 }
 /** A Stage 3 game with the ceremony performed on top of the 1950 road + rail network. */
-export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true, firstEra?: number, techK?: number, islands = false, seats?: { capital?: string; sub?: string }) {
-  const { w, hash } = realWorld(islands), sim = createSim(w, "m", hash, seed, firstEra !== undefined ? { stage3: true, firstEra, techK, ...(seats?.capital ? { capital: seats.capital } : {}), subCapital: seats?.sub ?? "JP-27" } : { era, stage3: true, techK });
+export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true, firstEra?: number, techK?: number, islands = false, seats?: { capital?: string; sub?: string; palace?: string }) {
+  const { w, hash } = realWorld(islands), pal = seats?.palace ? w.cities.find((c) => c.pref === seats.palace && c.kind === "capital") : null;
+  const sim = createSim(w, "m", hash, seed, firstEra !== undefined ? { stage3: true, firstEra, techK, ...(seats?.capital ? { capital: seats.capital } : {}), subCapital: seats?.sub ?? "JP-27", ...(pal ? { palace: { pref: seats!.palace!, pos: pal.pos } } : {}) } : { era, stage3: true, techK });
   if (ceremony) {
     const line = (a: Vec, b: Vec, n = 12): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
     if (sim.crossings) {   // the Issue #15 ceremony: one national road, capital -> sub-capital
@@ -54,9 +55,9 @@ export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 
 }
 /** Stage 9: the real Japan with hand-drawn ranges (lon/lat points along each ridge line), for the mountain-barrier tests. */
 const ridgeCache: Record<string, { w: World; hash: string }> = {};
-export function ridgeWorld(ridges: { ne?: [number, number][]; sw?: [number, number][] }, islands = true) {
-  const key = JSON.stringify(ridges) + islands; if (ridgeCache[key]) return ridgeCache[key];
-  const s = defaultState(); if (islands) s.islands = true;
+export function ridgeWorld(ridges: { ne?: [number, number][]; sw?: [number, number][] }, islands = true, alps?: { ne?: true; sw?: true }) {
+  const key = JSON.stringify(ridges) + islands + JSON.stringify(alps ?? null); if (ridgeCache[key]) return ridgeCache[key];
+  const s = defaultState(); if (islands) s.islands = true; if (alps) s.alpsRemoved = alps;
   const to = ([lon, lat]: [number, number]): Vec => realToWorld("honshu", s.bodies.honshu, lonLatToReal(lon, lat));
   s.ridges = { ne: ridges.ne ? ridges.ne.map(to) : null, sw: ridges.sw ? ridges.sw.map(to) : null };
   const t = generateTerrain(s, loadDem()); return (ridgeCache[key] = { w: buildWorld(t, s.seed), hash: t.hash });

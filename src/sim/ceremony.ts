@@ -5,7 +5,7 @@ import { designate, ev, routeOfficial } from "./engine";
 import { buildIndex, layPath, nodeSplitAt } from "./network";
 import { LAKE_TAG, MAX_FERRY_KM, crossingPorts, findFerry, makeFerry, makeFerryAt, makeLakeBridgeAt, massRoute, nearTown, servedMasses } from "./ferry";
 import { techAt } from "./tech";
-import { prefOfSeat } from "../core/seat";
+import { DEFAULT_SUB, prefOfSeat } from "../core/seat";
 import { ERA, eraLabel, type SimState } from "./types";
 import { ERAS, eraKeyOf } from "./eras";
 import { cellDistKm, pathfind, type World } from "./world";
@@ -144,7 +144,7 @@ function nearestPair(w: World, la: number, lb: number, pa: Vec, pb: Vec): { a: n
  */
 export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: string, opts: { techK?: number; year?: number } = {}): NatPreview {
   const bad = (r: string[]): NatPreview => ({ ok: false, reasons: r, cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "", segments: [], ferries: [], from: "", to: "" });
-  const home = homeCity(w, capital), dest = subCity(w, sub) ?? seatCity(w, "JP-27"); if (!home || !dest) return bad(["首都または副首都の県庁所在地が地図にありません"]);
+  const home = homeCity(w, capital), dest = subCity(w, sub) ?? seatCity(w, DEFAULT_SUB); if (!home || !dest) return bad(["首都または副首都の県庁所在地が地図にありません"]);
   if (home.pref === dest.pref) return bad(["首都と副首都は別の府県にしてください"]);
   if (drawn.length < 2) return bad(["線が短すぎます。画面上でなぞってください"]);
   let len = 0; for (let i = 1; i < drawn.length; i++) len += dist(drawn[i - 1], drawn[i]);

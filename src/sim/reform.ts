@@ -3,6 +3,7 @@
  * as a fictional variant; 正化 never). Lines are handed to area successor companies, thin short lines go to a regional third-sector
  * operator, and the thinnest are closed. The line numbers change with the operator and the old number is retired, never reused.
  */
+import { capitalPref } from "./roles";
 import { eraKeyOf, type EraKey } from "./eras";
 import { ev, issueNumber, prefName, routeOfficial } from "./engine";
 import { pushHist, setEdgeState } from "./network";
@@ -44,7 +45,7 @@ export function reformJnr(sim: SimState, w: World, y: number): void {
       for (const e of es) if (e.state === "open" || e.state === "dormant") setEdgeState(sim, e, "closed", "国鉄改革で廃止対象に");
       r.active = false; r.endMonth = sim.month; r.history.push({ month: sim.month, grade: r.grade, number: r.number, text: "国鉄改革で廃止" }); closed++; continue;
     }
-    const op = small && mean < 1500 ? third(es[0].region === "JP" ? "JP-13" : es[0].region) : succ(areaOf(w, es[Math.floor(es.length / 2)]));
+    const op = small && mean < 1500 ? third(es[0].region === "JP" ? capitalPref(sim) : es[0].region) : succ(areaOf(w, es[Math.floor(es.length / 2)]));
     reassignRoute(sim, r, op, before);
     if (op.kind === "tertiary") toThird++; else toSucc++;
   }

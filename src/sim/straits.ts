@@ -6,6 +6,7 @@
  * same crossings in different, fictional years: 修文 gets road crossings earlier and 正化 the railway ones. The names and the
  * geometry are the model's (a crossing joins two city centres), not a survey.
  */
+import { capitalPref } from "./roles";
 import { TABLE_STANCE, type EraKey } from "./eras";
 import { stanceAt } from "./kaigen";
 import { buildIndex, newEdgeDefaults, newId, nodeAtCell, pushHist } from "./network";
@@ -43,7 +44,7 @@ export function openStraits(sim: SimState, w: World, year: number, atStart = fal
     let op: string | undefined; if (rail) op = sim.operators.jnr?.until !== undefined ? "" : "jnr";
     const e: SimEdge = {
       ...newEdgeDefaults(), id, a, b, cells: [ca.cell, cb.cell], lengthKm: Math.round(Math.hypot(ca.pos[0] - cb.pos[0], ca.pos[1] - cb.pos[1]) * 10) / 10,
-      surface: "paved", quality: 92, built: 1, open: true, state: "open", standard: "standard", maxGradePct: 1, builtMonth: sim.month, region: w.prefOf(ca.cell) ?? "JP-13",
+      surface: "paved", quality: 92, built: 1, open: true, state: "open", standard: "standard", maxGradePct: 1, builtMonth: sim.month, region: w.prefOf(ca.cell) ?? capitalPref(sim),
       facility: s.fac, facilityName: `${s.id}:${s.name}`, ...(rail ? { mode: "rail" as const, op: op || "jnr" } : {}),
     };
     sim.edges[id] = e; if (sim.crossings) carryOver(sim, w, e);

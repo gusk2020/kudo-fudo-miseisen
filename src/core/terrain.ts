@@ -61,6 +61,37 @@ function fillPolygon(poly: Vec[], x0: number, y0: number, cell: number, nx: numb
 
 const N8: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
 
+/**
+ * Stage 10: the high massifs of the real 飛騨山脈 (北アルプス, key "ne") and 赤石山脈 (南アルプス, key "sw"), as rough crest lines (lon/lat) with the half-width of
+ * the high ground (CORE km, fully levelled) and of the transition (EDGE km, blended back to the DEM). Rough lines, not survey data -- the same ones the 実アルプス
+ * button draws, extended a little to cover each massif's ends. Mt. Fuji (some 50 km from the southern line) and Lake Biwa are far outside either zone.
+ */
+export const REAL_ALPS: Record<"ne" | "sw", { line: [number, number][]; core: number; edge: number }> = {
+  ne: { line: [[137.70, 36.95], [137.76, 36.76], [137.62, 36.58], [137.65, 36.34], [137.55, 36.11], [137.52, 36.0]], core: 12, edge: 30 },
+  sw: { line: [[138.24, 35.80], [138.23, 35.78], [138.24, 35.67], [138.10, 35.60], [138.14, 35.45], [138.10, 35.33], [138.06, 35.22]], core: 10, edge: 28 },
+};
+/** Inside a zone the ground becomes the level of the land around it (an inverse-distance average of the ring of land just outside the zone -- smooth in
+ * position, so neither gaps nor steps), plus low rolling hills; the transition blends smoothly back to the original. The new level never exceeds 1,030 m (900 + hills). */
+function levelRealAlps(key: "ne" | "sw", s: ProjectState, elev: Float32Array, land: Uint8Array, g: { x0: number; y0: number; cell: number; nx: number; ny: number }, seed: number) {
+  const z = REAL_ALPS[key], pts = z.line.map(([lon, lat]) => realToWorld("honshu", s.bodies.honshu, [(lon - JAPAN.proj.lon0) * JAPAN.proj.kmPerDegLon, (lat - JAPAN.proj.lat0) * JAPAN.proj.kmPerDegLat]));
+  const { x0, y0, cell, nx, ny } = g, src = Float32Array.from(elev), RING = 12, R = z.edge + RING;
+  const crest = (p: Vec) => { let d = Infinity; for (let q = 0; q + 1 < pts.length; q++) d = Math.min(d, pointSegDist(p, pts[q], pts[q + 1])); return d; };
+  let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity; for (const p of pts) { bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]); by0 = Math.min(by0, p[1]); by1 = Math.max(by1, p[1]); }
+  const zone: { k: number; p: Vec; d: number }[] = [], ring: { p: Vec; e: number }[] = [];
+  for (let j = Math.max(0, Math.floor((by0 - R - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((by1 + R - y0) / cell)); j++)
+    for (let i = Math.max(0, Math.floor((bx0 - R - x0) / cell)); i <= Math.min(nx - 1, Math.ceil((bx1 + R - x0) / cell)); i++) {
+      const k = j * nx + i; if (land[k] !== 1) continue; const p: Vec = [x0 + (i + 0.5) * cell, y0 + (j + 0.5) * cell], d = crest(p);
+      if (d < z.edge) zone.push({ k, p, d }); else if (d <= R) ring.push({ p, e: src[k] });
+    }
+  if (!ring.length) return;
+  for (const { k, p, d } of zone) {
+    let sw = 0, se = 0; for (const r of ring) { const q = 1 / ((p[0] - r.p[0]) ** 2 + (p[1] - r.p[1]) ** 2 + 400); sw += q; se += q * r.e; }
+    const base = Math.min(900, se / sw), hills = 70 * (fbm(seed + 31, p[0] / 22, p[1] / 22) - 0.5) * 2, flat = Math.max(30, base + 60 + hills);
+    const t = d <= z.core ? 0 : (d - z.core) / (z.edge - z.core), wgt = t * t * (3 - 2 * t);   // 0 inside the core, smoothstep to 1 at the outer edge
+    elev[k] = flat * (1 - wgt) + src[k] * wgt;   // a gorge inside the massif is filled to the new level too (the massif and its valleys go together)
+  }
+}
+
 export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: number, msg: string) => void = () => {}): TerrainResult {
   const warnings: string[] = [];
   const seed = s.seed >>> 0;
@@ -142,6 +173,9 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
       elev[k] = Math.max(2, e + (fbm(seed, cx(i) / 28, cy(j) / 28) - 0.5) * 2 * amp);
     } else elev[k] = -(25 + 14 * Math.pow(offshore[k], 0.85));
   }
+
+  // ---- Stage 10: the real Alps removed (a range the player takes over is drawn anew; the original massif must not stay as a second barrier) ----
+  for (const key of ["ne", "sw"] as const) if (s.alpsRemoved?.[key]) levelRealAlps(key, s, elev, land, { x0, y0, cell, nx, ny }, seed);
 
   // ---- hand-drawn ridges ----
   progress(0.3, "山脈");

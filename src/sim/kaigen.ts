@@ -23,9 +23,11 @@
  */
 import type { EraKey } from "./eras";
 
-export interface EraCand { name: string; stance: EraKey; real: boolean; note: string }
+export interface EraCand { name: string; stance: EraKey; real: boolean; note: string; recon?: Recon }
+/** Stage 10: the 1945 reconstruction policy (recon.ts). Only the first era choice carries one. */
+export interface Recon { coast: "pacific" | "japansea"; focus: "concentrate" | "disperse" }
 export interface EraEntry { name: string; start: number; stance: EraKey; real: boolean; picked: number; of: number; auto: boolean }
-export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number }
+export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number; recon?: Recon }
 
 /** The policy stances a candidate can carry, in the order they are handed out. Issue #15 added 空路重視 and 海路重視 to the original three. */
 export const STANCES: EraKey[] = ["heisei", "shubun", "shoka", "kuuro", "kairo"];
@@ -38,8 +40,10 @@ export const STANCE_LABEL: Record<EraKey, string> = { heisei: "均衡", shubun: 
  */
 const cyc = (names: string[], note: (n: string) => string): EraCand[] => names.map((name, i) => ({ name, stance: CYCLE[i % CYCLE.length], real: true, note: note(name) }));
 
+/** Stage 10: the reconstruction policy, the four combinations in turn (independent of the stance cycle of five, so every combination meets several stances). */
+const withRecon = (l: EraCand[]): EraCand[] => l.map((c, i) => ({ ...c, recon: { coast: i % 2 === 0 ? "pacific" : "japansea", focus: Math.floor(i / 2) % 2 === 0 ? "concentrate" : "disperse" } }));
 /** 1945: the candidates passed over in 1926 (昭和 itself excluded). Order: 宮内省案, then 内閣案. */
-export const CAND_1945: EraCand[] = cyc(["神化", "元化", "神和", "同和", "継明", "順明", "明保", "寛安", "元安", "立成", "定業", "光文", "章明", "協中"], (n) => `1926年の${["神化", "元化", "神和", "同和", "継明", "順明", "明保", "寛安", "元安"].includes(n) ? "宮内省案" : "内閣案"}`);
+export const CAND_1945: EraCand[] = withRecon(cyc(["神化", "元化", "神和", "同和", "継明", "順明", "明保", "寛安", "元安", "立成", "定業", "光文", "章明", "協中"], (n) => `1926年の${["神化", "元化", "神和", "同和", "継明", "順明", "明保", "寛安", "元安"].includes(n) ? "宮内省案" : "内閣案"}`));
 /** 1989: 平成 is the real choice and comes first. These three keep the stances the game has always used for them. */
 export const CAND_1989: EraCand[] = [
   { name: "平成", stance: "heisei", real: true, note: "1989年の実際の新元号" }, { name: "修文", stance: "shubun", real: true, note: "1989年の候補(落選)" }, { name: "正化", stance: "shoka", real: true, note: "1989年の候補(落選)" }];
@@ -111,7 +115,7 @@ export function futureCandidates(year: number, taken: Set<string> = new Set()): 
 }
 
 // ---------------------------------------------------------------- the timeline ----------
-export const newKaigen = (first: EraCand, firstIdx: number, seed: number): KaigenState => ({ eras: [{ name: first.name, start: FIRST_YEAR, stance: first.stance, real: first.real, picked: firstIdx, of: CAND_1945.length, auto: false }], pending: null, next: KAIGEN_YEARS.second, nextIdx: 0 });
+export const newKaigen = (first: EraCand, firstIdx: number, seed: number): KaigenState => ({ eras: [{ name: first.name, start: FIRST_YEAR, stance: first.stance, real: first.real, picked: firstIdx, of: CAND_1945.length, auto: false }], pending: null, next: KAIGEN_YEARS.second, nextIdx: 0, ...(first.recon ? { recon: { ...first.recon } } : {}) });
 export function candidatesFor(k: KaigenState, year: number): EraCand[] {
   if (year === KAIGEN_YEARS.second) return CAND_1989; if (year === KAIGEN_YEARS.third) return CAND_2019;
   return futureCandidates(year, new Set(k.eras.map((x) => x.name)));

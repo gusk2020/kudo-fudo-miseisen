@@ -2,6 +2,8 @@
  * Yearly planning. Every prefecture keeps its own queue and purse, so many regions build at the same time.
  * Cost control ("performance budget"): at most MAX_PATHFINDS route searches per year, regions take turns.
  */
+import { basePop, capitalPref } from "./roles";
+import { reconCorridor, reconMeanCore, reconOf } from "./recon";
 import { dist } from "../core/geom";
 import { refBias, referenceGrids } from "./reference";
 import { buildIndex, facilitySplit, layPath, newId, nodeAtCell } from "./network";
@@ -63,9 +65,9 @@ export const LOCAL_TAG = "【地方】";
  * The factor and its causes go into the project's reason, so the timeline says why the line was built.
  */
 export const BALANCE_K = 0.8, PORT_LINK_K = 0.12;
-export function corridorFactor(sim: SimState, w: World, def: Float64Array | null, i: number, j: number): { f: number; why: string } {
-  const d = def ? (def[i] + def[j]) / 2 : 0, tier = Math.max(sim.hubs?.ports[w.cities[i].id]?.tier ?? 0, sim.hubs?.ports[w.cities[j].id]?.tier ?? 0), port = tier >= 2 ? PORT_LINK_K * (tier - 1) : 0;
-  const f = 1 + BALANCE_K * d + port, why = [d >= 0.15 ? `交通の不便な地域を優先(到達性が全国中央値より${Math.round(d * 100)}%低い)` : "", port ? `港湾(${["", "地方", "重要", "国際拠点", "国際戦略"][tier]}港)の後背地輸送` : ""].filter(Boolean).join("・");
+export function corridorFactor(sim: SimState, w: World, def: Float64Array | null, i: number, j: number, rc?: { y: number; meanCore: number }): { f: number; why: string } {
+  const rk = rc ? reconCorridor(sim, w, i, j, rc.y, rc.meanCore) : { f: 1, why: "" }, d = def ? (def[i] + def[j]) / 2 : 0, tier = Math.max(sim.hubs?.ports[w.cities[i].id]?.tier ?? 0, sim.hubs?.ports[w.cities[j].id]?.tier ?? 0), port = tier >= 2 ? PORT_LINK_K * (tier - 1) : 0;
+  const f = (1 + BALANCE_K * d + port) * rk.f, why = [rk.why, d >= 0.15 ? `交通の不便な地域を優先(到達性が全国中央値より${Math.round(d * 100)}%低い)` : "", port ? `港湾(${["", "地方", "重要", "国際拠点", "国際戦略"][tier]}港)の後背地輸送` : ""].filter(Boolean).join("・");
   return { f, why: why ? `。${why}` : "" };
 }
 export function activeProjects(sim: SimState) { return Object.values(sim.projects).filter((p) => p.status === "concept" || p.status === "planned" || p.status === "building" || p.status === "suspended"); }
@@ -78,13 +80,13 @@ const nodeName = (sim: SimState, id: string) => sim.nodes[id]?.name ?? "地点";
 
 export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
   const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; let pf = sim.stage3 ? MAX_PATHFINDS_S3 : MAX_PATHFINDS; const RPY = sim.stage3 ? REGIONS_PER_YEAR_S3 : REGIONS_PER_YEAR;
-  const def = sim.stage3 ? accessDeficit(w, an) : null;
+  const def = sim.stage3 ? accessDeficit(w, an) : null, rc = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined;
   const start = ((y - sim.startYear) * RPY) % n, slice = Array.from({ length: Math.min(n, RPY) }, (_, i) => regions[(start + i) % n]);
   const live = activeProjects(sim).filter((p) => modeOf(p) === "road"), busy = new Set(live.flatMap((p) => p.edgeIds)), perRegion = new Map<string, number>();
   for (const p of live) if (p.status !== "suspended") perRegion.set(p.region, (perRegion.get(p.region) ?? 0) + 1);
   const edgesBy = new Map<string, SimEdge[]>(); for (const e of Object.values(sim.edges)) if (modeOf(e) === "road" && e.facility !== "ferry") (edgesBy.get(e.region) ?? edgesBy.set(e.region, []).get(e.region)!).push(e);
-  const vilBy = new Map<string, string[]>(); for (const v of Object.values(sim.settlements)) if (!v.gone) { const r = w.prefOf(v.cell) ?? "JP-13"; (vilBy.get(r) ?? vilBy.set(r, []).get(r)!).push(v.id); }
-  const cityBy = new Map<string, number[]>(); w.cities.forEach((c, i) => { const r = c.pref ?? "JP-13"; (cityBy.get(r) ?? cityBy.set(r, []).get(r)!).push(i); });
+  const vilBy = new Map<string, string[]>(); for (const v of Object.values(sim.settlements)) if (!v.gone) { const r = w.prefOf(v.cell) ?? capitalPref(sim); (vilBy.get(r) ?? vilBy.set(r, []).get(r)!).push(v.id); }
+  const cityBy = new Map<string, number[]>(); w.cities.forEach((c, i) => { const r = c.pref ?? capitalPref(sim); (cityBy.get(r) ?? cityBy.set(r, []).get(r)!).push(i); });
   const nc = w.cities.length, others: { cell: number; pos: [number, number]; name: string; pop: number; isl: number }[] = [];
   if (sim.stage3) { for (const v of Object.values(sim.settlements)) if (!v.gone && v.pop >= 300) others.push({ cell: v.cell, pos: w.cellPos(v.cell) as [number, number], name: v.name, pop: v.pop, isl: w.t.island[v.cell] }); for (const c of w.cities) others.push({ cell: c.cell, pos: c.pos as [number, number], name: c.name, pop: sim.cities[c.id].pop, isl: w.t.island[c.cell] }); }
   for (const r of slice) {
@@ -116,7 +118,7 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
       // competition: where a good railway already serves the pair and the era prefers it, a new road is less needed (and the other way round for railways below)
       const service = Math.max(roadSvc, railSvc * competeWeight(sim.dials, "rail")); if (service > 0.6) continue;
       const unmet = (Math.pow(sim.cities[a.id].pop * sim.cities[b.id].pop, 0.7) / Math.pow(d, 1.2)) * (1 - service) / (d * 1.3 + 10);
-      const cf = corridorFactor(sim, w, def, i, j);
+      const cf = corridorFactor(sim, w, def, i, j, rc);
       cands.push({ score: Math.log10(1 + unmet) * 1.2 * (d < 30 ? 1.3 : 1) * cf.f, kind: "new", a: i, b: j, local: d < 30, reason: `${a.name}〜${b.name}間の需要に対し${isFinite(t) ? `所要時間${t.toFixed(1)}h` : "未接続"}${cf.why}` });
     }
     cands.sort((p, q) => q.score - p.score || (p.kind < q.kind ? -1 : 1));
@@ -163,13 +165,13 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     if (e.state === "open" && e.congYears >= 2 && e.standard !== "highgrade" && (e.standard === "rural" || dl.hsr > 0.4)) cands.push({ score: 3.2 + Math.min(3, (e.through / RAIL_CAPACITY_OF(e)) * 0.3), kind: "electrify", edge: e, reason: `輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%に達し${e.congYears}年混雑(${e.standard === "rural" ? "電化・複線化" : "高速化"})` });
     else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && dl.railBuild > 0.3 && !e.convertedTo) cands.push({ score: 2 + (an.potential.get(e.id) ?? 0) / 90, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}人/日が${e.reviveYears}年続いている` });
   }
-  const dens = (c: { pop: number }) => c.pop, rdef = accessDeficit(w, an);
+  const dens = (c: { pop: number }) => c.pop, rdef = accessDeficit(w, an), rc = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined;
   for (let i = 0; i < nc; i++) for (let j = i + 1; j < nc; j++) {
     const a = w.cities[i], b = w.cities[j]; if (a.island !== b.island) continue; const d = dist(a.pos, b.pos); if (d < 40 || d > 260) continue;
     const tt = an.TT[i * nc + j], tr = an.T[i * nc + j], railSvc = isFinite(tt) ? Math.min(1, d / (tt * 60)) : 0, roadSvc = isFinite(tr) ? Math.min(1, d / (tr * 40)) : 0, svc = Math.max(railSvc, roadSvc * competeWeight(dl, "road")); if (svc > 0.65) continue;
     const pa = dens(sim.cities[a.id]), pb = dens(sim.cities[b.id]), unmet = (Math.pow(pa * pb, 0.65) / Math.pow(d, 1.25)) * (1 - svc) * 1e-3;
     const big = Math.min(pa, pb) > 400000, std: Standard = dl.hsr > 0.45 && y >= 1955 && big && d >= 120 ? "highgrade" : y >= 1960 ? "standard" : "rural";
-    const cf = corridorFactor(sim, w, rdef, i, j);
+    const cf = corridorFactor(sim, w, rdef, i, j, rc);
     cands.push({ score: (Math.log10(1 + unmet * 30) * (0.5 + dl.railBuild) + (std === "highgrade" ? 0.5 * dl.hsr : 0)) * cf.f, kind: "new", a: i, b: j, std, reason: `${a.name}〜${b.name}間(${Math.round(d)}km)の鉄道が${isFinite(tt) ? `所要${tt.toFixed(1)}時間` : "未整備"}${cf.why}` });
   }
   // 地方支線: a city the railway does not reach is tied to the nearest existing line by a short rural branch (quota of its own below)
@@ -215,7 +217,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
       const newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) continue;
       const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) continue;   // not buildable with this year's tunnelling (yet)
       const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > PRIVATE_MIN_POP && dist(a.pos, b.pos) < PRIVATE_MAX_KM,   /* Stage 7: private companies enter the busier corridors the national railway serves poorly, so the two compete */ localPrivate = !!c.local && !jnrEra;
-      let op = "jnr"; if (c.local && !localPrivate) op = "jnr"; else if (!jnrEra || privateOk) { const anchorIsA = !b || a.pop0 >= b.pop0, id = `p.${anchorIsA ? a.id : b!.id}`, anchor = anchorIsA ? a : b!; if (!sim.operators[id]) sim.operators[id] = { id, name: `${baseName(anchor.name)}${jnrEra ? "電鉄" : "鉄道"}`, kind: "private", since: y, note: "新規参入の鉄道事業者(架空の事業者名)" } as Operator; op = id; }
+      let op = "jnr"; if (c.local && !localPrivate) op = "jnr"; else if (!jnrEra || privateOk) { const anchorIsA = !b || basePop(sim, w, a) >= basePop(sim, w, b), id = `p.${anchorIsA ? a.id : b!.id}`, anchor = anchorIsA ? a : b!; if (!sim.operators[id]) sim.operators[id] = { id, name: `${baseName(anchor.name)}${jnrEra ? "電鉄" : "鉄道"}`, kind: "private", since: y, note: "新規参入の鉄道事業者(架空の事業者名)" } as Operator; op = id; }
       const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 88, built: 0, month: sim.month, standard: std, mode: "rail", op }); if (!l.created.length) continue;
       const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s2, x) => s2 + x.lengthKm * RAIL_UNIT[std] * (1 + x.maxGradePct * 0.08) * facCost(x, sim) * mountainCost(w, x.cells), 0);
       const p = createProject(sim, "new", "JP", nodeAtCell(sim, w, idx, aCell, "junction"), nodeAtCell(sim, w, idx, bCell, "junction"), l.created, l.chain, cost, c.reason, c.score); p.mode = "rail"; p.op = op; p.status = "concept"; techRoll(sim, p, tcR.hard, y, `${aName}〜${bName}`);
