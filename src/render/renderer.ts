@@ -9,7 +9,7 @@ import { ISLAND_IDS } from "../core/types";
 import { featureWorld } from "../core/validate";
 import { RoadLayer, type RoadArgs } from "./roads";
 
-export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[]; si?: number /* Stage 9: which stroke (0 = first, -1 = a new one) */ }; feature?: { which: "biwa" | "fuji"; pos: Vec; rot?: number; scale?: number; bad?: boolean } }
+export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[]; si?: number /* Stage 9: which stroke (0 = first, -1 = a new one) */ }; feature?: { which: "biwa" | "fuji"; pos: Vec; rot?: number; scale?: number; scaleY?: number; bad?: boolean } }
 export interface View { cx: number; cy: number; zoom: number } // centre in world km (y up), zoom = px per km
 
 const RAMP: [number, number[]][] = [[0, [92, 148, 76]], [150, [134, 170, 86]], [450, [196, 192, 112]], [900, [170, 136, 88]], [1600, [138, 108, 84]], [2400, [196, 190, 184]], [3400, [250, 250, 250]]];
@@ -85,9 +85,13 @@ export class Renderer {
   setRoads(a: RoadArgs) { this.roadArgs = a; return this.roads.set(a, this.view.zoom); }
   /** The feature being edited by touch (null = none): drawn with a handle. */
   featureSel: "biwa" | "fuji" | null = null;
+  /** Stage 11: the stroke of a range picked with the 区間 tool (drawn highlighted). */
+  ridgeSel: { key: "sw" | "ne"; si: number } | null = null;
+  /** How many range strokes the last redraw put on the map (0 on the road map; for tests). */
+  ridgeStrokesDrawn = 0;
   private withPending(s: ProjectState, pending: Pending | null, which: "biwa" | "fuji"): ProjectState {
     const f = pending?.feature; if (!f || f.which !== which) return s;
-    return { ...s, features: { ...s.features, [which]: { ...s.features[which], pos: f.pos, ...(f.rot !== undefined ? { rot: f.rot } : {}), ...(f.scale !== undefined ? { scale: f.scale } : {}) } } };
+    return { ...s, features: { ...s.features, [which]: { ...s.features[which], pos: f.pos, ...(f.rot !== undefined ? { rot: f.rot } : {}), ...(f.scale !== undefined ? { scale: f.scale } : {}), ...(f.scaleY !== undefined ? { scaleY: f.scaleY } : { scaleY: undefined }) } } };
   }
   update(s: ProjectState, t: TerrainResult | null, issues: Issue[], pending: Pending | null) { this.lastArgs = [s, t, issues, pending]; this.rebuild(); }
   private rebuild() {
@@ -143,16 +147,18 @@ export class Renderer {
       h.circle(c[0], c[1], px(8)).stroke({ width: px(2.5), color: col }).fill({ color: 0xffffff, alpha: 0.5 });
       this.overlay.addChild(h);
     }
-    if (s.layers.ridges) {
+    // Stage 11: the drawn ranges (lines, handles) belong to the terrain map: the road map does not show them (the barrier they make is still there in the simulation)
+    this.ridgeStrokesDrawn = 0;
+    if (s.layers.ridges && this.bg === "terrain") {
       const rg = new Graphics();
       for (const key of ["sw", "ne"] as const) {
         // Stage 9: every stroke of the range; the one being drawn or edited is shown as it is now
         const lines: (Vec[] | null)[] = [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])], pr = pending?.ridge?.key === key ? pending.ridge : null;
         if (pr) { const si = pr.si ?? (s.ridges[key] ? -1 : 0); if (si >= 0) lines[si] = pr.pts; else lines.push(pr.pts); }
-        for (const line of lines) {
-          if (line && line.length > 1) { rg.moveTo(...P(line[0])); for (const q of line.slice(1)) rg.lineTo(...P(q)); rg.stroke({ width: px(5), color: key === "sw" ? 0x7a4a2a : 0x8a3a5a, alpha: 0.85, cap: "round", join: "round" }); }
+        lines.forEach((line, li) => {
+          if (line && line.length > 1) { this.ridgeStrokesDrawn++; const sel = this.ridgeSel?.key === key && this.ridgeSel.si === li; rg.moveTo(...P(line[0])); for (const q of line.slice(1)) rg.lineTo(...P(q)); rg.stroke({ width: px(sel ? 8 : 5), color: sel ? 0xffc400 : key === "sw" ? 0x7a4a2a : 0x8a3a5a, alpha: sel ? 0.95 : 0.85, cap: "round", join: "round" }); }
           if (line && (s.step === 3 || this.ridgeHandles)) line.forEach((q, i) => { const end = this.ridgeHandles && (i === 0 || i === line.length - 1); rg.circle(...P(q), px(end ? 8 : 4.5)).fill({ color: end ? 0xffe14a : 0xffffff }).stroke({ width: px(end ? 2 : 1), color: 0x333333 }); });   // Stage 9: the ends (where a stroke can be continued) are big and yellow
-        }
+        });
       }
       this.overlay.addChild(rg);
     }

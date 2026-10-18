@@ -26,7 +26,7 @@ function cleanBody(b: any, id: (typeof ISLAND_IDS)[number], problems: string[]):
 /** Allowed range of the size controls (Lake Biwa / Mt. Fuji): wide enough to see, narrow enough to keep the lake off the coast and the summit above sea level. */
 export const FEATURE_LIMITS = { scale: [0.2, 5] as [number, number], height: [0.5, 1.3] as [number, number] };
 function cleanFeature(f: any): FeatureState {
-  return { pos: okVec(f?.pos) ? f.pos : null, rot: fin(f?.rot) ? f.rot : 0, ...(fin(f?.scale) && f.scale !== 1 ? { scale: Math.max(FEATURE_LIMITS.scale[0], Math.min(FEATURE_LIMITS.scale[1], f.scale)) } : {}), ...(f?.auto === true ? { auto: true as const } : {}), ...(fin(f?.height) && f.height !== 1 ? { height: Math.max(FEATURE_LIMITS.height[0], Math.min(FEATURE_LIMITS.height[1], f.height)) } : {}) };
+  return { pos: okVec(f?.pos) ? f.pos : null, rot: fin(f?.rot) ? f.rot : 0, ...(fin(f?.scale) && (f.scale !== 1 || (fin(f?.scaleY) && f.scaleY !== 1)) ? { scale: Math.max(FEATURE_LIMITS.scale[0], Math.min(FEATURE_LIMITS.scale[1], f.scale)) } : {}), ...(fin(f?.scaleY) && fin(f?.scale) ? (Math.max(FEATURE_LIMITS.scale[0], Math.min(FEATURE_LIMITS.scale[1], f.scaleY)) !== Math.max(FEATURE_LIMITS.scale[0], Math.min(FEATURE_LIMITS.scale[1], f.scale)) ? { scaleY: Math.max(FEATURE_LIMITS.scale[0], Math.min(FEATURE_LIMITS.scale[1], f.scaleY)) } : {}) : {}), ...(f?.auto === true ? { auto: true as const } : {}), ...(fin(f?.height) && f.height !== 1 ? { height: Math.max(FEATURE_LIMITS.height[0], Math.min(FEATURE_LIMITS.height[1], f.height)) } : {}) };
 }
 function cleanLine(l: any, problems: string[], name: string): Vec[] | null {
   if (l == null) return null;
@@ -56,6 +56,7 @@ export function parseState(input: unknown): { state: ProjectState; problems: str
     ...(raw.ridgeExtra && typeof raw.ridgeExtra === "object" ? { ridgeExtra: { sw: (Array.isArray(raw.ridgeExtra.sw) ? raw.ridgeExtra.sw : []).map((l: unknown) => cleanLine(l, problems, "南西山脈")).filter((l: Vec[] | null): l is Vec[] => !!l && l.length >= 2), ne: (Array.isArray(raw.ridgeExtra.ne) ? raw.ridgeExtra.ne : []).map((l: unknown) => cleanLine(l, problems, "北東山脈")).filter((l: Vec[] | null): l is Vec[] => !!l && l.length >= 2) } } : {}),
     ...(raw.alpsRemoved && typeof raw.alpsRemoved === "object" && (raw.alpsRemoved.ne === true || raw.alpsRemoved.sw === true) ? { alpsRemoved: { ...(raw.alpsRemoved.ne === true ? { ne: true as const } : {}), ...(raw.alpsRemoved.sw === true ? { sw: true as const } : {}) } } : {}),
     ...(Array.isArray(raw.layersSet) ? { layersSet: (raw.layersSet as unknown[]).filter((k): k is string => typeof k === "string" && k in d.layers).slice(0, 40) } : {}),
+    ...(raw.bg === "roadmap" || raw.bg === "terrain" ? { bg: raw.bg as "roadmap" | "terrain" } : {}),
     finalized: raw.finalized === true,
     ...(raw.real === true ? { real: true } : {}),
     ...(raw.islands === true ? { islands: true } : {}),

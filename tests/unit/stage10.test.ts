@@ -9,7 +9,7 @@ import { REAL_ALPS, generateTerrain } from "../../src/core/terrain";
 import { createSim, settleKaigen, stepMonth, yearOf } from "../../src/sim/engine";
 import { CAND_1945, CAND_1989, CAND_2019 } from "../../src/sim/kaigen";
 import { coastSide, reconGrowth } from "../../src/sim/recon";
-import { basePop, computeRoles, prefMass, roleScale } from "../../src/sim/roles";
+import { METRO_SIZE, basePop, computeRoles, prefMass, roleScale } from "../../src/sim/roles";
 import { cityBoost, currentSites } from "../../src/sim/sites";
 import type { SimState } from "../../src/sim/types";
 import { buildWorld, pathfind, type World } from "../../src/sim/world";
@@ -76,7 +76,7 @@ describe("Stage 10: the seats swap roles with the real Tokyo / Osaka / Kyoto", (
       if (c === s) continue; const r = computeRoles(w, c, s, "JP-13"), got = prefs.map((p) => r.prof[p] ?? p);
       expect(new Set(got).size).toBe(prefs.length);                       // each mass held by exactly one prefecture
       expect(r.prof[c] ?? c).toBe("JP-13"); expect(r.prof[s] ?? s).toBe("JP-27");
-      expect(r.capMetro.length).toBeLessThanOrEqual(3); expect(r.subMetro.length).toBeLessThanOrEqual(3); expect(r.capMetro.some((p) => r.subMetro.includes(p))).toBe(false);
+      expect(r.capMetro.length).toBeLessThanOrEqual(METRO_SIZE); expect(r.subMetro.length).toBeLessThanOrEqual(METRO_SIZE); expect(r.capMetro.some((p) => r.subMetro.includes(p))).toBe(false);
       expect([c, s].some((p) => r.capMetro.includes(p) || r.subMetro.includes(p))).toBe(false);
       const sum = w.cities.reduce((a, x) => a + basePop({ roles: r }, w, x), 0); expect(Math.abs(sum - total)).toBeLessThan(w.cities.length);
     }
@@ -84,7 +84,7 @@ describe("Stage 10: the seats swap roles with the real Tokyo / Osaka / Kyoto", (
   it("Sapporo as capital: Sapporo carries Tokyo's 1950 size, Tokyo Sapporo's (reduced, not zero); the clusters follow access, not names", () => {
     const r = computeRoles(w, "HK-SAP", "JP-27", "JP-13"), pop = (pref: string) => w.cities.filter((c) => c.pref === pref).reduce((s, c) => s + basePop({ roles: r }, w, c), 0);
     expect(Math.abs(pop("HK-SAP") - prefMass(w, "JP-13"))).toBeLessThan(5); expect(Math.abs(pop("JP-13") - prefMass(w, "HK-SAP"))).toBeLessThan(5); expect(pop("JP-13")).toBeGreaterThan(100000);
-    expect(r.capMetro).toContain("HK-HAK"); expect(r.capMetro.every((p) => !["JP-14", "JP-11", "JP-12"].includes(p))).toBe(true);
+    expect(r.capMetro).toContain("HK-HAK"); expect(r.capMetro.every((p) => !["JP-14", "JP-11", "JP-12", "JP-13"].includes(p))).toBe(true);
     expect(roleScale({ roles: r }, w, "JP-14")).toBeLessThan(1); expect(roleScale({ roles: r }, w, "HK-HAK")).toBeGreaterThan(1);
   });
   it("Takamatsu as sub-capital takes Osaka's role; the palace moves Kyoto's cultural role (and may share a seat)", () => {

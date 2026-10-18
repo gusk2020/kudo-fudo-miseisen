@@ -30,7 +30,7 @@ import type { RoleState, SimState } from "./types";
 import type { WCity, World } from "./world";
 
 export const ROLE_TOKYO = DEFAULT_CAPITAL, ROLE_OSAKA = DEFAULT_SUB, ROLE_KYOTO = "JP-26";
-export const METRO_SIZE = 3, SEA_ACCESS = 1.6;
+export const METRO_SIZE = 5, SEA_ACCESS = 1.6;
 
 const seatOf = (w: World, pref: string): WCity | undefined => w.cities.find((c) => c.pref === pref && c.kind === "capital");
 /** The 1950 population of a prefecture's cities (its role mass). */

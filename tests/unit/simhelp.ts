@@ -55,9 +55,10 @@ export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 
 }
 /** Stage 9: the real Japan with hand-drawn ranges (lon/lat points along each ridge line), for the mountain-barrier tests. */
 const ridgeCache: Record<string, { w: World; hash: string }> = {};
-export function ridgeWorld(ridges: { ne?: [number, number][]; sw?: [number, number][] }, islands = true, alps?: { ne?: true; sw?: true }) {
-  const key = JSON.stringify(ridges) + islands + JSON.stringify(alps ?? null); if (ridgeCache[key]) return ridgeCache[key];
+export function ridgeWorld(ridges: { ne?: [number, number][]; sw?: [number, number][] }, islands = true, alps?: { ne?: true; sw?: true }, fuji?: { lonLat: [number, number]; scale?: number }) {
+  const key = JSON.stringify(ridges) + islands + JSON.stringify(alps ?? null) + JSON.stringify(fuji ?? null); if (ridgeCache[key]) return ridgeCache[key];
   const s = defaultState(); if (islands) s.islands = true; if (alps) s.alpsRemoved = alps;
+  if (fuji) { s.features.fuji.pos = realToWorld("honshu", s.bodies.honshu, lonLatToReal(fuji.lonLat[0], fuji.lonLat[1])); if (fuji.scale) s.features.fuji.scale = fuji.scale; }
   const to = ([lon, lat]: [number, number]): Vec => realToWorld("honshu", s.bodies.honshu, lonLatToReal(lon, lat));
   s.ridges = { ne: ridges.ne ? ridges.ne.map(to) : null, sw: ridges.sw ? ridges.sw.map(to) : null };
   const t = generateTerrain(s, loadDem()); return (ridgeCache[key] = { w: buildWorld(t, s.seed), hash: t.hash });

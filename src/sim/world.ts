@@ -60,9 +60,13 @@ const D8: [number, number, number][] = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1
  * of a 2,000 m range costs about 40 times a flat km; above MTN_EXTREME_M three times that, and a railway above MTN_RAIL_PASS_M five times again. 0 outside the drawn ranges (the real terrain keeps its own cost).
  */
 export const MTN_RIDGE_MIN = 0.15, MTN_K = 10, MTN_EXTREME_M = 2000, MTN_EASE = 1.4, MTN_RAIL_PASS_M = 1300;
+/** Stage 11: however good the tunnelling, a high range keeps at least this share of its barrier (was 0.15: by 2050 the best technology made a drawn range nearly free to cross). */
+export const MTN_EASE_FLOOR = 0.4;
+/** Stage 11: on a steep slope inside a barrier the cost grows with the slope (percent) as 1 + slope / MTN_SLOPE_DIV. */
+export const MTN_SLOPE_DIV = 8;
 export const mountainBarrier = (ridge: number, elevM: number) => (ridge <= MTN_RIDGE_MIN ? 0 : ridge * MTN_K * Math.pow(Math.max(0, elevM) / 1000, 2) * (elevM > MTN_EXTREME_M ? 3 : 1));
 /** Stage 9: how much a line through drawn mountains costs to build, relative to the same length on open ground (earthworks, tunnels, slow progress). */
-export function mountainCost(w: World, cells: number[]): number { if (!cells.length || !w.barrier) return 1; let s = 0; for (const k of cells) s += mountainBarrier(w.t.ridge[k], w.t.elev[k]); return 1 + 0.25 * (s / cells.length); }
+export function mountainCost(w: World, cells: number[]): number { if (!cells.length || !w.barrier) return 1; let s = 0; for (const k of cells) s += mountainBarrier(w.t.barrier[k], w.t.elev[k]); return 1 + 0.25 * (s / cells.length); }
 /** Least-cost path on the 5 km grid. Land only, never through lakes, never between islands. */
 export function pathfind(w: World, from: number, to: number, o: PathOpts = {}): number[] | null {
   const { nx, ny, cell, t } = w; if (from < 0 || to < 0 || t.land[from] !== 1 || t.land[to] !== 1 || t.island[from] !== t.island[to]) return null;
@@ -87,9 +91,9 @@ export function pathfind(w: World, from: number, to: number, o: PathOpts = {}): 
         : 1 + ez * (0.07 * slope + 0.012 * slope * slope + (w.river[n] ? 0.5 : 0) + (t.ridge[n] > 0.5 ? 0.35 : 0) + (t.elev[n] > 1500 ? 0.5 : 0));
       // Stage 9: a drawn mountain range is a real barrier -- its high ground costs many times an ordinary climb, a reference corridor gives it no discount,
       // and tunnelling technology takes off only part of it (MTN_*; see mountainCost)
-      const mb = w.barrier ? mountainBarrier(t.ridge[n], t.elev[n]) : 0; if (mb > 0) f += mb * (o.rail ? (t.elev[n] > MTN_RAIL_PASS_M ? 5 : 1.3) : 1) * Math.max(0.15, 1 - MTN_EASE * (o.ease ?? 0));   // a railway cannot climb over a high pass at all: it waits for a long tunnel
+      const mb = w.barrier ? mountainBarrier(t.barrier[n], t.elev[n]) * (1 + slope / MTN_SLOPE_DIV) : 0; if (mb > 0) f += mb * (o.rail ? (t.elev[n] > MTN_RAIL_PASS_M ? 5 : 1.3) : 1) * Math.max(MTN_EASE_FLOOR, 1 - MTN_EASE * (o.ease ?? 0));   // a railway cannot climb over a high pass at all: it waits for a long tunnel
       if (o.roadCells?.has(n) && o.roadCells.has(c)) f *= mb > 1 ? 0.6 : 0.3;
-      if (o.bias) { const b = o.bias(n); f *= w.barrier && t.ridge[n] > MTN_RIDGE_MIN ? Math.max(1, b) : b; }
+      if (o.bias) { const b = o.bias(n); f *= w.barrier && t.barrier[n] > MTN_RIDGE_MIN ? Math.max(1, b) : b; }
       const nd = dist[lc] + dkm * f, ln = loc(n);
       if (nd < dist[ln]) { dist[ln] = nd; prev[ln] = c; heap.push(nd + hx(n), n); }
     }
@@ -98,7 +102,7 @@ export function pathfind(w: World, from: number, to: number, o: PathOpts = {}): 
   const out: number[] = []; for (let k = to; k !== -1; k = prev[loc(k)]) { out.push(k); if (k === from) break; }
   out.reverse();
   // Stage 9: a path forced over a drawn range may only be so because the search window was too small to see the way round it: look once more, wider
-  if (w.barrier && m < MTN_WIDE_MARGIN && out.some((k) => mountainBarrier(t.ridge[k], t.elev[k]) > MTN_RETRY)) return pathfind(w, from, to, { ...o, margin: MTN_WIDE_MARGIN }) ?? out;
+  if (w.barrier && m < MTN_WIDE_MARGIN && out.some((k) => mountainBarrier(t.barrier[k], t.elev[k]) > MTN_RETRY)) return pathfind(w, from, to, { ...o, margin: MTN_WIDE_MARGIN }) ?? out;
   return out;
 }
 export const MTN_RETRY = 8, MTN_WIDE_MARGIN = 45;

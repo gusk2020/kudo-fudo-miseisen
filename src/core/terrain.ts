@@ -5,7 +5,7 @@ import { MinHeap } from "./heap";
 import { dist, pointSegDist, rot as rotv } from "./geom";
 import { fbm, hashArrays } from "./rng";
 import { featureWorldPos } from "./state";
-import { featureWorld, FUJI_RADIUS_KM, fujiHeightFactor } from "./validate";
+import { featureScales, featureWorld, FUJI_RADIUS_KM, fujiHeightFactor } from "./validate";
 import type { IslandId, ProjectState, Vec } from "./types";
 import { ISLAND_IDS } from "./types";
 
@@ -19,6 +19,7 @@ export interface TerrainResult {
   pref: Uint8Array;        // 0 none, 1.. = index in JAPAN.prefectures + 1 (see prefOrder)
   plains: Uint8Array;
   ridge: Float32Array;     // 0..1 closeness to a drawn ridge
+  barrier: Float32Array;   // Stage 11: 0..1 construction barrier = drawn ranges and the Fuji cone (see the world's pathfinder)
   streams: Float32Array;   // x1,y1,x2,y2,widthCells per segment
   borders: Float32Array;   // x1,y1,x2,y2 per segment
   rivers: RiverInfo[];
@@ -66,6 +67,8 @@ const N8: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1
  * the high ground (CORE km, fully levelled) and of the transition (EDGE km, blended back to the DEM). Rough lines, not survey data -- the same ones the 実アルプス
  * button draws, extended a little to cover each massif's ends. Mt. Fuji (some 50 km from the southern line) and Lake Biwa are far outside either zone.
  */
+/** Stage 11: height of the Fuji cone at which its barrier field reaches 1 (below it the field falls off linearly down to the foot). */
+export const FUJI_BARRIER_FULL_M = 1500;
 export const REAL_ALPS: Record<"ne" | "sw", { line: [number, number][]; core: number; edge: number }> = {
   ne: { line: [[137.70, 36.95], [137.76, 36.76], [137.62, 36.58], [137.65, 36.34], [137.55, 36.11], [137.52, 36.0]], core: 12, edge: 30 },
   sw: { line: [[138.24, 35.80], [138.23, 35.78], [138.24, 35.67], [138.10, 35.60], [138.14, 35.45], [138.10, 35.33], [138.06, 35.22]], core: 10, edge: 28 },
@@ -200,13 +203,15 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     elev[k] = Math.min(3300, elev[k] + h * ridge[k]);
   }
 
+  // Stage 11: the construction-barrier field = the drawn ranges plus the cone of Mt. Fuji (foot included). `ridge` itself stays the drawn ranges only: it also steers the rivers, and the terrain hash must not move for older saves
+  const barrier = Float32Array.from(ridge);
   // ---- Mt. Fuji ----
   let fujiTop = -1;
   {
-    const c = featureWorldPos(s, "fuji"), a0 = s.features.fuji.rot, fk = s.features.fuji.scale ?? 1, summit = JAPAN.fuji.summitM * fujiHeightFactor(s.features.fuji);
+    const c = featureWorldPos(s, "fuji"), a0 = s.features.fuji.rot, [fkx, fky] = featureScales(s.features.fuji), fk = Math.max(fkx, fky), summit = JAPAN.fuji.summitM * fujiHeightFactor(s.features.fuji);
     const r0 = FUJI_RADIUS_KM * fk * 1.25;
-    const ff = s.features.fuji;
-    if (ff.pos || ff.scale !== undefined || ff.height !== undefined) {
+    const ff = s.features.fuji, fujiEdited = !!(ff.pos || ff.scale !== undefined || ff.scaleY !== undefined || ff.height !== undefined);
+    if (ff.pos || ff.scale !== undefined || ff.scaleY !== undefined || ff.height !== undefined) {
       // Issue #18: an edited Fuji leaves no relief behind at the real site -- the DEM's own cone is levelled to its surroundings
       const o = realToWorld("honshu", s.bodies.honshu, JAPAN.fuji.center), R = FUJI_RADIUS_KM * 1.7, ring: number[] = [];
       for (let q = 0; q < 16; q++) { const kk = idxOf([o[0] + Math.cos(q * Math.PI / 8) * R * 1.15, o[1] + Math.sin(q * Math.PI / 8) * R * 1.15]); if (kk >= 0 && land[kk] === 1) ring.push(elev[kk]); }
@@ -220,9 +225,15 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     for (let j = Math.max(0, Math.floor((c[1] - r0 - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((c[1] + r0 - y0) / cell)); j++)
       for (let i = Math.max(0, Math.floor((c[0] - r0 - x0) / cell)); i <= Math.min(nx - 1, Math.ceil((c[0] + r0 - x0) / cell)); i++) {
         const k = j * nx + i; if (land[k] !== 1) continue;
-        const dx = cx(i) - c[0], dy = cy(j) - c[1], d = Math.hypot(dx, dy), th = Math.atan2(dy, dx) - a0;
-        const R = FUJI_RADIUS_KM * fk * (1 + 0.1 * Math.sin(3 * th + 1) + 0.06 * Math.sin(5 * th + 2));
-        if (d < R) { const e = 250 + (summit - 250) * Math.pow(1 - d / R, 1.5); if (e > elev[k]) elev[k] = e; }
+        // the cone is stretched along its own axes (sx, sy) and then turned: take the cell into the cone's own frame, undo the stretch, and measure against the fixed silhouette
+        const dx = cx(i) - c[0], dy = cy(j) - c[1]; let d: number, R: number;
+        if (fkx === fky) { d = Math.hypot(dx, dy); const th = Math.atan2(dy, dx) - a0; R = FUJI_RADIUS_KM * fkx * (1 + 0.1 * Math.sin(3 * th + 1) + 0.06 * Math.sin(5 * th + 2)); }   // uniform size: the exact arithmetic every older save was made with (terrain hashes must not move)
+        else { const u = (dx * Math.cos(a0) + dy * Math.sin(a0)) / fkx, v = (-dx * Math.sin(a0) + dy * Math.cos(a0)) / fky, th = Math.atan2(v, u); d = Math.hypot(u, v); R = FUJI_RADIUS_KM * (1 + 0.1 * Math.sin(3 * th + 1) + 0.06 * Math.sin(5 * th + 2)); }
+        if (d < R) {
+          const e = 250 + (summit - 250) * Math.pow(1 - d / R, 1.5); if (e > elev[k]) elev[k] = e;
+          // Stage 11: a Fuji the player has moved, stretched or re-heightened is a construction barrier like a drawn range, foot included (it follows the mountain wherever it stands). The untouched Fuji is not: the real Tokaido skirts its foot, and the calibration of every game on the real map rests on that
+          if (fujiEdited) { const foot = Math.min(1, e / FUJI_BARRIER_FULL_M); if (foot > barrier[k]) barrier[k] = foot; }
+        }
       }
     const kc = idxOf(c);
     if (kc >= 0 && land[kc] === 1) { elev[kc] = summit; fujiTop = kc; }
@@ -389,7 +400,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   const hash = hashArrays(Int16Array.from(elev, (v) => Math.round(v)), pref, land, Int16Array.from(borders), Int16Array.from(streamSeg));
   progress(1, "完了");
   return {
-    grid: { x0, y0, cell, nx, ny }, land, island, elev, pref, plains, ridge, streams: Float32Array.from(streamSeg), borders: Float32Array.from(borders),
+    grid: { x0, y0, cell, nx, ny }, land, island, elev, pref, plains, ridge, barrier, streams: Float32Array.from(streamSeg), borders: Float32Array.from(borders),
     rivers, cities, prefOrder: prefs.map((p) => p.id), stats, warnings, hash,
   };
 }
