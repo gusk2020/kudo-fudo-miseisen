@@ -30,19 +30,34 @@ const JAPAN_SEA: [number, number][] = [[127.0, 34.3], [129.3, 33.6], [130.3, 33.
   [137.5, 36.3], [138.6, 36.9], [140.0, 38.2], [140.4, 40.0], [140.35, 41.0], [140.2, 41.4], [140.2, 41.9], [140.6, 42.8], [141.4, 43.0], [141.9, 44.5], [141.95, 45.45], [142.0, 46.0], [142.0, 50.0], [141.5, 53.0], [140.0, 48.0], [130.5, 42.5], [129.5, 37.0], [128.5, 35.0]];
 /** The Sea of Okhotsk (with the Nemuro strait): neither side. */
 const OKHOTSK: [number, number][] = [[141.95, 45.45], [142.3, 44.0], [144.5, 43.6], [145.2, 43.3], [145.9, 43.4], [146.5, 44.5], [150.0, 47.0], [143.0, 52.0], [142.2, 46.2]];
-function inPoly(poly: [number, number][], x: number, y: number): boolean { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; }
+const bbox = (p: [number, number][]) => [Math.min(...p.map((q) => q[0])), Math.max(...p.map((q) => q[0])), Math.min(...p.map((q) => q[1])), Math.max(...p.map((q) => q[1]))];
+const JS_BOX = bbox(JAPAN_SEA), OK_BOX = bbox(OKHOTSK);
+function inPoly(poly: [number, number][], x: number, y: number): boolean { const b = poly === JAPAN_SEA ? JS_BOX : poly === OKHOTSK ? OK_BOX : null; if (b && (x < b[0] || x > b[1] || y < b[2] || y > b[3])) return false; let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; }
 /** Sea cells: 1 = Sea of Japan, 2 = Pacific side (Pacific, Seto Inland Sea, East China Sea), 0 = land / lake / Okhotsk. Real-map games: the world frame is the real one. */
 export function seaClass(w: World, k: number): 0 | 1 | 2 {
   if (w.t.land[k] !== 0) return 0; const [lon, lat] = realToLonLat(w.cellPos(k)); if (inPoly(OKHOTSK, lon, lat)) return 0; return inPoly(JAPAN_SEA, lon, lat) ? 1 : 2;
 }
 const sideMemo = new WeakMap<World, Map<string, number>>();
 const CAP_CELLS = 80;
-/** -1 (on the Sea of Japan) .. +1 (on the Pacific side), from the distances to the nearest sea of each kind; inland cities in between. */
+/** -1 (on the Sea of Japan) .. +1 (on the Pacific side), from the distances to the nearest sea of each kind; inland cities in between. Computed once per world
+ * (two breadth-first sweeps over the grid with typed arrays: about a tenth of a second on a phone). */
 export function coastSide(w: World, cityId: string): number {
   let m = sideMemo.get(w);
   if (!m) {
-    const dist = (cls: 1 | 2) => { const d = new Uint8Array(w.N).fill(255), q: number[] = []; for (let k = 0; k < w.N; k++) if (seaClass(w, k) === cls) { d[k] = 0; q.push(k); }
-      for (let h = 0; h < q.length; h++) { const k = q[h]; if (d[k] >= CAP_CELLS) continue; const i = k % w.nx, j = (k / w.nx) | 0; for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]) { if (a < 0 || b < 0 || a >= w.nx || b >= w.ny) continue; const n = b * w.nx + a; if (d[n] > d[k] + 1) { d[n] = d[k] + 1; q.push(n); } } } return d; };
+    // the world frame is the real one here, so longitude depends on the column only and latitude on the row only
+    const cls = new Uint8Array(w.N), lon = Float64Array.from({ length: w.nx }, (_, i) => realToLonLat(w.cellPos(i))[0]), lat = Float64Array.from({ length: w.ny }, (_, j) => realToLonLat(w.cellPos(j * w.nx))[1]);
+    // scanline: per row, where each outline's edges cross that latitude; a cell is inside when an odd number of crossings lie west of it (same rule as inPoly)
+    const cross = (poly: [number, number][], y: number) => { const xs: number[] = []; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if (yi > y !== yj > y) xs.push(((xj - xi) * (y - yi)) / (yj - yi) + xi); } return xs.sort((p, q) => p - q); };
+    const inside = (xs: number[], x: number) => { let n = 0; for (const v of xs) if (x < v) n++; return n % 2 === 1; };
+    for (let j = 0; j < w.ny; j++) { const cj = cross(JAPAN_SEA, lat[j]), co = cross(OKHOTSK, lat[j]); for (let i = 0; i < w.nx; i++) { const k = j * w.nx + i; if (w.t.land[k] !== 0) continue; const x = lon[i]; cls[k] = co.length && inside(co, x) ? 0 : cj.length && inside(cj, x) ? 1 : 2; } }
+    const dist = (c: 1 | 2) => {
+      const d = new Uint8Array(w.N).fill(255), q = new Int32Array(w.N); let n = 0; for (let k = 0; k < w.N; k++) if (cls[k] === c) { d[k] = 0; q[n++] = k; }
+      const nx = w.nx, ny = w.ny;
+      for (let h = 0; h < n; h++) { const k = q[h], dk = d[k]; if (dk >= CAP_CELLS) continue; const i = k % nx, j = (k / nx) | 0, nd = dk + 1;
+        if (i + 1 < nx && d[k + 1] > nd) { d[k + 1] = nd; q[n++] = k + 1; } if (i > 0 && d[k - 1] > nd) { d[k - 1] = nd; q[n++] = k - 1; }
+        if (j + 1 < ny && d[k + nx] > nd) { d[k + nx] = nd; q[n++] = k + nx; } if (j > 0 && d[k - nx] > nd) { d[k - nx] = nd; q[n++] = k - nx; } }
+      return d;
+    };
     const dj = dist(1), dp = dist(2); m = new Map(); for (const c of w.cities) { const a = Math.min(CAP_CELLS, dj[c.cell]), b = Math.min(CAP_CELLS, dp[c.cell]); m.set(c.id, (a - b) / (a + b + 1)); } sideMemo.set(w, m);
   }
   return m.get(cityId) ?? 0;

@@ -299,6 +299,8 @@ test("皇居: 49府県から選べ、首都と同じ府県でもよく、地図�
 
 test("凡例の「路線名」は国道だけでなく、鉄道と途中で自動生成された路線にも効き、番号標識とは別に保たれる", async ({ page }) => {
   const errs = watchErrors(page); await startReal(page, "heisei");
+  // Stage 10: number signs start OFF after the ceremony; the player switches them on in the layer sheet
+  expect(await app(page, "a => a.s.layers.signs")).toBe(false); await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = "layers"; a.buildSheet(); }); await page.locator("#layer-signs").check();
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.ffYears(40); a.r.setView({ zoom: 1.4 }, true); a.renderRoads(); });
   const stat = () => page.evaluate(() => { const L = (window as any).__kfm.r.roads, vis = L.signs.filter((s: any) => s.c.visible); return { signs: vis.length, names: vis.filter((s: any) => s.nk.visible).length, texts: vis.map((s: any) => s.t.text), nameTexts: vis.filter((s: any) => s.nk.visible).map((s: any) => s.nk.text) }; });
   const off = await stat(); expect(off.signs).toBeGreaterThan(3); expect(off.names).toBe(0); expect(off.texts.every((x: string) => /^\d+$/.test(x))).toBe(true);   // number-only signs, no name text anywhere
@@ -606,7 +608,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true,"sw":true}');
   // the ceremony: signs start OFF; switched on by hand they stay on through a reload
   expect(await app(page, "a => a.s.layers.signs")).toBe(true);
-  await page.click("#terrain-edit-toggle").catch(() => {}); if (await page.isVisible("#tool-ridge-sw")) await page.click("#terrain-edit-toggle");
+  await editor(page, false);
   const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市");
   await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, osaka); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.layers.signs")).toBe(false); expect(await app(page, "a => !!a.sim.roles && !!a.sim.kaigen.recon")).toBe(true);
