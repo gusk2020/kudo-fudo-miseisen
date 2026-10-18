@@ -618,3 +618,57 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   expect(await app(page, "a => a.s.layers.signs")).toBe(true);
   expect(errs).toEqual([]);
 });
+
+test("Stage 11: 道路図/地形図を最初に選べて保存される。道路図では山脈の線を出さず、山脈の編集中だけ地形図になる。区間を選んで消す・描き直す・Undo/Redoができる", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  const drawn = () => app(page, "a => a.r.ridgeStrokesDrawn") as Promise<number>;
+  // the settings sheet offers the two maps; the road map is the default, and the choice is kept through a reload
+  await openSetup(page); expect(await page.isVisible("#bg-roadmap")).toBe(true); expect(await page.getAttribute("#bg-roadmap", "aria-pressed")).toBe("true");
+  await page.click("#bg-terrain"); expect(await app(page, "a => a.bg")).toBe("terrain"); expect(await app(page, "a => a.s.bg")).toBe("terrain"); await closeSheet(page);
+  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(await app(page, "a => a.bg")).toBe("terrain");
+  await openSetup(page); await page.click("#bg-roadmap"); await closeSheet(page); expect(await app(page, "a => a.bg")).toBe("roadmap");
+  // draw two ranges: on the road map the lines are not drawn, while the range tools are on the terrain map is shown, and afterwards the road map returns
+  await page.click("#terrain-edit-toggle"); await page.click("#edit-more");
+  const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市", "岐阜市"]);
+  await page.click("#tool-ridge-ne"); expect(await app(page, "a => a.bg")).toBe("terrain");
+  await stroke(page, [P[0], P[2]]); await stroke(page, [P[1], P[3]]);
+  expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1); expect(await drawn()).toBe(2);
+  // 区間を選ぶ: tap a stroke, delete it, undo, redo; then redraw it
+  await page.click("#tool-ridge-pick");
+  const mid = await page.evaluate(() => { const a = (window as any).__kfm, l = a.s.ridgeExtra.ne[0]; return a.r.worldToScreen(l[Math.floor(l.length / 2)]); }) as [number, number];
+  await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => JSON.stringify(a.ridgeSel)")).toBe('{"key":"ne","si":1}');
+  await page.click("#ridge-del"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(0); expect(await drawn()).toBe(1);
+  await page.click("#edit-undo"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1);
+  await page.click("#edit-redo"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(0); await page.click("#edit-undo");
+  await page.mouse.click(mid[0], mid[1]); await page.click("#ridge-redraw"); expect(await app(page, "a => a.tool")).toBe("ridge-ne");
+  const before = await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne[0])") as string;
+  await stroke(page, [[P[1][0] + 4, P[1][1] + 4], [P[4][0], P[4][1]], [P[3][0] + 4, P[3][1] + 4]]);
+  expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1); expect(await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne[0])")).not.toBe(before);
+  // leave the range tools: back to the road map, ranges hidden, the constructions barrier unchanged in the terrain
+  await page.click("#tool-ridge-ne"); await page.click("#edit-more").catch(() => {}); await editor(page, false);
+  expect(await app(page, "a => a.bg")).toBe("roadmap"); expect(await drawn()).toBe(0);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 11: 琵琶湖・富士山の縦と横を別々に伸ばせる(各最大5倍・回転を保つ)。富士山の高さは面積相当の倍率に連動し、保存・Undo/Redoで残る", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#terrain-edit-toggle"); await page.click("#sel-fuji");
+  const size = () => app(page, "a => JSON.stringify([a.s.features.fuji.scale ?? 1, a.s.features.fuji.scaleY ?? a.s.features.fuji.scale ?? 1])") as Promise<string>;
+  await page.click("#rot-l"); const rot = await app(page, "a => a.s.features.fuji.rot") as number; expect(rot).not.toBe(0);
+  await page.click("#fuji-x-more"); await page.click("#fuji-x-more");
+  const [sx, sy] = JSON.parse(await size()) as [number, number]; expect(sx).toBeGreaterThan(1.2); expect(sy).toBe(1);
+  expect(await page.textContent("#fuji-size")).toContain("横×"); expect(await page.textContent("#fuji-size")).toContain("縦×1");
+  const hgt = await app(page, "a => a.s.features.fuji.auto === true"); expect(hgt).toBe(true);
+  await page.click("#fuji-y-less"); const [sx2, sy2] = JSON.parse(await size()) as [number, number]; expect(sx2).toBe(sx); expect(sy2).toBeLessThan(1);
+  expect(await app(page, "a => a.s.features.fuji.rot")).toBe(rot);                       // the rotation is kept
+  await page.click("#edit-undo"); expect(JSON.parse(await size())[1]).toBe(1); await page.click("#edit-redo"); expect(JSON.parse(await size())[1]).toBe(sy2);
+  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(JSON.parse(await size())).toEqual([sx, sy2]);
+  // the lake: its own two axes, each stops at 5x (the map check may stop it sooner: the lake must stay off the coast)
+  await page.click("#terrain-edit-toggle").catch(() => {}); if (!(await page.isVisible("#sel-biwa"))) await page.click("#terrain-edit-toggle");
+  await page.click("#sel-biwa"); await page.click("#biwa-y-more"); await page.click("#biwa-y-more");
+  const lake = await app(page, "a => JSON.stringify([a.s.features.biwa.scale ?? 1, a.s.features.biwa.scaleY ?? a.s.features.biwa.scale ?? 1])") as string; const [lx, ly] = JSON.parse(lake) as [number, number];
+  expect(ly).toBeGreaterThan(lx); expect(Math.max(lx, ly)).toBeLessThanOrEqual(5); expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error').length")).toBe(0);
+  expect(errs).toEqual([]);
+});
