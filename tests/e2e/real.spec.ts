@@ -656,7 +656,7 @@ test("Stage 11: 琵琶湖・富士山の縦と横を別々に伸ばせる(各最
   await page.click("#terrain-edit-toggle"); await page.click("#sel-fuji");
   const size = () => app(page, "a => JSON.stringify([a.s.features.fuji.scale ?? 1, a.s.features.fuji.scaleY ?? a.s.features.fuji.scale ?? 1])") as Promise<string>;
   await page.click("#rot-l"); const rot = await app(page, "a => a.s.features.fuji.rot") as number; expect(rot).not.toBe(0);
-  await page.click("#feature-axes-toggle");   // the 縦横 row opens on demand (the closed toolbar stays one short row)
+  await page.click("#fuji-size");   // tapping the size opens the 縦横 row (the closed toolbar stays one short row)
   await page.click("#fuji-x-more"); await page.click("#fuji-x-more");
   const [sx, sy] = JSON.parse(await size()) as [number, number]; expect(sx).toBeGreaterThan(1.2); expect(sy).toBe(1);
   expect(await page.textContent("#fuji-size")).toContain("横×"); expect(await page.textContent("#fuji-size")).toContain("縦×1");
@@ -668,7 +668,7 @@ test("Stage 11: 琵琶湖・富士山の縦と横を別々に伸ばせる(各最
   expect(JSON.parse(await size())).toEqual([sx, sy2]);
   // the lake: its own two axes, each stops at 5x (the map check may stop it sooner: the lake must stay off the coast)
   await page.click("#terrain-edit-toggle").catch(() => {}); if (!(await page.isVisible("#sel-biwa"))) await page.click("#terrain-edit-toggle");
-  await page.click("#sel-biwa"); if (!(await page.isVisible("#biwa-y-more"))) await page.click("#feature-axes-toggle"); await page.click("#biwa-y-more"); await page.click("#biwa-y-more");
+  await page.click("#sel-biwa"); if (!(await page.isVisible("#biwa-y-more"))) await page.click("#biwa-size"); await page.click("#biwa-y-more"); await page.click("#biwa-y-more");
   const lake = await app(page, "a => JSON.stringify([a.s.features.biwa.scale ?? 1, a.s.features.biwa.scaleY ?? a.s.features.biwa.scale ?? 1])") as string; const [lx, ly] = JSON.parse(lake) as [number, number];
   expect(ly).toBeGreaterThan(lx); expect(Math.max(lx, ly)).toBeLessThanOrEqual(5); expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error').length")).toBe(0);
   expect(errs).toEqual([]);
