@@ -31,6 +31,8 @@ export interface ProjectState {
   alpsRemoved?: { ne?: true; sw?: true };
   /** Stage 10: the layers the player has switched by hand (their choice is never overridden by a later default, e.g. signs OFF after the ceremony). */
   layersSet?: string[];
+  /** Stage 11: which map is shown, the road map or the terrain map -- chosen in the settings, kept with the game (a display choice: not part of the map hash). */
+  bg?: "roadmap" | "terrain";
   finalized: boolean;
   /** Stage 3: the real Japan (no deformation, no drawn ridges). Set only by realState(); the hand-edited map flow never sets it. */
   real?: boolean;

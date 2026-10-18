@@ -30,7 +30,7 @@ import { eraKeyOf, type EraKey } from "../sim/eras";
 import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraPicker } from "./stage3";
 import { CAND_1945 } from "../sim/kaigen";
 
-type Tool = "view" | "palace" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
+type Tool = "view" | "palace" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "ridge-pick" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const pathLen = (p: Vec[]) => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; };
 export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -52,6 +52,13 @@ function toControlPoints(pts: Vec[]): Vec[] {
 /** Stage 11: set a feature's two sizes (x along its own axis, y along the other); equal sizes are stored as the single `scale`, and 1 x 1 as nothing at all, exactly as older saves. */
 export function setFeatureSize(f: { scale?: number; scaleY?: number }, kx: number, ky: number) { if (kx === 1 && ky === 1) { delete f.scale; delete f.scaleY; return; } f.scale = kx; if (ky === kx) delete f.scaleY; else f.scaleY = ky; }
 const stateKey = (s: Store["state"]) => JSON.stringify([s.seed, s.bodies, s.features, s.ridges, s.ridgeExtra ?? null, s.islands ? 1 : 0, ...(s.alpsRemoved ? [s.alpsRemoved] : [])]);
+/** Stage 11: the four range tools: draw north / south, move points, select a stroke (区間). */
+const isRidgeTool = (t: string) => t === "ridge-ne" || t === "ridge-sw" || t === "ridge-edit" || t === "ridge-pick";
+/** Stage 11: remove one stroke of a range (0 = the first: the next one takes its place). */
+function removeRidgeStroke(s: Store["state"], key: "sw" | "ne", si: number) {
+  if (si === 0) { const ex = s.ridgeExtra?.[key] ?? []; s.ridges[key] = ex.length ? ex.shift()! : null; } else if (s.ridgeExtra) s.ridgeExtra[key].splice(si - 1, 1);
+  if (s.ridgeExtra && !s.ridgeExtra.sw.length && !s.ridgeExtra.ne.length) delete s.ridgeExtra;
+}
 /** Stage 9: how close (screen px) a finger must come to a range's end to continue it, or to a point to grab it -- a fingertip, not a mouse pointer. */
 const RIDGE_TOUCH_PX = 40;
 /** Stage 9: write one stroke of a range: 0 = the first, -1 = a new one appended, n = the n-th added. */
@@ -71,6 +78,7 @@ export class App {
   sim: SimState | null = null; world: World | null = null; private worldRef: TerrainResult | null = null; pendingSim: SimState | null = null;
   cerDraft: Partial<Record<CerKind, CerDraft>> = {};
   /** Stage 9: how the 国道1号 tool acts -- draw a stroke, move a control point, or pick a stroke (then delete or redraw it). */
+  ridgeSel: { key: "sw" | "ne"; si: number } | null = null; ridgeRedraw: { key: "sw" | "ne"; si: number } | null = null; bgBeforeRidge: "terrain" | "roadmap" | null = null;
   cerMode: "draw" | "move" | "pick" = "draw"; cerSel: number | null = null; cerRedraw: number | null = null; private cerLive: Vec[] | null = null; pin: Vec | null = null; scenery: any = null;
   compareYear: number | null = null; selEdge: string | null = null;
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
@@ -140,7 +148,9 @@ export class App {
     if (validate(cand).some((i) => i.severity === "error" && i.step === "features" && /^(biwa|fuji|features)\./.test(i.code))) which.add("biwa").add("fuji");
     this.store.set((s) => fix(s, which)); this.toast(`置けない位置にあった${[...which].map((f) => (f === "biwa" ? "琵琶湖" : "富士山")).join("・")}を元の位置に戻しました`); return true;
   }
-  render() { this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = this.tool === "ridge-ne" || this.tool === "ridge-sw" || this.tool === "ridge-edit"; this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+  render() { if (!isRidgeTool(this.tool) && this.bgBeforeRidge) { const b0 = this.bgBeforeRidge; this.bgBeforeRidge = null; this.bg = b0; this.r.setBg(b0); }   // leaving the range tools by any route puts the map back
+    if (this.real && this.s.bg && this.s.bg !== this.bg && !this.bgBeforeRidge) { this.bg = this.s.bg; this.r.setBg(this.bg); }   // a loaded game brings its own map choice
+    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -218,7 +228,7 @@ export class App {
   private bodyForTool(): IslandId { return this.s.step === 1 ? "honshu" : this.activeBody; }
   // Stage 9 (Pixel 7a report): drawing a range starts a terrain rebuild that takes seconds on a phone; the range tools must keep working meanwhile (each new
   // edit simply restarts the rebuild), or the next stroke turns into a pan of the map and seems to do nothing
-  private editable() { const ridgeTool = this.tool === "ridge-ne" || this.tool === "ridge-sw" || this.tool === "ridge-edit"; return this.tool !== "view" && (!this.generating || ridgeTool) && !this.catching && (this.s.step === 6 || !this.store.locked); }
+  private editable() { const ridgeTool = isRidgeTool(this.tool); return this.tool !== "view" && (!this.generating || ridgeTool) && !this.catching && (this.s.step === 6 || !this.store.locked); }
   handler() {
     return {
       active: () => this.editable(),
@@ -294,9 +304,15 @@ export class App {
     }
     if (t === "ridge-sw" || t === "ridge-ne") {   // Stage 9: a new stroke -- the first of the range, or one more (continuing a stroke when started at its end)
       if (!this.onHonshu(w)) return false; const key = t === "ridge-sw" ? "sw" : "ne", lines = [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])], tol = RIDGE_TOUCH_PX / this.r.view.zoom;
-      let si = s.ridges[key] ? -1 : 0, join: "end" | "start" | null = null;
+      let si = s.ridges[key] ? -1 : 0, join: "end" | "start" | null = null; const rd = this.ridgeRedraw && this.ridgeRedraw.key === key ? this.ridgeRedraw : null;
+      if (rd) { this.grab = { t, key, pts: [w], si: rd.si, join: null, redraw: true }; this.pending = { ridge: { key, pts: [w], si: rd.si } }; this.render(); return true; }   // redrawing a picked stroke: it replaces that stroke, it does not continue another
       lines.forEach((l, i) => { if (!l || l.length < 2 || join) return; if (dist(l[l.length - 1], w) <= tol) { si = i; join = "end"; } else if (dist(l[0], w) <= tol) { si = i; join = "start"; } });
       this.grab = { t, key, pts: [w], si, join }; this.pending = { ridge: { key, pts: [w], si: si >= 0 && join ? si : si } }; this.render(); return true;
+    }
+    if (t === "ridge-pick") {   // Stage 11: a tap selects the nearest stroke of either range (the same 区間 selection as for the 国道1号)
+      let best: { key: "sw" | "ne"; si: number } | null = null, bd = RIDGE_TOUCH_PX / this.r.view.zoom;
+      for (const key of ["sw", "ne"] as const) [s.ridges[key], ...(s.ridgeExtra?.[key] ?? [])].forEach((l, si) => { for (let i = 0; l && i + 1 < l.length; i++) { const d = pointSegDist(w, l[i], l[i + 1]); if (d < bd) { bd = d; best = { key, si }; } } });
+      this.ridgeSel = best; this.render(); this.buildToolbar(); return true;
     }
     if (t === "ridge-edit") {   // any point of any stroke
       let best: { key: "sw" | "ne"; si: number; i: number } | null = null, bd = RIDGE_TOUCH_PX / this.r.view.zoom;
@@ -345,7 +361,14 @@ export class App {
       else this.render();
     } else if (g.t === "move" && g.place) this.store.commit((s) => { s.bodies[g.id as IslandId].place = g.place; });
     else if (g.t === "feature" && g.pos) { const f = this.s.features[g.which as "biwa" | "fuji"]; this.applyFeaturePose(g.which, { pos: g.pos, rot: f.rot, scale: featureScales(f)[0], sy: featureScales(f)[1] }); }
-    else if ((g.t === "ridge-sw" || g.t === "ridge-ne") && g.pts.length >= 2) { const line = simplifyLine(this.ridgeJoined(g), 4); this.commitEdit((s) => setRidgeStroke(s, g.key, g.si, line)); }
+    else if ((g.t === "ridge-sw" || g.t === "ridge-ne") && g.pts.length >= 2) {
+      let line = simplifyLine(this.ridgeJoined(g), 4);
+      if (g.redraw) {   // Stage 11: the redrawn stroke takes the place of the picked one; a loose end close to an old end joins it again
+        const old = this.ridgeStroke(g.key, g.si) ?? [], tol = RIDGE_TOUCH_PX / this.r.view.zoom, snap = (p: Vec) => (old.length ? [old[0], old[old.length - 1]].find((q) => dist(q, p) <= tol) ?? p : p);
+        line = [snap(line[0]), ...line.slice(1, -1), snap(line[line.length - 1])]; this.ridgeRedraw = null;
+      }
+      this.commitEdit((s) => setRidgeStroke(s, g.key, g.si, line)); if (g.redraw) { this.buildToolbar(); this.render(); }
+    }
     else if (g.t === "ridge-edit" && g.pts) this.commitEdit((s) => setRidgeStroke(s, g.key, g.si, g.pts));
     else this.render();
   }
@@ -486,6 +509,10 @@ export class App {
     sim.speed = 1; this.sim = sim; this.saveLocked = false; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.saveCer(); this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
     this.persist(); this.toast("開通の儀を終えました。時間が動き始めます"); this.onChange();
   }
+  /** Stage 11: delete the selected stroke of a range (one Undo step), as 区間を消す does for the 国道1号. */
+  ridgeDeleteSel() { const sel = this.ridgeSel; if (!sel) return; this.ridgeSel = null; this.commitEdit((s) => removeRidgeStroke(s, sel.key, sel.si)); this.buildToolbar(); this.render(); }
+  /** Stage 11: redraw the selected stroke: the next stroke drawn replaces it, its ends snapped to the old ends when they are close (so it joins what it joined before). */
+  ridgeRedrawSel() { const sel = this.ridgeSel; if (!sel) return; this.ridgeRedraw = { ...sel }; this.ridgeSel = null; this.tool = sel.key === "ne" ? "ridge-ne" : "ridge-sw"; this.pending = null; this.toast("選んだ区間を描き直してください。両端は元の線の端につながります"); this.buildToolbar(); this.render(); }
   /** Look at a past year (read-only, time stopped) or return to now. Never changes the simulation. */
   setViewYear(y: number | null) {
     this.viewYear = y; if (y !== null) this.selEdge = null;
@@ -574,7 +601,8 @@ export class App {
   saveUi() { try { localStorage.setItem("kfm.ui", JSON.stringify({ hide: [...this.hide], names: this.names, legendOpen: this.legendOpen })); } catch { /* ignore */ } }
   /** Legend filters are display-only: they never touch the simulation. */
   toggleHide(key: string) { if (this.hide.has(key)) this.hide.delete(key); else this.hide.add(key); this.saveUi(); this.renderRoads(); this.buildSheet(); }
-  setBg(bg: "terrain" | "roadmap") { this.bg = bg; try { localStorage.setItem("kfm.bg", bg); } catch { /* ignore */ } this.r.setBg(bg); this.buildToolbar(); }
+  /** Stage 11: which map is shown -- the road map or the terrain map -- is chosen in the settings, kept with the game (`bg`), and restored on load. `keep` = false for the temporary switch while a range is edited. */
+  setBg(bg: "terrain" | "roadmap", keep = true) { this.bg = bg; if (keep) { try { localStorage.setItem("kfm.bg", bg); } catch { /* ignore */ } if (this.s.bg !== bg) this.store.set((s) => { s.bg = bg; }); } this.r.setBg(bg); this.buildToolbar(); }
   /** Stage 3 dock: the observation tools get their own buttons (the old dock's 検証/取消/やり直し make no sense on a fixed real map). */
   private buildRealDock() {
     const dock = $("dock"), fit = $("btn-fit");   // the old buttons stay in the DOM (other code reads them) but are hidden
@@ -593,13 +621,17 @@ export class App {
   private tbtn(label: string, on: boolean, f: () => void, id?: string, mark = true) { return h("button", { id, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: f }, on && mark ? "✓ " + label : label); }
   private setTool(t: Tool) {
     this.tool = this.tool === t ? "view" : t; this.pending = null;
+    if (this.tool !== "ridge-pick") this.ridgeSel = null; if (this.ridgeRedraw && !(this.tool === (this.ridgeRedraw.key === "ne" ? "ridge-ne" : "ridge-sw"))) this.ridgeRedraw = null;
+    // Stage 11: the drawn ranges are shown on the terrain map only; editing them from the road map switches to the terrain map for the duration and switches back afterwards
+    if (isRidgeTool(this.tool) && this.bg === "roadmap") { this.bgBeforeRidge = "roadmap"; this.setBg("terrain", false); this.toast("山脈の編集は地形図で行います(終わると道路図に戻ります)"); }
+    else if (!isRidgeTool(this.tool) && this.bgBeforeRidge) { const b = this.bgBeforeRidge; this.bgBeforeRidge = null; this.setBg(b, false); }
     // Stage 10: choosing 北 / 南 for the first time takes the real Alps of that side out of the DEM (one Undo step brings them back; the other side is left alone)
     if ((this.tool === "ridge-ne" || this.tool === "ridge-sw") && !this.sim && !this.pendingSim) { const key = this.tool === "ridge-ne" ? "ne" : "sw"; if (!this.s.alpsRemoved?.[key] && this.commitEdit((s) => { s.alpsRemoved = { ...s.alpsRemoved, [key]: true }; })) this.toast(`${key === "ne" ? "北アルプス(飛騨山脈)" : "南アルプス(赤石山脈)"}の元の山体を地形から取り除きました。描いた山脈だけが障壁になります(元に戻すで復元)`); }
     this.buildToolbar(); this.render();
   }
   buildToolbar() {
     const tb = $("toolbar"); tb.replaceChildren(); tb.classList.remove("compact"); const st = this.stepId;
-    const TOOL_NAMES: Record<Tool, string> = { palace: "皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす" };
+    const TOOL_NAMES: Record<Tool, string> = { palace: "皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす", "ridge-pick": "山脈の区間を選ぶ" };
     if (this.store.locked && (st === "honshu" || st === "islands" || st === "features")) {
       tb.append(h("div", { id: "lock-banner", role: "status" }, "🔒 地図は最終確定済みのためロック中(閲覧のみ)"), h("button", { id: "unlock-map", type: "button", onclick: () => this.unlockMap() }, "ロックを解除して編集"));
       return;
@@ -637,7 +669,7 @@ export class App {
     const featOn = (f: "biwa" | "fuji") => this.tool === "feature" && this.selFeature === f;
     const featBtn = (f: "biwa" | "fuji", label: string) => this.tbtn(label, featOn(f), () => { if (featOn(f)) this.setTool("feature"); else { this.selFeature = f; this.tool = "feature"; this.pending = null; this.buildToolbar(); this.render(); } }, "sel-" + f, false);
     const tool = (t: Tool, l: string) => this.tbtn(l, this.tool === t, () => this.setTool(t), "tool-" + t, false);
-    const ridgeOn = this.tool === "ridge-ne" || this.tool === "ridge-sw" || this.tool === "ridge-edit", ridges = this.editMore || ridgeOn;
+    const ridgeOn = isRidgeTool(this.tool), ridges = this.editMore || ridgeOn;
     tb.append(h("div", { class: "grp", id: "edit-tools" }, toggle, featBtn("biwa", "琵琶湖"), featBtn("fuji", "富士山"),
       h("button", { id: "edit-more", type: "button", "aria-pressed": ridges ? "true" : "false", class: ridges ? "mode on" : "mode", onclick: () => { if (ridges) { this.editMore = false; if (ridgeOn) this.tool = "view"; } else this.editMore = true; this.buildToolbar(); this.render(); } }, "山脈"),
       h("button", { id: "edit-undo", type: "button", "aria-label": "元に戻す", disabled: !this.store.canUndo, onclick: () => this.undoEdit() }, "↶"), h("button", { id: "edit-redo", type: "button", "aria-label": "やり直す", disabled: !this.store.canRedo, onclick: () => this.redoEdit() }, "↷")));
@@ -650,8 +682,13 @@ export class App {
       if (f === "fuji") row.append(h("button", { id: "fuji-lower", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1 / 1.1) }, "高−"), h("button", { id: "fuji-higher", type: "button", onclick: () => this.scaleFeature("fuji", "height", 1.1) }, "高＋"));
       tb.append(row, h("div", { class: "grp", id: "feature-axes" }, h("button", { id: `${f}-x-less`, type: "button", "aria-label": "横を縮める", onclick: () => this.scaleFeature(f, "scale", 1 / 1.15, "x") }, "横−"), h("button", { id: `${f}-x-more`, type: "button", "aria-label": "横を伸ばす", onclick: () => this.scaleFeature(f, "scale", 1.15, "x") }, "横＋"), h("button", { id: `${f}-y-less`, type: "button", "aria-label": "縦を縮める", onclick: () => this.scaleFeature(f, "scale", 1 / 1.15, "y") }, "縦−"), h("button", { id: `${f}-y-more`, type: "button", "aria-label": "縦を伸ばす", onclick: () => this.scaleFeature(f, "scale", 1.15, "y") }, "縦＋"), h("small", { class: "tag" }, "縦横は別々に最大5倍(回転に従う)")));
     }
-    if (ridges) tb.append(h("div", { class: "grp", id: "edit-more-row" }, tool("ridge-ne", "北"), tool("ridge-sw", "南"), tool("ridge-edit", "点"), h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実アルプス"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "消去"), h("small", { class: "tag", id: "terrain-edit-note" }, "海岸線は固定")));
-    if (ridgeOn) tb.append(h("div", { class: "note", id: "ridge-hint" }, this.tool === "ridge-edit" ? "点をつかんで動かします(線の上の白丸)" : "大きい丸(線の端)から描くと続き、ほかの場所から描くと新しい線を足します。地形の作り直し中でも続けて描けます"));
+    if (ridges) tb.append(h("div", { class: "grp", id: "edit-more-row" }, tool("ridge-ne", "北"), tool("ridge-sw", "南"), tool("ridge-edit", "点"), tool("ridge-pick", "区間"), h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実アルプス"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "消去"), h("small", { class: "tag", id: "terrain-edit-note" }, "海岸線は固定")));
+    if (ridgeOn) {
+      // Stage 11: the same three operations as for the 国道1号 -- 描く (北・南) / 点を動かす (点) / 区間を選ぶ (区間: 消す・描き直す); ↶ ↷ above undo every one of them
+      const sel = this.ridgeSel, selTxt = sel ? `${sel.key === "ne" ? "北" : "南"}の山脈 区間${sel.si + 1}` : "";
+      tb.append(h("div", { class: "note", id: "ridge-hint" }, this.tool === "ridge-edit" ? "点をつかんで動かします(線の上の白丸)" : this.tool === "ridge-pick" ? (sel ? `${selTxt}を選択中` : "線をタップして区間を選びます") : this.ridgeRedraw ? "選んだ区間を描き直してください。端が前の線につながります" : "大きい丸(線の端)から描くと続き、ほかの場所から描くと新しい線を足します。地形の作り直し中でも続けて描けます"));
+      if (this.tool === "ridge-pick" && sel) tb.append(h("div", { class: "grp", id: "ridge-sel-row" }, h("button", { id: "ridge-del", type: "button", onclick: () => this.ridgeDeleteSel() }, `区間${sel.si + 1}を消す`), h("button", { id: "ridge-redraw", type: "button", onclick: () => this.ridgeRedrawSel() }, "描き直す")));
+    }
     const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
   }
   /** Issue #20: the start-of-game settings (the first era, the capital, the sub-capital, the palace) in a sheet of their own, off the terrain menu. */
@@ -660,6 +697,8 @@ export class App {
     const w = this.ensureWorld(), st = seatsOf(this.s);
     body.append(h("h3", {}, "元号・首都・副首都・皇居"));
     eraPicker(this, body, this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); this.buildSheet(); });
+    // Stage 11: the map to look at -- the road map (flat, no drawn ranges) or the terrain map (relief and the ranges) -- chosen before any editing, kept with the game
+    body.append(h("div", { class: "grp", id: "bg-choice" }, h("span", {}, "地図の表示"), ...(["roadmap", "terrain"] as const).map((m) => h("button", { id: "bg-" + m, type: "button", class: this.bg === m ? "mode on" : "mode", "aria-pressed": this.bg === m ? "true" : "false", onclick: () => { this.setBg(m); this.buildSheet(); } }, m === "roadmap" ? "道路図" : "地形図"))), h("small", {}, "道路図は山脈の編集線を表示しません。地形図は標高と山脈を表示します。山脈を編集するときは自動で地形図になります"));
     const sel = (id: string, label: string, val: string, which: "capital" | "sub" | "palace") => {
       const s = h("select", { id, "aria-label": label, onchange: (e: Event) => { this.setSeat(which, (e.target as HTMLSelectElement).value); } }) as HTMLSelectElement;
       for (const blk of REGION_BLOCKS) { const g = h("optgroup", { label: blk.name }); for (const pid of blk.prefs) { const dis = (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital); g.append(h("option", { value: pid, ...(pid === val ? { selected: "" } : {}), ...(dis ? { disabled: "" } : {}) }, `${seatPrefName(pid)}(${w ? seatCity(w, pid)?.name ?? "" : ""})${dis ? " ※別の府県に" : ""}`)); } s.append(g); }
