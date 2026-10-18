@@ -8,11 +8,12 @@ import { dist } from "../core/geom";
 import { refBias, referenceGrids } from "./reference";
 import { buildIndex, facilitySplit, layPath, newId, nodeAtCell } from "./network";
 import { HARD_ROCK_M, crossingEase, facilityCostMult, techAt } from "./tech";
-import { accessDeficit, ev, projLabel, rand } from "./engine";
+import { accessDeficit, ev, projLabel, rand, yearOf } from "./engine";
 import { CAPACITY, RAIL_CAPACITY as RAIL_CAP, edgeSpeed, type Analysis } from "./demand";
 const edgeKmh = (e: SimEdge) => edgeSpeed(e);
 import { KIND_LABEL, modeOf, type Operator, type ProjectKind, type SimEdge, type SimProject, type SimState, type Standard } from "./types";
 import { mountainCost, pathfind, type World } from "./world";
+import { burdenCost, terrainGate } from "./land";
 
 /** A long tunnel or bridge costs several times as much per km as the open line. */
 export const facCost = (e: SimEdge, sim?: Pick<SimState, "tech" | "startYear" | "month">) => (e.facility === "tunnel" ? 3 : e.facility === "bridge" ? 2.2 : 1) * (e.facility && sim?.tech ? facilityCostMult(sim.tech, sim.startYear + Math.floor(sim.month / 12)) : 1) * (1 + Math.min(0.5, (e.curv ?? 0) * 0.3));
@@ -22,13 +23,28 @@ export const DETOUR_CUT = 0.75;
 /** Stage 7 地方道: villages of at least this many people may get a link of their own when it cuts the way to the neighbour to LINK_CUT of the cells. */
 export const LINK_MIN_POP = 1200, LINK_CUT = 0.75;
 /** Counters for tests and tools only (not saved): how often the tunnelling limit or the tunnel-project cap held a project back, and how many hard-rock rolls went wrong. */
-export const techStats = { tooLong: 0, capped: 0, checked: 0, hard: 0, trouble: 0 };
+export const techStats = { tooLong: 0, capped: 0, checked: 0, hard: 0, trouble: 0, unaffordable: 0 };
 /**
  * Can the line along `path` be built with the technology of year `y`? A tunnel longer than the longest that can be driven means the project
  * has to wait (null: not feasible yet); too many tunnel projects at once also waits, so cheaper tunnels do not crowd out everything else.
  * `hard` = the tunnel runs through high, hard rock (the success roll applies). Only games with a tech rule are gated; older saves are not.
  */
+/** Stage 12: the construction multiplier of a stretch -- the land model (land.ts) in the games that use it, the Stage 9 barrier cost otherwise. */
+const mtnCost = (w: World, sim: SimState, mode: "road" | "rail", cells: number[], y: number): number => (w.land12 ? burdenCost(w, sim, mode, cells, y) : mountainCost(w, cells));
+/**
+ * Stage 12: can the place pay for it? A stretch of range costs several times the same length of plain (land.ts), and until now nothing ever asked whether the
+ * money was there -- cost only made a project slow, so every planner kept laying lines through the hardest ground it could reach. A project whose land makes
+ * it dearer than ordinary ground must now fit AFFORD times the purse of the region (or of the railway pool) that has to pay for it.
+ */
+export const AFFORD = 1.0;
+export function affordable(sim: SimState, w: World, mode: "road" | "rail", path: number[], newKm: number, unit: number, purse: number, y: number): boolean {
+  if (!w.land12) return true; const m = burdenCost(w, sim, mode, path, y); if (m <= 1.05) return true;
+  const ok = newKm * unit * m <= AFFORD * purse; if (!ok) techStats.unaffordable++; return ok;
+}
+/** The railway construction pool of one year (the monthly pot of railMonthly times twelve). */
+export const railPurse = (sim: SimState): number => sim.macro.budgetBu * (1 - sim.dials.roadShare) * 0.8 * sim.dials.railBuild * 12;
 export function techCheck(sim: SimState, w: World, mode: "road" | "rail", path: number[], y: number): { ok: boolean; hard: boolean } {
+  if (w.land12 && !terrainGate(w, sim, mode, path, y).ok) { techStats.tooLong++; return { ok: false, hard: false }; }   // Stage 12: a stretch of range that only a tunnel longer than this year's technology could cross is not built, however much it would earn
   if (!sim.tech) return { ok: true, hard: false };
   const tun = facilitySplit(w, mode, path, true).find((s) => s.fac === "tunnel"); if (!tun) return { ok: true, hard: false };
   const km = (tun.cells.length - 1) * w.cell, now = techAt(sim.tech.k, y); techStats.checked++; if (km > now.tunnelKm) { techStats.tooLong++; return { ok: false, hard: false }; }
@@ -206,7 +222,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     if (c.local) { if (nLocal >= 1 || liveLocal + nLocal >= maxLocal) continue; }
     else if (c.kind === "new" ? nNew >= wantNew || liveNew + nNew >= maxNew : nUp >= wantUp || liveUp + nUp >= maxUp) continue;   // new lines and upgrades each get their own quota, so upgrades cannot crowd out new lines for ever
     if (c.edge && (c.kind === "electrify" || c.kind === "restore")) {
-      const e = c.edge, cost = e.lengthKm * (c.kind === "restore" ? (e.state === "lost" ? 2.4 : 1.2) : e.standard === "rural" ? 1.3 : 3.2) * mountainCost(w, e.cells);   // Stage 9: upgrading a line through drawn mountains costs as much more as building it
+      const e = c.edge, cost = e.lengthKm * (c.kind === "restore" ? (e.state === "lost" ? 2.4 : 1.2) : e.standard === "rural" ? 1.3 : 3.2) * mtnCost(w, sim, "rail", e.cells, y);   // Stage 9: upgrading a line through drawn mountains costs as much more as building it
       const p = createProject(sim, c.kind, "JP", e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], cost, c.reason, c.score); p.mode = "rail"; p.op = e.op ?? "jnr";
       ev(sim, "project", `${c.kind === "restore" ? "復活計画" : e.standard === "rural" ? "電化・複線化計画" : "高速化計画"}: ${projLabel(sim, p)}`, c.reason, { project: p.id, edge: e.id }); made++; nUp++; yield; continue;
     }
@@ -216,10 +232,11 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
       const path = pathfind(w, aCell, bCell, { rail: true, ease: crossingEase(sim.tech, y), bias: (k) => refBias(ref.rail)(k) * (idx.roadCells.has(k) ? 1.6 : 1), margin: 16 }); yield; if (!path) continue;   // a new line is a direct one: existing track is not discounted
       const newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) continue;
       const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) continue;   // not buildable with this year's tunnelling (yet)
+      if (!affordable(sim, w, "rail", path, newKm, RAIL_UNIT[std], railPurse(sim), y)) continue;
       const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > PRIVATE_MIN_POP && dist(a.pos, b.pos) < PRIVATE_MAX_KM,   /* Stage 7: private companies enter the busier corridors the national railway serves poorly, so the two compete */ localPrivate = !!c.local && !jnrEra;
       let op = "jnr"; if (c.local && !localPrivate) op = "jnr"; else if (!jnrEra || privateOk) { const anchorIsA = !b || basePop(sim, w, a) >= basePop(sim, w, b), id = `p.${anchorIsA ? a.id : b!.id}`, anchor = anchorIsA ? a : b!; if (!sim.operators[id]) sim.operators[id] = { id, name: `${baseName(anchor.name)}${jnrEra ? "電鉄" : "鉄道"}`, kind: "private", since: y, note: "新規参入の鉄道事業者(架空の事業者名)" } as Operator; op = id; }
       const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 88, built: 0, month: sim.month, standard: std, mode: "rail", op }); if (!l.created.length) continue;
-      const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s2, x) => s2 + x.lengthKm * RAIL_UNIT[std] * (1 + x.maxGradePct * 0.08) * facCost(x, sim) * mountainCost(w, x.cells), 0);
+      const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s2, x) => s2 + x.lengthKm * RAIL_UNIT[std] * (1 + x.maxGradePct * 0.08) * facCost(x, sim) * mtnCost(w, sim, "rail", x.cells, y), 0);
       const p = createProject(sim, "new", "JP", nodeAtCell(sim, w, idx, aCell, "junction"), nodeAtCell(sim, w, idx, bCell, "junction"), l.created, l.chain, cost, c.reason, c.score); p.mode = "rail"; p.op = op; p.status = "concept"; techRoll(sim, p, tcR.hard, y, `${aName}〜${bName}`);
       ev(sim, "project", `${std === "highgrade" ? "高速新線" : "新線"}構想: ${aName}〜${bName}(${Math.round(es.reduce((s2, x) => s2 + x.lengthKm, 0))}km・${sim.operators[op]?.name ?? "国鉄"})`, c.reason, { project: p.id }); made++; if (c.local) nLocal++; else nNew++; yield;
     }
@@ -239,10 +256,10 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
       const shared = path ? path.filter((k) => old.has(k)).length : 99;
       if (path && shared === 0 && path.length >= 3) {
         const idx = buildIndex(sim); if (path.slice(1, -1).some((k) => idx.nodeByCell.has(k) || idx.cellEdge.has(k))) return planImprove(sim, w, e, region, purse, c);
-        const tcB = techCheck(sim, w, "road", path, y); if (!tcB.ok) return planImprove(sim, w, e, region, purse, c);   // would cut another road: improve in place instead
+        const tcB = techCheck(sim, w, "road", path, y); if (!tcB.ok || !affordable(sim, w, "road", path, path.length * w.cell, UNIT[target], purse, y)) return planImprove(sim, w, e, region, purse, c);   // would cut another road: improve in place instead
         const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 90, built: 0, month: sim.month, standard: target });
         if (l.created.length) {
-          const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[target] * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * mountainCost(w, x.cells), 0);
+          const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[target] * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * mtnCost(w, sim, "road", x.cells, y), 0);
           if (cost > purse * 1.5) { for (const x of es) { x.built = 0; } }  // kept as a (slow) plan; the region's purse decides how long it takes
           const p = createProject(sim, "bypass", region, e.a, e.b, l.created, l.chain, cost, c.reason, c.score, [e.id]); techRoll(sim, p, tcB.hard, y, projLabel(sim, p));
           ev(sim, "project", `バイパス計画: ${projLabel(sim, p)}(${Math.round(es.reduce((s, x) => s + x.lengthKm, 0))}km・${target === "highgrade" ? "高規格" : "2車線"})`, `${c.reason}。同じ区間に新道を計画`, { project: p.id, edge: e.id }); return true;
@@ -256,18 +273,19 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
     const idx = buildIndex(sim), now = pathfind(w, v.cell, c.toCell, { roadCells: idx.roadCells, margin: 10 }), direct = pathfind(w, v.cell, c.toCell, { margin: 10, ease: crossingEase(sim.tech, y), bias: (k) => (idx.roadCells.has(k) ? 1.25 : 1) });
     if (!direct) return false; const nowKm = now ? now.length : Infinity; if (direct.length > nowKm * LINK_CUT) return false;   // the way that exists is already about as short
     if (!techCheck(sim, w, "road", direct, y).ok) return false;
-    const newKm = direct.filter((k, q) => q > 0 && !idx.step.has(`${direct[q - 1]}:${k}`)).length * w.cell; if (newKm < 4) return false; if (newKm > purse) return false; 
+    const newKm = direct.filter((k, q) => q > 0 && !idx.step.has(`${direct[q - 1]}:${k}`)).length * w.cell; if (newKm < 4) return false; if (newKm > purse) return false; if (!affordable(sim, w, "road", direct, newKm, 0.9, purse, y)) return false;
     const l = layPath(sim, w, direct, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 70, built: 0, month: sim.month, standard: "rural" }); if (!l.created.length) return false;
-    const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * 0.9 * (1 + x.maxGradePct * 0.03) * facCost(x, sim), 0);
+    const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * 0.9 * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * (w.land12 ? mtnCost(w, sim, "road", x.cells, y) : 1), 0);
     const p = createProject(sim, "access", region, nodeAtCell(sim, w, idx, v.cell, "village"), nodeAtCell(sim, w, idx, c.toCell, "junction"), l.created, l.chain, cost, c.reason, c.score);
     ev(sim, "project", `地方道の計画: ${v.name}〜${c.toName ?? "隣の集落"}(${Math.round(es.reduce((s, x) => s + x.lengthKm, 0))}km)`, c.reason, { project: p.id }); return true;
   }
   if (c.kind === "access" && c.vid && canSpend()) {
     const v = sim.settlements[c.vid], city = w.cityById.get(v.city)!; if (!spend()) return false;
     const idx = buildIndex(sim), path = pathfind(w, v.cell, city.cell, { roadCells: idx.roadCells, margin: 12 }); if (!path) return false;
-    const newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell; if (newKm < 3 || newKm * 1 > purse) return false;
+    if (w.land12 && !techCheck(sim, w, "road", path, yearOf(sim)).ok) return false;
+    const newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell; if (newKm < 3 || newKm * 1 > purse) return false; if (!affordable(sim, w, "road", path, newKm, 0.8, purse, yearOf(sim))) return false;
     const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 70, built: 0, month: sim.month, standard: "rural" }); if (!l.created.length) return false;
-    const es = l.created.map((id) => sim.edges[id]), a = nodeAtCell(sim, w, idx, v.cell, "village"), cost = es.reduce((s, x) => s + x.lengthKm * 0.8, 0);
+    const es = l.created.map((id) => sim.edges[id]), a = nodeAtCell(sim, w, idx, v.cell, "village"), cost = es.reduce((s, x) => s + x.lengthKm * 0.8 * (w.land12 ? mtnCost(w, sim, "road", x.cells, yearOf(sim)) : 1), 0);
     const p = createProject(sim, "access", region, a, nodeAtCell(sim, w, idx, city.cell, "junction"), l.created, l.chain, cost, c.reason, c.score);
     ev(sim, "project", `集落アクセス道の計画: ${v.name}`, c.reason, { project: p.id }); return true;
   }
@@ -292,9 +310,9 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
         return planImprove(sim, w, slow, region, purse, { ...c, reason: `${c.reason}。経路上で最も遅い区間を改良` });
       }
     }
-    if (newKm * 1.3 > Math.max(30, purse)) return false; 
+    if (newKm * 1.3 > Math.max(30, purse)) return false; if (!affordable(sim, w, "road", path, newKm, UNIT[std], purse, y)) return false;
     const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 80, built: 0, month: sim.month, standard: std }); if (!l.created.length) return false;
-    const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[std] * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * mountainCost(w, x.cells), 0);
+    const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[std] * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * mtnCost(w, sim, "road", x.cells, y), 0);
     const reg = a.pref === b.pref ? region : "JP";
     const p = createProject(sim, "new", reg, nodeAtCell(sim, w, idx, a.cell, "junction"), nodeAtCell(sim, w, idx, b.cell, "junction"), l.created, l.chain, cost, c.reason, c.score); if (sim.stage3) p.status = "concept"; techRoll(sim, p, tcN.hard, y, `${a.name}〜${b.name}`);
     ev(sim, "project", `${sim.stage3 ? "新規構想" : "新規計画"}: ${a.name}〜${b.name}(${Math.round(es.reduce((s, x) => s + x.lengthKm, 0))}km)`, c.reason, { project: p.id }); return true;
@@ -302,7 +320,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
   return false;
 }
 function planImprove(sim: SimState, w: World, e: SimEdge, region: string, purse: number, c: Cand): boolean {
-  const target: Standard = e.standard === "rural" ? "standard" : "highgrade", cost = e.lengthKm * UNIT[target] * 0.6 * mountainCost(w, e.cells); if (cost > purse * 1.5) return false;
+  const target: Standard = e.standard === "rural" ? "standard" : "highgrade", cost = e.lengthKm * UNIT[target] * 0.6 * mtnCost(w, sim, "road", e.cells, yearOf(sim)); if (cost > purse * 1.5) return false;
   const p = createProject(sim, "improve", region, e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], cost, c.reason, c.score);
   ev(sim, "project", `改良計画: ${nodeName(sim, e.a)}〜${nodeName(sim, e.b)}(${target === "standard" ? "2車線化" : "高規格化"})`, c.reason, { project: p.id, edge: e.id }); return true;
 }

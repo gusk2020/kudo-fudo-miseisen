@@ -21,6 +21,7 @@ import { reviewRailLines } from "./railecon";
 import { reviewWorks } from "./freeze";
 import { carryOver, finishCrossing, isCrossingProject, planCrossings } from "./crossing";
 import { homeCity, subCity, tokyoCity } from "./ceremony";
+import { siteCapacity, upkeepMult } from "./land";
 import { basePop, capitalPref, computeRoles, roleIndustry } from "./roles";
 import { reconGrowth, reconIndustry, reconMeanCore, reconOf, reconShare } from "./recon";
 import { DEFAULT_CAPITAL, DEFAULT_SUB, DEFAULT_PALACE, prefOfSeat } from "../core/seat";
@@ -71,11 +72,21 @@ export const routeOfficial = (r: SimRoute) => GRADE_MODE[r.grade] === "rail" ? `
 export const routeLabel = (r: SimRoute) => routeOfficial(r) + (r.nick ? `(通称:${NICK_LABEL[r.grade]})` : "");
 export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).year;
 
+/**
+ * Stage 12: the people a city's land cannot hold (1 - siteCapacity of its base size) move to the other cities of the same prefecture, in proportion to how
+ * much better their land is; a prefecture with no better-sited city sends them to the nation's cities in proportion to size, so the national total holds.
+ */
+export function squeezeSites(sim: SimState, w: World) {
+  let lost = 0; const cap = new Map<string, number>();
+  for (const c of w.cities) { const k = siteCapacity(w, c); cap.set(c.id, k); if (k < 1) { const st = sim.cities[c.id], keep = Math.round(st.pop * k), d = st.pop - keep; st.pop = keep; lost += d; const pf = c.pref; const hosts = w.cities.filter((q) => q.pref === pf && (cap.get(q.id) ?? siteCapacity(w, q)) >= 0.9); const tot = hosts.reduce((s, q) => s + sim.cities[q.id].pop, 0); if (tot > 0) { for (const q of hosts) sim.cities[q.id].pop += Math.round(d * sim.cities[q.id].pop / tot); lost -= d; } } }
+  if (lost > 0) { const hosts = w.cities.filter((q) => (cap.get(q.id) ?? 1) >= 0.9), tot = hosts.reduce((s, q) => s + sim.cities[q.id].pop, 0); for (const q of hosts) sim.cities[q.id].pop += Math.round(lost * sim.cities[q.id].pop / tot); }
+}
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
 export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
   w.barrier = !!opts.stage3;   // Stage 9: the mountain barrier is part of the real-map game
+  w.land12 = !!(opts.stage3 && opts.firstEra !== undefined);   // Stage 12: every game started from the era timeline (Stage 10 onward flow) uses the land model
   const firstCand = opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
   const sim: SimState = {
     schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
@@ -88,11 +99,13 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
   if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE); }
+  if (firstCand) sim.econ = true;   // Stage 12
   const tokyoId = sim.roles ? undefined : tokyoCity(w)?.id;
   for (const c of w.cities) sim.cities[c.id] = { pop: basePop(sim, w, c), popSource: c.popSource, lowAccessYears: 0, industry: Math.round(Math.max(0.05, Math.min(1, 0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim) + roleIndustry(sim, w, c))) * 1000) / 1000 };
   // (older games) a moved capital draws people and industry to itself and costs the old one some; a sub-capital gains a little (fictional, modest, provisional)
   if (sim.capital && tokyoId && sim.cities[tokyoId]) { const hc = homeCity(w, sim.capital); if (hc && sim.cities[hc.id] && hc.id !== tokyoId) { const c = sim.cities[hc.id], o = sim.cities[tokyoId]; c.pop = Math.round(c.pop * CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.15) * 1000) / 1000); if (!(sim.subCapital && subCity(w, sim.subCapital)?.id === tokyoId)) o.pop = Math.round(o.pop * CAPITAL_LOSS); } }
   if (sim.subCapital && !sim.roles) { const sc = subCity(w, sim.subCapital), hc = homeCity(w, sim.capital); if (sc && sim.cities[sc.id] && sc.id !== hc?.id) { const c = sim.cities[sc.id]; c.pop = Math.round(c.pop * SUB_CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.05) * 1000) / 1000); } }
+  if (sim.econ) squeezeSites(sim, w);   // Stage 12: a city whose land is far worse than any real city's starts smaller; the rest settle on the better land near it
   if (sim.stage3) ensureHubs(sim, w, sim.startYear);   // Stage 8: the ports of 1950 (airports open from the late 1950s)
   yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); yield 1;
   return sim;
@@ -208,7 +221,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   // Stage 10: the 1945 reconstruction policy moves growth between coasts / toward or away from the seats (zero-sum; nothing without a policy)
   const rg = reconGrowth(sim, w, y), rmc = rg.size ? reconMeanCore(sim, w) : 0;
   w.cities.forEach((c, i) => {
-    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), hb = hubBoost(sim, c.id), before = st.pop, g = popRate(y, st.pop, sim.stage3 === true && y <= 2026) + hb.growth - hbMean + 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3 - (sim.stage3 ? crowding(st.pop, basePop(sim, w, c), c.plains) : 0) + (rg.get(c.id) ?? 0) + (rand(sim) - 0.5) * 0.008;
+    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), hb = hubBoost(sim, c.id), before = st.pop, g = popRate(y, st.pop, sim.stage3 === true && y <= 2026) + hb.growth - hbMean + 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3 - (sim.stage3 ? crowding(st.pop, sim.econ ? basePop(sim, w, c) * siteCapacity(w, c) : basePop(sim, w, c), c.plains) : 0) + (rg.get(c.id) ?? 0) + (rand(sim) - 0.5) * 0.008;
     st.pop = Math.max(2000, Math.round(st.pop * (1 + g)));
     const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + roleIndustry(sim, w, c) + 0.9 * an.acc[i] + 0.5 * bo.industry + hb.industry + (rg.size ? reconIndustry(sim, w, c.id, y, rmc) : 0)); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
     st.lowAccessYears = an.acc[i] < 0.02 ? st.lowAccessYears + 1 : 0; const base = basePop(sim, w, c);
@@ -349,7 +362,7 @@ function* monthlyGen(sim: SimState, w: World): Generator<void> {
   for (const [r, es] of [...byRegion.entries()].sort()) {
     es.sort((a, b) => b.traffic - a.traffic || (a.id < b.id ? -1 : 1)); let purse = left[r] ?? 0;
     for (const e of es) {
-      const cost = e.lengthKm * MAINT[e.surface] * STD_MAINT[e.standard] * (e.quality < 50 ? 1.5 : 1) * (e.state === "dormant" ? 0.15 : 1); need += cost;
+      const cost = e.lengthKm * MAINT[e.surface] * STD_MAINT[e.standard] * upkeepMult(w, e) * (e.quality < 50 ? 1.5 : 1) * (e.state === "dormant" ? 0.15 : 1); need += cost;
       const ok = purse >= cost; if (ok) { purse -= cost; funded += cost; }
       const decay = DECAY[e.surface] * (1 + e.maxGradePct / 15) * (e.standard === "highgrade" ? 0.6 : 1);
       if (ok) { e.quality = Math.min(100, e.quality + 0.3 - 0.3 * decay); e.weathering = Math.max(0, e.weathering - 0.08); }
@@ -403,7 +416,7 @@ function railMonthly(sim: SimState, w: World, railB: number) {
     let pool = rev.get(op)! + (op === "jnr" ? M * dl.jnrSubsidy : M * (1 - dl.jnrSubsidy) * (rev.get(op)! / othersRev));
     const es = byOp.get(op)!.sort((a, b) => b.traffic - a.traffic || (a.id < b.id ? -1 : 1));
     for (const e of es) {
-      const cost = e.lengthKm * RAIL_MAINT[e.standard] * (e.quality < 50 ? 1.5 : 1) * (e.state === "dormant" ? 0.15 : 1), ok = pool >= cost;
+      const cost = e.lengthKm * RAIL_MAINT[e.standard] * upkeepMult(w, e) * (e.quality < 50 ? 1.5 : 1) * (e.state === "dormant" ? 0.15 : 1), ok = pool >= cost;
       if (ok) pool -= cost;
       const decay = RAIL_DECAY * (1 + e.maxGradePct / 12) * (e.standard === "highgrade" ? 0.6 : 1);
       if (ok) { e.quality = Math.min(100, e.quality + 0.3 - 0.3 * decay); e.weathering = Math.max(0, e.weathering - 0.08); }

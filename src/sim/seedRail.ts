@@ -7,6 +7,7 @@
  * the national railway. None of that is a claim about who really owned which line.
  */
 import { basePop, capitalPref } from "./roles";
+import { terrainGate } from "./land";
 import { dist } from "../core/geom";
 import { layPath } from "./network";
 import { designate, ev, prefName, rand } from "./engine";
@@ -73,6 +74,7 @@ export function* seedRailGen(sim: SimState, w: World): Generator<number> {
     const path = pathfind(w, a.cell, b.cell, { rail: true, bias, roadCells: railCells, margin: 18 }); tried++;
     if (tried % 6 === 0) yield 0.05 + 0.6 * (tried / cand.length);
     const r = rand(sim), r2 = rand(sim); if (!path || path.length < 3) continue;
+    if (w.land12 && !terrainGate(w, sim, "rail", path, sim.startYear).ok) continue;
     const cov = refCoverage(ref.rail, path), structural = mst.has(a.id + b.id);
     if (cov < (structural ? 0.3 : 0.55)) continue;
     const len = path.length * w.cell, op = opFor(a, b, len, r);
@@ -92,7 +94,7 @@ export function* seedRailGen(sim: SimState, w: World): Generator<number> {
       let route: SimRoute | null = null, prev: string | null = null; const first = (c[0].fwd ? mine[c[0].idx].a : mine[c[0].idx].b).name, last = (c[c.length - 1].fwd ? mine[c[c.length - 1].idx].b : mine[c[c.length - 1].idx].a).name;
       for (const { idx, fwd } of c) {
         const l = mine[idx], cells = fwd ? l.path : [...l.path].reverse();
-        const lay = layPath(sim, w, cells, { open: true, surface: "paved", quality: opId === "jnr" ? 52 + rand(sim) * 28 : 58 + rand(sim) * 27, built: 1, month: 0, standard: l.std, mode: "rail", op: opId });
+        const lay = layPath(sim, w, cells, { facilities: w.land12, open: true, surface: "paved", quality: opId === "jnr" ? 52 + rand(sim) * 28 : 58 + rand(sim) * 27, built: 1, month: 0, standard: l.std, mode: "rail", op: opId });
         for (const ref2 of lay.chain) {
           const e = sim.edges[ref2.edgeId], from = ref2.dir === 1 ? e.a : e.b, to = ref2.dir === 1 ? e.b : e.a;
           if (route && prev !== from) route = null;   // track shared with an earlier line can leave a gap: a gap starts a new line
