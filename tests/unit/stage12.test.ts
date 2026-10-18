@@ -44,6 +44,16 @@ describe("Stage 12: the land model (Issue #30)", () => {
   });
 });
 
+describe("Stage 12: the drawn range and the barrier are one field (Issue #30 audit item 6)", () => {
+  it("the construction barrier is never smaller than the drawn-range closeness, and is zero where neither a range nor an edited Fuji stands", () => {
+    const { w } = kanto(); let below = 0, ridged = 0, far = 0;
+    for (let k = 0; k < w.N; k++) { if (w.t.barrier[k] < w.t.ridge[k] - 1e-6) below++; if (w.t.ridge[k] > 0.15) ridged++; }
+    expect(below).toBe(0); expect(ridged).toBeGreaterThan(100);
+    const none = realWorld(true).w; for (let k = 0; k < none.N; k++) if (none.t.barrier[k] > 0) far++;
+    expect(far).toBe(0);   // the untouched map has no barrier at all: the real Tokaido calibration is untouched
+  });
+});
+
 describe("Stage 12: cities on bad land", () => {
   it("no real city is squeezed on the untouched map; a city under a placed range is, and the national total holds", () => {
     const a = realWorld(true).w; for (const c of a.cities) expect(siteCapacity(a, c), c.name).toBe(1);

@@ -34,9 +34,10 @@ export type EcoPart = (typeof ECO_PARTS)[number];
 export const ECO_LABEL: Record<EcoPart, string> = { industry: "産業", logistics: "物流", tourism: "観光", commute: "通勤圏", agglomeration: "集積", rent: "地価・混雑", shock: "災害", climate: "低地・海面" };
 export interface City12 { p: number[]; h: number[]; adv: number }
 /** Weights of the parts in the migration advantage (empirical, not statistics). MIG is the share of its size a city gains per year per unit of advantage. */
-export const MIG = 0.012, W_IND = 0.6, W_LOG = 0.8, W_TOUR = 0.8, W_CMT = 1.0, W_AGG = 0.12, W_RENT = 1.3;
+export const MIG = 0.012, W_IND = 0.6, W_LOG = 0.6, W_TOUR = 0.6, W_CMT = 1.0, W_AGG = 0.12, W_RENT = 1.3;
 /** The people a city's land holds comfortably, as a multiple of its 1950 size (more on a plain). A city above it pays dear rent, one far below it is cheap -- which is what stops a decline. */
 export const ROOM_BASE = 2.4, ROOM_PLAIN = 1.2;
+export const ADV_MIN = -0.8, ADV_MAX = 1.2;
 export const COMMUTE_H = 0.9, CORE_PRESSURE_FROM = 0.9;
 export const TOUR_TAU_H = 2.5, TOUR_TRANSIT_DETOUR = 1.15, TOUR_TRANSIT_W = 0.5;
 /** Daily-commute limits for the lanes that need no land: door-to-door hours, the weather reliability, the daily volume that counts as frequent. */
@@ -49,10 +50,12 @@ const at = (k: [number, number][], y: number) => { if (y <= k[0][0]) return k[0]
 const IND_Y: [number, number][] = [[1950, 0.8], [1975, 1.1], [2000, 0.6], [2030, 0.3], [2110, 0.2]];
 const LOG_Y: [number, number][] = [[1950, 0.3], [1970, 0.6], [1990, 1], [2020, 1.4], [2060, 1.5], [2110, 1.4]];
 /** Remote work, ageing and a rising bill for big-city land make rent weigh more on the choice of where to live; the pull of sheer size eases. */
-const RENT_Y: [number, number][] = [[1950, 0.7], [1990, 1], [2020, 1.4], [2060, 1.9], [2110, 2]];
+const RENT_Y: [number, number][] = [[1950, 0.7], [1990, 1], [2020, 1.5], [2060, 2.3], [2110, 2.6]];
+/** Leisure and inbound travel matter more as incomes rise: the weight of the tourism pull. */
+const TOURW_Y: [number, number][] = [[1950, 0.5], [2000, 1], [2050, 1.7], [2110, 2]];
 const AGG_Y: [number, number][] = [[1950, 1.2], [1990, 1], [2020, 0.6], [2060, 0.3], [2110, 0.2]];
 /** How much a low, sea-facing site counts against a city as the sea rises and storms get worse (zero until about 2000). */
-const CLIM_Y: [number, number][] = [[1950, 0], [2000, 0.05], [2050, 0.35], [2110, 0.8]];
+const CLIM_Y: [number, number][] = [[1950, 0], [2000, 0.1], [2040, 0.6], [2110, 1.6]];
 const exposureMemo = new WeakMap<World, Map<string, number>>();
 /** 0..1: the share of the land around a city that lies below 10 m and within a few cells of the sea (the ground a rising sea and a storm surge reach first). */
 export function exposure(w: World, c: WCity): number {
@@ -122,11 +125,14 @@ export function ecoYear(sim: SimState, w: World, an: { T: Float64Array; TT: Floa
   // --- agglomeration, rent, shocks
   const agg = P.map((p) => Math.tanh(Math.log(Math.max(1, p) / 1.5e5) / 1.6)), ratio = P.map((p, i) => Math.min(3, p / cap[i])), mr = wmean(ratio), rent = ratio.map((r) => r - mr);   // signed: a city that has shrunk below its land's room is cheap, and cheap attracts
   const out = new Map<string, number>(), mi = wmean(ind), ml = wmean(log), mt = wmean(tour);
-  const wa = W_AGG * at(AGG_Y, y), wr = W_RENT * at(RENT_Y, y), wc = at(CLIM_Y, y), wi = W_IND * at(IND_Y, y), wl = W_LOG * at(LOG_Y, y), wt = W_TOUR;
+  const wa = W_AGG * at(AGG_Y, y), wr = W_RENT * at(RENT_Y, y), wc = at(CLIM_Y, y), wi = W_IND * at(IND_Y, y), wl = W_LOG * at(LOG_Y, y), wt = W_TOUR * at(TOURW_Y, y);
   const adv = w.cities.map((_, i) => wi * (ind[i] - mi) + wl * (log[i] - ml) + wt * (tour[i] - mt) + W_CMT * Math.max(-1, Math.min(1.5, cmt[i])) + wa * agg[i] - wr * rent[i] - wc * exposure(w, w.cities[i]));
   const ma = wmean(adv);
+  // No city is allowed to lose (or gain) faster than ADV_MIN / ADV_MAX per year relative to the nation: a place keeps some people however poor its prospects (kin, land, a
+  // local market). The clamp breaks the zero-sum a little, so the mean is taken out again afterwards.
+  const clampAdv = adv.map((a) => Math.max(ADV_MIN, Math.min(ADV_MAX, a - ma))), mc = wmean(clampAdv);
   w.cities.forEach((c, i) => {
-    const mig = MIG * (adv[i] - ma); let shock = 0;
+    const mig = MIG * (clampAdv[i] - mc); let shock = 0;
     const cur = (sim.city12 ??= {})[c.id] ?? (sim.city12[c.id] = { p: [], h: [], adv: 0 });
     const lastShock = cur.p[6] ?? 0;
     if (lastShock < -0.005) shock = -lastShock * SHOCK_RECOVER;   // coming back
@@ -134,7 +140,7 @@ export function ecoYear(sim: SimState, w: World, an: { T: Float64Array; TT: Floa
     if (rand(sim) < risk) shock = -(SHOCK_MIN + rand(sim) * (SHOCK_MAX - SHOCK_MIN));
     out.set(c.id, mig + shock);
     cur.p = [wi * (ind[i] - mi), wl * (log[i] - ml), wt * (tour[i] - mt), W_CMT * Math.max(-1, Math.min(1.5, cmt[i])), wa * agg[i], -wr * rent[i], shock < 0 && lastShock >= -0.005 ? shock : shock > 0 ? lastShock : 0, -wc * exposure(w, c)].map((x) => Math.round(x * 1000) / 1000);
-    cur.adv = Math.round((adv[i] - ma) * 1000) / 1000;
+    cur.adv = Math.round((clampAdv[i] - mc) * 1000) / 1000;
     if ((y - sim.startYear) % 5 === 0 && cur.h.length <= (y - sim.startYear) / 5) cur.h.push(Math.round(P[i]));
   });
   return out;

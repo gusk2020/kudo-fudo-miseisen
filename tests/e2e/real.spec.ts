@@ -673,3 +673,18 @@ test("Stage 11: 琵琶湖・富士山の縦と横を別々に伸ばせる(各最
   expect(ly).toBeGreaterThan(lx); expect(Math.max(lx, ly)).toBeLessThanOrEqual(5); expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error').length")).toBe(0);
   expect(errs).toEqual([]);
 });
+
+test("Stage 12: 地図帳に都市の栄枯盛衰(伸びた・縮んだ都市と原因)が出て、都市を選ぶと推移グラフと追い風・逆風の内訳が見える。地図の規模表示はレイヤーで切り替わり、シミュレーションは不変", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page, "heisei");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "auto"; a.ffYears(30); });
+  expect(await app(page, "a => a.sim.econ === true && Object.keys(a.sim.city12).length > 40")).toBe(true);
+  const h0 = await app(page, "a => a.sim.month + ':' + JSON.stringify(a.sim.city12).length");
+  await page.click("#dock-layers"); await page.uncheck("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(false); await page.check("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(true);
+  expect(await app(page, "a => a.sim.month + ':' + JSON.stringify(a.sim.city12).length")).toBe(h0); await closeSheet(page);
+  await page.click("#dock-atlas"); await expect(page.locator("#city-eco")).toBeVisible();
+  expect(await page.locator("#eco-up .issue").count()).toBe(5); expect(await page.locator("#eco-down .issue").count()).toBe(5);
+  await expect(page.locator("#eco-up")).toContainText("▲"); await expect(page.locator("#eco-down")).toContainText("▼");
+  await page.click("#eco-detail summary"); await expect(page.locator("#eco-chart")).toBeVisible(); await expect(page.locator("#eco-out")).toContainText("集積");
+  await page.selectOption("#eco-city", { index: 3 }); expect(await page.locator("#eco-chart polyline").count()).toBe(1);
+  expect(errs).toEqual([]);
+});
