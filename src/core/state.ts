@@ -16,7 +16,7 @@ export function defaultState(seed = 20260101): ProjectState {
     schemaVersion: SCHEMA_VERSION, seed, step: 0, bodies,
     features: { biwa: { pos: null, rot: 0 }, fuji: { pos: null, rot: 0 } },
     ridges: { sw: null, ne: null }, finalized: false,
-    layers: { coast: true, elevation: true, rivers: true, lakes: true, borders: true, cities: true, ridges: true, roads: true, rail: true, plans: true, abandoned: true, ports: true, airports: true, lanes: true, signs: true },
+    layers: { coast: true, elevation: true, rivers: true, lakes: true, borders: true, cities: true, ridges: true, roads: true, rail: true, plans: true, abandoned: true, ports: true, airports: true, lanes: true, signs: true, econ: true },
   };
 }
 /** Stage 3 start: real geography, nothing deformed, already finalised, at the roads step. */

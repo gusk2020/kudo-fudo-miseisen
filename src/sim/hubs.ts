@@ -235,7 +235,7 @@ function layAccess(sim: SimState, w: World, a: AirportState, mode: "road" | "rai
   if (mode === "rail") { let bd = Infinity; for (const q of idx.nodeByCell.keys()) { if (w.lm[q] !== w.lm[c.cell]) continue; const d = dist(w.cellPos(q), w.cellPos(a.site)); if (d < bd) { bd = d; from = q; } } if (bd > 60) return false; }
   const path = pathfind(w, from, a.site, { margin: 8, ...(mode === "rail" ? { rail: true } : {}) }); if (!path || path.length < 2) return false;
   if (w.land12 && !terrainGate(w, sim, mode, path, y).ok) return false;
-  const lay = layPath(sim, w, path, { open: true, surface: "paved", quality: 90, built: 1, month: sim.month, standard: "standard", mode, ...(mode === "rail" ? { op: "jnr" } : {}) });
+  const lay = layPath(sim, w, path, { facilities: w.land12, open: true, surface: "paved", quality: 90, built: 1, month: sim.month, standard: "standard", mode, ...(mode === "rail" ? { op: "jnr" } : {}) });
   const ids = lay.chain.map((x) => x.edgeId).filter((id) => modeOf(sim.edges[id]) === mode); if (!ids.length) return false;
   for (const id of lay.created) sim.edges[id].hist.push({ m: sim.month, t: `${airName(w, a.city)}へのアクセス${mode === "rail" ? "鉄道" : "道路"}として開通(${y}年)` });
   if (mode === "rail") a.railIds = ids; else a.access = ids; return true;

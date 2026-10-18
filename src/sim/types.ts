@@ -118,6 +118,7 @@ export interface SimState {
   tech?: { k: number };       // Issue #13: bridge/tunnel technology rule (see tech.ts). Absent = older games, which keep the old fixed facility rules
   hubs?: HubsState;          // Stage 8: ports, airports and their routes (hubs.ts). Absent = older saves; created at the next yearly step
   kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
+  city12?: Record<string, { p: number[]; h: number[]; adv: number }>;   // Stage 12: per city, the parts of its yearly migration advantage and its size every 5 years (econ.ts)
   econ?: true;                // Stage 12: the land-based city economy (land.ts, econ.ts). Absent = older games, which keep the rules they were made with
   roles?: RoleState;          // Stage 10: who carries whose regional role (roles.ts). Absent = older games (they keep the bonus they were created with)
 }
