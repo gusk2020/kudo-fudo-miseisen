@@ -29,7 +29,11 @@ export const SCENARIOS: Record<string, Scenario> = {
   "H-ridgeNE": { first: 0, policy: "auto", ridges: "ne" }, "H-ridgeSW": { first: 0, policy: "auto", ridges: "sw" }, "H-ridge2": { first: 0, policy: "auto", ridges: "both" }, "H-shikoku": { first: 0, policy: "auto", route: "shikoku" },
   // Stage 10: role swaps (A-C), the 1945 reconstruction policy (D, E: candidates 0 / 5 / 10 are all 均衡; 0 = 太平洋側・一極集中, 5 = 日本海側・一極集中, 10 = 太平洋側・地方分散)
   "T-base": { first: 0, policy: "auto" }, "T-capSAP": { first: 0, policy: "auto", capital: "HK-SAP", sub: "JP-27" }, "T-sub37": { first: 0, policy: "auto", sub: "JP-37" }, "T-sub17": { first: 0, policy: "auto", sub: "JP-17" },
-  "T-pal40": { first: 0, policy: "auto", palace: "JP-40" }, "T-alps": { first: 0, policy: "auto", alps: "both" }, "T-alpsNE": { first: 0, policy: "auto", alps: "both", ridges: "ne" }, "T-ridgeNE": { first: 0, policy: "auto", ridges: "ne" }, "T-fuji": { first: 0, policy: "auto", fuji: { lonLat: [136.55, 35.3], scale: 1.6 } }, "T-japansea": { first: 5, policy: "auto" }, "T-disperse": { first: 10, policy: "auto" },
+  "T-pal40": { first: 0, policy: "auto", palace: "JP-40" }, "T-alps": { first: 0, policy: "auto", alps: "both" }, "T-alpsNE": { first: 0, policy: "auto", alps: "both", ridges: "ne" }, "T-ridgeNE": { first: 0, policy: "auto", ridges: "ne" }, "T-fuji": { first: 0, policy: "auto", fuji: { lonLat: [137.0, 35.0], scale: 2 } }, "T-japansea": { first: 5, policy: "auto" }, "T-disperse": { first: 10, policy: "auto" },
+  // Stage 11: the capital swap in other modes (道路 / 鉄道 first era), and a Shikoku (Matsuyama) sub-capital
+  "U-capSAP-S": { first: 1, policy: "auto", capital: "HK-SAP", sub: "JP-27" }, "U-capSAP-R": { first: 2, policy: "auto", capital: "HK-SAP", sub: "JP-27" }, "U-sub38": { first: 0, policy: "auto", sub: "JP-38" },
+  // Stage 11: the same alps-removed worlds with and without a drawn range, at two more seeds
+  "T-alps-11": { first: 0, policy: "auto", alps: "both", seed: 11 }, "T-alpsNE-11": { first: 0, policy: "auto", alps: "both", ridges: "ne", seed: 11 }, "T-alps-23": { first: 0, policy: "auto", alps: "both", seed: 23 }, "T-alpsNE-23": { first: 0, policy: "auto", alps: "both", ridges: "ne", seed: 23 },
   "S-later1": { first: 1, policy: "auto", later: "first" }, "R-later1": { first: 2, policy: "auto", later: "first" }, "H-seed2": { first: 0, policy: "auto", seed: 11 },
 };
 const STANCE_OF = ["heisei", "shubun", "shoka", "kuuro", "kairo"];
