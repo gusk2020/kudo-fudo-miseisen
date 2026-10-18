@@ -14,17 +14,21 @@ export const FUJI_SHAPE: Vec[] = Array.from({ length: 48 }, (_, i) => {
   return [Math.cos(a) * r, Math.sin(a) * r] as Vec;
 });
 export const featureShape = (which: "biwa" | "fuji"): Vec[] => (which === "biwa" ? JAPAN.biwa.shape : FUJI_SHAPE);
+/** Stage 11: the two sizes of a feature, along its own x and y axes (an absent `scaleY` is the same as `scale`). */
+export const featureScales = (f: { scale?: number; scaleY?: number }): [number, number] => { const kx = f.scale ?? 1; return [kx, f.scaleY ?? kx]; };
 export function featureWorld(s: ProjectState, which: "biwa" | "fuji"): Vec[] {
-  const pos = featureWorldPos(s, which), a = s.features[which].rot, k = s.features[which].scale ?? 1;
-  return featureShape(which).map((q) => { const r = rotv([q[0] * k, q[1] * k], a); return [r[0] + pos[0], r[1] + pos[1]] as Vec; });
+  const pos = featureWorldPos(s, which), a = s.features[which].rot, [kx, ky] = featureScales(s.features[which]);
+  return featureShape(which).map((q) => { const r = rotv([q[0] * kx, q[1] * ky], a); return [r[0] + pos[0], r[1] + pos[1]] as Vec; });
 }
 
 /** Issue #18: Fuji's summit factor. A manual height always wins; with the `auto` link (set when the size is changed by touch) the elevation follows the size at HALF the proportion, capped at 3x (size 5x). The manual height range is separate and unchanged. */
 export const FUJI_AUTO_HEIGHT_MAX = 3;   // = 1 + (5-1)/2: the body's 5x limit gives 3x. NOT the manual height range (FEATURE_LIMITS.height, 0.5-1.3x), which is a separate hand-set value
-export function fujiHeightFactor(f: { scale?: number; height?: number; auto?: true }): number {
+export function fujiHeightFactor(f: { scale?: number; scaleY?: number; height?: number; auto?: true }): number {
   if (f.height !== undefined) return f.height;
   if (!f.auto) return 1;
-  return Math.max(0.5, Math.min(FUJI_AUTO_HEIGHT_MAX, 1 + ((f.scale ?? 1) - 1) / 2));
+  // Stage 11: with the two axes stretched apart, the link follows the AREA-EQUIVALENT size sqrt(sx * sy) (= the plain size when the two are equal, so every older save is unchanged)
+  const [kx, ky] = featureScales(f), eq = Math.sqrt(kx * ky);
+  return Math.max(0.5, Math.min(FUJI_AUTO_HEIGHT_MAX, 1 + (eq - 1) / 2));
 }
 
 export interface Derived { parts: Record<IslandId, Vec[][]>; frame: AxisFrame; biwa: Vec[]; fuji: Vec[] }
@@ -86,7 +90,7 @@ export function validate(s: ProjectState): Issue[] {
   for (const which of ["biwa", "fuji"] as const) {
     const nm = which === "biwa" ? "琵琶湖" : "富士山", host = featureHost(lands, d[which]);
     if (!host) add("features", "error", `${which}.coast`, `${nm}の中心が陸地にないか、同じ陸地に収まっていないか、海岸線に近すぎます(面積1.2倍で判定)`);
-    else if (s.real && (s.features[which].scale ?? 1) < DEFAULT_MIN_SCALE && Math.abs(polyArea(host)) > SMALL_LAND_KM2) add("features", "error", `${which}.minscale`, `${nm}を0.5倍より小さくできるのは沖縄など小さな島だけです`);
+    else if (s.real && Math.min(...featureScales(s.features[which])) < DEFAULT_MIN_SCALE && Math.abs(polyArea(host)) > SMALL_LAND_KM2) add("features", "error", `${which}.minscale`, `${nm}を0.5倍より小さくできるのは沖縄など小さな島だけです`);
   }
   if (!s.real) for (const which of ["biwa", "fuji"] as const) if (!inKHRange(kc, hc, centroid(d[which]))) add("features", "error", `${which}.range`, `${which === "biwa" ? "琵琶湖" : "富士山"}が北海道〜九州の軸範囲外です`);
   if (featuresOverlap(d.biwa, d.fuji)) add("features", "error", "features.overlap", "琵琶湖と富士山が重なっています");

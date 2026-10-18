@@ -9,7 +9,7 @@ export type Op =
 
 export interface Place { pos: Vec; rot: number; scale: number }
 export interface BodyState { ops: Op[]; place: Place }
-export interface FeatureState { pos: Vec | null; rot: number; scale?: number; height?: number; auto?: true }   // Issue #15: scale = outline / body size (both), height = summit height (Fuji only); absent = 1 // pos null = follow Honshu's warp of the real position
+export interface FeatureState { pos: Vec | null; rot: number; scale?: number; scaleY?: number; height?: number; auto?: true }   // Issue #15: scale = outline / body size (both). Stage 11: `scale` is the size along the feature's own x axis, `scaleY` along its y axis (absent = the same as `scale`: a uniform size, as in every older save); the stretch is axis-aligned in the feature's own frame and the rotation is applied after it, so the outline is never sheared., height = summit height (Fuji only); absent = 1 // pos null = follow Honshu's warp of the real position
 
 export const STEPS = ["base", "honshu", "islands", "features", "terrain", "confirm", "roads"] as const;
 export type StepId = (typeof STEPS)[number];

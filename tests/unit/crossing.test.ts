@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { advance } from "../../src/sim/engine";
-import { CROSSING_TAG, POP_PER_KM, chooseStructure, isCrossingProject, planCrossings } from "../../src/sim/crossing";
+import { CROSSING_TAG, MAX_ACTIVE_PER_MODE, POP_PER_KM, chooseStructure, isCrossingProject, planCrossings } from "../../src/sim/crossing";
 import { fixedLink, seedFerries } from "../../src/sim/ferry";
 import { capacityOf } from "../../src/sim/demand";
 import { checkIntegrity } from "../../src/sim/network";
@@ -28,7 +28,7 @@ describe("strait links: ferry, bridge or tunnel (Issue #15)", () => {
     const same = chooseStructure(sim, 5, 40, "road", 1990)!, rail = chooseStructure(sim, 5, 40, "rail", 1990)!; expect(rail.fac).toBe(same.fac);   // the same rule for both modes
     expect(Math.max(...TUNNEL_KM.map((k) => k[1]))).toBeLessThan(640);
   });
-  it("a busy ferry gets a project (road and rail alike); an idle one does not; never more than one per mode at a time", () => {
+  it("a busy ferry gets a project (road and rail alike); an idle one does not; never more than MAX_ACTIVE_PER_MODE per mode at a time", () => {
     const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true); sim.policy!.mode = "auto"; let any = 0; const modes = new Set<string>();
     for (const year of [1960, 1975, 1990, 2010, 2040, 2070]) {
       advance(sim, w, 12 * (year - 1950 - Math.floor(sim.month / 12)));
@@ -39,7 +39,9 @@ describe("strait links: ferry, bridge or tunnel (Issue #15)", () => {
       sim.dials.hwyBuild = 1; sim.dials.railBuild = 1; sim.macro.budgetBu = 1e6;
       const made = planCrossings(sim, w, year); expect(made.length).toBeLessThanOrEqual(2); expect(new Set(made.map((p) => modeOf(p))).size).toBe(made.length);
       for (const p of made) { modes.add(modeOf(p)); expect(p.reason.startsWith(CROSSING_TAG)).toBe(true); expect(p.status).toBe("concept"); expect(sim.edges[p.edgeIds[0]].built).toBe(0); expect(["bridge", "tunnel"]).toContain(sim.edges[p.edgeIds[0]].facility); }
-      any += made.length; if (made.length) expect(planCrossings(sim, w, year)).toEqual([]);   // one per mode at a time
+      any += made.length;
+      for (let again = 0; again < 4; again++) planCrossings(sim, w, year);   // asked over and over, a mode never has more than its cap of live projects
+      for (const m of ["road", "rail"] as const) expect(Object.values(sim.projects).filter((p) => isCrossingProject(p) && modeOf(p) === m && ["concept", "planned", "building", "suspended"].includes(p.status)).length).toBeLessThanOrEqual(MAX_ACTIVE_PER_MODE);
     }
     expect(any).toBeGreaterThan(0); expect(modes.size).toBeGreaterThanOrEqual(1);
   }, 600000);
@@ -56,10 +58,13 @@ describe("strait links: ferry, bridge or tunnel (Issue #15)", () => {
       return { sim, w, seen, first, links, log };
     };
     const a = run(2), b = run(1);
-    expect(a.first).toBeGreaterThan(1950); expect(a.seen.maxActive).toBeLessThanOrEqual(1);
+    expect(a.first).toBeGreaterThan(1950); expect(a.seen.maxActive).toBeLessThanOrEqual(MAX_ACTIVE_PER_MODE);
     expect(a.seen.road + a.seen.rail).toBeGreaterThanOrEqual(2); expect(a.seen.road).toBeGreaterThanOrEqual(1); expect(a.seen.rail).toBeGreaterThanOrEqual(1);
     expect(a.seen.road + a.seen.rail).toBeLessThanOrEqual(24);                       // no endless chaining
-    expect(a.first).toBeLessThanOrEqual(b.first);                                    // K=2 is not later than K=1
+    // the faster technology builds sooner: by 2000 it has more fixed links than K=1, and its first one is not much later (Stage 11: a strait a bridge will span soon is waited for, not tunnelled, so the very
+    // first link can come a year or two later when a bridge, not a tunnel, is what the faster clock builds)
+    const by2000 = (r: ReturnType<typeof run>) => r.links.filter((e) => e.builtMonth !== null && 1950 + e.builtMonth / 12 <= 2000).length;
+    expect(by2000(a)).toBeGreaterThanOrEqual(by2000(b)); expect(a.first).toBeLessThanOrEqual(b.first + 3);
     expect(a.log.filter((x) => x.includes("海峡") && x.includes("構想")).length).toBeGreaterThan(0);   // the history is recorded as it happens (the timeline keeps the newest 1000; finished projects are tidied away after 25 years)
     expect(a.log.some((x) => x.includes("連絡が開通"))).toBe(true); expect(a.log.some((x) => x.includes("フェリーを廃止") || x.includes("連絡船を廃止"))).toBe(true);
     expect(checkIntegrity(a.sim)).toEqual([]);

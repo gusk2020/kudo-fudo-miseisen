@@ -15,7 +15,7 @@
  * Pure rules over the sim and the world; no place names.
  */
 import { UNIT, RAIL_UNIT, createProject, facCost } from "./planning";
-import { crossingPorts, fixedLink, servedMasses, type Crossing } from "./ferry";
+import type { WCity } from "./world";
 import { capacityOf } from "./demand";
 import { ev, yearOf } from "./engine";
 import { newEdgeDefaults, newId, pushHist } from "./network";
@@ -25,24 +25,68 @@ import type { World } from "./world";
 
 export const CROSSING_TAG = "【海峡連絡】";
 /** At most this many crossing projects of one mode at once; and a pair is not tried again within COOLING_YEARS of an abandoned attempt. */
-export const MAX_ACTIVE_PER_MODE = 1, COOLING_YEARS = 12, FUND_SHARE = 0.6, SCORE_MIN = 0.3;
+export const MAX_ACTIVE_PER_MODE = 2, COOLING_YEARS = 12, FUND_SHARE = 0.6, SCORE_MIN = 0.3;
+/** Stage 11: the longer the water, the busier the ferry must be before a fixed link is planned: the bar is SCORE_MIN + span / SPAN_SCORE_KM (10 km: 0.47, 25 km: 0.72, 40 km: 0.97). */
+export const SPAN_SCORE_KM = 60;
 /** A fixed link must serve people: the smaller shore's population (cities and villages) has to reach this many per km of open water. 10 km of strait needs 35,000 on the small side, 50 km needs 175,000. */
 export const POP_PER_KM = 3500;
 const ACTIVE = new Set(["concept", "planned", "building", "suspended"]);
 
 export const isCrossingProject = (p: SimProject) => p.reason.startsWith(CROSSING_TAG);
-const ferryOf = (sim: SimState, c: Crossing, mode: Mode): SimEdge | null => {
-  const na = Object.values(sim.nodes).find((n) => n.cell === c.a.cell)?.id, nb = Object.values(sim.nodes).find((n) => n.cell === c.b.cell)?.id; if (!na || !nb) return null;
-  return Object.values(sim.edges).find((e) => e.facility === "ferry" && modeOf(e) === mode && ((e.a === na && e.b === nb) || (e.a === nb && e.b === na))) ?? null;
-};
+/** Stage 11: a bridge is the preferred structure whenever the technology can span the water and it costs no more than BRIDGE_PREF times the tunnel (a bridge is built to be seen and
+ * driven; the cheaper structure won every time before, so no bridge was ever planned). A tunnel takes the crossings a bridge cannot span, or where it would cost far more. */
+export const BRIDGE_PREF = 2.2, BRIDGE_WAIT_YEARS = 30 /* technology-clock years (15 calendar years at K=2) */, PLAN_TUNNEL_MAX_KM = 40;
 /** What would be built across this gap, and what it would cost (null when neither a bridge nor a tunnel is feasible this year). */
 export function chooseStructure(sim: SimState, gapKm: number, km: number, mode: Mode, year: number): { fac: "bridge" | "tunnel"; cost: number } | null {
-  if (!sim.tech) return null; const now = techAt(sim.tech.k, year), unit = mode === "rail" ? RAIL_UNIT.standard : UNIT.standard, opts: { fac: "bridge" | "tunnel"; cost: number }[] = [];
+  if (!sim.tech) return null; const now = techAt(sim.tech.k, year), unit = mode === "rail" ? RAIL_UNIT.standard : UNIT.standard;
   // the structure is the span over open water (dearer the longer it is); the rest of the way between the two ports is ordinary road or rail
   const price = (fac: "bridge" | "tunnel", span: number) => span * facCost({ facility: fac, curv: 0 } as SimEdge, sim) * unit * (1 + span / (fac === "bridge" ? 15 : 40)) + Math.max(0, km - span) * unit;
-  if (gapKm <= now.bridgeKm) opts.push({ fac: "bridge", cost: price("bridge", gapKm) });
-  if (gapKm <= now.tunnelKm) opts.push({ fac: "tunnel", cost: price("tunnel", gapKm) });
-  return opts.sort((a, b) => a.cost - b.cost)[0] ?? null;
+  const b = gapKm <= now.bridgeKm ? { fac: "bridge" as const, cost: price("bridge", gapKm) } : null, t = gapKm <= now.tunnelKm ? { fac: "tunnel" as const, cost: price("tunnel", gapKm) } : null;
+  if (t && gapKm > PLAN_TUNNEL_MAX_KM) return b;   // no tunnel is planned across water wider than the world's longest (the Channel Tunnel's 38 km): a wider sea stays a ferry
+  if (b && t) return b.cost <= BRIDGE_PREF * t.cost ? b : t;
+  // a strait a bridge will span within BRIDGE_WAIT_YEARS is waited for rather than tunnelled: the bridge is the structure the crossing is meant to get
+  if (!b && t && gapKm <= techAt(sim.tech.k, year + BRIDGE_WAIT_YEARS / sim.tech.k).bridgeKm) return null;
+  return b ?? t;
+}
+/**
+ * Stage 11: the crossings the planner considers are the FERRY routes themselves (any open sea ferry of the mode between two port cities on different land masses), not one canonical
+ * pair per pair of masses. Before, Honshu-Shikoku had a single candidate (the two closest cities) and everything else -- Okayama-Takamatsu, Hiroshima-Matsuyama, the Bungo channel --
+ * could never be planned. The open water of a corridor is the narrowest strait between the two shores it joins (`localGapKm`).
+ */
+export interface Corridor { ferry: SimEdge; a: WCity; b: WCity; span: number; km: number }
+const spanMemo = new WeakMap<World, Map<string, number>>();
+/** The narrowest open water between the two shores THIS corridor joins: the nearest pair of coast cells among those within SPAN_REACH_KM of its two ports (km). A straight line between two port
+ * cities is not the strait -- Aomori to Hakodate is 100 km, the Tsugaru strait between their coasts is a quarter of that. */
+export const SPAN_REACH_KM = 60;
+export function localGapKm(w: World, ca: number, cb: number): number {
+  let m = spanMemo.get(w); if (!m) { m = new Map(); spanMemo.set(w, m); } const key = ca < cb ? `${ca}:${cb}` : `${cb}:${ca}`, hit = m.get(key); if (hit !== undefined) return hit;
+  const r = Math.ceil(SPAN_REACH_KM / w.cell), shore = (c: number): number[] => {
+    const lm = w.lm[c], i0 = c % w.nx, j0 = (c / w.nx) | 0, out: number[] = [];
+    for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const i = i0 + di, j = j0 + dj; if (i < 1 || j < 1 || i >= w.nx - 1 || j >= w.ny - 1 || di * di + dj * dj > r * r) continue; const k = j * w.nx + i; if (w.lm[k] !== lm) continue; if (w.t.land[k - 1] === 0 || w.t.land[k + 1] === 0 || w.t.land[k - w.nx] === 0 || w.t.land[k + w.nx] === 0) out.push(k); }
+    return out;
+  }, A = shore(ca), B = shore(cb); let best = Infinity;
+  for (const x of A) { const ax = x % w.nx, ay = (x / w.nx) | 0; for (const y of B) { const d = Math.hypot(ax - (y % w.nx), ay - ((y / w.nx) | 0)); if (d < best) best = d; } }
+  const km = isFinite(best) ? Math.round(best * w.cell * 10) / 10 : Infinity; m.set(key, km); return km;
+}
+export function corridorsOf(sim: SimState, w: World, mode: Mode): Corridor[] {
+  const out: Corridor[] = [];
+  for (const f of Object.values(sim.edges)) {
+    if (f.facility !== "ferry" || modeOf(f) !== mode || f.state !== "open" || f.cells.length < 2) continue;
+    const a = w.cityByCell.get(f.cells[0]), b = w.cityByCell.get(f.cells[f.cells.length - 1]); if (!a || !b || w.lm[a.cell] === w.lm[b.cell]) continue;
+    out.push({ ferry: f, a, b, span: localGapKm(w, a.cell, b.cell), km: Math.round(f.lengthKm * 10) / 10 });
+  }
+  return out.sort((p, q) => (p.ferry.id < q.ferry.id ? -1 : 1));
+}
+/** A fixed link of this mode (built, or still a live project) already runs within LINK_NEAR_KM of both ports of this corridor. */
+export const LINK_NEAR_KM = 40;
+export function corridorTaken(sim: SimState, w: World, c: Corridor, mode: Mode): boolean {
+  const near = (cell: number, port: WCity) => Math.hypot(w.cellPos(cell)[0] - port.pos[0], w.cellPos(cell)[1] - port.pos[1]) <= LINK_NEAR_KM;
+  for (const e of Object.values(sim.edges)) {
+    if ((e.facility !== "bridge" && e.facility !== "tunnel") || modeOf(e) !== mode || e.cells.length < 2) continue;
+    if (e.built < 1 && !Object.values(sim.projects).some((p) => p.edgeIds.includes(e.id) && ACTIVE.has(p.status))) continue;
+    const x = e.cells[0], z = e.cells[e.cells.length - 1]; if ((near(x, c.a) && near(z, c.b)) || (near(x, c.b) && near(z, c.a))) return true;
+  }
+  return false;
 }
 /** People living on a land mass: its cities and its villages. */
 export function massPop(sim: SimState, w: World, lm: number): number {
@@ -55,31 +99,30 @@ export const ferryLoad = (e: SimEdge | null) => (e ? (e.through + e.local + 0.4 
 /** One year's decision. Returns the projects started (usually none). */
 export function planCrossings(sim: SimState, w: World, y: number): SimProject[] {
   if (!sim.crossings || !sim.tech) return [];
-  const dl = sim.dials, started: SimProject[] = [], masses = servedMasses(w), proj = Object.values(sim.projects).filter(isCrossingProject);
+  const dl = sim.dials, started: SimProject[] = [], proj = Object.values(sim.projects).filter(isCrossingProject);
   for (const mode of ["road", "rail"] as Mode[]) {
     if (proj.filter((p) => modeOf(p) === mode && ACTIVE.has(p.status)).length >= MAX_ACTIVE_PER_MODE) continue;
     const appetite = (mode === "road" ? dl.hwyBuild : dl.railBuild) * (1 + 0.5 * dl.hsr) * (1 - 0.35 * Math.min(1, dl.seaBias)); if (appetite < 0.15) continue;
-    let best: { c: Crossing; s: { fac: "bridge" | "tunnel"; cost: number }; score: number; ferry: SimEdge } | null = null;
-    for (let i = 0; i < masses.length; i++) for (let j = i + 1; j < masses.length; j++) {
-      const c = crossingPorts(w, masses[i], masses[j]); if (!c || fixedLink(sim, w, c.la, c.lb, mode)) continue;
-      const ferry = ferryOf(sim, c, mode); if (!ferry || ferry.state !== "open") continue;
+    let best: { c: Corridor; s: { fac: "bridge" | "tunnel"; cost: number }; score: number } | null = null;
+    for (const c of corridorsOf(sim, w, mode)) {
+      const ferry = c.ferry; if (corridorTaken(sim, w, c, mode)) continue;
       const recent = proj.some((p) => modeOf(p) === mode && p.from === ferry.a && p.to === ferry.b && (ACTIVE.has(p.status) || yearOf(sim) - (sim.startYear + Math.floor(p.statusSince / 12)) < COOLING_YEARS)); if (recent) continue;
-      if (Math.min(massPop(sim, w, c.la), massPop(sim, w, c.lb)) < POP_PER_KM * c.gapKm) continue;   // too few people on the small shore for this much strait
-      const s = chooseStructure(sim, c.gapKm, c.km, mode, y); if (!s) continue;
-      const months = Math.max(24, c.gapKm * 0.8) * techAt(sim.tech.k, y).timeMult, need = s.cost / months, pool = sim.macro.budgetBu * (mode === "road" ? dl.roadShare * dl.austerity : 1 - dl.roadShare) * (mode === "road" ? 0.2 : 0.6);
+      if (Math.min(massPop(sim, w, w.lm[c.a.cell]), massPop(sim, w, w.lm[c.b.cell])) < POP_PER_KM * Math.max(c.span, 1)) continue;   // too few people on the small shore for this much strait
+      const s = chooseStructure(sim, c.span, c.km, mode, y); if (!s) continue;
+      const months = Math.max(24, c.span * 0.8) * techAt(sim.tech.k, y).timeMult, need = s.cost / months, pool = sim.macro.budgetBu * (mode === "road" ? dl.roadShare * dl.austerity : 1 - dl.roadShare) * (mode === "road" ? 0.2 : 0.6);
       if (need > FUND_SHARE * pool) continue;
       const score = Math.min(2, ferryLoad(ferry)) * appetite;
-      if (score >= SCORE_MIN && (!best || score > best.score || (score === best.score && c.km < best.c.km))) best = { c, s, score, ferry };
+      if (score >= SCORE_MIN + c.span / SPAN_SCORE_KM && (!best || score > best.score || (score === best.score && c.km < best.c.km))) best = { c, s, score };
     }
-    if (best) started.push(startCrossing(sim, w, best.c, best.s, best.ferry, mode, best.score, y));
+    if (best) started.push(startCrossing(sim, w, best.c, best.s, best.c.ferry, mode, best.score, y));
   }
   return started;
 }
-function startCrossing(sim: SimState, w: World, c: Crossing, s: { fac: "bridge" | "tunnel"; cost: number }, ferry: SimEdge, mode: Mode, score: number, y: number): SimProject {
+function startCrossing(sim: SimState, w: World, c: Corridor, s: { fac: "bridge" | "tunnel"; cost: number }, ferry: SimEdge, mode: Mode, score: number, y: number): SimProject {
   const id = newId(sim, "edge"), rail = mode === "rail", a = c.a.name.replace(/市$/, ""), b = c.b.name.replace(/市$/, "");
   const e: SimEdge = { ...newEdgeDefaults(), id, a: ferry.a, b: ferry.b, cells: [...ferry.cells], lengthKm: ferry.lengthKm, surface: "paved", quality: 92, built: 0, open: false, state: "closed", standard: "standard", maxGradePct: 1, builtMonth: null, region: ferry.region, facility: s.fac, facilityName: `link:${a}〜${b}${s.fac === "bridge" ? "大橋" : "海底トンネル"}`, ...(rail ? { mode: "rail" as const, op: ferry.op ?? "jnr" } : {}) };
   sim.edges[id] = e;
-  const reason = `${CROSSING_TAG}${a}〜${b}の${rail ? "鉄道" : "道路"}連絡船は混雑(${Math.round(ferryLoad(ferry) * 100)}%)。海峡${c.gapKm}kmは${s.fac === "bridge" ? "橋" : "海底トンネル"}で結べる技術がある`;
+  const reason = `${CROSSING_TAG}${a}〜${b}の${rail ? "鉄道" : "道路"}連絡船は混雑(${Math.round(ferryLoad(ferry) * 100)}%)。海峡${c.span}kmは${s.fac === "bridge" ? "橋" : "海底トンネル"}で結べる技術がある`;
   const p = createProject(sim, "new", "JP", ferry.a, ferry.b, [id], [{ edgeId: id, dir: 1 }], s.cost, reason, score); p.status = "concept"; if (rail) { p.mode = "rail"; p.op = e.op; }
   ev(sim, "crossing", `海峡${s.fac === "bridge" ? "架橋" : "トンネル"}構想(${rail ? "鉄道" : "道路"}): ${a}〜${b}`, `${reason}(工費の目安${s.cost.toFixed(1)}。連絡船はそのまま運航)`, { project: p.id, edge: id }); void y; return p;
 }

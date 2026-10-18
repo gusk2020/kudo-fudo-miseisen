@@ -9,7 +9,7 @@ import { ISLAND_IDS } from "../core/types";
 import { featureWorld } from "../core/validate";
 import { RoadLayer, type RoadArgs } from "./roads";
 
-export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[]; si?: number /* Stage 9: which stroke (0 = first, -1 = a new one) */ }; feature?: { which: "biwa" | "fuji"; pos: Vec; rot?: number; scale?: number; bad?: boolean } }
+export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[]; si?: number /* Stage 9: which stroke (0 = first, -1 = a new one) */ }; feature?: { which: "biwa" | "fuji"; pos: Vec; rot?: number; scale?: number; scaleY?: number; bad?: boolean } }
 export interface View { cx: number; cy: number; zoom: number } // centre in world km (y up), zoom = px per km
 
 const RAMP: [number, number[]][] = [[0, [92, 148, 76]], [150, [134, 170, 86]], [450, [196, 192, 112]], [900, [170, 136, 88]], [1600, [138, 108, 84]], [2400, [196, 190, 184]], [3400, [250, 250, 250]]];
@@ -87,7 +87,7 @@ export class Renderer {
   featureSel: "biwa" | "fuji" | null = null;
   private withPending(s: ProjectState, pending: Pending | null, which: "biwa" | "fuji"): ProjectState {
     const f = pending?.feature; if (!f || f.which !== which) return s;
-    return { ...s, features: { ...s.features, [which]: { ...s.features[which], pos: f.pos, ...(f.rot !== undefined ? { rot: f.rot } : {}), ...(f.scale !== undefined ? { scale: f.scale } : {}) } } };
+    return { ...s, features: { ...s.features, [which]: { ...s.features[which], pos: f.pos, ...(f.rot !== undefined ? { rot: f.rot } : {}), ...(f.scale !== undefined ? { scale: f.scale } : {}), ...(f.scaleY !== undefined ? { scaleY: f.scaleY } : { scaleY: undefined }) } } };
   }
   update(s: ProjectState, t: TerrainResult | null, issues: Issue[], pending: Pending | null) { this.lastArgs = [s, t, issues, pending]; this.rebuild(); }
   private rebuild() {
