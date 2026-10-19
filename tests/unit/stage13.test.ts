@@ -128,10 +128,10 @@ describe("Stage 13: metropolitan areas", () => {
     expect(big).toBeGreaterThan(3); expect(saturated).toBeGreaterThan(0);
     expect(metroBudgetKm2(36e6, 0.5)).toBeGreaterThan(8000); expect(metroBudgetKm2(36e6, 0.5)).toBeLessThan(22000); expect(metroBudgetKm2(3e5, 0.5)).toBeGreaterThan(150); expect(metroBudgetKm2(3e5, 0.5)).toBeLessThan(500);
   });
-  it("a bigger city covers more ground; satellites join a city at least twice their size; the largest metropolis spreads across prefectures", () => {
+  it("a bigger city covers more ground; satellites join a city at least 1.5 times their size; the largest metropolis spreads across prefectures", () => {
     const sorted = [...M.list].sort((p, q) => q.pop - p.pop), top = sorted[0];
     expect(top.areaKm2).toBeGreaterThan(sorted[5].areaKm2); expect(top.members.length).toBeGreaterThan(1);
-    for (const m of M.list) for (const id of m.members) if (id !== m.core) expect(sim.cities[id].pop * 2).toBeLessThanOrEqual(sim.cities[m.core].pop + 1);
+    for (const m of M.list) for (const id of m.members) if (id !== m.core) expect(sim.cities[id].pop * 1.5).toBeLessThanOrEqual(sim.cities[m.core].pop + 1);
     expect(sorted.slice(0, 5).some((m) => m.prefs.length >= 2 && m.outsidePct > 0.05)).toBe(true);
   });
   it("the history keeps a size and an area every five years for the past view", () => {

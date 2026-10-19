@@ -97,7 +97,14 @@ export function ruralBase(w: World, cell: number): number {
   for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) { if (di * di + dj * dj > R * R) continue; const i = i0 + di, j = j0 + dj; if (i < 0 || j < 0 || i >= w.nx || j >= w.ny) continue; if (w.t.land[j * w.nx + i] === 1) n++; }
   const v = n * w.cell * w.cell * RURAL_PER_KM2; m.set(cell, v); return v;
 }
+/** One answer per (game, month, pair of shores): the planner, the demand block and the checks all ask for the same pairs within a month. */
+let popMemo: { sim: SimState; month: number; map: Map<number, [number, number]> } | null = null;
 export function sidePops(sim: SimState, w: World, ca: number, cb: number): [number, number] {
+  if (!popMemo || popMemo.sim !== sim || popMemo.month !== sim.month) popMemo = { sim, month: sim.month, map: new Map() };
+  const key = ca * 1_000_003 + cb, hit = popMemo.map.get(key); if (hit) return hit;
+  const r = sidePopsRaw(sim, w, ca, cb); popMemo.map.set(key, r); return r;
+}
+function sidePopsRaw(sim: SimState, w: World, ca: number, cb: number): [number, number] {
   const pa = w.cellPos(ca), pb = w.cellPos(cb); let a = 0, b = 0, now = 0, base = 0;
   for (const c of w.cities) { now += sim.cities[c.id]?.pop ?? 0; base += c.pop0; }
   const scale = base > 0 ? now / base : 1;   // the countryside follows the nation's course

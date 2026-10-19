@@ -15,7 +15,7 @@ import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./r
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
 import { isWaterTunnel, techAt, techYear, TECH_K, WATER_K, waterTechAt } from "./tech";
-import { LAKE_BRIDGE_TAG, reviewLakeFerries } from "./ferry";
+import { LAKE_BRIDGE_TAG, isBayFerry, reviewLakeFerries } from "./ferry";
 import { ensureHubs, hubBoost, hubStats, reviewHubs } from "./hubs";
 import { reviewRailLines } from "./railecon";
 import { reviewWorks } from "./freeze";
@@ -174,11 +174,11 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, y); }
   const an = yield* analyzeGen(sim, w); yield;
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
-  updatePopulation(sim, w, an, y); if (sim.econ) sim.metro = computeMetros(sim, w, an, y, sim.metro); updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield;
+  updatePopulation(sim, w, an, y); if (sim.econ) { sim.metro = computeMetros(sim, w, an, y, sim.metro); yield; } updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield;
   yield* evaluateEdgesGen(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
-  if (sim.crossings) { planCrossings(sim, w, y); reviewLakeFerries(sim, w, y); }
+  if (sim.crossings) { yield; planCrossings(sim, w, y); yield; reviewLakeFerries(sim, w, y); }
   reviewWorks(sim);
   refreshNick(sim);
   if (sim.stage3) compactSim(sim, y);
@@ -293,8 +293,14 @@ export function updateRegionShares(sim: SimState, w: World, an?: Pick<Analysis, 
   for (const r of w.t.prefOrder) share[r] = EQUAL_SHARE / n + (1 - EQUAL_SHARE - ns) * ((econ[r] ?? 0) / (tot || 1)) + ns * ((need[r] ?? 0) / (needTot || 1));
   sim.regionShare = share;
 }
+/** The 'would anyone be cut off?' search is the costliest thing a dormant edge asks every year; its answer is kept for 4 years in the water-tunnel games (who would be cut off changes slowly; the older games ask every year, as they always did). */
+const strandMemo = new WeakMap<SimEdge, { y: number; open: number; s: { villages: number; cities: number } }>();
+function strandedMemo(sim: SimState, w: World, e: SimEdge, y: number, open: number) {
+  const m = strandMemo.get(e); if (m && y - m.y < 4 && sim.tech?.wk !== undefined) return m.s;
+  const s = strandedWithout(sim, w, e); strandMemo.set(e, { y, open, s }); return s;
+}
 function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
-  let n = 0;
+  let n = 0; const openN = Object.values(sim.edges).reduce((t, e) => t + (e.state === "open" ? 1 : 0), 0);
   for (const e of Object.values(sim.edges)) {
     if (++n % EDGE_SLICE === 0) yield;   // Stage 7: a slice of edges at a time (closure checks search the network and are not cheap)
     if (e.built < 1) continue; const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
@@ -306,7 +312,7 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
       if (e.state === "dormant" && d >= Z * 2) { setEdgeState(sim, e, "open", `需要が回復(${Math.round(d)}${unit})`); ev(sim, "reopen", `${edgeName(sim, e)}が休止から再開`, `需要が${Math.round(d)}${unit}に回復`, { edge: e.id }); }
       else if (e.state === "open" && e.zeroYears >= DORMANT_YEARS) { setEdgeState(sim, e, "dormant", `需要が${e.zeroYears}年連続でほぼゼロ(閾値${Z}${unit}未満)`); ev(sim, "dormant", `${edgeName(sim, e)}を休止`, `需要が${e.zeroYears}年連続で${Z}${unit}未満`, { edge: e.id }); }
       else if (e.state === "dormant" && e.zeroYears >= CLOSE_YEARS) {
-        const s = strandedWithout(sim, w, e);
+        const s = isBayFerry(e) ? { villages: 0, cities: 0 } : strandedMemo(sim, w, e, y, openN);   // (Stage 13: a bay ferry is a shortcut by construction -- the way round by land exists -- so there is nothing to search for)
         if (s.villages === 0 && s.cities === 0 && an.potential.get(e.id)! < REVIVE_DEMAND) { setEdgeState(sim, e, "closed", `需要ゼロが${e.zeroYears}年継続・代替路あり`); ev(sim, "close", `${edgeName(sim, e)}を閉鎖`, `需要ゼロが${e.zeroYears}年継続し、代替路があり孤立する集落もない`, { edge: e.id }); }
         else if (e.zeroYears === CLOSE_YEARS) { pushHist(sim, e, "閉鎖を見送り: 代替路がない、または沿線に集落がある"); }
       }

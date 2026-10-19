@@ -222,8 +222,8 @@ export const lakePortCost = (c: LakeCrossing) => Math.round((0.05 + LAKE_PORT_CO
 export const lakeFerryName = (c: LakeCrossing) => `ferry:${LAKE_TAG}${c.nameA}港〜${c.nameB}港湖上フェリー${c.id === "long" ? "" : "(横断)"}`;
 export const lakeEdge = (sim: SimState, c: LakeCrossing): SimEdge | null => Object.values(sim.edges).find((e) => isLakeFerry(e) && e.facilityName === lakeFerryName(c)) ?? null;
 /** A port is useful only if roads reach it: share a road that already passes within LAKE_SNAP_KM, else lay a rural access road to the nearest road (or city). Returns the cell the port ends up at. */
-export function connectPort(sim: SimState, w: World, cell: number): number {
-  const idx = buildIndex(sim, "road"), R = Math.ceil(LAKE_SNAP_KM / w.cell), ci = cell % w.nx, cj = (cell / w.nx) | 0, lay = (to: number, margin: number) => { const path = pathfind(w, cell, to, { margin }); if (path && path.length > 1) layPath(sim, w, path, { open: true, surface: "unpaved", quality: 40, built: 1, month: sim.month, standard: "rural" }); };
+export function connectPort(sim: SimState, w: World, cell: number, known?: ReturnType<typeof buildIndex>): number {
+  const idx = known ?? buildIndex(sim, "road"), R = Math.ceil(LAKE_SNAP_KM / w.cell), ci = cell % w.nx, cj = (cell / w.nx) | 0, lay = (to: number, margin: number) => { const path = pathfind(w, cell, to, { margin }); if (path && path.length > 1) layPath(sim, w, path, { open: true, surface: "unpaved", quality: 40, built: 1, month: sim.month, standard: "rural" }); };
   if (idx.nodeByCell.has(cell)) return cell;
   let best = -1, bd = Infinity; for (const q of idx.nodeByCell.keys()) { if (w.lm[q] !== w.lm[cell]) continue; const d = Math.hypot((q % w.nx) - ci, ((q / w.nx) | 0) - cj); if (d < bd) { bd = d; best = q; } }
   if (best >= 0) lay(best, bd <= R ? 6 : 24);   // an existing road node within reach, else the nearest one (a longer access road)
@@ -292,13 +292,14 @@ export const BAY_TAG = "湾岸航路", BAY_MIN_SAVING = 55, BAY_MIN_POP = 40000,
 export const isBayFerry = (e: SimEdge) => e.facility === "ferry" && (e.facilityName ?? "").endsWith(BAY_TAG);
 export function seedBayFerries(sim: SimState, w: World): number {
   const near = (a: Vec, b: Vec) => dist(a, b) < BAY_DUP_KM;
-  let n = 0;
+  let n = 0, idx = buildIndex(sim, "road");
   for (const l of waterLinks(w)) {
     if (n >= BAY_MAX) break; if (l.saving < BAY_MIN_SAVING || l.kind !== "sea") continue;
     const pa = w.cellPos(l.a), pb = w.cellPos(l.b);
     if (Object.values(sim.edges).some((e) => e.facility === "ferry" && modeOf(e) === "road" && e.cells.length >= 2 && ((near(w.cellPos(e.cells[0]), pa) && near(w.cellPos(e.cells[e.cells.length - 1]), pb)) || (near(w.cellPos(e.cells[0]), pb) && near(w.cellPos(e.cells[e.cells.length - 1]), pa))))) continue;
     if (Math.min(...sidePops(sim, w, l.a, l.b)) < BAY_MIN_POP) continue;
-    const ca = connectPort(sim, w, l.a), cb = connectPort(sim, w, l.b);
+    const nodes0 = Object.keys(sim.nodes).length, ca = connectPort(sim, w, l.a, idx), cb = connectPort(sim, w, l.b, idx);
+    if (Object.keys(sim.nodes).length !== nodes0) idx = buildIndex(sim, "road");   // (the index is rebuilt only when a port's access road has added nodes)
     makeFerryAt(sim, w, { cell: ca, pos: w.cellPos(ca) }, { cell: cb, pos: w.cellPos(cb) }, "road", `湾・海峡の航路(1950年の既存の連絡。陸路は${Math.round(l.landKm ?? 0)}kmの遠回り、海上は${l.km}km)`, `ferry:${shoreNames(w, l.a, l.b).join("〜")}${BAY_TAG}`); n++;
   }
   if (n) ev(sim, "seed", `1950年の湾・海峡の航路: ${n}本(陸路が遠回りの海を船で渡る)`, "初期条件。海岸線の形から向かい合う岸を探した(合成。実在の航路表ではない)", {});

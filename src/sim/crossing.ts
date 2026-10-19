@@ -40,7 +40,7 @@ export const MAX_ACTIVE_WATER = 6, STARTS_PER_YEAR_WATER = 2, LAKE_TUNNEL_MAX_KM
 /** A fixed link must serve people: the smaller shore's population (cities and villages) has to reach this many per km of open water. 10 km of strait needs 35,000 on the small side, 50 km needs 175,000. */
 export const POP_PER_KM = 3500;
 /** Stage 13: what a project already under way takes of the yearly budget, per month (its price over a typical building time); the water-tunnel games limit what is started by this, not by a count. */
-export const COMMIT_MONTHS = 60, LAND_PART_MAX_KM = 45;
+export const LOOK_AGAIN = 8, COMMIT_MONTHS = 60, LAND_PART_MAX_KM = 45;
 const ACTIVE = new Set(["concept", "planned", "building", "suspended"]);
 
 export const isCrossingProject = (p: SimProject) => p.reason.startsWith(CROSSING_TAG);
@@ -116,17 +116,23 @@ export const RAIL_REACH_KM = 45;
 const railNear = (w: World, idx: ReturnType<typeof buildIndex>, cell: number, other: number): boolean => { const p = w.cellPos(cell), po = w.cellPos(other); for (const q of idx.nodeByCell.keys()) { const d = dist(w.cellPos(q), p); if (w.lm[q] === w.lm[cell] && d <= RAIL_REACH_KM && d < dist(w.cellPos(q), po)) return true; } return false; };
 /** A fixed link of this mode (built, or still a live project) already runs within LINK_NEAR_KM of both ports of this corridor. */
 export const LINK_NEAR_KM = 40;
-export function corridorTaken(sim: SimState, w: World, c: Corridor, mode: Mode): boolean {
+/** The fixed links of a mode that exist or are being built (the only edges `corridorTaken` has to look at). */
+export function fixedLinksOf(sim: SimState, mode: Mode): SimEdge[] {
+  const active = new Set<string>(); for (const p of Object.values(sim.projects)) if (ACTIVE.has(p.status)) for (const id of p.edgeIds) active.add(id);
+  return Object.values(sim.edges).filter((e) => (e.facility === "bridge" || e.facility === "tunnel") && modeOf(e) === mode && e.cells.length >= 2 && (e.built >= 1 || active.has(e.id)));
+}
+export function corridorTaken(sim: SimState, w: World, c: Corridor, mode: Mode, fixed: SimEdge[] = fixedLinksOf(sim, mode)): boolean {
   const near = (cell: number, port: Port) => Math.hypot(w.cellPos(cell)[0] - port.pos[0], w.cellPos(cell)[1] - port.pos[1]) <= LINK_NEAR_KM;
-  for (const e of Object.values(sim.edges)) {
-    if ((e.facility !== "bridge" && e.facility !== "tunnel") || modeOf(e) !== mode || e.cells.length < 2) continue;
-    if (e.built < 1 && !Object.values(sim.projects).some((p) => p.edgeIds.includes(e.id) && ACTIVE.has(p.status))) continue;
-    const x = e.cells[0], z = e.cells[e.cells.length - 1]; if ((near(x, c.a) && near(z, c.b)) || (near(x, c.b) && near(z, c.a))) return true;
-  }
+  for (const e of fixed) { const x = e.cells[0], z = e.cells[e.cells.length - 1]; if ((near(x, c.a) && near(z, c.b)) || (near(x, c.b) && near(z, c.a))) return true; }
   return false;
 }
 /** People living on a land mass: its cities and its villages. */
+let massMemo: { sim: SimState; month: number; map: Map<number, number> } | null = null;
 export function massPop(sim: SimState, w: World, lm: number): number {
+  if (!massMemo || massMemo.sim !== sim || massMemo.month !== sim.month) massMemo = { sim, month: sim.month, map: new Map() };
+  const hit = massMemo.map.get(lm); if (hit !== undefined) return hit; const r = massPopRaw(sim, w, lm); massMemo.map.set(lm, r); return r;
+}
+function massPopRaw(sim: SimState, w: World, lm: number): number {
   let n = 0; for (const c of w.cities) if (w.lm[c.cell] === lm) n += sim.cities[c.id]?.pop ?? 0;
   for (const v of Object.values(sim.settlements)) if (!v.gone && w.lm[v.cell] === lm) n += v.pop; return n;
 }
@@ -136,10 +142,10 @@ export const ferryLoad = (e: SimEdge | null) => (e ? (e.through + e.local + 0.4 
 /** One year's decision. Returns the projects started (usually none). */
 /** Why a corridor is, or is not, a candidate this year: the planner's whole test for one corridor, kept apart so a study (or a test) can ask it. */
 export interface CorridorEval { ok: boolean; why: string; s?: { fac: "bridge" | "tunnel"; cost: number }; score?: number; rank?: number; need?: number; fund?: number; bar?: number }
-export function evalCorridor(sim: SimState, w: World, c: Corridor, mode: Mode, y: number, appetite: number, started: SimProject[] = [], proj: SimProject[] = Object.values(sim.projects).filter(isCrossingProject)): CorridorEval {
+export function evalCorridor(sim: SimState, w: World, c: Corridor, mode: Mode, y: number, appetite: number, started: SimProject[] = [], proj: SimProject[] = Object.values(sim.projects).filter(isCrossingProject), fixed?: SimEdge[]): CorridorEval {
   const committed = sim.tech?.wk !== undefined ? [...proj, ...started].filter((p) => modeOf(p) === mode && ACTIVE.has(p.status)).reduce((t, p) => t + p.costBu / COMMIT_MONTHS, 0) : 0;
   const dl = sim.dials, wk = sim.tech?.wk, ferry = c.ferry;
-  if (corridorTaken(sim, w, c, mode) || started.some((p) => p.from === ferry.a && p.to === ferry.b && modeOf(p) === mode)) return { ok: false, why: "taken" };
+  if (corridorTaken(sim, w, c, mode, fixed) || started.some((p) => p.from === ferry.a && p.to === ferry.b && modeOf(p) === mode)) return { ok: false, why: "taken" };
   if (proj.some((p) => modeOf(p) === mode && p.from === ferry.a && p.to === ferry.b && (ACTIVE.has(p.status) || yearOf(sim) - (sim.startYear + Math.floor(p.statusSince / 12)) < COOLING_YEARS))) return { ok: false, why: "recent" };
   // (Stage 13: a link is a crossing of water, not a second trunk road: where the two ports are far apart by land, the ordinary road between them comes first and the crossing is planned between nearer shores)
   if (wk !== undefined && c.km - c.span > LAND_PART_MAX_KM) return { ok: false, why: "far-ports" };
@@ -163,13 +169,18 @@ export function planCrossings(sim: SimState, w: World, y: number): SimProject[] 
   for (const mode of ["road", "rail"] as Mode[]) {
     const maxActive = wk !== undefined ? MAX_ACTIVE_WATER : MAX_ACTIVE_PER_MODE;
     const appetite = (mode === "road" ? dl.hwyBuild : dl.railBuild) * (1 + 0.5 * dl.hsr) * (1 - 0.35 * Math.min(1, dl.seaBias)); if (appetite < 0.15) continue;
+    let pool: Corridor[] | undefined; const fixed = fixedLinksOf(sim, mode);
     for (let round = 0; round < (wk !== undefined ? STARTS_PER_YEAR_WATER : 1); round++) {
       if (proj.filter((p) => modeOf(p) === mode && ACTIVE.has(p.status)).length + started.filter((p) => modeOf(p) === mode).length >= maxActive) break;
       let best: { c: Corridor; s: { fac: "bridge" | "tunnel"; cost: number }; score: number; rank: number } | null = null;
-      for (const c of corridorsOf(sim, w, mode)) {
-        const ev = evalCorridor(sim, w, c, mode, y, appetite, started, proj); if (!ev.ok) continue;
+      // (a second start in the same year only has to look again at the best few of the first look: what was not a candidate then cannot become one by money being committed)
+      const field: { c: Corridor; rank: number }[] = [];
+      for (const c of pool ?? corridorsOf(sim, w, mode)) {
+        const ev = evalCorridor(sim, w, c, mode, y, appetite, started, proj, fixed); if (!ev.ok) continue;
+        field.push({ c, rank: ev.rank! });
         if (!best || ev.rank! > best.rank || (ev.rank === best.rank && c.km < best.c.km)) best = { c, s: ev.s!, score: ev.score!, rank: ev.rank! };
       }
+      pool = field.sort((a, b) => b.rank - a.rank).slice(0, LOOK_AGAIN).map((x) => x.c);
       if (!best) break;
       const sp = startCrossing(sim, w, best.c, best.s, best.c.ferry, mode, best.score, y); if (sp) started.push(sp); else break;
     }

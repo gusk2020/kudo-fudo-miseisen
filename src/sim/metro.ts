@@ -4,7 +4,7 @@
  * A circle of radius sqrt(pop) says how big a city is; it does not say where its people live. A real metropolis is a SHAPE: it runs along the railways and
  * motorways, fills the plain, stops at a range and at the sea, and crosses a prefecture's line without noticing. So the footprint here is grown, not drawn:
  *
- *   1. SATELLITES. A city within a commute of a city at least twice its size (travel time `an.T`, hours) is that city's satellite: one metropolis, counted once.
+ *   1. SATELLITES. A city within a commute of a city at least 1.5 times its size (travel time `an.T`, hours) is that city's satellite: one metropolis, counted once.
  *      Every city belongs to exactly one metropolis, so people and output are never counted twice where two circles would overlap.
  *   2. AREA BUDGET. The metropolis wants A = AREA_K x (pop in millions)^0.8 x (0.7 + 0.6 x industry) km2 of reference ground. (AREA_K = 800: Tokyo's 36 M -> ~14,000 km2,
  *      a regional city of 300 k -> ~300 km2, which is what Japan's metropolitan employment areas measure.)
@@ -22,7 +22,7 @@ import type { SimState } from "./types";
 import type { World } from "./world";
 
 export const AREA_K = 800, AREA_POW = 0.8, PLAIN_F = 1.5, LOW_F = 1, HIGH_F = 0.5, PLAIN_M = 120, PLAIN_SLOPE = 4, LOW_M = 500, MAX_H = 1.5;
-export const SAT_RATIO = 2, SAT_H = 0.75, OFF_KMH = 12, HISTORY_KEEP = 40;
+export const SAT_RATIO = 1.5, SAT_H = 1.0, OFF_KMH = 12, HISTORY_KEEP = 40;
 export interface MetroInfo { core: string; members: string[]; pop: number; areaKm2: number; radiusKm: number; cells: number[]; prefs: string[]; outsidePct: number; budgetKm2: number }
 export interface MetroState { year: number; list: MetroInfo[]; of: Record<string, string>; h: Record<string, [number, number, number][]> }
 
@@ -31,6 +31,9 @@ export function terrainFactor(w: World, k: number): number {
   const m = w.elevM(k); if (m > LOW_M || hardnessAt(w, k) >= H_TUNNEL) return HIGH_F;
   return m <= PLAIN_M && slopeOf(w)[k] <= PLAIN_SLOPE ? PLAIN_F : LOW_F;
 }
+const factorMemo = new WeakMap<World, Float32Array>();
+/** The terrain factor of every land cell (0 = not land), once per world: the terrain never changes within a game. */
+function factorsOf(w: World): Float32Array { let f = factorMemo.get(w); if (!f) { f = new Float32Array(w.N); for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1) f[k] = terrainFactor(w, k); factorMemo.set(w, f); } return f; }
 export const metroBudgetKm2 = (pop: number, industry: number) => AREA_K * Math.pow(pop / 1e6, AREA_POW) * (0.7 + 0.6 * industry);
 
 class Heap {
@@ -71,7 +74,7 @@ export function computeMetros(sim: SimState, w: World, an: { T: Float64Array; TT
     if (e.built < 1 || e.state !== "open" || e.facility === "ferry") continue;
     const v = Math.max(OFF_KMH, Math.min(modeOf(e) === "rail" ? 90 : 70, edgeSpeed(e))); for (const k of e.cells) if (v > spd[k]) spd[k] = v;
   }
-  const f = new Float32Array(w.N); for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1) f[k] = terrainFactor(w, k);
+  const f = factorsOf(w);
   const owner = new Int16Array(w.N).fill(-1), rem = budget.slice(), cellKm2 = w.cell * w.cell, heap = new Heap(), cells: number[][] = roots.map(() => []);
   const nx = w.nx, ny = w.ny, dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
   const claim = (k: number, l: number, t: number) => {
