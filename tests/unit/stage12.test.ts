@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeSim } from "../../src/core/save2";
 import { AIR_ONTIME, SEA_ONTIME, weatherFactor } from "../../src/sim/demand";
-import { ecoYear, ECO_PARTS, exposure, mainCause } from "../../src/sim/econ";
+import { ecoYear, ECO_PARTS, exposure, mainCause, MIG } from "../../src/sim/econ";
 import { advance, createSim } from "../../src/sim/engine";
 import { H_TUNNEL, hardnessAt, routeBurden, siteCapacity, siteQuality, tunnelLimitKm, upkeepMult } from "../../src/sim/land";
 import { modeOf } from "../../src/sim/types";
@@ -70,7 +70,10 @@ describe("Stage 12: the city economy", () => {
   it("migration moves people, it does not create them (the shocks aside)", () => {
     const n = w.cities.length, an = { T: new Float64Array(n * n).fill(Infinity), TT: new Float64Array(n * n).fill(Infinity) };
     const out = ecoYear(sim, w, an, 1962), P = w.cities.map((c) => sim.cities[c.id].pop), tot = P.reduce((a, b) => a + b, 0);
-    const net = w.cities.reduce((s, c, i) => s + P[i] * (out.get(c.id) ?? 0), 0) / tot; expect(Math.abs(net)).toBeLessThan(0.002);
+    // the migration part (MIG x each city's advantage over the mean, which ecoYear records as `adv`) sums to nothing; what is left of `out` is the shocks and their recovery, which are drawn at random
+    // and so differ with every change that moves the random stream (a shock of 3-8 % on a big city alone is 0.5 % of the nation)
+    const move = w.cities.reduce((s, c, i) => s + P[i] * MIG * sim.city12![c.id].adv, 0) / tot; expect(Math.abs(move)).toBeLessThan(0.0002);
+    const shocks = w.cities.reduce((s, c, i) => s + P[i] * ((out.get(c.id) ?? 0) - MIG * sim.city12![c.id].adv), 0) / tot; expect(Math.abs(shocks)).toBeLessThan(0.02);
   });
   it("every city keeps the parts of its advantage and a size history; the main cause can be named", () => {
     expect(Object.keys(sim.city12!).length).toBe(w.cities.length); const d = sim.city12![city(w, "名古屋市").id]; expect(d.p.length).toBe(ECO_PARTS.length); expect(d.h.length).toBeGreaterThanOrEqual(2);

@@ -25,7 +25,7 @@ describe("Stage 11: straits are crossed by bridges and tunnels, corridor by corr
     expect(new Set(cs.map((c) => w.lm[c.a.cell] + "-" + w.lm[c.b.cell])).size).toBeLessThan(cs.length);              // several corridors between one pair of land masses
   });
   it("a bridge is chosen wherever technology can span the water at a price within BRIDGE_PREF of a tunnel; a tunnel where it cannot; nothing beyond the longest tunnel", () => {
-    const { sim } = stage3Sim("heisei", 7, false, 0, 2, true);
+    const { sim } = stage3Sim("heisei", 7, false, 0, 2, true, undefined, 0);   // the Stage 11 structure rule (waterK 0); the water-tunnel rule of Stage 13 is tested in stage13.test.ts
     const at = (gap: number, y: number) => chooseStructure(sim, gap, gap * 3, "road", y);
     expect(at(8, 1990)?.fac).toBe("bridge"); expect(at(14, 2000)?.fac).toBe("bridge");
     expect(at(30, 1960)).toBeNull();                         // a tunnel will not come for decades and a bridge is not yet possible, but neither is wanted now: it waits
@@ -35,7 +35,7 @@ describe("Stage 11: straits are crossed by bridges and tunnels, corridor by corr
     expect(at(36, 1975)?.fac).toBe("tunnel");
   });
   it("1950-2100: the planner now builds bridges as well as tunnels, over several corridors between the same land masses, and records what it started and what it finished", () => {
-    const { sim, w: ww } = stage3Sim("heisei", 7, true, 0, 2, true); sim.policy!.mode = "auto";
+    const { sim, w: ww } = stage3Sim("heisei", 7, true, 0, 2, true, undefined, 0); sim.policy!.mode = "auto";
     let ideas = 0, opened = 0; const seen = new Set<number>();
     for (let y = 1951; y <= 2100; y++) { advance(sim, ww, 12); for (const e of sim.events) if (!seen.has(e.id)) { seen.add(e.id); if (e.kind === "crossing") ideas++; else if (e.kind === "open" && e.text.includes("海峡連絡が開通")) opened++; } }
     const links = Object.values(sim.edges).filter((e) => (e.facility === "bridge" || e.facility === "tunnel") && (e.facilityName ?? "").startsWith("link:") && e.built >= 1);

@@ -17,7 +17,7 @@ describe("strait links: ferry, bridge or tunnel (Issue #15)", () => {
     expect(planCrossings(sim, w, 1950)).toEqual([]);   // no traffic yet on any ferry
   });
   it("the structure follows the technology: a bridge when it spans, else a tunnel when it can be driven, else the ferry stays", () => {
-    const { sim } = stage3Sim("heisei", 7, false, 0, 2, true);
+    const { sim } = stage3Sim("heisei", 7, false, 0, 2, true, undefined, 0);
     const early = techAt(2, 1950), late = techAt(2, 2060); expect(early.bridgeKm).toBe(BRIDGE_KM[0][1]); expect(late.tunnelKm).toBeGreaterThan(early.tunnelKm);
     expect(chooseStructure(sim, 1, 30, "road", 1950)?.fac).toBe("bridge");
     const mid = chooseStructure(sim, 10, 60, "road", 1955); expect(mid === null || mid.fac === "tunnel").toBe(true);
@@ -29,7 +29,7 @@ describe("strait links: ferry, bridge or tunnel (Issue #15)", () => {
     expect(Math.max(...TUNNEL_KM.map((k) => k[1]))).toBeLessThan(640);
   });
   it("a busy ferry gets a project (road and rail alike); an idle one does not; never more than MAX_ACTIVE_PER_MODE per mode at a time", () => {
-    const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true); sim.policy!.mode = "auto"; let any = 0; const modes = new Set<string>();
+    const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true, undefined, 0); sim.policy!.mode = "auto"; let any = 0; /* Stage 11 rules (waterK 0): a game made before the Stage 13 water-tunnel rule keeps them; the Stage 13 rules are in stage13.test.ts */ const modes = new Set<string>();
     for (const year of [1960, 1975, 1990, 2010, 2040, 2070]) {
       advance(sim, w, 12 * (year - 1950 - Math.floor(sim.month / 12)));
       for (const e of Object.values(sim.edges)) if (e.facility === "ferry") { e.through = 0; e.local = 0; e.freight = 0; }
@@ -47,7 +47,7 @@ describe("strait links: ferry, bridge or tunnel (Issue #15)", () => {
   }, 600000);
   it("over a century: links appear later than 1950, for both modes, with history; routes stay continuous; and the faster technology builds sooner", () => {
     const run = (k: number) => {
-      const { sim, w } = stage3Sim("heisei", 7, true, 0, k, true); sim.policy!.mode = "auto"; const seen = { road: 0, rail: 0, maxActive: 0 }, log: string[] = []; let first = 9999, lastEv = 0;
+      const { sim, w } = stage3Sim("heisei", 7, true, 0, k, true, undefined, 0); sim.policy!.mode = "auto"; const seen = { road: 0, rail: 0, maxActive: 0 }, log: string[] = []; let first = 9999, lastEv = 0;
       for (let y = 1951; y <= 2100; y++) {
         advance(sim, w, 12); for (const e of sim.events) if (e.id > lastEv) { log.push(e.text); lastEv = e.id; }
         const act = Object.values(sim.projects).filter((p) => isCrossingProject(p) && ["concept", "planned", "building", "suspended"].includes(p.status));

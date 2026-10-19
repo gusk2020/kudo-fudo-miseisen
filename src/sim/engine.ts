@@ -14,8 +14,8 @@ import { openStraits } from "./straits";
 import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./reform";
 import { SNAP_EVERY_YEARS, makeDeltaSnapshot } from "./ledger";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
-import { techAt, techYear, TECH_K } from "./tech";
-import { LAKE_BRIDGE_TAG, reviewLakeFerries } from "./ferry";
+import { isWaterTunnel, techAt, techYear, TECH_K, WATER_K, waterTechAt } from "./tech";
+import { BAY_PER_YEAR, BAY_YEARS, LAKE_BRIDGE_TAG, isBayFerry, reviewLakeFerries, seedBayFerries } from "./ferry";
 import { ensureHubs, hubBoost, hubStats, reviewHubs } from "./hubs";
 import { reviewRailLines } from "./railecon";
 import { reviewWorks } from "./freeze";
@@ -23,6 +23,7 @@ import { carryOver, finishCrossing, isCrossingProject, planCrossings } from "./c
 import { homeCity, subCity, tokyoCity } from "./ceremony";
 import { siteCapacity, upkeepMult } from "./land";
 import { ecoIndustry, ecoYear } from "./econ";
+import { computeMetros } from "./metro";
 import { basePop, capitalPref, computeRoles, roleIndustry } from "./roles";
 import { reconGrowth, reconIndustry, reconMeanCore, reconOf, reconShare } from "./recon";
 import { DEFAULT_CAPITAL, DEFAULT_SUB, DEFAULT_PALACE, prefOfSeat } from "../core/seat";
@@ -82,9 +83,15 @@ export function squeezeSites(sim: SimState, w: World) {
   for (const c of w.cities) { const k = siteCapacity(w, c); cap.set(c.id, k); if (k < 1) { const st = sim.cities[c.id], keep = Math.round(st.pop * k), d = st.pop - keep; st.pop = keep; lost += d; const pf = c.pref; const hosts = w.cities.filter((q) => q.pref === pf && (cap.get(q.id) ?? siteCapacity(w, q)) >= 0.9); const tot = hosts.reduce((s, q) => s + sim.cities[q.id].pop, 0); if (tot > 0) { for (const q of hosts) sim.cities[q.id].pop += Math.round(d * sim.cities[q.id].pop / tot); lost -= d; } } }
   if (lost > 0) { const hosts = w.cities.filter((q) => (cap.get(q.id) ?? 1) >= 0.9), tot = hosts.reduce((s, q) => s + sim.cities[q.id].pop, 0); for (const q of hosts) sim.cities[q.id].pop += Math.round(lost * sim.cities[q.id].pop / tot); }
 }
+/** Stage 13: the building-time factor of a project with a facility: the water-tunnel rule for a tunnel under water, the general bridge/tunnel rule otherwise. */
+export function projectTimeMult(sim: SimState, p: SimProject): number {
+  if (!sim.tech) return 1; const y = yearOf(sim);
+  if (sim.tech.wk !== undefined && p.edgeIds.some((id) => { const e = sim.edges[id]; return !!e && isWaterTunnel(e); })) return waterTechAt(sim.tech.wk, y).timeMult;
+  return techAt(sim.tech.k, y).timeMult;
+}
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
-export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
+export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
   w.barrier = !!opts.stage3;   // Stage 9: the mountain barrier is part of the real-map game
   w.land12 = !!(opts.stage3 && opts.firstEra !== undefined);   // Stage 12: every game started from the era timeline (Stage 10 onward flow) uses the land model
@@ -93,7 +100,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
     schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
     next: { node: 0, edge: 0, route: 0, project: 0, event: 0 }, nodes: {}, edges: {}, routes: {}, projects: {}, cities: {}, settlements: {}, links: [], snaps: [], regionShare: {},
     macro: { mood: 0, budgetBu: 0, maintCoverage: 1 }, routeCounters: {}, events: [], stats: [], skippedMonths: 0, lastWallMs: 0, ceremonyDone: false,
-    operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0) } : {}), ...(opts.stage3 && (firstCand || opts.techK !== undefined) ? { tech: { k: opts.techK ?? TECH_K } } : {}),
+    operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0) } : {}), ...(opts.stage3 && (firstCand || opts.techK !== undefined) ? { tech: { k: opts.techK ?? TECH_K, ...(firstCand && opts.waterK !== 0 ? { wk: opts.waterK ?? WATER_K } : {}) } } : {}),
     ...(prefOfSeat(opts.capital) && prefOfSeat(opts.capital) !== DEFAULT_CAPITAL ? { capital: prefOfSeat(opts.capital)! } : {}), ...(prefOfSeat(opts.subCapital) ? { subCapital: prefOfSeat(opts.subCapital)! } : {}), ...(opts.palace ? { palace: opts.palace } : {}),
     ...(firstCand ? { crossings: true as const } : {}),
   };
@@ -165,13 +172,15 @@ const edgeName = (sim: SimState, e: SimEdge) => `${sim.nodes[e.a]?.name ?? "地�
 function* yearlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, y); }
+  // Stage 13: the rest of the 1950s bay and strait ferries come in a few at a time (ferry.ts: BAY_FIRST)
+  if (sim.tech?.wk !== undefined && y > sim.startYear && y < sim.startYear + BAY_YEARS) { for (let i = 0; i < BAY_PER_YEAR; i++) { if (!seedBayFerries(sim, w, 1)) break; yield; } }   // (one ferry per slice: each access road is a pass over the whole network)
   const an = yield* analyzeGen(sim, w); yield;
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
-  updatePopulation(sim, w, an, y); updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield;
+  updatePopulation(sim, w, an, y); if (sim.econ) { sim.metro = computeMetros(sim, w, an, y, sim.metro); yield; } updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield;
   yield* evaluateEdgesGen(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
-  if (sim.crossings) { planCrossings(sim, w, y); reviewLakeFerries(sim, w, y); }
+  if (sim.crossings) { yield; planCrossings(sim, w, y); yield; reviewLakeFerries(sim, w, y); }
   reviewWorks(sim);
   refreshNick(sim);
   if (sim.stage3) compactSim(sim, y);
@@ -286,8 +295,14 @@ export function updateRegionShares(sim: SimState, w: World, an?: Pick<Analysis, 
   for (const r of w.t.prefOrder) share[r] = EQUAL_SHARE / n + (1 - EQUAL_SHARE - ns) * ((econ[r] ?? 0) / (tot || 1)) + ns * ((need[r] ?? 0) / (needTot || 1));
   sim.regionShare = share;
 }
+/** The 'would anyone be cut off?' search is the costliest thing a dormant edge asks every year; its answer is kept for 4 years in the water-tunnel games (who would be cut off changes slowly; the older games ask every year, as they always did). */
+const strandMemo = new WeakMap<SimEdge, { y: number; open: number; s: { villages: number; cities: number } }>();
+function strandedMemo(sim: SimState, w: World, e: SimEdge, y: number, open: number) {
+  const m = strandMemo.get(e); if (m && y - m.y < 4 && sim.tech?.wk !== undefined) return m.s;
+  const s = strandedWithout(sim, w, e); strandMemo.set(e, { y, open, s }); return s;
+}
 function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
-  let n = 0;
+  let n = 0; const openN = Object.values(sim.edges).reduce((t, e) => t + (e.state === "open" ? 1 : 0), 0);
   for (const e of Object.values(sim.edges)) {
     if (++n % EDGE_SLICE === 0) yield;   // Stage 7: a slice of edges at a time (closure checks search the network and are not cheap)
     if (e.built < 1) continue; const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
@@ -299,7 +314,7 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
       if (e.state === "dormant" && d >= Z * 2) { setEdgeState(sim, e, "open", `需要が回復(${Math.round(d)}${unit})`); ev(sim, "reopen", `${edgeName(sim, e)}が休止から再開`, `需要が${Math.round(d)}${unit}に回復`, { edge: e.id }); }
       else if (e.state === "open" && e.zeroYears >= DORMANT_YEARS) { setEdgeState(sim, e, "dormant", `需要が${e.zeroYears}年連続でほぼゼロ(閾値${Z}${unit}未満)`); ev(sim, "dormant", `${edgeName(sim, e)}を休止`, `需要が${e.zeroYears}年連続で${Z}${unit}未満`, { edge: e.id }); }
       else if (e.state === "dormant" && e.zeroYears >= CLOSE_YEARS) {
-        const s = strandedWithout(sim, w, e);
+        const s = isBayFerry(e) ? { villages: 0, cities: 0 } : strandedMemo(sim, w, e, y, openN);   // (Stage 13: a bay ferry is a shortcut by construction -- the way round by land exists -- so there is nothing to search for)
         if (s.villages === 0 && s.cities === 0 && an.potential.get(e.id)! < REVIVE_DEMAND) { setEdgeState(sim, e, "closed", `需要ゼロが${e.zeroYears}年継続・代替路あり`); ev(sim, "close", `${edgeName(sim, e)}を閉鎖`, `需要ゼロが${e.zeroYears}年継続し、代替路があり孤立する集落もない`, { edge: e.id }); }
         else if (e.zeroYears === CLOSE_YEARS) { pushHist(sim, e, "閉鎖を見送り: 代替路がない、または沿線に集落がある"); }
       }
@@ -385,7 +400,7 @@ function* monthlyGen(sim: SimState, w: World): Generator<void> {
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "road").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
   // Stage 7: what the national pool does not need for national projects goes to regional projects their own region could not fully fund this month
   // (国庫補助). Measured before this: 96% of the pool and 63% of the regional purses went unspent while regional projects stalled for lack of money.
-  const reqOf = (p: SimProject) => { const totLen = p.edgeIds.reduce((s, id) => s + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, tm = sim.tech && p.edgeIds.some((id) => sim.edges[id]?.facility) ? techAt(sim.tech.k, yearOf(sim)).timeMult : 1; return { totLen, req: Math.max(0.0001, p.costBu / Math.max(24 * tm, totLen * 0.8 * tm)) }; };
+  const reqOf = (p: SimProject) => { const totLen = p.edgeIds.reduce((s, id) => s + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, tm = sim.tech && p.edgeIds.some((id) => sim.edges[id]?.facility) ? projectTimeMult(sim, p) : 1; return { totLen, req: Math.max(0.0001, p.costBu / Math.max(24 * tm, totLen * 0.8 * tm)) }; };
   const short: { p: SimProject; f: number; req: number; totLen: number }[] = [];
   for (const p of projs) if (p.region !== "JP") { const r = p.region, { req, totLen } = reqOf(p), f = Math.min(req, Math.max(0, left[r] ?? 0)); left[r] = (left[r] ?? 0) - f; if (sim.stage3 && f < req) short.push({ p, f, req, totLen }); else if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen); }
   for (const p of projs) if (p.region === "JP") { const { req, totLen } = reqOf(p), f = Math.min(req, Math.max(0, pool)); pool -= f; if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen); }
@@ -432,9 +447,10 @@ function railMonthly(sim: SimState, w: World, railB: number) {
     }
   }
   let pot = railB * 0.4 * dl.railBuild * 2;
+  const rtm = (p: SimProject) => (sim.tech?.wk !== undefined && p.edgeIds.some((id) => { const e = sim.edges[id]; return !!e && isWaterTunnel(e); }) ? projectTimeMult(sim, p) : 1);   // Stage 13: a railway tunnel under water is built in the water-tunnel time
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "rail").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
   for (const p of projs) {
-    const totLen = p.edgeIds.reduce((t, id) => t + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, req = Math.max(0.0001, p.costBu / Math.max(36, totLen * 0.6)), f = Math.min(req, Math.max(0, pot)); pot -= f;
+    const totLen = p.edgeIds.reduce((t, id) => t + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, req = Math.max(0.0001, p.costBu / Math.max(36 * rtm(p), totLen * 0.6 * rtm(p))), f = Math.min(req, Math.max(0, pot)); pot -= f;
     if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen);
   }
 }
