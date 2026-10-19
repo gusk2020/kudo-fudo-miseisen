@@ -48,7 +48,7 @@ export const isCrossingProject = (p: SimProject) => p.reason.startsWith(CROSSING
  * driven; the cheaper structure won every time before, so no bridge was ever planned). A tunnel takes the crossings a bridge cannot span, or where it would cost far more. */
 export const BRIDGE_PREF = 2.2, BRIDGE_WAIT_YEARS = 30 /* technology-clock years (15 calendar years at K=2) */, PLAN_TUNNEL_MAX_KM = 40;
 /** Stage 13: with the water-tunnel rule (tech.wk) the longest tunnel a crossing project will plan is longer: the sea beds the user named are 15-70 km wide. */
-export const PLAN_WATER_TUNNEL_MAX_KM = 70;
+export const PLAN_WATER_TUNNEL_MAX_KM = 3 * PLAN_TUNNEL_MAX_KM;   // (the water rule's reach is wk times the ordinary one, so is the longest crossing it will plan at wk 3)
 /** What would be built across this gap, and what it would cost (null when neither a bridge nor a tunnel is feasible this year). */
 export function chooseStructure(sim: SimState, gapKm: number, km: number, mode: Mode, year: number): { fac: "bridge" | "tunnel"; cost: number } | null {
   if (!sim.tech) return null; const now = techAt(sim.tech.k, year), unit = mode === "rail" ? RAIL_UNIT.standard : UNIT.standard;
@@ -122,7 +122,9 @@ export function fixedLinksOf(sim: SimState, mode: Mode): SimEdge[] {
   return Object.values(sim.edges).filter((e) => (e.facility === "bridge" || e.facility === "tunnel") && modeOf(e) === mode && e.cells.length >= 2 && (e.built >= 1 || active.has(e.id)));
 }
 export function corridorTaken(sim: SimState, w: World, c: Corridor, mode: Mode, fixed: SimEdge[] = fixedLinksOf(sim, mode)): boolean {
-  const near = (cell: number, port: Port) => Math.hypot(w.cellPos(cell)[0] - port.pos[0], w.cellPos(cell)[1] - port.pos[1]) <= LINK_NEAR_KM;
+  // (water-tunnel games: a short crossing is not 'taken' by a link whose ends are 30 km away -- the radius shrinks with the crossing, so the mouth of a bay and a link up its head are two crossings)
+  const radius = sim.tech?.wk !== undefined ? Math.min(LINK_NEAR_KM, 0.5 * c.km + 5) : LINK_NEAR_KM;
+  const near = (cell: number, port: Port) => Math.hypot(w.cellPos(cell)[0] - port.pos[0], w.cellPos(cell)[1] - port.pos[1]) <= radius;
   for (const e of fixed) { const x = e.cells[0], z = e.cells[e.cells.length - 1]; if ((near(x, c.a) && near(z, c.b)) || (near(x, c.b) && near(z, c.a))) return true; }
   return false;
 }

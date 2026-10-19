@@ -17,7 +17,7 @@ describe("strait links: ferry, bridge or tunnel (Issue #15)", () => {
     expect(planCrossings(sim, w, 1950)).toEqual([]);   // no traffic yet on any ferry
   });
   it("the structure follows the technology: a bridge when it spans, else a tunnel when it can be driven, else the ferry stays", () => {
-    const { sim } = stage3Sim("heisei", 7, false, 0, 2, true);
+    const { sim } = stage3Sim("heisei", 7, false, 0, 2, true, undefined, 0);
     const early = techAt(2, 1950), late = techAt(2, 2060); expect(early.bridgeKm).toBe(BRIDGE_KM[0][1]); expect(late.tunnelKm).toBeGreaterThan(early.tunnelKm);
     expect(chooseStructure(sim, 1, 30, "road", 1950)?.fac).toBe("bridge");
     const mid = chooseStructure(sim, 10, 60, "road", 1955); expect(mid === null || mid.fac === "tunnel").toBe(true);

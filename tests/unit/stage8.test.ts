@@ -52,7 +52,7 @@ describe("Stage 8: 国道1号 across Lake Biwa", () => {
 const lakeCells = (w: World) => { let n = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 2) n++; return n; };
 const openLakes = (sim: ReturnType<typeof createSim>) => Object.values(sim.edges).filter((e) => isLakeFerry(e) && e.state === "open");
 describe("Stage 8: the lake's services grow with demand, within what the lake's size allows", () => {
-  const mk = (mut?: (s: ReturnType<typeof defaultState>) => void) => { const b = worldOf(mut), sim = createSim(b.w, "m", b.hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27" }); return { ...b, sim }; };
+  const mk = (mut?: (s: ReturnType<typeof defaultState>) => void) => { const b = worldOf(mut), sim = createSim(b.w, "m", b.hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27", waterK: 0 }); return { ...b, sim }; };   // Stage 8 lake rules (a game without the Stage 13 water-tunnel rule); the Stage 13 lake planner is tested in stage13.test.ts
   it("a small lake keeps one service; a big one may get more, never beyond its cap", () => {
     expect(maxLakeRoutes(10)).toBe(1); expect(maxLakeRoutes(1000)).toBe(4);
     const small = worldOf((s) => { s.features.biwa.scale = 0.4; }); expect(lakeCrossings(small.w).length).toBeLessThanOrEqual(maxLakeRoutes(lakeCells(small.w)));

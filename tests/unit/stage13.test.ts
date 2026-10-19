@@ -10,25 +10,27 @@ import { landDistanceKm, sidePops, virtualTrips, waterLinks } from "../../src/si
 import type { SimEdge } from "../../src/sim/types";
 import { biwaWorld, runWater } from "../study/water13lib";
 import { createSim } from "../../src/sim/engine";
-import { isLakeFerry, reviewLakeFerries, LAKE_BRIDGE_TAG } from "../../src/sim/ferry";
+import { BAY_FIRST, BAY_TAG, isLakeFerry, reviewLakeFerries, LAKE_BRIDGE_TAG } from "../../src/sim/ferry";
 import { CROSSING_TAG, MAX_ACTIVE_PER_MODE, MAX_ACTIVE_WATER, isCrossingProject, planCrossings } from "../../src/sim/crossing";
 import { capacityOf } from "../../src/sim/demand";
 import { modeOf } from "../../src/sim/types";
+import { checkIntegrity } from "../../src/sim/network";
 import { realWorld, stage3Sim } from "./simhelp";
 
 const lonLat = (w: ReturnType<typeof realWorld>["w"], k: number) => realToLonLat(w.cellPos(k) as [number, number]);
 const near = (p: number[], lon: number, lat: number, tol = 0.35) => Math.abs(p[0] - lon) <= tol && Math.abs(p[1] - lat) <= tol;
 
 describe("Stage 13: the water-tunnel technology rule (Issue #33)", () => {
-  it("the clock runs three times as fast, the reach is read off that clock once, and cost and time are halved", () => {
+  it("the clock runs three times as fast, at any technology year the reach is three times the ordinary reach, and cost and time are halved -- each once", () => {
     expect(WATER_K).toBe(3);
     const a = waterTechAt(3, 1960), b = waterTechAt(1, 1960);
     expect(a.yEff).toBe(1980); expect(b.yEff).toBe(1960);
     expect(a.costMult).toBeCloseTo(0.5, 9); expect(a.timeMult).toBeCloseTo(0.5, 9); expect(b.costMult).toBe(1); expect(b.timeMult).toBe(1);
-    expect(a.reachKm).toBeGreaterThan(b.reachKm);
-    // read off the faster clock only: the reach in 1960 at 3x is the ordinary reach of 1980 -- not three times that again
-    expect(a.reachKm).toBeCloseTo(waterTechAt(1, 1980).reachKm, 9);
-    expect(waterTechAt(3, 2100).reachKm).toBe(TUNNEL_KM[TUNNEL_KM.length - 1][1]);
+    // the baseline (wk 1) is the ordinary curve; wk 3 reads the curve at the faster year AND triples it
+    expect(b.reachKm).toBeCloseTo(techAt(1, 1960).tunnelKm, 9);
+    expect(a.reachKm).toBeCloseTo(3 * waterTechAt(1, 1980).reachKm, 9);
+    expect(a.reachKm).toBeGreaterThan(3 * b.reachKm);   // faster clock x longer reach: more than either alone
+    expect(waterTechAt(3, 2100).reachKm).toBe(3 * TUNNEL_KM[TUNNEL_KM.length - 1][1]);
   });
   it("only a fixed link under water follows it: a bridge, and an ordinary land tunnel, keep the general rule", () => {
     const mk = (facility: string, facilityName?: string) => ({ facility, facilityName, curv: 0 }) as unknown as SimEdge;
@@ -84,8 +86,8 @@ describe("Stage 13: the planner takes them up on cost and demand (1950-1975 at 1
   it("technology at 1x gets fewer of them, and later", () => {
     const n = (r: ReturnType<typeof runWater>) => r.projects.filter((p) => p.state === "open").length;
     expect(n(a3)).toBeGreaterThan(n(a1));
-    const first = (r: ReturnType<typeof runWater>, pat: RegExp) => Math.min(...r.projects.filter((p) => pat.test(p.name ?? "") && p.state === "open").map((p) => Math.min(...(p.hist as any[]).filter((h) => String(h[1]).startsWith("op")).map((h) => h[0]))));
-    expect(first(a1, /神奈川〜千葉海底トンネル/)).toBeGreaterThan(first(a3, /神奈川〜千葉海底トンネル/) - 1);
+    const years = (r: ReturnType<typeof runWater>) => r.projects.filter((p) => p.state === "open").map((p) => Math.min(...(p.hist as any[]).filter((h) => String(h[1]).startsWith("op")).map((h) => h[0] as number))), mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    expect(mean(years(a3))).toBeLessThan(mean(years(a1)));   // the faster technology opens its projects earlier on the whole (a single project's year moves with the random stream)
   });
   it("every candidate evaluated says why it is, or is not, one; and a far pair of ports is not a crossing", () => {
     const { sim, w } = stage3Sim("heisei", 7, false, 0, 2, true);
@@ -150,7 +152,7 @@ describe("Stage 13: Lake Biwa -- a tunnel, a bridge and a ferry compete, at any 
     for (let y = 1985; y < 2010; y++) { planCrossings(sim, w, y); reviewLakeFerries(sim, w, y); }
     const fixed = Object.values(sim.projects).filter((p) => p.reason.startsWith(CROSSING_TAG) || p.reason.startsWith(LAKE_BRIDGE_TAG));
     expect(fixed.length).toBeGreaterThan(0);
-    const key = (p: (typeof fixed)[0]) => { const e = sim.edges[p.edgeIds[0]]; return [e.cells[0], e.cells[e.cells.length - 1]].sort().join(); };
+    const key = (p: (typeof fixed)[0]) => { const e = sim.edges[p.edgeIds[0]]; return modeOf(p) + [e.cells[0], e.cells[e.cells.length - 1]].sort().join(); };
     const keys = fixed.filter((p) => p.status !== "abolished").map(key); expect(new Set(keys).size).toBe(keys.length);   // one project per pair of shores
     for (const e of lakes) expect(["open", "dormant"].includes(e.state)).toBe(true);
   });
@@ -178,4 +180,28 @@ describe("Stage 13: the water-tunnel games plan by money, not by a count of two"
     for (let i = 0; i < 8; i++) planCrossings(sim, w, 1990);
     expect(Object.values(sim.projects).filter((p) => isCrossingProject(p) && modeOf(p) === "road").length).toBeLessThanOrEqual(MAX_ACTIVE_PER_MODE);
   });
+});
+
+describe("Stage 13 (audit): Lake Biwa tunnels get built when the lake and its shore towns give them a reason", () => {
+  for (const [scale, rot] of [[3, 0.8], [3, 0], [5, 0]] as [number, number][]) it(`scale ${scale} rotated ${rot}: a lake tunnel is conceived, built and opened (no fixed year), and the lake's bridge rule stands down in favour of one planner`, () => {
+    const r = runWater(3, 7, 1975, `biwa:${scale}:${rot}`), tun = r.projects.filter((p) => /湖底トンネル/.test(p.name ?? "") && p.state === "open");
+    expect(tun.length).toBeGreaterThan(0); for (const p of tun) { expect(p.cost).toBeGreaterThan(0); expect(p.km).toBeGreaterThan(5); expect(p.km).toBeLessThanOrEqual(40); }
+    expect(Object.values(r._sim.projects).some((p) => p.reason.startsWith(LAKE_BRIDGE_TAG))).toBe(false);   // lake bridges and tunnels are one planner's choice (BRIDGE_PREF), not two rules
+    const names = tun.map((p) => p.name as string); for (const n of names) expect(n).not.toContain("海底");
+  }, 300000);
+  it("the lake's shore ferries are seeded from the shape of the lake, are lake ferries, and a larger or demanding lake gets crossings a small one does not", () => {
+    const small = biwaWorld(1, 0), big = biwaWorld(3, 0.8);
+    const lakeSeeded = (b: ReturnType<typeof biwaWorld>) => Object.values(createSim(b.w, "m", b.hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27" }).edges).filter((e) => (e.facilityName ?? "").endsWith("湖岸航路"));
+    const a = lakeSeeded(big); expect(a.length).toBeGreaterThan(lakeSeeded(small).length); for (const e of a) expect(isLakeFerry(e)).toBe(true);
+  });
+});
+
+describe("Stage 13 (audit): the 1950s ferries are laid a few at a time (start-up cost)", () => {
+  it("at the start only BAY_FIRST are laid; the rest join over the first years; a game without the water rule gets none", () => {
+    const { w, hash } = realWorld(true), mk = (waterK?: number) => createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27", ...(waterK !== undefined ? { waterK } : {}) });
+    const count = (s: ReturnType<typeof mk>) => Object.values(s.edges).filter((e) => (e.facilityName ?? "").endsWith(BAY_TAG) || (e.facilityName ?? "").endsWith("湖岸航路")).length;
+    const a = mk(); expect(count(a)).toBeGreaterThan(0); expect(count(a)).toBeLessThanOrEqual(BAY_FIRST);
+    a.policy!.mode = "auto"; advance(a, w, 12 * 10); expect(count(a)).toBeGreaterThan(BAY_FIRST); expect(checkIntegrity(a)).toEqual([]);
+    expect(count(mk(0))).toBe(0);
+  }, 300000);
 });

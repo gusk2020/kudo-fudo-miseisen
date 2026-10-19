@@ -14,8 +14,8 @@ import { loadDem } from "../unit/helpers";
 const biwaCache: Record<string, ReturnType<typeof realWorld>> = {};
 export function biwaWorld(scale: number, rot: number) { const key = `${scale}/${rot}`; if (biwaCache[key]) return biwaCache[key]; const s = defaultState(); s.islands = true; s.features.biwa.scale = scale; s.features.biwa.rot = rot; const t = generateTerrain(s, loadDem()); return (biwaCache[key] = { w: buildWorld(t, s.seed), hash: t.hash }); }
 
-export function runWater(wk: number, seed: number, until: number, world: "plain" | "biwa5" = "plain", hook?: (sim: ReturnType<typeof createSim>, w: ReturnType<typeof realWorld>["w"], y: number) => void) {
-  const base = world === "plain" ? realWorld(true) : biwaWorld(world === "biwa5" ? 5 : 3, world === "biwa5" ? 0 : 0.8), { w, hash } = base;
+export function runWater(wk: number, seed: number, until: number, world: string = "plain", hook?: (sim: ReturnType<typeof createSim>, w: ReturnType<typeof realWorld>["w"], y: number) => void) {
+  const base = world === "plain" ? realWorld(true) : world.startsWith("biwa:") ? biwaWorld(+world.split(":")[1], +world.split(":")[2]) : biwaWorld(world === "biwa5" ? 5 : 3, world === "biwa5" ? 0 : 0.8), { w, hash } = base;
   const sim = createSim(w, "m", hash, seed, { stage3: true, firstEra: 0, techK: 2, waterK: wk, subCapital: "JP-27" });
   const line = (a: Vec, b: Vec, n = 20): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
   const p = previewNational(w, line(homeCity(w, sim.capital)!.pos, subCity(w, sim.subCapital)!.pos), sim.capital, sim.subCapital); if (!performNational(sim, w, p)) throw new Error("ceremony");

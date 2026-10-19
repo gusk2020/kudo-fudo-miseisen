@@ -47,11 +47,11 @@ export const facilityCostMult = (tech: TechState | undefined, year: number): num
 export const EASE_MAX = 0.6;
 export const crossingEase = (tech: TechState | undefined, year: number): number => (tech ? Math.min(EASE_MAX, EASE_MAX * (techAt(tech.k, year).tunnelKm - TUNNEL_KM[0][1]) / (TUNNEL_KM[TUNNEL_KM.length - 1][1] - TUNNEL_KM[0][1]) * 1.6) : 0);
 
-/** Stage 13: what underwater tunnelling can do in `year` at speed `wk` (see TechState). Each factor is applied once and never stacked on another: the clock runs wk times faster (the reach is simply read off that clock -- it is the curve's value at the later technology year, which is the 'distance three times as long' of a world three times as advanced), and cost and time are each 1/(1+(wk-1)/2) (0.5 at wk 3). */
+/** Stage 13: what underwater tunnelling can do in `year` at speed `wk` (see TechState). Three separate rules, each applied once: (1) the technology clock runs wk times faster (`yEff`); (2) at any technology year the reach is wk times the ordinary tunnel reach of that year (the ordinary curve read at `yEff`, then x wk -- the faster clock and the longer reach are different conditions, so both apply); (3) cost and time are each 1/(1+(wk-1)/2) (0.5 at wk 3), applied once and not stacked on (1) or (2). wk 1 is the historical baseline. */
 export interface WaterTechNow { yEff: number; reachKm: number; costMult: number; timeMult: number }
 export function waterTechAt(wk: number, year: number): WaterTechNow {
   const yEff = techYear(wk, year), f = 1 / (1 + (wk - 1) / 2);
-  return { yEff, reachKm: at(TUNNEL_KM, yEff), costMult: f, timeMult: f };
+  return { yEff, reachKm: wk * at(TUNNEL_KM, yEff), costMult: f, timeMult: f };
 }
 /** True for the edges the water-tunnel rule governs: a tunnel that is a fixed link across water (named link:...). */
 export const isWaterTunnel = (e: { facility?: string; facilityName?: string }) => e.facility === "tunnel" && (e.facilityName ?? "").startsWith("link:");

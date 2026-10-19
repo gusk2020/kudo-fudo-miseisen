@@ -258,7 +258,8 @@ export function reviewLakeFerries(sim: SimState, w: World, y: number): number {
     const e = openLake(sim, w, next, `湖上フェリーの新設(${busiest >= LAKE_CROSS_LOAD ? `湖の航路の混雑${Math.round(busiest * 100)}%` : `湖岸の人口${Math.round(shorePop / 1000)}千人`}。港の整備費${cost})`);
     ev(sim, "ferry", `湖上フェリー新設: ${next.nameA}港〜${next.nameB}港`, `${y}年、${busiest >= LAKE_CROSS_LOAD ? "湖の航路が混み" : "湖岸の町が育ち"}、港の整備費${cost}を負担できた(湖の大きさで最大${maxLakeRoutes(lakeCells)}航路)`, { edge: e.id }); n++;
   }
-  if (sim.tech && !Object.values(sim.projects).some((p) => p.reason.startsWith(LAKE_BRIDGE_TAG) && (p.status === "planned" || p.status === "building" || p.status === "concept"))) {
+  // Stage 13: with the water-tunnel rule a lake is crossed by the same planner as a strait (crossing.ts): bridge, tunnel and ferry compete there by price and traffic, so the older lake-only bridge rule stands down
+  if (sim.tech && sim.tech.wk === undefined && !Object.values(sim.projects).some((p) => p.reason.startsWith(LAKE_BRIDGE_TAG) && (p.status === "planned" || p.status === "building" || p.status === "concept"))) {
     const span = techAt(sim.tech.k, y).bridgeKm;
     // a busy lake ferry within the span is replaced; failing that, when the lake's services are busy, the narrows (or any crossing within the span) get a bridge of their own
     const ferryC = open.map((e) => ({ e, a: sim.nodes[e.a].cell, b: sim.nodes[e.b].cell, water: Math.max(0.5, dist(w.cellPos(e.cells[0]), w.cellPos(e.cells[e.cells.length - 1])) - w.cell), l: load(e) })).filter((c) => c.water <= span && c.l >= LAKE_BRIDGE_LOAD).sort((p, q) => q.l - p.l)[0];
@@ -288,21 +289,25 @@ function lakeCentre(w: World): Vec { let x = 0, y = 0, c = 0; for (let k = 0; k 
  * proof that nobody needs them. Where from: `waterLinks` (the shape of the coast); a link is seeded when crossing saves at least BAY_MIN_SAVING km over the way by land, both
  * shores hold at least BAY_MIN_POP people within BAY_REACH_KM, and no ferry already joins the same two coasts. Each end is joined to the roads (connectPort).
  */
+/** The longest lake crossing seeded as a ferry (a tunnel along the length of a lake is no crossing). */
+export const LAKE_LINK_MAX_KM = 40;
+/** Seeding is spread over the first years (each access road costs a pass over the whole network): this many at the start, this many each year after, for BAY_YEARS years. */
+export const BAY_FIRST = 12, BAY_PER_YEAR = 4, BAY_YEARS = 10;
 export const BAY_TAG = "湾岸航路", BAY_MIN_SAVING = 55, BAY_MIN_POP = 40000, BAY_MAX = 64, BAY_DUP_KM = 25;
 export const isBayFerry = (e: SimEdge) => e.facility === "ferry" && (e.facilityName ?? "").endsWith(BAY_TAG);
-export function seedBayFerries(sim: SimState, w: World): number {
+export function seedBayFerries(sim: SimState, w: World, maxNew = BAY_MAX): number {
   const near = (a: Vec, b: Vec) => dist(a, b) < BAY_DUP_KM;
-  let n = 0, idx = buildIndex(sim, "road");
+  let n = 0, idx = buildIndex(sim, "road"); const have = Object.values(sim.edges).filter((e) => isBayFerry(e) || (e.facilityName ?? "").endsWith("湖岸航路")).length;
   for (const l of waterLinks(w)) {
-    if (n >= BAY_MAX) break; if (l.saving < BAY_MIN_SAVING || l.kind !== "sea") continue;
+    if (n >= maxNew || have + n >= BAY_MAX) break; if (l.saving < BAY_MIN_SAVING || (l.kind === "lake" && l.km > LAKE_LINK_MAX_KM)) continue;
     const pa = w.cellPos(l.a), pb = w.cellPos(l.b);
     if (Object.values(sim.edges).some((e) => e.facility === "ferry" && modeOf(e) === "road" && e.cells.length >= 2 && ((near(w.cellPos(e.cells[0]), pa) && near(w.cellPos(e.cells[e.cells.length - 1]), pb)) || (near(w.cellPos(e.cells[0]), pb) && near(w.cellPos(e.cells[e.cells.length - 1]), pa))))) continue;
     if (Math.min(...sidePops(sim, w, l.a, l.b)) < BAY_MIN_POP) continue;
     const nodes0 = Object.keys(sim.nodes).length, ca = connectPort(sim, w, l.a, idx), cb = connectPort(sim, w, l.b, idx);
     if (Object.keys(sim.nodes).length !== nodes0) idx = buildIndex(sim, "road");   // (the index is rebuilt only when a port's access road has added nodes)
-    makeFerryAt(sim, w, { cell: ca, pos: w.cellPos(ca) }, { cell: cb, pos: w.cellPos(cb) }, "road", `湾・海峡の航路(1950年の既存の連絡。陸路は${Math.round(l.landKm ?? 0)}kmの遠回り、海上は${l.km}km)`, `ferry:${shoreNames(w, l.a, l.b).join("〜")}${BAY_TAG}`); n++;
+    makeFerryAt(sim, w, { cell: ca, pos: w.cellPos(ca) }, { cell: cb, pos: w.cellPos(cb) }, "road", `${l.kind === "lake" ? "湖の" : "湾・海峡の"}航路(1950年の既存の連絡。陸路は${Math.round(l.landKm ?? 0)}kmの遠回り、海上は${l.km}km)`, l.kind === "lake" ? `ferry:${LAKE_TAG}${shoreNames(w, l.a, l.b).join("〜")}湖岸航路` : `ferry:${shoreNames(w, l.a, l.b).join("〜")}${BAY_TAG}`); n++;
   }
-  if (n) ev(sim, "seed", `1950年の湾・海峡の航路: ${n}本(陸路が遠回りの海を船で渡る)`, "初期条件。海岸線の形から向かい合う岸を探した(合成。実在の航路表ではない)", {});
+  if (n && have === 0) ev(sim, "seed", `1950年代の湾・海峡の航路: 最初の${n}本(残りは続く数年で加わる。陸路が遠回りの海を船で渡る)`, "初期条件。海岸線の形から向かい合う岸を探した(合成。実在の航路表ではない)", {});
   return n;
 }
 
