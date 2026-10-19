@@ -10,7 +10,7 @@ import { refBias, referenceGrids } from "./reference";
 import { seedRailGen } from "./seedRail";
 import { openStraits } from "./straits";
 import { homeCity } from "./ceremony";
-import { seedFerries, seedLakeFerries , seedInnerSeaFerries } from "./ferry";
+import { seedFerries, seedLakeFerries , seedInnerSeaFerries, seedBayFerries } from "./ferry";
 
 export const RESERVED = { national: 1, fuTokyo: 1 };   // numbers kept for the 開通の儀 roads
 export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<number> {
@@ -66,5 +66,5 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
   }
   ev(sim, "seed", `1950年の既存道路網: 都市間${links.length}線・集落${Object.keys(sim.settlements).length}か所(合成)・路線${nRoutes}本`, "初期条件(実在の道路網ではない)", {});
   void newId;
-  if (sim.stage3) { yield* seedRailGen(sim, w); openStraits(sim, w, sim.startYear, true); if (sim.crossings) { seedFerries(sim, w); if (sim.roles) seedInnerSeaFerries(sim, w); seedLakeFerries(sim, w); } yield 0.95; }
+  if (sim.stage3) { yield* seedRailGen(sim, w); openStraits(sim, w, sim.startYear, true); if (sim.crossings) { seedFerries(sim, w); if (sim.roles) seedInnerSeaFerries(sim, w); seedLakeFerries(sim, w); if (sim.tech?.wk !== undefined) seedBayFerries(sim, w); } yield 0.95; }
 }

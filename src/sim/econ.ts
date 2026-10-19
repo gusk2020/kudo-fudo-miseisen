@@ -18,6 +18,7 @@
  * Nothing here knows a place name: every input is the road/rail network, the hubs, the sites of government and the land. The parts are kept per city (sim.city12)
  * so the map and the atlas can say WHY a city moved.
  */
+import { metroPopOf } from "./metro";
 import { dist } from "../core/geom";
 import { homeCity, subCity } from "./ceremony";
 import { siteCapacity, siteQuality } from "./land";
@@ -123,7 +124,7 @@ export function ecoYear(sim: SimState, w: World, an: { T: Float64Array; TT: Floa
   }
   for (const o of coreIdx) cmt[o] -= pull[o] / Math.max(1, P[o]);   // the core pays for what its satellites gain
   // --- agglomeration, rent, shocks
-  const agg = P.map((p) => Math.tanh(Math.log(Math.max(1, p) / 1.5e5) / 1.6)), ratio = P.map((p, i) => Math.min(3, p / cap[i])), mr = wmean(ratio), rent = ratio.map((r) => r - mr);   // signed: a city that has shrunk below its land's room is cheap, and cheap attracts
+  const agg = P.map((p, i) => Math.tanh(Math.log(Math.max(1, sim.tech?.wk !== undefined ? metroPopOf(sim.metro, w.cities[i].id, p) : p) / 1.5e5) / 1.6)), ratio = P.map((p, i) => Math.min(3, p / cap[i])), mr = wmean(ratio), rent = ratio.map((r) => r - mr);   // signed: a city that has shrunk below its land's room is cheap, and cheap attracts
   const out = new Map<string, number>(), mi = wmean(ind), ml = wmean(log), mt = wmean(tour);
   const wa = W_AGG * at(AGG_Y, y), wr = W_RENT * at(RENT_Y, y), wc = at(CLIM_Y, y), wi = W_IND * at(IND_Y, y), wl = W_LOG * at(LOG_Y, y), wt = W_TOUR * at(TOURW_Y, y);
   const adv = w.cities.map((_, i) => wi * (ind[i] - mi) + wl * (log[i] - ml) + wt * (tour[i] - mt) + W_CMT * Math.max(-1, Math.min(1.5, cmt[i])) + wa * agg[i] - wr * rent[i] - wc * exposure(w, w.cities[i]));

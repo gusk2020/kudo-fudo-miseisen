@@ -16,7 +16,14 @@
  * The curves are model values in the spirit of the real record (the longest tunnels were ~8 km around 1950, ~54 km with the 青函 tunnel by 1988); they are not statistics.
  */
 export const TECH_K = 2;
-export interface TechState { k: number }
+/** Stage 13: the speed of underwater tunnelling a new game starts with (see TechState.wk). */
+export const WATER_K = 3;
+/**
+ * `wk`: the speed of UNDERWATER tunnelling (sea and lake beds), a rule of its own, separate from `k` (which keeps governing bridges and ordinary land tunnels). Stage 13: 3 means
+ * technology advances three times as fast as the historical curve, the length that can be driven is read off that faster clock (never multiplied again), and cost and building time are each half; 1 is the
+ * historical course (the A/B baseline). Absent in older games: they keep the single rule.
+ */
+export interface TechState { k: number; wk?: number }
 type Key = [number, number][];
 const at = (k: Key, y: number) => { if (y <= k[0][0]) return k[0][1]; for (let i = 1; i < k.length; i++) if (y <= k[i][0]) { const [a, va] = k[i - 1], [b, vb] = k[i]; return va + ((vb - va) * (y - a)) / (b - a); } return k[k.length - 1][1]; };
 /** Longest tunnel (km) that can be driven, by technology year. */
@@ -39,3 +46,12 @@ export const facilityCostMult = (tech: TechState | undefined, year: number): num
 /** How much tunnelling and bridging take off the cost of crossing rough ground in year `y` (0 at the start, about 0.6 at the technology ceiling). Same for roads and railways. */
 export const EASE_MAX = 0.6;
 export const crossingEase = (tech: TechState | undefined, year: number): number => (tech ? Math.min(EASE_MAX, EASE_MAX * (techAt(tech.k, year).tunnelKm - TUNNEL_KM[0][1]) / (TUNNEL_KM[TUNNEL_KM.length - 1][1] - TUNNEL_KM[0][1]) * 1.6) : 0);
+
+/** Stage 13: what underwater tunnelling can do in `year` at speed `wk` (see TechState). Each factor is applied once and never stacked on another: the clock runs wk times faster (the reach is simply read off that clock -- it is the curve's value at the later technology year, which is the 'distance three times as long' of a world three times as advanced), and cost and time are each 1/(1+(wk-1)/2) (0.5 at wk 3). */
+export interface WaterTechNow { yEff: number; reachKm: number; costMult: number; timeMult: number }
+export function waterTechAt(wk: number, year: number): WaterTechNow {
+  const yEff = techYear(wk, year), f = 1 / (1 + (wk - 1) / 2);
+  return { yEff, reachKm: at(TUNNEL_KM, yEff), costMult: f, timeMult: f };
+}
+/** True for the edges the water-tunnel rule governs: a tunnel that is a fixed link across water (named link:...). */
+export const isWaterTunnel = (e: { facility?: string; facilityName?: string }) => e.facility === "tunnel" && (e.facilityName ?? "").startsWith("link:");

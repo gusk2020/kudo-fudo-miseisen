@@ -34,7 +34,7 @@ describe("added islands: 淡路島・対馬・佐渡島・壱岐島・隠岐諸�
     expect(parseState({ ...old, real: true }).state.islands).toBeUndefined(); expect(parseState(JSON.parse(JSON.stringify(now))).state.islands).toBe(true);
   });
   it("a game on the island map runs: roads and villages on every island, integrity holds, remote islands start isolated, 淡路 gets its bridges", () => {
-    const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true);
+    const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true, undefined, 0);   // Stage 11 rules (waterK 0): with the Stage 13 water tunnels 淡路 is reached by tunnels long before the scripted bridges
     for (let i = 0; i < 5; i++) { const c = w.cities.find((x) => x.id === "X-" + EXTRA_IDS[i].toUpperCase())!; expect(Object.values(sim.settlements).some((v) => v.city === c.id), c.name).toBe(true); }
     expect(isolatedIslands(sim, w)).toEqual([]);   // Issue #15: every island is joined to the mainland by ferry from the first day (no bridge is forced into 1950)
     const lmOf = (id: string) => w.lm[w.cityById.get(id)!.cell], honshu = w.lm[w.cityById.get("C-JP-27")!.cell];

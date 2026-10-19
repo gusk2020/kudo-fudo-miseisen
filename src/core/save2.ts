@@ -1,4 +1,5 @@
 /** Save format v2: { map, sim } with integrity checks. v1 (map only) is migrated, never rejected. Nothing here throws. */
+import { validMetro } from "../sim/metro";
 import { STANCES } from "../sim/kaigen";
 import { checkIntegrity } from "../sim/network";
 import { DIAL_KEYS, composeDials } from "../sim/eras";
@@ -59,6 +60,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (!DIAL_KEYS.every((k) => fin(raw.dials[k]))) raw.dials = composeDials({ era: raw.era, mods: raw.mods }, monthYear(raw));
   if (raw.stage3 === true && !(isRec(raw.policy) && fin(raw.policy.points) && Array.isArray(raw.policy.history) && ["priority", "idleAuto", "auto"].includes(raw.policy.mode) && (raw.policy.pending === null || (isRec(raw.policy.pending) && Number.isInteger(raw.policy.pending.year))))) raw.policy = defaultPolicy(); if (raw.stage3 !== true) { delete raw.stage3; delete raw.policy; }
   if (raw.tech !== undefined && !(isRec(raw.tech) && fin(raw.tech.k) && raw.tech.k >= 1 && raw.tech.k <= 4)) delete raw.tech;
+  if (isRec(raw.tech) && raw.tech.wk !== undefined && !(fin(raw.tech.wk) && raw.tech.wk >= 1 && raw.tech.wk <= 6)) delete raw.tech.wk;   // Stage 13
   // Issue #13: the era timeline is kept only if it is well formed; otherwise the game simply continues as a single-era game (never refused)
   if (raw.kaigen !== undefined) {
     const k = raw.kaigen, okE = (e: any) => isRec(e) && typeof e.name === "string" && e.name.length > 0 && e.name.length < 12 && Number.isInteger(e.start) && STANCES.includes(e.stance);
@@ -68,6 +70,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.roles !== undefined) { const r = raw.roles, str = (x: any) => typeof x === "string" && x.length < 12; if (!(isRec(r) && isRec(r.prof) && Object.entries(r.prof).every(([k, v]) => str(k) && str(v)) && Array.isArray(r.capMetro) && r.capMetro.every(str) && Array.isArray(r.subMetro) && r.subMetro.every(str) && str(r.culture))) delete raw.roles; }
   // Stage 12: the per-city economy record is kept only if well formed (a damaged one is dropped; the next year rebuilds it)
   if (raw.city12 !== undefined && !(isRec(raw.city12) && Object.values<any>(raw.city12).every((c) => isRec(c) && Array.isArray(c.p) && c.p.length <= 12 && c.p.every(fin) && Array.isArray(c.h) && c.h.length < 60 && c.h.every(fin) && fin(c.adv)))) delete raw.city12;
+  if (raw.metro !== undefined && !validMetro(raw.metro)) delete raw.metro;   // Stage 13: rebuilt at the next yearly step
   if (raw.econ !== undefined && raw.econ !== true) delete raw.econ;
   if (isRec(raw.kaigen) && raw.kaigen.recon !== undefined && !(isRec(raw.kaigen.recon) && ["pacific", "japansea"].includes(raw.kaigen.recon.coast) && ["concentrate", "disperse"].includes(raw.kaigen.recon.focus))) delete raw.kaigen.recon;
   // Stage 8: a lake bridge keeps only its two shore cells (an early Stage 8 build stored the water cells too, which the land check would refuse)

@@ -7,7 +7,7 @@ import { reconCorridor, reconMeanCore, reconOf } from "./recon";
 import { dist } from "../core/geom";
 import { refBias, referenceGrids } from "./reference";
 import { buildIndex, facilitySplit, layPath, newId, nodeAtCell } from "./network";
-import { HARD_ROCK_M, crossingEase, facilityCostMult, techAt } from "./tech";
+import { HARD_ROCK_M, crossingEase, facilityCostMult, isWaterTunnel, techAt, waterTechAt } from "./tech";
 import { accessDeficit, ev, projLabel, rand, yearOf } from "./engine";
 import { CAPACITY, RAIL_CAPACITY as RAIL_CAP, edgeSpeed, type Analysis } from "./demand";
 const edgeKmh = (e: SimEdge) => edgeSpeed(e);
@@ -16,7 +16,7 @@ import { mountainCost, pathfind, type World } from "./world";
 import { burdenCost, terrainGate } from "./land";
 
 /** A long tunnel or bridge costs several times as much per km as the open line. */
-export const facCost = (e: SimEdge, sim?: Pick<SimState, "tech" | "startYear" | "month">) => (e.facility === "tunnel" ? 3 : e.facility === "bridge" ? 2.2 : 1) * (e.facility && sim?.tech ? facilityCostMult(sim.tech, sim.startYear + Math.floor(sim.month / 12)) : 1) * (1 + Math.min(0.5, (e.curv ?? 0) * 0.3));
+export const facCost = (e: SimEdge, sim?: Pick<SimState, "tech" | "startYear" | "month">) => (e.facility === "tunnel" ? 3 : e.facility === "bridge" ? 2.2 : 1) * (e.facility && sim?.tech ? (sim.tech.wk !== undefined && isWaterTunnel(e) ? waterTechAt(sim.tech.wk, sim.startYear + Math.floor(sim.month / 12)).costMult : facilityCostMult(sim.tech, sim.startYear + Math.floor(sim.month / 12))) : 1) * (1 + Math.min(0.5, (e.curv ?? 0) * 0.3));
 export const MAX_TUNNEL_PROJECTS = 3;
 /** Stage 7: a new road is laid beside an existing connection only when it cuts the way to at most this share of the cells (a real shortcut). */
 export const DETOUR_CUT = 0.75;

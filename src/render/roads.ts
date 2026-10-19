@@ -77,32 +77,47 @@ export class RoadLayer {
       for (const p of Object.values(s.projects)) h = (h * 31 + p.status.length + p.edgeIds.length) >>> 0;
       for (const c of Object.values(s.cities)) if (c.airport !== undefined) h = (h * 31 + 7) >>> 0;
       if (s.city12) { for (const c of Object.values(s.city12)) h = (h * 31 + c.h.length * 7 + (c.h[c.h.length - 1] ?? 0) % 997) >>> 0; }
+      if (s.metro) { for (const m of s.metro.list) h = (h * 31 + Math.round(m.pop / 1000) + m.cells.length * 3) >>> 0; }
       if (s.hubs) { for (const p of Object.values(s.hubs.ports)) h = (h * 31 + p.tier + (p.until ? 5 : 0)) >>> 0; for (const x of Object.values(s.hubs.airports)) h = (h * 31 + x.runwayM + (x.kind === "hub" ? 3 : 0) + (x.until ? 5 : 0)) >>> 0; for (const r of s.hubs.routes) h = (h * 31 + r.state.length + r.since) >>> 0; }
     }
     const L = a.layers;
     return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${L.econ ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => (c.strokes ? c.strokes.map((st) => st.map((q) => q[0].toFixed(1) + q[1].toFixed(1)).join()).join("/") + (c.sel ?? "") + (c.handles ? "h" : "") : "") + c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
   }
   /**
-   * Stage 12: how big each city is, and whether it is rising or falling -- a disc scaled by sqrt(population), green when it has gained on the nation over the last
-   * twenty years, red when it has lost, grey in between, and a small triangle for the clear movers. Only the largest cities and the biggest movers are drawn, so the
-   * map stays readable: the full list is in the atlas.
+   * Stage 12/13: how big each metropolis is, and whether it is rising or falling -- green when it has gained on the nation over the last twenty years, red when it
+   * has lost, grey in between. From Stage 13 the disc is the metropolitan area itself (metro.ts): its radius is sqrt(area / pi) of the ground the metropolis really
+   * covers (an isochrone grown over the land, wider on a plain and narrower on a range), and the ground is drawn faintly under it so the disc reads as a scale
+   * indicator, not as the shape. Older saves, before their first yearly step under Stage 13, show the Stage 12 disc scaled by the city's own size. No triangles:
+   * the colour says rising or falling, the atlas says why. Only the largest and the biggest movers are drawn; the full list is in the atlas.
    */
   private drawCityEcon(sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
-    const g = this.g.city12, c12 = sim.city12!, rows: { x: number; y: number; p: number; rel: number }[] = [];
-    let s0 = 0, s1 = 0; const raw: { c: (typeof w.cities)[0]; p1: number; p0: number }[] = [];
-    for (const c of w.cities) {
+    const g = this.g.city12, c12 = sim.city12!, M = sim.metro, rows: { x: number; y: number; p: number; rel: number; r: number; cells?: number[] }[] = [];
+    let s0 = 0, s1 = 0; const raw: { x: number; y: number; p1: number; p0: number; r: number; cells?: number[] }[] = [];
+    if (M) {
+      for (const m of M.list) {
+        const core = w.cityById.get(m.core); if (!core) continue; const h = M.h[m.core] ?? [];
+        let k = h.length - 1; if (year !== null) { k = -1; for (let q = 0; q < h.length; q++) if (h[q][0] <= year) k = q; if (k < 0) continue; }
+        const cur = year === null ? { pop: m.pop, area: m.areaKm2 } : { pop: h[k][1], area: h[k][2] }, past = h[Math.max(0, k - 4)];
+        const p1 = cur.pop, p0 = past ? past[1] : p1; raw.push({ x: core.pos[0], y: core.pos[1], p1, p0, r: Math.sqrt(cur.area / Math.PI), ...(year === null ? { cells: m.cells } : {}) }); s0 += p0; s1 += p1;
+      }
+    } else for (const c of w.cities) {
       const h = c12[c.id]?.h; if (!h || h.length < 2) continue; let k = h.length - 1; if (year !== null) k = Math.max(1, Math.min(h.length - 1, Math.floor((year - sim.startYear) / 5)));
-      const p1 = h[k], p0 = h[Math.max(0, k - 4)]; raw.push({ c, p1, p0 }); s0 += p0; s1 += p1;
+      const p1 = h[k], p0 = h[Math.max(0, k - 4)]; raw.push({ x: c.pos[0], y: c.pos[1], p1, p0, r: -1 }); s0 += p0; s1 += p1;
     }
     const nat = s0 > 0 ? s1 / s0 : 1;
-    for (const r of raw) rows.push({ x: r.c.pos[0], y: r.c.pos[1], p: r.p1, rel: r.p0 > 0 ? r.p1 / r.p0 / nat : 1 });
+    for (const r of raw) rows.push({ x: r.x, y: r.y, p: r.p1, rel: r.p0 > 0 ? r.p1 / r.p0 / nat : 1, r: r.r, ...(r.cells ? { cells: r.cells } : {}) });
     const bySize = [...rows].sort((p, q) => q.p - p.p), keep = new Set(bySize.slice(0, lite ? 8 : zoom < 0.5 ? 12 : 24));
     for (const r of [...rows].sort((p, q) => q.rel - p.rel).slice(0, 4)) if (r.rel > 1.1 && r.p > 5e4) keep.add(r);
     for (const r of [...rows].sort((p, q) => p.rel - q.rel).slice(0, 4)) if (r.rel < 0.9 && r.p > 5e4) keep.add(r);
     for (const r of keep) {
-      const rad = px(3 + 3.2 * Math.sqrt(r.p / 1e5)), col = r.rel > 1.08 ? 0x2fbf5f : r.rel < 0.93 ? 0xe0463c : 0x9aa4ad;
-      g.circle(r.x, -r.y, Math.min(rad, px(26))).fill({ color: col, alpha: 0.38 }).stroke({ width: px(1.4), color: col, alpha: 0.95 });
-      if (r.rel > 1.12 || r.rel < 0.88) { const u = px(1), dir = r.rel > 1 ? -1 : 1, yy = -r.y + dir * (Math.min(rad, px(26)) + 5 * u); g.poly([r.x, yy - dir * 4 * u, r.x - 4 * u, yy + dir * 3 * u, r.x + 4 * u, yy + dir * 3 * u]).fill({ color: col }).stroke({ width: px(0.8), color: 0xffffff }); }
+      const col = r.rel > 1.08 ? 0x2fbf5f : r.rel < 0.93 ? 0xe0463c : 0x9aa4ad, rad = r.r >= 0 ? Math.max(px(4), r.r) : Math.min(px(3 + 3.2 * Math.sqrt(r.p / 1e5)), px(26));
+      if (r.cells && !lite && zoom >= 0.3) {
+        const nx = w.nx, c = w.cell; let run = 0, k0 = -1;
+        const flush = () => { if (run > 0) { const p = w.cellPos(k0); g.rect(p[0] - c / 2, -p[1] - c / 2, run * c, c); } run = 0; };
+        for (const k of r.cells) { if (run > 0 && k === k0 + run && (k % nx) !== 0) run++; else { flush(); k0 = k; run = 1; } }
+        flush(); g.fill({ color: col, alpha: 0.16 });
+      }
+      g.circle(r.x, -r.y, rad).fill({ color: col, alpha: r.r >= 0 ? 0.2 : 0.38 }).stroke({ width: px(1.4), color: col, alpha: 0.95 });
     }
   }
   /** Stage 8/9: ports and airports, each in two sizes only (large: 国際拠点港湾以上 / 国際ハブ空港; small: the rest), and the busiest domestic flights.

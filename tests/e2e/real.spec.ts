@@ -679,11 +679,14 @@ test("Stage 12: 地図帳に都市の栄枯盛衰(伸びた・縮んだ都市と
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "auto"; a.ffYears(30); });
   expect(await app(page, "a => a.sim.econ === true && Object.keys(a.sim.city12).length > 40")).toBe(true);
   const h0 = await app(page, "a => a.sim.month + ':' + JSON.stringify(a.sim.city12).length");
-  await page.click("#dock-layers"); await page.uncheck("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(false); await page.check("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(true);
+  await page.click("#dock-layers"); await await expect(page.locator("label.layer:has(#layer-econ)")).toContainText("都市圏"); await page.uncheck("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(false); await page.check("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(true);
   expect(await app(page, "a => a.sim.month + ':' + JSON.stringify(a.sim.city12).length")).toBe(h0); await closeSheet(page);
   await page.click("#dock-atlas"); await expect(page.locator("#city-eco")).toBeVisible();
   expect(await page.locator("#eco-up .issue").count()).toBe(5); expect(await page.locator("#eco-down .issue").count()).toBe(5);
   await expect(page.locator("#eco-up")).toContainText("▲"); await expect(page.locator("#eco-down")).toContainText("▼");
+  // Stage 13: the metropolitan areas (one count per person, area and radius in km, the prefectures they cross) are in the atlas; the legend names them
+  expect(await app(page, "a => !!a.sim.metro && a.sim.metro.list.length > 10")).toBe(true);
+  expect(await page.locator("#eco-metro .issue").count()).toBeGreaterThanOrEqual(5); await expect(page.locator("#eco-metro")).toContainText("km²"); await expect(page.locator("#eco-metro")).toContainText("府県にまたがり");
   await page.click("#eco-detail summary"); await expect(page.locator("#eco-chart")).toBeVisible(); await expect(page.locator("#eco-out")).toContainText("集積");
   await page.selectOption("#eco-city", { index: 3 }); expect(await page.locator("#eco-chart polyline").count()).toBe(1);
   expect(errs).toEqual([]);

@@ -64,6 +64,9 @@ export function upkeepMult(w: World, e: { cells: number[]; facility?: string }):
 
 // ---- the sites of cities ----
 /** Slope in percent, the steepest of the four neighbours. */
+const slopeMemo = new WeakMap<World, Float32Array>();
+/** Memoised per world (the terrain never changes within a game). */
+export function slopeOf(w: World): Float32Array { let m = slopeMemo.get(w); if (!m) { m = slopeField(w); slopeMemo.set(w, m); } return m; }
 function slopeField(w: World): Float32Array {
   const { nx, ny, cell, t } = w, out = new Float32Array(w.N);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {

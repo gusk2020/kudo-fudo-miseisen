@@ -195,6 +195,14 @@ export function buildCityEconomy(app: App, sim: SimState, body: HTMLElement, yea
   body.append(h("small", {}, `${year ?? "現在"}年までの約20年で、全国の増減(${nat >= 1 ? "+" : ""}${Math.round((nat - 1) * 100)}%)を上回った・下回った都市(人口10万以上)`));
   body.append(h("div", { id: "eco-up" }, h("b", {}, "伸びた"), ...[...big].sort((p, q) => q.rel - p.rel).slice(0, 5).map(line)));
   body.append(h("div", { id: "eco-down" }, h("b", {}, "縮んだ"), ...[...big].sort((p, q) => p.rel - q.rel).slice(0, 5).map(line)));
+  if (sim.metro) {
+    const M = sim.metro, pick = (m: (typeof M.list)[0]) => { const hh = M.h[m.core] ?? []; if (year === null) return { pop: m.pop, area: m.areaKm2 }; let k = -1; for (let q = 0; q < hh.length; q++) if (hh[q][0] <= year) k = q; return k < 0 ? null : { pop: hh[k][1], area: hh[k][2] }; };
+    const ms = M.list.map((m) => ({ m, v: pick(m) })).filter((x): x is { m: (typeof M.list)[0]; v: { pop: number; area: number } } => !!x.v).sort((p, q) => q.v.pop - p.v.pop).slice(0, 8);
+    body.append(h("div", { id: "eco-metro" }, h("b", {}, "都市圏(通勤・生活の広がり。1つの人口は1つの都市圏にだけ数える)"), ...ms.map(({ m, v }) => {
+      const nm = w.cityById.get(m.core)?.name ?? m.core, r = Math.sqrt(v.area / Math.PI);
+      return h("div", { class: "issue" }, `${nm}圏 ${(v.pop / 1e6).toFixed(2)}百万人・${Math.round(v.area).toLocaleString()}km²(半径${Math.round(r)}km)${year === null ? `・衛星${m.members.length - 1}市・${m.prefs.length}府県にまたがり、本拠の府県の外が${Math.round(m.outsidePct * 100)}%` : ""}`);
+    })));
+  }
   const det = h("details", { id: "eco-detail" }, h("summary", {}, "都市を選んで推移と原因を見る")) as HTMLDetailsElement, sel = h("select", { id: "eco-city", "aria-label": "都市" }) as HTMLSelectElement;
   for (const r of [...rows].sort((p, q) => q.p1 - p.p1).slice(0, 40)) sel.append(h("option", { value: r.id }, `${r.name} ${Math.round(r.p1 / 1000).toLocaleString()}千人`));
   const out = h("div", { id: "eco-out" }); const show = () => {

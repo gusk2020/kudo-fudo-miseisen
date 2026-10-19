@@ -38,7 +38,7 @@ describe("bridge/tunnel technology rule (one rule for road and rail)", () => {
     expect(typeof techCheck(s2, w, "rail", line, 1950).ok).toBe("boolean");
   });
   it("over a century the same rule lets both modes build more facilities with K=2 than K=1", () => {
-    const run = (k: number) => { Object.assign(techStats, { tooLong: 0, capped: 0, checked: 0, hard: 0, trouble: 0 }); const { sim, w } = stage3Sim("heisei", 7, true, 0, k); sim.policy!.mode = "auto"; advance(sim, w, 12 * 100); const fs = Object.values(sim.edges).filter((e) => e.facility && e.built >= 1 && !e.facilityName?.includes(":")); return { road: fs.filter((e) => modeOf(e) === "road").length, rail: fs.filter((e) => modeOf(e) === "rail").length, km: Math.round(fs.reduce((s, e) => s + e.lengthKm, 0)), ...techStats }; };
+    const run = (k: number) => { Object.assign(techStats, { tooLong: 0, capped: 0, checked: 0, hard: 0, trouble: 0 }); const { sim, w } = stage3Sim("heisei", 7, true, 0, k, false, undefined, 0); sim.policy!.mode = "auto"; advance(sim, w, 12 * 100); const fs = Object.values(sim.edges).filter((e) => e.facility && e.built >= 1 && !e.facilityName?.includes(":")); return { road: fs.filter((e) => modeOf(e) === "road").length, rail: fs.filter((e) => modeOf(e) === "rail").length, km: Math.round(fs.reduce((s, e) => s + e.lengthKm, 0)), ...techStats }; };
     const a = run(1), b = run(2); require("node:fs").writeFileSync("/tmp/tech-fac.json", JSON.stringify({ k1: a, k2: b }));
     expect(b.road + b.rail).toBeGreaterThanOrEqual(a.road + a.rail - 2);
     expect(b.tooLong / Math.max(1, b.checked)).toBeLessThan(a.tooLong / Math.max(1, a.checked));   // fewer projects held back by tunnel length with the faster technology

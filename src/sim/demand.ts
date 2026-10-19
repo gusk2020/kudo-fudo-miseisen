@@ -5,6 +5,7 @@
  * All figures are synthetic "vehicles/day"; they are not statistics.
  */
 import { goodsPull, paxPull } from "./sites";
+import { virtualTrips } from "./waterlink";
 import { airportMap, hubDemand, JET_YEAR, type HubTotals } from "./hubs";
 import { MinHeap } from "../core/heap";
 import { modeOf, type Mode, type Standard, type Surface, type SimEdge, type SimState } from "./types";
@@ -199,6 +200,12 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
     if (!passable(e)) { e.through = 0; e.local = 0; e.freight = 0; }
     e.traffic = Math.round((e.through + e.local + (multi ? e.freight * 0.4 : 0)) * 100) / 100;
     e.through = Math.round(e.through * 100) / 100; e.local = Math.round(e.local * 100) / 100; e.freight = Math.round(e.freight * 100) / 100;
+  }
+  // Stage 13: a crossing between two shores that are not cities (a bay's mouth, a lake) is used by the people who live on them, not only by the cities' trips
+  if (multi && sim.tech?.wk !== undefined) for (const e of edges) {
+    if (!passable(e) || e.cells.length < 2 || (e.facility !== "ferry" && e.facility !== "bridge" && e.facility !== "tunnel")) continue;
+    const ca = e.cells[0], cb = e.cells[e.cells.length - 1]; if (w.lm[ca] === 0 || w.lm[cb] === 0) continue;
+    const trips = virtualTrips(sim, w, ca, cb, e.lengthKm, modeOf(e)), have = e.through + e.local; if (trips > have) { e.local += trips - have; e.traffic = Math.round((e.through + e.local + e.freight * 0.4) * 100) / 100; }
   }
   const popTot = w.cities.reduce((s, c) => s + sim.cities[c.id].pop, 0), acc: number[] = [];
   for (let i = 0; i < nc; i++) { let s = 0; for (let j = 0; j < nc; j++) if (j !== i) { const t = Math.min(T[i * nc + j], TT[i * nc + j] + RAIL_ACCESS_H); if (isFinite(t)) s += sim.cities[w.cities[j].id].pop * Math.exp(-t / 3); } acc.push(popTot ? s / popTot : 0); }
