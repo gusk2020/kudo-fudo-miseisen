@@ -7,6 +7,7 @@ import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
 import { CAND_1945, STANCE_LABEL } from "../sim/kaigen";
 import { reconText } from "../sim/recon";
+import { homeCity, subCity } from "../sim/ceremony";
 import { ECO_LABEL, ECO_PARTS, mainCause } from "../sim/econ";
 import { displayName } from "../sim/straits";
 import { AIR_KIND_LABEL, PORT_CAP, PORT_TIER_LABEL, airName, foreignName, hubsAt, portName } from "../sim/hubs";
@@ -195,6 +196,11 @@ export function buildCityEconomy(app: App, sim: SimState, body: HTMLElement, yea
   body.append(h("small", {}, `${year ?? "現在"}年までの約20年で、全国の増減(${nat >= 1 ? "+" : ""}${Math.round((nat - 1) * 100)}%)を上回った・下回った都市(人口10万以上)`));
   body.append(h("div", { id: "eco-up" }, h("b", {}, "伸びた"), ...[...big].sort((p, q) => q.rel - p.rel).slice(0, 5).map(line)));
   body.append(h("div", { id: "eco-down" }, h("b", {}, "縮んだ"), ...[...big].sort((p, q) => p.rel - q.rel).slice(0, 5).map(line)));
+  if (sim.seats14) {
+    const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital), order = [...w.cities].sort((a, b) => sim.cities[b.id].pop - sim.cities[a.id].pop);
+    const line1 = (c: typeof hc, role: string) => { if (!c) return null; const m = sim.metro?.list.find((x) => x.members.includes(c.id)), rank = order.findIndex((o) => o.id === c.id) + 1; return h("div", { class: "issue" }, `${role} ${c.name.replace(/市$/, "")}: 都市単体 ${(sim.cities[c.id].pop / 1e6).toFixed(2)}百万人(全国${rank}位)${m ? `・都市圏 ${(m.pop / 1e6).toFixed(2)}百万人(単体の割合${Math.round((sim.cities[c.id].pop / m.pop) * 100)}%、衛星${m.members.length - 1}市)` : ""}`); };
+    body.append(h("div", { id: "eco-seats" }, h("b", {}, "首都・副首都の都市序列(このゲームの人為的な規則)"), h("small", {}, "首都と副首都は都市単体の人口で全国の上位2つに保つ。超えた分は周辺の都市へ移し、人を消さない。工業・貿易・観光はほかの都市が全国一でもよい。都市単体と都市圏の人口は別の数字。"), ...([line1(hc, "首都"), line1(sc, "副首都")].filter((x) => !!x) as Node[])));
+  }
   if (sim.metro) {
     const M = sim.metro, pick = (m: (typeof M.list)[0]) => { const hh = M.h[m.core] ?? []; if (year === null) return { pop: m.pop, area: m.areaKm2 }; let k = -1; for (let q = 0; q < hh.length; q++) if (hh[q][0] <= year) k = q; return k < 0 ? null : { pop: hh[k][1], area: hh[k][2] }; };
     const ms = M.list.map((m) => ({ m, v: pick(m) })).filter((x): x is { m: (typeof M.list)[0]; v: { pop: number; area: number } } => !!x.v).sort((p, q) => q.v.pop - p.v.pop).slice(0, 8);

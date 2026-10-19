@@ -686,6 +686,9 @@ test("Stage 12: 地図帳に都市の栄枯盛衰(伸びた・縮んだ都市と
   await expect(page.locator("#eco-up")).toContainText("▲"); await expect(page.locator("#eco-down")).toContainText("▼");
   // Stage 13: the metropolitan areas (one count per person, area and radius in km, the prefectures they cross) are in the atlas; the legend names them
   expect(await app(page, "a => !!a.sim.metro && a.sim.metro.list.length > 10")).toBe(true);
+  // Stage 14: the seats head the city order (one artificial rule, stated in the atlas), and the circles are drawn on top
+  await expect(page.locator("#eco-seats")).toContainText("人為的な規則"); expect(await page.locator("#eco-seats .issue").count()).toBe(2); await expect(page.locator("#eco-seats")).toContainText("全国1位"); await expect(page.locator("#eco-seats")).toContainText("全国2位");
+  expect(await app(page, "a => !!a.sim.seats14")).toBe(true);
   expect(await page.locator("#eco-metro .issue").count()).toBeGreaterThanOrEqual(5); await expect(page.locator("#eco-metro")).toContainText("km²"); await expect(page.locator("#eco-metro")).toContainText("府県にまたがり");
   await page.click("#eco-detail summary"); await expect(page.locator("#eco-chart")).toBeVisible(); await expect(page.locator("#eco-out")).toContainText("集積");
   await page.selectOption("#eco-city", { index: 3 }); expect(await page.locator("#eco-chart polyline").count()).toBe(1);
