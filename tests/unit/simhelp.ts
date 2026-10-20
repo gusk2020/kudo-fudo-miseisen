@@ -8,7 +8,7 @@ import { derive } from "../../src/core/validate";
 import { createSim, type SimOpts } from "../../src/sim/engine";
 import { TOKYO, homeCity, performCeremony, performNational, previewCeremony, previewNational, subCity, tokyoCity } from "../../src/sim/ceremony";
 import type { Vec } from "../../src/core/types";
-import { buildWorld, type World } from "../../src/sim/world";
+import { buildWorld, townsForSeats, type World } from "../../src/sim/world";
 import { loadDem } from "./helpers";
 
 let cache: { w: World; hash: string } | null = null;
@@ -31,14 +31,19 @@ export function startedSim(seed = 1, end = "名古屋市") {
 
 /** The real Japan (no deformation, no drawn ridges): what Stage 3 plays on. */
 const realCache: Record<string, { w: World; hash: string }> = {};
-export function realWorld(islands = false) {
-  const key = islands ? "i" : "p"; if (realCache[key]) return realCache[key];
-  const s = defaultState(); if (islands) s.islands = true; const t = generateTerrain(s, loadDem()); return (realCache[key] = { w: buildWorld(t, s.seed), hash: t.hash });
+const terrainCache: Record<string, ReturnType<typeof generateTerrain>> = {};
+/** `towns`: false = the 55 cities only (every game before Stage 16); true = with the provincial towns of the default seats' prefectures; or the two seat prefectures to take them for. */
+export function realWorld(islands = false, towns: boolean | { capital?: string; sub?: string } = false) {
+  const tk = islands ? "i" : "p", s = defaultState(); if (islands) s.islands = true;
+  const t = terrainCache[tk] ?? (terrainCache[tk] = generateTerrain(s, loadDem()));
+  const prefs = towns ? [towns === true ? "JP-13" : towns.capital ?? "JP-13", towns === true ? "JP-27" : towns.sub ?? "JP-27"] : null, ids = prefs ? townsForSeats(t, prefs) : false;
+  const key = tk + (ids ? ids.join(",") : ""); if (realCache[key]) return realCache[key];
+  return (realCache[key] = { w: buildWorld(t, s.seed, ids), hash: t.hash });
 }
 /** A Stage 3 game with the ceremony performed on top of the 1950 road + rail network. */
-export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true, firstEra?: number, techK?: number, islands = false, seats?: { capital?: string; sub?: string; palace?: string }, waterK?: number, extra?: Partial<SimOpts>) {
-  const { w, hash } = realWorld(islands), pal = seats?.palace ? w.cities.find((c) => c.pref === seats.palace && c.kind === "capital") : null;
-  const sim = createSim(w, "m", hash, seed, firstEra !== undefined ? { stage3: true, firstEra, techK, ...(waterK !== undefined ? { waterK } : {}), ...(seats?.capital ? { capital: seats.capital } : {}), subCapital: seats?.sub ?? "JP-27", ...(pal ? { palace: { pref: seats!.palace!, pos: pal.pos } } : {}), ...(extra ?? {}) } : { era, stage3: true, techK });
+export function stage3Sim(era: "heisei" | "shubun" | "shoka" = "heisei", seed = 7, ceremony = true, firstEra?: number, techK?: number, islands = false, seats?: { capital?: string; sub?: string; palace?: string }, waterK?: number, extra?: Partial<SimOpts> & { towns?: boolean }) {
+  const { w, hash } = realWorld(islands, extra?.towns ? { capital: seats?.capital, sub: seats?.sub } : false), pal = seats?.palace ? w.cities.find((c) => c.pref === seats.palace && c.kind === "capital") : null;
+  const sim = createSim(w, "m", hash, seed, firstEra !== undefined ? { stage3: true, firstEra, techK, ...(waterK !== undefined ? { waterK } : {}), ...(seats?.capital ? { capital: seats.capital } : {}), subCapital: seats?.sub ?? "JP-27", ...(pal ? { palace: { pref: seats!.palace!, pos: pal.pos } } : {}), ...Object.fromEntries(Object.entries(extra ?? {}).filter(([k]) => k !== "towns")) } : { era, stage3: true, techK });
   if (ceremony) {
     const line = (a: Vec, b: Vec, n = 12): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
     if (sim.crossings) {   // the Issue #15 ceremony: one national road, capital -> sub-capital

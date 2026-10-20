@@ -77,7 +77,8 @@ export function railShare(tRoad: number, tRail: number, carBias: number, railBia
  * sea, the sea more than the air, and forecasting and bigger ships claw some of it back over the decades. Games from Stage 12 on only (1 elsewhere).
  */
 export const AIR_ONTIME = 0.93, SEA_ONTIME = 0.85;
-const exposureLat = (w: World, i: number) => Math.max(0, Math.min(1, (realToLonLat(w.cities[i].pos as [number, number])[1] - 34) / 8));
+const exposureMemo = new WeakMap<World, Float64Array>();
+const exposureLat = (w: World, i: number) => { let m = exposureMemo.get(w); if (!m) { m = new Float64Array(w.cities.length).fill(-1); exposureMemo.set(w, m); } return m[i] >= 0 ? m[i] : (m[i] = Math.max(0, Math.min(1, (realToLonLat(w.cities[i].pos as [number, number])[1] - 34) / 8))); };
 export function weatherFactor(sim: SimState, w: World, mode: "air" | "sea", i: number, j: number): number {
   if (!sim.econ) return 1; const y = sim.startYear + Math.floor(sim.month / 12), base = mode === "air" ? AIR_ONTIME : SEA_ONTIME, gain = 1 - 0.3 * Math.max(0, Math.min(1, (y - 1950) / 100));
   return Math.max(0.5, 1 - (1 - base) * (1 + 0.6 * (exposureLat(w, i) + exposureLat(w, j))) * gain);
@@ -104,6 +105,8 @@ export function seaShareOf(sim: SimState, w: World, i: number, j: number): numbe
 }
 /** The whole analysis in one go (tests, tools). The game itself uses `analyzeGen` so a long pass can be cut into slices. */
 export function analyze(sim: SimState, w: World): Analysis { const g = analyzeGen(sim, w); for (;;) { const r = g.next(); if (r.done) return r.value; } }
+/** Two provincial towns further apart than this (travel time, hours) do not trade with each other in the gravity pass. */
+export const TOWN_FAR_H = 5;
 export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> {
   const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, string>(), N = nodeIds.length;
   for (const n of Object.values(sim.nodes)) nodeByCell.set(n.cell, n.id);
@@ -122,6 +125,9 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
   const apMap = multi && sim.hubs ? airportMap(sim, w) : null;
   const hubCity = new Set<number>(), trees = new Map<number, { R: Tree; Q: Tree | null }>(), pairs = new Map<string, number>(), domSea = new Map<string, number>(), domAir = new Map<string, number>();
   if (multi && sim.hubs) w.cities.forEach((c, i) => { if (sim.hubs!.ports[c.id] || sim.hubs!.airports[c.id]) hubCity.add(i); });
+  // Stage 16: the per-city pulls and sizes are read for every pair, so they are read once; and two provincial towns more than TOWN_FAR_H hours apart exchange next to nothing (the gravity falls with the
+  // 1.2 power of the time and the towns are small), so that pair is not walked along its whole path (only in a game that has towns)
+  const PUL = multi ? w.cities.map((c) => paxPull(sim, w, c.id)) : [], GUL = multi ? w.cities.map((c) => goodsPull(sim, w, c.id)) : [], isTown = w.cities.map((c) => c.kind === "town");
   for (let i = 0; i < nc; i++) {
     if (i > 0 && i % 6 === 0) yield;   // a slice of work per few source cities keeps each frame short
     const src = cityNodes[i]; if (!src) { for (const vid of villagesOf.get(w.cities[i].id) ?? []) reach.set(vid, false); continue; }
@@ -131,6 +137,7 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
     for (let j = i + 1; j < nc; j++) {
       const cn = cityNodes[j]; if (!cn) continue; const k0 = pos.get(cn)!, tr = R.d[k0], tt = Q ? Q.d[k0] : Infinity;
       if (!isFinite(tr) && !isFinite(tt)) continue;
+      if (isTown[i] && isTown[j] && Math.min(tr, isFinite(tt) ? tt + RAIL_ACCESS_H : Infinity) > TOWN_FAR_H) continue;
       const pi = sim.cities[w.cities[i].id], pj = sim.cities[w.cities[j].id];
       if (!multi) {   // Stage 2 (roads only): the original formula, untouched
         const flow = KFLOW * Math.pow(pi.pop * pj.pop, 0.6) / (1 + Math.pow(tr, 1.2));
@@ -138,7 +145,7 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
         continue;
       }
       const s = railShare(tr, tt, dl.carBias, dl.railBias), tmin = Math.min(tr, isFinite(tt) ? tt + RAIL_ACCESS_H : Infinity);
-      const ai = paxPull(sim, w, w.cities[i].id), aj = paxPull(sim, w, w.cities[j].id), gi = goodsPull(sim, w, w.cities[i].id), gj = goodsPull(sim, w, w.cities[j].id);   // Issue #18: seats and sights shift a city's pull on passengers (commerce, tourism) and goods (manufacturing)
+      const ai = PUL[i], aj = PUL[j], gi = GUL[i], gj = GUL[j];   // Issue #18: seats and sights shift a city's pull on passengers (commerce, tourism) and goods (manufacturing)
       const flow = KFLOW * Math.pow(pi.pop * ai * pj.pop * aj, 0.6) / (1 + Math.pow(tmin, 1.2));
       const air = airShare(sim, w, i, j, s, apMap), land = flow * (1 - air); airFlow += flow * air; landFlow += land;
       if (air > 0 && sim.hubs) { const a = apMap![i]!, b = apMap![j]!, p = flow * air * RAIL_PAX; airPkm += p * Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); pairs.set(a < b ? `${a}|${b}` : `${b}|${a}`, p); domAir.set(a, (domAir.get(a) ?? 0) + p); domAir.set(b, (domAir.get(b) ?? 0) + p); }

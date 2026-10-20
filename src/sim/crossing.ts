@@ -17,7 +17,7 @@
 import { UNIT, RAIL_UNIT, createProject, facCost } from "./planning";
 import { dist } from "../core/geom";
 import type { Vec } from "../core/types";
-import { buildIndex, layPath, nodeAtCell, setEdgeState } from "./network";
+import { buildIndex, layPath, netRemoved, nodeAtCell, setEdgeState } from "./network";
 import { MAIN_ISLAND_CELLS, isLakeFerry, nearTown, shoreNames } from "./ferry";
 import { pathfind } from "./world";
 import { waterTechAt } from "./tech";
@@ -253,7 +253,7 @@ function startCrossing(sim: SimState, w: World, c: Corridor, s: { fac: "bridge" 
   const rail = mode === "rail", a = c.a.name.replace(/市$/, ""), b = c.b.name.replace(/市$/, ""), sea = c.kind === "lake" ? "湖底" : "海底";
   // a railway tunnel needs the railway to reach both shores; the approach lines are part of the project (and of its price)
   type Ap = NonNullable<ReturnType<typeof railApproach>>; let approachA: Ap | null = { created: [], chain: [], km: 0 }, approachB: Ap | null = approachA;
-  if (rail && sim.tech?.wk !== undefined && ferry.mode !== "rail") { approachA = railApproach(sim, w, c.a.cell, true, y, c.b.cell); approachB = railApproach(sim, w, c.b.cell, false, y, c.a.cell); if (!approachA || !approachB) { for (const ap of [approachA, approachB]) if (ap) for (const id of ap.created) delete sim.edges[id]; return null; } }
+  if (rail && sim.tech?.wk !== undefined && ferry.mode !== "rail") { approachA = railApproach(sim, w, c.a.cell, true, y, c.b.cell); approachB = railApproach(sim, w, c.b.cell, false, y, c.a.cell); if (!approachA || !approachB) { for (const ap of [approachA, approachB]) if (ap) for (const id of ap.created) delete sim.edges[id]; netRemoved(sim); return null; } }
   if (!rail && sim.tech?.wk !== undefined) { ensureAccess(sim, w, c.a.cell); ensureAccess(sim, w, c.b.cell); }
   const id = newId(sim, "edge");
   const e: SimEdge = { ...newEdgeDefaults(), id, a: ferry.a, b: ferry.b, cells: [...ferry.cells], lengthKm: ferry.lengthKm, surface: "paved", quality: 92, built: 0, open: false, state: "closed", standard: "standard", maxGradePct: 1, builtMonth: null, region: ferry.region, facility: s.fac, facilityName: `link:${a}〜${b}${s.fac === "bridge" ? "大橋" : `${sea}トンネル`}`, ...(rail ? { mode: "rail" as const, op: ferry.op ?? "jnr" } : {}) };
@@ -262,7 +262,7 @@ function startCrossing(sim: SimState, w: World, c: Corridor, s: { fac: "bridge" 
   const reason = `${CROSSING_TAG}${wk14Strategic(w, c) ? STRATEGIC_TAG : ""}${a}〜${b}の${rail ? "鉄道" : "道路"}${rail && ferry.mode !== "rail" ? "輸送" : "連絡船"}は混雑(${Math.round(ferryLoad(ferry) * 100)}%)。${c.kind === "lake" ? "湖面" : "海峡"}${c.span}kmは${s.fac === "bridge" ? "橋" : sea + "トンネル"}で結べる技術がある`;
   // a route is one unbroken chain: if the approaches do not join up end to end, nothing is started (and nothing is left behind)
   const joins = chain.every((x, i) => { if (i === 0) return true; const q = chain[i - 1], pe = sim.edges[q.edgeId], ce = sim.edges[x.edgeId]; return !!pe && !!ce && (q.dir === 1 ? pe.b : pe.a) === (x.dir === 1 ? ce.a : ce.b); });
-  if (!joins) { if (process.env.DBG13) (globalThis as any).__dbg13 = ((globalThis as any).__dbg13 ?? []).concat(`${c.a.name}>${c.b.name} ` + chain.map((x) => { const q = sim.edges[x.edgeId]; return `${x.edgeId}/${x.dir}:${q?.a}>${q?.b}`; }).join(" ")); for (const eid of edgeIds) delete sim.edges[eid]; return null; }
+  if (!joins) { if (process.env.DBG13) (globalThis as any).__dbg13 = ((globalThis as any).__dbg13 ?? []).concat(`${c.a.name}>${c.b.name} ` + chain.map((x) => { const q = sim.edges[x.edgeId]; return `${x.edgeId}/${x.dir}:${q?.a}>${q?.b}`; }).join(" ")); for (const eid of edgeIds) delete sim.edges[eid]; netRemoved(sim); return null; }
   const p = createProject(sim, "new", "JP", ferry.a, ferry.b, edgeIds, chain, cost, reason, score); p.status = "concept"; if (rail) { p.mode = "rail"; p.op = e.op; }
   ev(sim, "crossing", `${c.kind === "lake" ? "湖底" : "海峡"}${s.fac === "bridge" ? "架橋" : "トンネル"}構想(${rail ? "鉄道" : "道路"}): ${a}〜${b}`, `${reason}(工費の目安${cost.toFixed(1)}${approachKm ? `、取付線${Math.round(approachKm)}kmを含む` : ""}。連絡船はそのまま運航)`, { project: p.id, edge: id }); return p;
 }

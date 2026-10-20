@@ -25,7 +25,7 @@ import { SimRunner } from "../sim/runner";
 import { ERA, GRADE_LABEL, KIND_LABEL, NICK_LABEL, PROJECT_LABEL, STANDARD_LABEL, STANDARD_LABEL_RAIL, STATE_LABEL, SURFACE_LABEL, eraLabel, monthToYM, setActiveEra, setActiveTimeline, ymLabel, type SimState } from "../sim/types";
 import { COND, CASING } from "../render/roads";
 import { edgePoints } from "../sim/network";
-import { buildWorld, type World } from "../sim/world";
+import { buildWorld, townsForSeats, type World } from "../sim/world";
 import { eraKeyOf, type EraKey } from "../sim/eras";
 import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraPicker } from "./stage3";
 import { CAND_1945 } from "../sim/kaigen";
@@ -75,7 +75,7 @@ export class App {
   client = new TerrainClient(new URL(import.meta.env.BASE_URL + "japan-dem.bin", document.baseURI).href, () => new Worker(new URL("../core/terrain.worker.ts", import.meta.url), { type: "module" }));
   private genTimer: any = 0; private saveTimer: any = 0; private grab: any = null;
   // ---- Stage 2 ----
-  sim: SimState | null = null; world: World | null = null; private worldRef: TerrainResult | null = null; pendingSim: SimState | null = null;
+  sim: SimState | null = null; world: World | null = null; private worldRef: TerrainResult | null = null; private worldKey = ""; pendingSim: SimState | null = null;
   cerDraft: Partial<Record<CerKind, CerDraft>> = {};
   /** Stage 9: how the 国道1号 tool acts -- draw a stroke, move a control point, or pick a stroke (then delete or redraw it). */
   axesOpen = false; ridgeSel: { key: "sw" | "ne"; si: number } | null = null; ridgeRedraw: { key: "sw" | "ne"; si: number } | null = null; bgBeforeRidge: "terrain" | "roadmap" | null = null;
@@ -165,7 +165,16 @@ export class App {
     if (this.saveLocked && !this.sim && !this.pendingSim) return Promise.resolve(false);
     if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now();
     if (this.real && this.sim && performance.now() - this.lastBackup > 120000) { this.lastBackup = performance.now(); void saveGame(this.saveKey + ":backup", makeSave(this.s, this.sim)); }   /* a second copy every two minutes; a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
-  ensureWorld(): World | null { if (!this.terrain) return null; if (this.worldRef !== this.terrain) { this.world = buildWorld(this.terrain, this.s.seed); this.world.barrier = !!this.real; this.worldRef = this.terrain; } return this.world; }
+  /** The towns a world carries: a running or loaded game keeps the ones it was started with (none for an older game); a game not yet started takes the towns around its two seats. */
+  private townIdsWanted(): string[] | false {
+    const sim = this.sim ?? this.pendingSim; if (sim) return sim.towns16 ?? false;
+    if (!this.real || !this.terrain) return false; const st = seatsOf(this.s); const ids = townsForSeats(this.terrain, [st.capital, st.sub]); return ids.length ? ids : false;
+  }
+  ensureWorld(): World | null {
+    if (!this.terrain) return null; const ids = this.townIdsWanted(), key = ids ? ids.join(",") : "";
+    if (this.worldRef !== this.terrain || this.worldKey !== key) { this.world = buildWorld(this.terrain, this.s.seed, ids); this.world.barrier = !!this.real; this.worldRef = this.terrain; this.worldKey = key; }
+    return this.world;
+  }
   renderRoads() {
     const w0 = this.world, cerTool = this.tool === "cer-kokudo1" || this.tool === "cer-fudo1", cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ strokes: d!.strokes, handles: cerTool && this.cerMode !== "draw", sel: cerTool ? this.cerSel : null, pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok, segs: (d!.prev as NatPreview).segments && w0 ? (d!.prev as NatPreview).segments.map((sg) => ({ pts: sg.cells.map((c) => w0.cellPos(c)), ferry: sg.ferry })) : undefined }));
     if (this.cerLive) cer.push({ strokes: [this.cerLive], handles: false, sel: null, pts: this.cerLive, path: undefined as any, ok: true, segs: undefined });

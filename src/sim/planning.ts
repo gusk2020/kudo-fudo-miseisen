@@ -6,7 +6,7 @@ import { basePop, capitalPref } from "./roles";
 import { FAVOURED_LEAN, POLICY_TRUNK_MIN, POLICY_TRUNK_SCORE, reconCorridor, reconFade, reconMeanCore, reconOf, reconRegionLean, reconText } from "./recon";
 import { dist } from "../core/geom";
 import { refBias, referenceGrids } from "./reference";
-import { buildIndex, facilitySplit, layPath, newId, nodeAtCell } from "./network";
+import { buildIndex, facilitySplit, layPath, newId, nodeAtCell, stepKey } from "./network";
 import { HARD_ROCK_M, crossingEase, facilityCostMult, isWaterTunnel, techAt, waterTechAt } from "./tech";
 import { accessDeficit, ev, projLabel, rand, yearOf } from "./engine";
 import { CAPACITY, RAIL_CAPACITY as RAIL_CAP, edgeSpeed, type Analysis } from "./demand";
@@ -233,7 +233,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     if (c.kind === "new" && c.a !== undefined && (c.b !== undefined || c.toCell !== undefined) && pf-- > 0) {
       const a = w.cities[c.a], aCell = c.fromCell ?? a.cell, aName = c.fromName ?? a.name, b = c.b !== undefined ? w.cities[c.b] : null, bCell = b ? b.cell : c.toCell!, bName = b ? b.name : c.toName ?? "既設線", idx = buildIndex(sim, "rail"), ref = referenceGrids(w), std = c.std ?? "rural";
       const path = pathfind(w, aCell, bCell, { rail: true, ease: crossingEase(sim.tech, y), bias: (k) => refBias(ref.rail)(k) * (idx.roadCells.has(k) ? 1.6 : 1), margin: 16 }); yield; if (!path) continue;   // a new line is a direct one: existing track is not discounted
-      const newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) continue;
+      const newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) continue;
       const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) continue;   // not buildable with this year's tunnelling (yet)
       if (!affordable(sim, w, "rail", path, newKm, RAIL_UNIT[std], railPurse(sim), y)) continue;
       const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > PRIVATE_MIN_POP && dist(a.pos, b.pos) < PRIVATE_MAX_KM,   /* Stage 7: private companies enter the busier corridors the national railway serves poorly, so the two compete */ localPrivate = !!c.local && !jnrEra;
@@ -276,7 +276,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
     const idx = buildIndex(sim), now = pathfind(w, v.cell, c.toCell, { roadCells: idx.roadCells, margin: 10 }), direct = pathfind(w, v.cell, c.toCell, { margin: 10, ease: crossingEase(sim.tech, y), bias: (k) => (idx.roadCells.has(k) ? 1.25 : 1) });
     if (!direct) return false; const nowKm = now ? now.length : Infinity; if (direct.length > nowKm * LINK_CUT) return false;   // the way that exists is already about as short
     if (!techCheck(sim, w, "road", direct, y).ok) return false;
-    const newKm = direct.filter((k, q) => q > 0 && !idx.step.has(`${direct[q - 1]}:${k}`)).length * w.cell; if (newKm < 4) return false; if (newKm > purse) return false; if (!affordable(sim, w, "road", direct, newKm, 0.9, purse, y)) return false;
+    const newKm = direct.filter((k, q) => q > 0 && !idx.step.has(stepKey(direct[q - 1], k))).length * w.cell; if (newKm < 4) return false; if (newKm > purse) return false; if (!affordable(sim, w, "road", direct, newKm, 0.9, purse, y)) return false;
     const l = layPath(sim, w, direct, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 70, built: 0, month: sim.month, standard: "rural" }); if (!l.created.length) return false;
     const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * 0.9 * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * (w.land12 ? mtnCost(w, sim, "road", x.cells, y) : 1), 0);
     const p = createProject(sim, "access", region, nodeAtCell(sim, w, idx, v.cell, "village"), nodeAtCell(sim, w, idx, c.toCell, "junction"), l.created, l.chain, cost, c.reason, c.score);
@@ -286,7 +286,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
     const v = sim.settlements[c.vid], city = w.cityById.get(v.city)!; if (!spend()) return false;
     const idx = buildIndex(sim), path = pathfind(w, v.cell, city.cell, { roadCells: idx.roadCells, margin: 12 }); if (!path) return false;
     if (w.land12 && !techCheck(sim, w, "road", path, yearOf(sim)).ok) return false;
-    const newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell; if (newKm < 3 || newKm * 1 > purse) return false; if (!affordable(sim, w, "road", path, newKm, 0.8, purse, yearOf(sim))) return false;
+    const newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell; if (newKm < 3 || newKm * 1 > purse) return false; if (!affordable(sim, w, "road", path, newKm, 0.8, purse, yearOf(sim))) return false;
     const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 70, built: 0, month: sim.month, standard: "rural" }); if (!l.created.length) return false;
     const es = l.created.map((id) => sim.edges[id]), a = nodeAtCell(sim, w, idx, v.cell, "village"), cost = es.reduce((s, x) => s + x.lengthKm * 0.8 * (w.land12 ? mtnCost(w, sim, "road", x.cells, yearOf(sim)) : 1), 0);
     const p = createProject(sim, "access", region, a, nodeAtCell(sim, w, idx, city.cell, "junction"), l.created, l.chain, cost, c.reason, c.score);
@@ -296,17 +296,17 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
     const a = w.cities[c.a], b = w.cities[c.b]; if (!spend()) return false;
     const idx = buildIndex(sim), path = pathfind(w, a.cell, b.cell, { roadCells: idx.roadCells, ease: crossingEase(sim.tech, y) }); if (!path) return false;
     const tcN = techCheck(sim, w, "road", path, y); if (!tcN.ok) return false;
-    let newKm = path.filter((k, q) => q > 0 && !idx.step.has(`${path[q - 1]}:${k}`)).length * w.cell;
+    let newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell;
     if (newKm < (c.local ? 5 : 15)) {
       if (!sim.stage3) return false;
       // Stage 7: the pair is already joined, only slowly. Either a genuinely shorter new road is worth laying (a pass road or a tunnel that cuts a long
       // detour), or the slowest piece of the road that exists is improved. Before, both cases were simply dropped (9 candidates in 10).
       if (!canSpend() || !spend()) return false;
       const direct = pathfind(w, a.cell, b.cell, { ease: crossingEase(sim.tech, y), bias: (k) => (idx.roadCells.has(k) ? 1.25 : 1) });
-      const dk = direct ? direct.filter((k, q) => q > 0 && !idx.step.has(`${direct[q - 1]}:${k}`)).length * w.cell : 0;
+      const dk = direct ? direct.filter((k, q) => q > 0 && !idx.step.has(stepKey(direct[q - 1], k))).length * w.cell : 0;
       if (direct && dk >= (c.local ? 5 : 12) && direct.length <= path.length * DETOUR_CUT && techCheck(sim, w, "road", direct, y).ok) { path.splice(0, path.length, ...direct); newKm = dk; }
       else {
-        const busy = new Set(activeProjects(sim).flatMap((p) => p.edgeIds)), along = new Set<string>(); for (let q = 1; q < path.length; q++) { const st = idx.step.get(`${path[q - 1]}:${path[q]}`); if (st) along.add(st.edge); }
+        const busy = new Set(activeProjects(sim).flatMap((p) => p.edgeIds)), along = new Set<string>(); for (let q = 1; q < path.length; q++) { const st = idx.step.get(stepKey(path[q - 1], path[q])); if (st) along.add(st.edge); }
         const slow = [...along].map((id) => sim.edges[id]).filter((e) => e && e.state === "open" && e.built >= 1 && modeOf(e) === "road" && e.facility !== "ferry" && !busy.has(e.id) && (e.standard === "rural" || e.surface !== "paved")).sort((p, q) => edgeKmh(p) - edgeKmh(q) || (p.id < q.id ? -1 : 1))[0];
         if (!slow) return false; 
         if (slow.surface !== "paved") { const cost = slow.lengthKm * 0.5; if (cost > purse) return false; const p = createProject(sim, "upgrade", region, slow.a, slow.b, [slow.id], [{ edgeId: slow.id, dir: 1 }], cost, `${c.reason}。経路上の未舗装区間を舗装`, c.score); ev(sim, "project", `舗装化計画: ${projLabel(sim, p)}`, p.reason, { project: p.id, edge: slow.id }); return true; }

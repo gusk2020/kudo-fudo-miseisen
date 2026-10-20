@@ -326,14 +326,16 @@ export function seedBayFerries(sim: SimState, w: World, maxNew = BAY_MAX): numbe
   // Stage 14: the narrowest strait between every two MAIN islands (Honshu, Hokkaido, Shikoku, Kyushu: the 4 with at least MAIN_ISLAND_CELLS cells) always has a ferry in the 1950s, however few
   // people live on its shores: the ferries between the islands' big cities are 100+ km, and a tunnel is planned only where a crossing exists to replace. (Hoyo: Kyushu-Shikoku.)
   const links = waterLinks(w), mainList = mainStraitLinks(w, links), mainPairs = new Set(mainList);
+  // (the road ferries there already are, as the positions of their two ends: a few dozen, where the edges are a thousand -- this test ran for every one of several hundred links)
+  const ferryEnds: [Vec, Vec][] = Object.values(sim.edges).filter((e) => e.facility === "ferry" && modeOf(e) === "road" && e.cells.length >= 2).map((e) => [w.cellPos(e.cells[0]), w.cellPos(e.cells[e.cells.length - 1])]);
   for (const l of [...mainList, ...links.filter((x) => !mainPairs.has(x))]) {
     if (n >= maxNew || have + n >= BAY_MAX) break; const main = mainPairs.has(l); if (!main && (l.saving < BAY_MIN_SAVING || (l.kind === "lake" && l.km > LAKE_LINK_MAX_KM))) continue;
     const pa = w.cellPos(l.a), pb = w.cellPos(l.b);
-    if (Object.values(sim.edges).some((e) => e.facility === "ferry" && modeOf(e) === "road" && e.cells.length >= 2 && ((near(w.cellPos(e.cells[0]), pa) && near(w.cellPos(e.cells[e.cells.length - 1]), pb)) || (near(w.cellPos(e.cells[0]), pb) && near(w.cellPos(e.cells[e.cells.length - 1]), pa))))) continue;
+    if (ferryEnds.some(([x, y]) => (near(x, pa) && near(y, pb)) || (near(x, pb) && near(y, pa)))) continue;
     if (!main && Math.min(...sidePops(sim, w, l.a, l.b)) < BAY_MIN_POP) continue;
     const nodes0 = Object.keys(sim.nodes).length, ca = connectPort(sim, w, l.a, idx), cb = connectPort(sim, w, l.b, idx);
     if (Object.keys(sim.nodes).length !== nodes0) idx = buildIndex(sim, "road");   // (the index is rebuilt only when a port's access road has added nodes)
-    makeFerryAt(sim, w, { cell: ca, pos: w.cellPos(ca) }, { cell: cb, pos: w.cellPos(cb) }, "road", `${l.kind === "lake" ? "湖の" : "湾・海峡の"}航路(1950年の既存の連絡。陸路は${Math.round(l.landKm ?? 0)}kmの遠回り、海上は${l.km}km)`, l.kind === "lake" ? `ferry:${LAKE_TAG}${shoreNames(w, l.a, l.b).join("〜")}湖岸航路` : `ferry:${shoreNames(w, l.a, l.b).join("〜")}${BAY_TAG}`); n++;
+    makeFerryAt(sim, w, { cell: ca, pos: w.cellPos(ca) }, { cell: cb, pos: w.cellPos(cb) }, "road", `${l.kind === "lake" ? "湖の" : "湾・海峡の"}航路(1950年の既存の連絡。陸路は${Math.round(l.landKm ?? 0)}kmの遠回り、海上は${l.km}km)`, l.kind === "lake" ? `ferry:${LAKE_TAG}${shoreNames(w, l.a, l.b).join("〜")}湖岸航路` : `ferry:${shoreNames(w, l.a, l.b).join("〜")}${BAY_TAG}`); n++; ferryEnds.push([w.cellPos(ca), w.cellPos(cb)]);
   }
   if (n && have === 0) ev(sim, "seed", `1950年代の湾・海峡の航路: 最初の${n}本(残りは続く数年で加わる。陸路が遠回りの海を船で渡る)`, "初期条件。海岸線の形から向かい合う岸を探した(合成。実在の航路表ではない)", {});
   return n;

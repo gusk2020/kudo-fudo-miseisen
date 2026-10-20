@@ -74,6 +74,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.econ !== undefined && raw.econ !== true) delete raw.econ;
   if (raw.seats14 !== undefined && raw.seats14 !== true) delete raw.seats14;   // Stage 14
   if (raw.pop15 !== undefined && raw.pop15 !== true) delete raw.pop15;   // Stage 15
+  if (raw.towns16 !== undefined && !(Array.isArray(raw.towns16) && raw.towns16.length > 0 && raw.towns16.length < 400 && raw.towns16.every((x: unknown) => typeof x === "string" && x.length < 24))) delete raw.towns16;   // Stage 16
   if (isRec(raw.kaigen) && raw.kaigen.recon !== undefined && !(isRec(raw.kaigen.recon) && ["pacific", "japansea"].includes(raw.kaigen.recon.coast) && ["concentrate", "disperse"].includes(raw.kaigen.recon.focus))) delete raw.kaigen.recon;
   // Stage 8: a lake bridge keeps only its two shore cells (an early Stage 8 build stored the water cells too, which the land check would refuse)
   for (const e of Object.values<any>(raw.edges)) if (e.facility === "bridge" && typeof e.facilityName === "string" && e.facilityName.includes("湖上大橋") && e.cells.length > 2) e.cells = [e.cells[0], e.cells[e.cells.length - 1]];
@@ -96,6 +97,7 @@ export function validateSimAgainstWorld(sim: SimState, w: World, terrainHash: st
   if (sim.terrainHash !== terrainHash) return "地形が保存時と一致しません(地形ハッシュ不一致)";
   for (const e of Object.values(sim.edges)) for (const c of e.cells) if (c >= w.N || w.t.land[c] !== 1) return `道路が地形の外にあります(${e.id})`;
   for (const n of Object.values(sim.nodes)) if (n.cell >= w.N) return "ノードが地形の外にあります";
+  if ((sim.towns16 ?? []).join(",") !== (w.townIds ?? []).join(",")) return "都市データの種類(町の有無)が保存時と一致しません";   // Stage 16
   return null;
 }
 export interface ParsedSave { map: ProjectState; sim: SimState | null; quarantine: unknown | null; problems: string[]; ok: boolean; migratedFrom: 1 | 2 | null }

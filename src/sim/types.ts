@@ -120,6 +120,7 @@ export interface SimState {
   kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
   city12?: Record<string, { p: number[]; h: number[]; adv: number }>;   // Stage 12: per city, the parts of its yearly migration advantage and its size every 5 years (econ.ts)
   metro?: import("./metro").MetroState;   // Stage 13: the metropolitan areas (metro.ts), rebuilt every year. Absent = older saves; created at the next yearly step
+  towns16?: string[];         // Stage 16: the provincial towns the game's world carries (ids; world.townIds): those of the seats' prefectures and the prefectures next to them. Absent = no towns (older games)
   pop15?: true;               // Stage 15: the cities start from the 1950 census (census50.ts) and the reconstruction policy also adds a priority to the corridors (recon.ts RECON_ADD). Absent = older games
   seats14?: true;             // Stage 14: the seats of government head the city order, and a seat's people live partly in the suburbs round it (seats14.ts). Absent = older games
   econ?: true;                // Stage 12: the land-based city economy (land.ts, econ.ts). Absent = older games, which keep the rules they were made with
