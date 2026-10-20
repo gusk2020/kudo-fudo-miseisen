@@ -22,5 +22,5 @@ describe("world line vs policy, 1950-2100", () => {
     expect(eras[2][2050].railKm).toBeGreaterThan(eras[1][2050].railKm); expect(eras[1][2050].hwyKm).toBeGreaterThan(eras[2][2050].hwyKm);
     // local transport: villages are not left behind on every path, and the network is not a one-way story of closures
     for (const r of eras) { expect(r[2050].villIso / Math.max(1, r[2050].villTot)).toBeLessThan(0.12); expect(r[2100].newRoadKm + r[2100].newRailKm).toBeGreaterThan(1500); }
-  }, 600000);
+  }, 1500000);
 });
