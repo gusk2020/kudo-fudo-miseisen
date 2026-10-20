@@ -23,6 +23,17 @@ export const SEAT_SHARE_MAX = 0.6, SEAT_FLOW = 0.08, SUBURB_H = 1.3, SUBURB_TAU 
 /** A suburb stops taking people once it is this big against the seat (so one town does not swallow the flow: the people spread over the towns of the plain). */
 export const SUBURB_MAX_RATIO = 0.3, SUBURB_GROWTH = 14, SUBURB_H_FAR = 3.5;
 export const SEAT_MARGIN = 0.98, SHED_MAX = 0.08, SHED_H = 1.6;
+/** Stage 15 (phone check: the satellites formed but were small and few): in a Stage 15 game the seat holds less of its own commuter belt, sends more of the excess each year, lets a suburb grow bigger against it,
+ * and the towns of the prefectures NEXT to the seat's own are reached however far the road is (a prefecture line is a line on the map, not a wall) and take a larger share. */
+export const SEAT_SHARE_MAX_15 = 0.5, SEAT_FLOW_15 = 0.12, SUBURB_MAX_RATIO_15 = 0.42, ADJ_BONUS = 1.8, ADJ_H_CAP = 1.5;   // (a town of the next prefecture counts as at most this far away for how much it takes)
+const adjMemo = new WeakMap<World, Map<string, Set<string>>>();
+/** Which prefectures touch which (an edge of cells), once per world. */
+export function prefAdjacency(w: World): Map<string, Set<string>> {
+  let m = adjMemo.get(w); if (m) return m; m = new Map();
+  const link = (a: string | null, b: string | null) => { if (!a || !b || a === b) return; (m!.get(a) ?? m!.set(a, new Set()).get(a)!).add(b); (m!.get(b) ?? m!.set(b, new Set()).get(b)!).add(a); };
+  for (let k = 0; k < w.N; k++) { if (w.t.land[k] !== 1) continue; const p = w.prefOf(k); if (!p) continue; const i = k % w.nx; if (i + 1 < w.nx && w.t.land[k + 1] === 1) link(p, w.prefOf(k + 1)); if (k + w.nx < w.N && w.t.land[k + w.nx] === 1) link(p, w.prefOf(k + w.nx)); }
+  adjMemo.set(w, m); return m;
+}
 
 /** Moves people between cities, to the person: the deltas are rounded and the rounding left over is put on the biggest receiver, so the sum stays exactly zero. */
 function apply(sim: SimState, w: World, delta: Map<number, number>) {
@@ -38,20 +49,22 @@ export function applySeatOrder(sim: SimState, w: World, an: { T: Float64Array; T
   const ind = (j: number) => sim.cities[w.cities[j].id]?.industry ?? 0.3;
   const delta = new Map<number, number>(); const add = (i: number, d: number) => delta.set(i, (delta.get(i) ?? 0) + d);
   // 1. suburbs
+  const p15 = !!sim.pop15, shareMax = p15 ? SEAT_SHARE_MAX_15 : SEAT_SHARE_MAX, flow = p15 ? SEAT_FLOW_15 : SEAT_FLOW, maxRatio = p15 ? SUBURB_MAX_RATIO_15 : SUBURB_MAX_RATIO;
   for (const s of seats) {
+    const home = w.cities[s].pref, near = p15 && home ? prefAdjacency(w).get(home) : undefined;
     let rec: { j: number; wt: number }[] = [], around = 0;
     // a suburb takes people up to the smaller of: SUBURB_MAX_RATIO of the seat, and what its own land and standing in 1950 can hold (SUBURB_GROWTH times, by its site: a small island town never becomes a metropolis)
     const collect = (maxH: number) => {
       rec = []; around = 0;
       for (let j = 0; j < nc; j++) {
-        if (j === s || isSeat.has(j) || P[j] < MIN_SUBURB_POP) continue; const h = t(s, j); if (!isFinite(h) || h > maxH) continue; around += P[j];
-        const c = w.cities[j], cap = SUBURB_GROWTH * basePop(sim, w, c) * siteCapacity(w, c) * (1 + c.plains), room = Math.max(0, Math.min(1 - P[j] / (SUBURB_MAX_RATIO * P[s]), 1 - P[j] / Math.max(1, cap)));
-        if (room > 0) rec.push({ j, wt: Math.exp(-h / SUBURB_TAU) * (0.3 + siteCapacity(w, c)) * (0.5 + c.plains) * (0.6 + ind(j)) * Math.pow(P[j] + 5e4, 0.4) * room });
+        if (j === s || isSeat.has(j) || P[j] < MIN_SUBURB_POP) continue; const h = t(s, j), adj = !!near && !!w.cities[j].pref && (near.has(w.cities[j].pref!) || w.cities[j].pref === home); if (!isFinite(h) || h > (adj ? Math.max(maxH, SUBURB_H_FAR) : maxH)) continue; around += P[j];
+        const c = w.cities[j], cap = SUBURB_GROWTH * basePop(sim, w, c) * siteCapacity(w, c) * (1 + c.plains), room = Math.max(0, Math.min(1 - P[j] / (maxRatio * P[s]), 1 - P[j] / Math.max(1, cap)));
+        if (room > 0) rec.push({ j, wt: Math.exp(-(adj ? Math.min(h, ADJ_H_CAP) : h) / SUBURB_TAU) * (0.3 + siteCapacity(w, c)) * (0.5 + c.plains) * (0.6 + ind(j)) * Math.pow(P[j] + 5e4, 0.4) * room * (adj ? ADJ_BONUS : 1) });
       }
     };
     collect(SUBURB_H); if (rec.length < 3) collect(SUBURB_H_FAR);   // (a seat with no town within a commute -- an island's capital -- reaches further for its suburbs)
-    if (!rec.length) continue; const total = P[s] + around, excess = P[s] - SEAT_SHARE_MAX * total; if (excess <= 0) continue;
-    const x = excess * SEAT_FLOW, sw = rec.reduce((a, r) => a + r.wt, 0); add(s, -x); for (const r of rec) add(r.j, (x * r.wt) / sw);
+    if (!rec.length) continue; const total = P[s] + around, excess = P[s] - shareMax * total; if (excess <= 0) continue;
+    const x = excess * flow, sw = rec.reduce((a, r) => a + r.wt, 0); add(s, -x); for (const r of rec) add(r.j, (x * r.wt) / sw);
   }
   if (delta.size) { apply(sim, w, delta); delta.clear(); for (let i = 0; i < nc; i++) P[i] = sim.cities[w.cities[i].id]?.pop ?? 0; }
   // 2. the order

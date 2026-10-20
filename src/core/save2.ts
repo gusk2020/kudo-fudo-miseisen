@@ -73,6 +73,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.metro !== undefined && !validMetro(raw.metro)) delete raw.metro;   // Stage 13: rebuilt at the next yearly step
   if (raw.econ !== undefined && raw.econ !== true) delete raw.econ;
   if (raw.seats14 !== undefined && raw.seats14 !== true) delete raw.seats14;   // Stage 14
+  if (raw.pop15 !== undefined && raw.pop15 !== true) delete raw.pop15;   // Stage 15
   if (isRec(raw.kaigen) && raw.kaigen.recon !== undefined && !(isRec(raw.kaigen.recon) && ["pacific", "japansea"].includes(raw.kaigen.recon.coast) && ["concentrate", "disperse"].includes(raw.kaigen.recon.focus))) delete raw.kaigen.recon;
   // Stage 8: a lake bridge keeps only its two shore cells (an early Stage 8 build stored the water cells too, which the land check would refuse)
   for (const e of Object.values<any>(raw.edges)) if (e.facility === "bridge" && typeof e.facilityName === "string" && e.facilityName.includes("湖上大橋") && e.cells.length > 2) e.cells = [e.cells[0], e.cells[e.cells.length - 1]];

@@ -26,6 +26,9 @@ export const RECON_GROWTH = 0.0035, RECON_INDUSTRY = 0.08, RECON_SHARE = 0.25, R
  * leans, not orders: a city's own geography, its distances and the economy decide the rest, so the Pacific side still grows where it has the demand, and the order of the two coasts changes
  * with the policy and the conditions, it is not fixed. Older games keep the strength they were made with. */
 export const RECON_BOOST = 2.5;
+/** Stage 15: the policy is also a PRIORITY, not only a multiplier on demand. A multiplier of at most ~1.6 cannot lift a corridor whose demand is a third of a Pacific-belt corridor's, and the planner builds one or two new links a year
+ * nationwide, so a policy that only scaled the score never reached the small cities of the other coast. Games from Stage 15 on add RECON_ADD x boost x lean to the corridor's score as well (in the score's own units: a typical new corridor scores 0.5 to 2.5). */
+export const RECON_ADD = 0.35;
 const boost = (sim: SimState) => (sim.seats14 ? RECON_BOOST : 1);
 export const reconFade = (y: number) => (y < 1975 ? 1 : y < 2000 ? 1 - 0.5 * ((y - 1975) / 25) : 0.5);
 export const reconText = (r: Recon) => `${RECON_LABEL[r.coast]}・${RECON_LABEL[r.focus]}`;
@@ -95,8 +98,18 @@ export function reconShare(sim: SimState, w: World, cityId: string, y: number, m
 }
 export const reconMeanCore = meanCoreOf;
 /** Priority factor of a new link between cities i and j, and the words for the plan's reason. */
-export function reconCorridor(sim: SimState, w: World, i: number, j: number, y: number, meanCore: number): { f: number; why: string } {
-  const r = reconOf(sim); if (!r) return { f: 1, why: "" }; const a = w.cities[i], b = w.cities[j], la = lean(sim, w, r, a.id, meanCore), lb = lean(sim, w, r, b.id, meanCore);
+export function reconCorridor(sim: SimState, w: World, i: number, j: number, y: number, meanCore: number): { f: number; why: string; add: number } {
+  const r = reconOf(sim); if (!r) return { f: 1, why: "", add: 0 }; const a = w.cities[i], b = w.cities[j], la = lean(sim, w, r, a.id, meanCore), lb = lean(sim, w, r, b.id, meanCore);
   const v = ((la.coast + lb.coast) / 2) * 1 + (la.focus + lb.focus) / 2, f = Math.max(sim.seats14 ? 0.25 : 0.5, 1 + RECON_PLAN * boost(sim) * reconFade(y) * v);
-  return { f, why: Math.abs(f - 1) >= 0.05 ? `復興方針(${reconText(r)})により${f > 1 ? "優先" : "後回し"}` : "" };
+  const add = sim.pop15 ? RECON_ADD * boost(sim) * reconFade(y) * v : 0, eff = f + (add ? add / 2 : 0);
+  return { f, add, why: Math.abs(eff - 1) >= 0.05 ? `復興方針(${reconText(r)})により${eff > 1 ? "優先" : "後回し"}` : "" };
 }
+
+/** Stage 15: how far a region (prefecture) as a whole is favoured by the policy, -1..1: the people-weighted mean of its cities' lean (the same lean the budget, growth and corridor terms use). */
+export function reconRegionLean(sim: SimState, w: World, region: string, meanCore: number): number {
+  const r = reconOf(sim); if (!r) return 0; let s = 0, p = 0;
+  for (const c of w.cities) if (c.pref === region) { const l = lean(sim, w, r, c.id, meanCore), n = sim.cities[c.id]?.pop ?? 0; s += n * (l.coast + l.focus); p += n; }
+  return p ? s / p : 0;
+}
+/** Regions the policy favours work faster: one more new link a year and one more job at a time (Stage 15 games). */
+export const FAVOURED_LEAN = 0.5;

@@ -26,6 +26,7 @@
  * Only games created from Stage 10 on carry `sim.roles`; older saves keep the bonus they were created with (CAPITAL_BONUS) and are not recomputed.
  */
 import { DEFAULT_CAPITAL, DEFAULT_PALACE, DEFAULT_SUB } from "../core/seat";
+import { startPop } from "./census50";
 import type { RoleState, SimState } from "./types";
 import type { WCity, World } from "./world";
 
@@ -34,19 +35,19 @@ export const METRO_SIZE = 5, SEA_ACCESS = 1.6;
 
 const seatOf = (w: World, pref: string): WCity | undefined => w.cities.find((c) => c.pref === pref && c.kind === "capital");
 /** The 1950 population of a prefecture's cities (its role mass). */
-export function prefMass(w: World, pref: string): number { let m = 0; for (const c of w.cities) if (c.pref === pref) m += c.pop0; return m; }
+export function prefMass(w: World, pref: string, p15?: boolean): number { let m = 0; for (const c of w.cities) if (c.pref === pref) m += startPop(w, c, p15); return m; }
 /** Travel effort between two prefecture seats: km, with a sea crossing (different land masses) weighted SEA_ACCESS. */
 export function accessKm(w: World, a: string, b: string): number {
   const x = seatOf(w, a), y = seatOf(w, b); if (!x || !y) return Infinity;
   const km = Math.hypot(x.pos[0] - y.pos[0], x.pos[1] - y.pos[1]); return w.lm[x.cell] === w.lm[y.cell] ? km : km * SEA_ACCESS;
 }
-const prefsOf = (w: World) => w.t.prefOrder.filter((p) => !!seatOf(w, p) && prefMass(w, p) > 0);
+const prefsOf = (w: World) => w.t.prefOrder.filter((p) => !!seatOf(w, p) && prefMass(w, p) > 0);   // (the mass is only tested for being positive: same under either rule)
 /** The METRO_SIZE prefectures nearest `centre` by access, skipping `skip`. Ties by id (stable). */
 export function nearestPrefs(w: World, centre: string, skip: Set<string>, n = METRO_SIZE): string[] {
   return prefsOf(w).filter((p) => p !== centre && !skip.has(p)).map((p) => ({ p, d: accessKm(w, centre, p) })).filter((x) => isFinite(x.d)).sort((a, b) => a.d - b.d || (a.p < b.p ? -1 : 1)).slice(0, n).map((x) => x.p);
 }
 /** The role assignment for a game: who carries whose mass, the two clusters, and where the cultural role sits. */
-export function computeRoles(w: World, capital: string, sub: string, palace: string): RoleState {
+export function computeRoles(w: World, capital: string, sub: string, palace: string, p15?: boolean): RoleState {
   const prof = new Map<string, string>(), holder = new Map<string, string>(), fixed = new Set<string>();
   for (const p of prefsOf(w)) { prof.set(p, p); holder.set(p, p); }
   const give = (target: string, mass: string) => {   // `target` takes `mass`; whoever held it takes target's
@@ -60,17 +61,17 @@ export function computeRoles(w: World, capital: string, sub: string, palace: str
   const capMetro = nearestPrefs(w, capital, new Set([...fixed])); capMetro.forEach((t, i) => { if (origCap[i]) give(t, origCap[i]); });
   const subMetro = sub !== capital ? nearestPrefs(w, sub, new Set([...fixed])) : []; subMetro.forEach((t, i) => { if (origSub[i]) give(t, origSub[i]); });
   const out: Record<string, string> = {}; for (const [p, m] of prof) if (p !== m) out[p] = m;
-  return { prof: out, capMetro, subMetro, culture: palace !== DEFAULT_PALACE ? palace : ROLE_KYOTO };
+  return { prof: out, capMetro, subMetro, culture: palace !== DEFAULT_PALACE ? palace : ROLE_KYOTO, ...(p15 ? { p15: true as const } : {}) };
 }
 const scaleMemo = new WeakMap<RoleState, { w: World; s: Map<string, number> }>();
 /** The factor applied to every city of a prefecture: (mass it carries) / (its own mass). 1 without roles. */
 export function roleScale(sim: Pick<SimState, "roles">, w: World, pref: string | null): number {
   const r = sim.roles; if (!r || !pref) return 1;
-  let e = scaleMemo.get(r); if (!e || e.w !== w) { const s = new Map<string, number>(); for (const [p, m] of Object.entries(r.prof)) { const own = prefMass(w, p); s.set(p, own > 0 ? prefMass(w, m) / own : 1); } e = { w, s }; scaleMemo.set(r, e); }
+  let e = scaleMemo.get(r); if (!e || e.w !== w) { const s = new Map<string, number>(); for (const [p, m] of Object.entries(r.prof)) { const own = prefMass(w, p, r.p15); s.set(p, own > 0 ? prefMass(w, m, r.p15) / own : 1); } e = { w, s }; scaleMemo.set(r, e); }
   return e.s.get(pref) ?? 1;
 }
 /** A city's 1950 population under this game's roles (the real one when roles are not used). Everything that read `pop0` reads this. */
-export const basePop = (sim: Pick<SimState, "roles">, w: World, c: WCity): number => (sim.roles ? Math.round(c.pop0 * roleScale(sim, w, c.pref)) : c.pop0);
+export const basePop = (sim: Pick<SimState, "roles">, w: World, c: WCity): number => (sim.roles ? Math.round(startPop(w, c, sim.roles.p15) * roleScale(sim, w, c.pref)) : c.pop0);
 /** Which role a prefecture plays (for the UI and the docs). */
 export function roleLabel(sim: Pick<SimState, "roles">, pref: string): string | null {
   const r = sim.roles; if (!r) return null; const m = r.prof[pref];
