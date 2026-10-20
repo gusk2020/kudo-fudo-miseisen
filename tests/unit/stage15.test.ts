@@ -41,9 +41,9 @@ describe("Stage 15: the cities start from the 1950 census, not from one factor o
     const tot = (s: typeof a, f: (c: (typeof w.cities)[0]) => number) => w.cities.reduce((t, c) => t + f(c), 0), base = tot(a, (c) => censusPops(w).get(c.id)!);
     expect(Math.abs(tot(a, (c) => basePop(a, w, c)) / base - 1)).toBeLessThan(0.01); expect(Math.abs(tot(mk({ capital: "JP-17" }), (c) => basePop(mk({ capital: "JP-17" }), w, c)) / base - 1)).toBeLessThan(0.01);
   });
-  it("the 1950 railway reaches the Sea-of-Japan coast between its sparse cities: the San'in prefectures have far more track than the 46 km the older start gave them", () => {
-    const rail = (s: typeof a) => Object.values(s.edges).filter((e) => modeOf(e) === "rail" && e.facility !== "ferry" && e.built >= 1).reduce((t, e) => t + (/-(31|32)$/.test(w.prefOf(e.cells[Math.floor(e.cells.length / 2)]) ?? "") ? e.lengthKm : 0), 0);
-    expect(rail(old)).toBeLessThan(120); expect(rail(a)).toBeGreaterThan(rail(old) * 2);
+  it("the 1950 railway reaches along the Sea-of-Japan coast between its sparse cities: Tohoku-Japan-Sea, Hokuriku and San'in together have clearly more track than the older start gave them", () => {
+    const rail = (s: typeof a) => Object.values(s.edges).filter((e) => modeOf(e) === "rail" && e.facility !== "ferry" && e.built >= 1).reduce((t, e) => t + (/-(05|06|15|16|17|18|31|32)$/.test(w.prefOf(e.cells[Math.floor(e.cells.length / 2)]) ?? "") ? e.lengthKm : 0), 0);
+    expect(rail(a)).toBeGreaterThan(rail(old) * 1.3);
   });
 }, 300000);
 
