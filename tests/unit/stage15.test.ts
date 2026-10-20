@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { sanitizeSim } from "../../src/core/save2";
 import { homeCity, subCity } from "../../src/sim/ceremony";
 import { censusPops, LISTED_CAP } from "../../src/sim/census50";
-import { advance, createSim } from "../../src/sim/engine";
+import { advance, createSim, updateRegionShares } from "../../src/sim/engine";
 import { computeMetros } from "../../src/sim/metro";
 import { reconCorridor, reconMeanCore, reconRegionLean, FAVOURED_LEAN } from "../../src/sim/recon";
 import { basePop } from "../../src/sim/roles";
@@ -35,6 +35,10 @@ describe("Stage 15: the cities start from the 1950 census, not from one factor o
   it("another capital takes the capital's mass under the census rule too, and the old capital's region shrinks to the new one's size", () => {
     const k = mk({ capital: "JP-17" }), tokyo = w.cities.find((c) => c.name === "東京")!, kana = homeCity(w, k.capital)!;
     expect(k.cities[kana.id].pop).toBeGreaterThan(a.cities[tokyo.id].pop * 0.8); expect(k.cities[tokyo.id].pop).toBeLessThan(a.cities[tokyo.id].pop * 0.3);
+  });
+  it("a capital placed elsewhere draws the region's people and its budget share: Aichi as capital holds 2.5 times the people it has when Tokyo is the capital", () => {
+    const x = (cap: string) => { const g = stage3Sim("heisei", 7, false, 0, 2, true, { capital: cap, sub: "JP-27" }); updateRegionShares(g.sim, g.w); return { people: g.w.cities.filter((c) => c.pref === "JP-23").reduce((t, c) => t + g.sim.cities[c.id].pop, 0), share: g.sim.regionShare["JP-23"] }; };
+    const t = x("JP-13"), n = x("JP-23"); expect(n.people).toBeGreaterThan(t.people * 2.5); expect(n.share).toBeGreaterThan(t.share);
   });
   it("the flag survives a load and is dropped when it is not `true`; the cities' total is conserved by the roles (a permutation of masses)", () => {
     const j = JSON.parse(JSON.stringify(a)); expect(sanitizeSim(j).sim?.pop15).toBe(true); j.pop15 = 3; expect(sanitizeSim(j).sim?.pop15).toBeUndefined();

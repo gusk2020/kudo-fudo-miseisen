@@ -193,7 +193,7 @@ export function planCrossings(sim: SimState, w: World, y: number): SimProject[] 
     const appetite = (mode === "road" ? dl.hwyBuild : dl.railBuild) * (1 + 0.5 * dl.hsr) * (1 - 0.35 * Math.min(1, dl.seaBias)); if (appetite < 0.15) continue;
     let pool: Corridor[] | undefined; const fixed = fixedLinksOf(sim, mode);
     for (let round = 0; round < (wk !== undefined ? STARTS_PER_YEAR_WATER : 1); round++) {
-      if (proj.filter((p) => modeOf(p) === mode && ACTIVE.has(p.status) && !(sim.pop15 && p.reason.includes(STRATEGIC_TAG))).length + started.filter((p) => modeOf(p) === mode && !(sim.pop15 && p.reason.includes(STRATEGIC_TAG))).length >= maxActive) break;
+      if (proj.filter((p) => modeOf(p) === mode && ACTIVE.has(p.status) && !(sim.pop15 && wk !== undefined && p.reason.includes(STRATEGIC_TAG))).length + started.filter((p) => modeOf(p) === mode && !(sim.pop15 && wk !== undefined && p.reason.includes(STRATEGIC_TAG))).length >= maxActive) break;
       let best: { c: Corridor; s: { fac: "bridge" | "tunnel"; cost: number }; score: number; rank: number } | null = null;
       // (a second start in the same year only has to look again at the best few of the first look: what was not a candidate then cannot become one by money being committed)
       const field: { c: Corridor; rank: number }[] = [];

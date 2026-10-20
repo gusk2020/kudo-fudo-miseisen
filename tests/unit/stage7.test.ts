@@ -79,7 +79,7 @@ describe("Stage 7: the world lines differ in the network itself, not only in the
   const memo = new Map<string, { sim: SimState; w: World }>();
   const run = (first: number, later: "same" | "first", y1 = 2030) => {
     const key = `${first}:${later}:${y1}`; if (memo.has(key)) return memo.get(key)!;
-    const { sim, w } = stage3Sim("heisei", 7, true, first, 2, true); sim.policy!.mode = "priority"; const stance = ["heisei", "shubun", "shoka"][first];
+    const { sim, w } = stage3Sim("heisei", 7, true, first, 2, true, undefined, undefined, { pop15: false }); sim.policy!.mode = "priority"; const stance = ["heisei", "shubun", "shoka"][first];
     while (yearOf(sim) < y1) { stepMonth(sim, w); if (sim.kaigen?.pending) { const i = later === "first" ? 0 : sim.kaigen.pending.cands.findIndex((c) => c.stance === stance); settleKaigen(sim, Math.max(0, i), true); } if (sim.policy?.pending) autoResolve(sim, w); }
     memo.set(key, { sim, w }); return { sim, w };
   };
