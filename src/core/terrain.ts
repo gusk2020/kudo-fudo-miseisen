@@ -1,6 +1,6 @@
 /** Deterministic terrain/hydrology/prefecture generation on a regular world grid. Pure: no DOM, no rendering. */
 import { localToWorld, realToWorld } from "./body";
-import { BODY_DEFS, EXTRA, EXTRA_IDS, JAPAN, realToLonLat } from "./data";
+import { BODY_DEFS, EXTRA, EXTRA_IDS, JAPAN, realToLonLat, TOWNS } from "./data";
 import { MinHeap } from "./heap";
 import { dist, pointSegDist, rot as rotv } from "./geom";
 import { fbm, hashArrays } from "./rng";
@@ -24,6 +24,8 @@ export interface TerrainResult {
   borders: Float32Array;   // x1,y1,x2,y2 per segment
   rivers: RiverInfo[];
   cities: CityOut[];
+  /** Stage 16: the provincial towns, placed like the cities but kept OUT of the terrain hash and of `cities`: only a world built with towns (games made from Stage 16 on) adds them. */
+  towns?: CityOut[];
   prefOrder: string[];
   stats: Record<string, number>;
   warnings: string[];
@@ -389,6 +391,13 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     if (k < 0) { warnings.push(`都市${c.name}を配置できません`); continue; }
     cities.push({ id: c.id, name: c.name, kind: c.kind, pref: c.pref, pos: moved ? [cx(k % nx), cy((k / nx) | 0)] : w, moved, elevM: Math.round(elev[k]), prefIndex: pref[k] });
   }
+  // Stage 16: the towns, placed the same way (never moved far: a town on unsuitable ground is dropped rather than shifted into another town's land)
+  const towns: CityOut[] = [], taken = new Set<number>(cities.map((c) => idxOf(c.pos)));
+  for (const c of TOWNS) {
+    const b = bodyOf(c.island), w = realToWorld(b, s.bodies[b], c.pos), k = idxOf(w);
+    if (k < 0 || land[k] !== 1 || elev[k] > 2600 || taken.has(k)) continue;
+    taken.add(k); towns.push({ id: c.id, name: c.name, kind: "town", pref: null, pos: w, moved: false, elevM: Math.round(elev[k]), prefIndex: pref[k] });
+  }
   const movedN = cities.filter((c) => c.moved).length;
   if (movedN) warnings.push(`${movedN}都市が不適地のため局所補正されました`);
 
@@ -401,7 +410,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   progress(1, "完了");
   return {
     grid: { x0, y0, cell, nx, ny }, land, island, elev, pref, plains, ridge, barrier, streams: Float32Array.from(streamSeg), borders: Float32Array.from(borders),
-    rivers, cities, prefOrder: prefs.map((p) => p.id), stats, warnings, hash,
+    rivers, cities, towns, prefOrder: prefs.map((p) => p.id), stats, warnings, hash,
   };
 }
 export { rotv as _rot };

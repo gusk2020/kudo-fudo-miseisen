@@ -1,6 +1,6 @@
 /** Static, derived-from-the-map context for the simulation. Rebuilt on load; never saved. */
 import { MinHeap } from "../core/heap";
-import { EXTRA, JAPAN } from "../core/data";
+import { EXTRA, JAPAN, TOWNS, lonLatToReal } from "../core/data";
 import { mulberry32 } from "../core/rng";
 import type { TerrainResult } from "../core/terrain";
 import type { Vec } from "../core/types";
@@ -17,10 +17,60 @@ export interface World {
   barrier?: boolean;
   /** Stage 12: the games that evaluate the land as the base of the economy (land.ts): tunnel limits, nonlinear costs, upkeep, city sites. */
   land12?: boolean;
+  /** Stage 16: the world carries the provincial towns (src/data/towns.json) after the 55 cities. A game made from Stage 16 on is built on such a world and records it (`sim.towns16`); older games never see them. */
+  hasTowns?: true;
+  /** The ids of the towns this world carries (in `cities` after the 55 cities), recorded in the game as `sim.towns16`. */
+  townIds?: string[];
 }
 export const POP_1950_SCALE = 0.32; // reference (modern) population -> 1950 level; a synthetic scaling, not a statistic
 
-export function buildWorld(t: TerrainResult, seed: number): World {
+/**
+ * Stage 16: which provincial towns a game carries: the towns of the prefectures the seats of government stand in and of every prefecture next to them (a town is a real town; the game only adds the ones
+ * whose growth the seats can reach, which keeps the city count -- and with it the cost of every pass over all pairs of cities -- down). Pure in the terrain and the two prefecture ids.
+ */
+export function townsForSeats(t: TerrainResult, prefs: string[]): string[] {
+  const { nx, ny } = t.grid, adj = new Map<number, Set<number>>(), idx = prefs.map((p) => t.prefOrder.indexOf(p) + 1).filter((i) => i > 0);
+  const link = (a: number, b: number) => { if (!a || !b || a === b) return; (adj.get(a) ?? adj.set(a, new Set()).get(a)!).add(b); (adj.get(b) ?? adj.set(b, new Set()).get(b)!).add(a); };
+  for (let k = 0; k < nx * ny; k++) { if (t.land[k] !== 1) continue; const i = k % nx; if (i + 1 < nx && t.land[k + 1] === 1) link(t.pref[k], t.pref[k + 1]); if (k + nx < nx * ny && t.land[k + nx] === 1) link(t.pref[k], t.pref[k + nx]); }
+  const want = new Set<number>(idx); for (const i of idx) for (const a of adj.get(i) ?? []) want.add(a);
+  void ny;
+  // at most TOWNS_PER_PREF towns of one prefecture, the biggest first (the seats' own prefectures count 1.8 times), and TOWN_MAX in all: a hundred cities cost every pass over the pairs of cities their square
+  const pop = new Map(TOWNS.map((x) => [x.id, x.pop])), byPref = new Map<number, { id: string; score: number }[]>();
+  for (const c of t.towns ?? []) { if (c.prefIndex <= 0 || !want.has(c.prefIndex)) continue; const l = byPref.get(c.prefIndex) ?? byPref.set(c.prefIndex, []).get(c.prefIndex)!; l.push({ id: c.id, score: (pop.get(c.id) ?? 0) * (idx.includes(c.prefIndex) ? 1.8 : 1) }); }
+  const all: { id: string; score: number }[] = []; for (const l of byPref.values()) all.push(...l.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1)).slice(0, TOWNS_PER_PREF));
+  const keep = new Set(all.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1)).slice(0, TOWN_MAX).map((x) => x.id));
+  return (t.towns ?? []).filter((c) => keep.has(c.id)).map((c) => c.id);   // (in the order of the data file, so a world is the same wherever it is built)
+}
+export const TOWNS_PER_PREF = 5, TOWN_MAX = 40;
+/** Stage 16: land the 5 km grid cannot hold. The Sadamisaki peninsula is 40 km long and a few km wide, so the grid keeps only its tip and a few cells of its root as separate specks
+ *  (the tip is a single cell with no prefecture); a road cannot reach the tip, and the Kyushu-Shikoku strait the grid sees is the 47 km one from Nobeoka, not the 14 km Hoyo strait the
+ *  real ferry crosses. Each line below is the spine of such a strip (lon,lat); the sea cells it passes through are made hilly land of the prefecture at its landward end. Applied to the
+ *  world only (never to the terrain, so the terrain hash and every older save are untouched), and only for the towns world a new game gets. */
+export const SUBGRID_LAND: { name: string; spine: [number, number][]; pref: string }[] = [
+  { name: "佐田岬半島", spine: [[132.03, 33.36], [132.09, 33.385], [132.20, 33.43], [132.30, 33.47], [132.364, 33.495]], pref: "JP-38" },
+];
+export function withSubgridLand(t: TerrainResult): TerrainResult {
+  const { nx, ny, cell, x0, y0 } = t.grid; let land: Uint8Array | null = null, island: Uint8Array | null = null, elev: Float32Array | null = null, pref: Uint8Array | null = null;
+  for (const s of SUBGRID_LAND) {
+    const pi = t.prefOrder.indexOf(s.pref) + 1; if (pi <= 0) continue;
+    const pts = s.spine.map(([lon, lat]) => lonLatToReal(lon, lat));
+    // the island is that of the landward end's cell
+    const endCell = (p: Vec) => { const i = Math.floor((p[0] - x0) / cell), j = Math.floor((p[1] - y0) / cell); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };
+    const ek = endCell(pts[pts.length - 1]); if (ek < 0 || t.land[ek] !== 1) continue; const isl = t.island[ek];
+    for (let n = 1; n < pts.length; n++) {
+      const a = pts[n - 1], b = pts[n], steps = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (cell / 2)));
+      for (let q = 0; q <= steps; q++) {
+        const k = endCell([a[0] + ((b[0] - a[0]) * q) / steps, a[1] + ((b[1] - a[1]) * q) / steps]); if (k < 0) continue;
+        if (t.land[k] === 1 && t.pref[k]) continue;
+        if (!land) { land = t.land.slice(); island = t.island.slice(); elev = t.elev.slice(); pref = t.pref.slice(); }
+        land[k] = 1; island![k] = isl; elev![k] = Math.max(elev![k], 250); pref![k] = pi;
+      }
+    }
+  }
+  return land ? { ...t, land, island: island!, elev: elev!, pref: pref! } : t;
+}
+export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false): World {
+  const t = withTowns ? withSubgridLand(t0) : t0;
   const { nx, ny, cell, x0, y0 } = t.grid, N = nx * ny;
   const cellPos = (k: number): Vec => [x0 + ((k % nx) + 0.5) * cell, y0 + (((k / nx) | 0) + 0.5) * cell];
   const cellOf = (p: Vec) => { const i = Math.floor((p[0] - x0) / cell), j = Math.floor((p[1] - y0) / cell); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };
@@ -44,6 +94,20 @@ export function buildWorld(t: TerrainResult, seed: number): World {
     }
     cities.push({ id: c.id, name: c.name, cell: k, pos: c.pos, pref: c.prefIndex ? t.prefOrder[c.prefIndex - 1] : null, island: t.island[k], pop0: Math.round(p.pop * POP_1950_SCALE), popSource: p.src, coastal, plains: cnt ? plain / cnt : 0, kind: c.kind });
   }
+  // Stage 16: the provincial towns come last, so the cities keep their places in every array indexed by city (and the random stream above is untouched)
+  if (withTowns && t.towns) {
+    const popOf = new Map(TOWNS.map((x) => [x.id, x.pop])), only = new Set(withTowns);
+    for (const c of t.towns) {
+      if (!only.has(c.id)) continue;
+      const k = cellOf(c.pos); if (k < 0 || cities.some((x) => x.cell === k)) continue;
+      let coastal = false, plain = 0, cnt = 0;
+      for (let dj = -3; dj <= 3; dj++) for (let di = -3; di <= 3; di++) {
+        const a = (k % nx) + di, b = ((k / nx) | 0) + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue;
+        const q = b * nx + a; cnt++; if (t.plains[q]) plain++; if (Math.abs(di) <= 2 && Math.abs(dj) <= 2 && t.land[q] === 0) coastal = true;
+      }
+      cities.push({ id: c.id, name: c.name, cell: k, pos: c.pos, pref: c.prefIndex ? t.prefOrder[c.prefIndex - 1] : null, island: t.island[k], pop0: Math.round((popOf.get(c.id) ?? 50000) * POP_1950_SCALE), popSource: "ne", coastal, plains: cnt ? plain / cnt : 0, kind: "town" });
+    }
+  }
   const lm = new Uint16Array(N); let lmCount = 0; const stack: number[] = [];
   for (let k0 = 0; k0 < N; k0++) if (t.land[k0] === 1 && !lm[k0]) {
     lm[k0] = ++lmCount; stack.push(k0);
@@ -51,7 +115,7 @@ export function buildWorld(t: TerrainResult, seed: number): World {
   }
   const cityById = new Map(cities.map((c) => [c.id, c])), cityByCell = new Map<number, WCity>();
   for (const c of cities) if (!cityByCell.has(c.cell)) cityByCell.set(c.cell, c);
-  return { t, nx, ny, cell, N, cities, cityById, cityByCell, lm, lmCount, river, cellPos, cellOf, elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
+  return { t, nx, ny, cell, N, cities, cityById, cityByCell, lm, lmCount, river, cellPos, cellOf, ...(withTowns && t.towns && cities.some((c) => c.kind === "town") ? { hasTowns: true as const, townIds: cities.filter((c) => c.kind === "town").map((c) => c.id) } : {}), elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
 }
 
 export interface PathOpts { bias?: (k: number) => number; allow?: (k: number) => boolean; roadCells?: { has(k: number): boolean }; margin?: number; rail?: boolean; ease?: number }   // ease 0..1: how much better tunnelling and bridging make mountains and rivers to cross (tech.ts); 0 = the older cost

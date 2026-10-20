@@ -11,6 +11,7 @@
  * Candidates are thinned so that one strait is one candidate, then ranked by what crossing saves. Nothing here knows a name or a coordinate: every number is read from the grid.
  * The water is never drawn as road: a candidate only says where two shores face each other; what crosses (ferry, bridge, tunnel) is decided by money, technology and demand.
  */
+import { basePop } from "./roles";
 import { dist } from "../core/geom";
 import type { WCity, World } from "./world";
 import type { Mode, SimState } from "./types";
@@ -106,7 +107,7 @@ export function sidePops(sim: SimState, w: World, ca: number, cb: number): [numb
 }
 function sidePopsRaw(sim: SimState, w: World, ca: number, cb: number): [number, number] {
   const pa = w.cellPos(ca), pb = w.cellPos(cb); let a = 0, b = 0, now = 0, base = 0;
-  for (const c of w.cities) { now += sim.cities[c.id]?.pop ?? 0; base += c.pop0; }
+  for (const c of w.cities) { now += sim.cities[c.id]?.pop ?? 0; base += sim.roles?.p15 ? basePop(sim, w, c) : c.pop0; }
   const scale = base > 0 ? now / base : 1;   // the countryside follows the nation's course
   a += ruralBase(w, ca) * scale; b += ruralBase(w, cb) * scale;
   const add = (p: Vec, n: number) => { const da = dist(p, pa), db = dist(p, pb); if (Math.min(da, db) > SHORE_REACH_KM) return; if (da <= db) a += n; else b += n; };

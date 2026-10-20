@@ -6,6 +6,7 @@ import { routeLabel, routeOfficial } from "../sim/engine";
 import { routeAtYear, type RouteView } from "../sim/ledger";
 import type { World } from "../sim/world";
 import { hubsAt } from "../sim/hubs";
+import { pickCityCircles } from "./cityCircles";
 import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
@@ -49,7 +50,7 @@ function pattern(g: Graphics, pts: Vec[], dash: number[]) {
     while (seg > 1e-6) { const step = Math.min(left, seg); if (draw) { g.moveTo(x, -y); g.lineTo(x + ux * step, -(y + uy * step)); } x += ux * step; y += uy * step; seg -= step; left -= step; if (left <= 1e-9) { i = (i + 1) % dash.length; draw = i % 2 === 0; left = dash[i]; } }
   }
 }
-const KEYS = ["city12", "halo", "facb", "ghost", "lanes", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "sel", "ov"];
+const KEYS = ["city12", "halo", "facb", "ghost", "lanes", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "cityTop", "sel", "ov"];
 const line = (g: Graphics, pts: Vec[]) => { g.moveTo(pts[0][0], -pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], -pts[i][1]); };
 const opColour = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return [0x7a1f3d, 0x1f5f7a, 0x6b4a14, 0x3b6b1f, 0x5a2a8a, 0x8a3a1a, 0x1f3f8a][h % 7]; };
 
@@ -117,7 +118,21 @@ export class RoadLayer {
         for (const k of r.cells) { if (run > 0 && k === k0 + run && (k % nx) !== 0) run++; else { flush(); k0 = k; run = 1; } }
         flush(); g.fill({ color: col, alpha: 0.16 });
       }
-      g.circle(r.x, -r.y, rad).fill({ color: col, alpha: r.r >= 0 ? 0.2 : 0.38 }).stroke({ width: px(1.4), color: col, alpha: 0.95 });
+      g.circle(r.x, -r.y, rad).fill({ color: col, alpha: r.r >= 0 ? 0.14 : 0.38 }).stroke({ width: px(1.2), color: col, alpha: r.r >= 0 ? 0.7 : 0.95 });
+    }
+  }
+  /**
+   * Stage 14 (Issue #35): the circle of every city that matters, on TOP of the roads (the metropolitan area above is a faint scale indicator on the bottom layer, where a thick bundle of lines hid it --
+   * a big city could be there and not be seen). Always drawn: the two seats of government (a gold ring round the colour), the cores of the ten biggest metropolises, and the towns of the seats'
+   * metropolises that are big enough to read (their own circles: the commuter belt round a capital is made of towns, not of one disc). Then the biggest cities by size, and the clear movers.
+   * Colour is the same as the metropolis's: green gained on the nation over twenty years, red lost, grey about even; radius grows with the square root of the city's own people. No triangles.
+   */
+  private drawCityCircles(sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
+    const g = this.g.cityTop;
+    for (const r of pickCityCircles(sim, w, zoom, year, lite)) {
+      const col = r.rel > 1.08 ? 0x2fbf5f : r.rel < 0.93 ? 0xe0463c : 0x9aa4ad, rad = Math.min(px(3 + 4 * Math.sqrt(r.p / 1e5)), px(r.seat ? 34 : 28));
+      g.circle(r.x, -r.y, rad).fill({ color: col, alpha: 0.3 }).stroke({ width: px(1.6), color: col, alpha: 1 });
+      if (r.seat) g.circle(r.x, -r.y, rad + px(2.5)).stroke({ width: px(1.8), color: 0xffc83a, alpha: 0.95 });
     }
   }
   /** Stage 8/9: ports and airports, each in two sizes only (large: 国際拠点港湾以上 / 国際ハブ空港; small: the rest), and the busiest domestic flights.
@@ -209,7 +224,7 @@ export class RoadLayer {
         if (n.kind === "pass" && showRoads && zoom >= 0.35) nodes.poly([n.pos[0], -n.pos[1] - px(6), n.pos[0] - px(5), -n.pos[1] + px(3), n.pos[0] + px(5), -n.pos[1] + px(3)]).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x222222 });
         else if (n.kind === "village" && zoom >= 0.5 && showRoads) nodes.circle(n.pos[0], -n.pos[1], px(2)).fill({ color: 0xf2e6c8 }).stroke({ width: px(0.8), color: 0x333333 });
       }
-      if (sim.city12 && (a.layers.econ ?? true)) this.drawCityEcon(sim, w, zoom, past ? year : null, px, lite);
+      if (sim.city12 && (a.layers.econ ?? true)) { this.drawCityEcon(sim, w, zoom, past ? year : null, px, lite); if (sim.metro) this.drawCityCircles(sim, w, zoom, past ? year : null, px, lite); }
       if (sim.stage3 && sim.hubs) this.drawHubs(a, sim, w, zoom, past ? year : null, px, lite);
       else if ((a.layers.ports ?? true) && !lite && sim.stage3 && zoom >= 0.5) {
         // supporting modes (games from before Stage 8): a port (blue square) at coastal cities, an airport (white cross) once it has opened

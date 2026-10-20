@@ -1,3 +1,4 @@
+import { startPop } from "../../src/sim/census50";
 import { describe, expect, it } from "vitest";
 import { realToWorld } from "../../src/core/body";
 import { JAPAN, lonLatToReal } from "../../src/core/data";
@@ -98,7 +99,7 @@ describe("Stage 10: the seats swap roles with the real Tokyo / Osaka / Kyoto", (
   it("a new game starts from the swapped sizes (no bonus on top); older saves keep what they had", () => {
     const a = stage3Sim("heisei", 7, false, 0, 2, true), b = stage3Sim("heisei", 7, false, 0, 2, true, { capital: "HK-SAP", sub: "JP-27" });
     const p = (x: { sim: SimState; w: World }, n: string) => x.sim.cities[city(x.w, n).id].pop;
-    expect(p(b, "札幌市")).toBe(Math.round(city(w, "札幌市").pop0 * roleScale(b.sim, w, "HK-SAP"))); expect(p(b, "東京")).toBeLessThan(p(a, "東京") / 10);
+    expect(p(b, "札幌市")).toBe(Math.round(startPop(w, city(w, "札幌市"), true) * roleScale(b.sim, w, "HK-SAP"))); expect(p(b, "東京")).toBeLessThan(p(a, "東京") / 2.5);   // (the census start: Hokkaido carries a third of what Tokyo does, not a seventeenth)
     expect(Object.values(b.sim.cities).reduce((s, c) => s + c.pop, 0)).toBeCloseTo(Object.values(a.sim.cities).reduce((s, c) => s + c.pop, 0), -2);
     const raw = JSON.parse(JSON.stringify(b.sim)); delete raw.roles; expect(sanitizeSim(raw).sim?.roles).toBeUndefined();
     const bad = JSON.parse(JSON.stringify(b.sim)); bad.roles = { prof: 5 }; expect(sanitizeSim(bad).sim?.roles).toBeUndefined();
@@ -106,7 +107,7 @@ describe("Stage 10: the seats swap roles with the real Tokyo / Osaka / Kyoto", (
     const legacy = createSim(w, "m", realWorld(true).hash, 7, { stage3: true, era: "heisei" }); expect(legacy.roles).toBeUndefined();
   });
   it("1950-1980: with Sapporo as capital, Sapporo outgrows Tokyo and gets the bigger airport; Tokyo stays a regional city", () => {
-    const run = (seats?: { capital: string; sub: string }) => { const x = stage3Sim("heisei", 7, true, 0, 2, true, seats); while (yearOf(x.sim) < 1980) { stepMonth(x.sim, x.w); if (x.sim.kaigen?.pending) settleKaigen(x.sim, 0, true); if (x.sim.policy?.pending) x.sim.policy.pending = null; } return x; };
+    const run = (seats?: { capital: string; sub: string }) => { const x = stage3Sim("heisei", 7, true, 0, 2, true, seats, undefined, { pop15: false });   /* (the role dynamics as Stage 10 made them: the census start has its own checks in stage15.test.ts) */ while (yearOf(x.sim) < 1980) { stepMonth(x.sim, x.w); if (x.sim.kaigen?.pending) settleKaigen(x.sim, 0, true); if (x.sim.policy?.pending) x.sim.policy.pending = null; } return x; };
     const a = run(), b = run({ capital: "HK-SAP", sub: "JP-27" }), p = (x: ReturnType<typeof run>, n: string) => x.sim.cities[city(x.w, n).id].pop;
     expect(p(a, "東京")).toBeGreaterThan(10 * p(a, "札幌市")); expect(p(b, "札幌市")).toBeGreaterThan(10 * p(b, "東京")); expect(p(b, "東京")).toBeGreaterThan(100000);
     const ap = (x: ReturnType<typeof run>, n: string) => x.sim.hubs?.airports[city(x.w, n).id]?.pax ?? 0;

@@ -80,13 +80,12 @@ describe("Stage 13: the planner takes them up on cost and demand (1950-1975 at 1
   const a3 = runWater(3, 7, 1975), a1 = runWater(1, 7, 1975);
   const ok = (r: ReturnType<typeof runWater>, pat: RegExp) => r.projects.some((p) => pat.test(p.name ?? "") && p.state === "open");
   it("at 3x the named places get a concept, a construction and an opening: Chiba-Kanagawa, the Aichi peninsulas, Oita-Ehime, Nagasaki, Kagoshima", () => {
-    expect(ok(a3, /神奈川〜千葉海底トンネル/)).toBe(true); expect(ok(a3, /名古屋東岸〜名古屋西岸|三重〜愛知/)).toBe(true); expect(ok(a3, /大分西岸〜松山東岸/)).toBe(true);
-    expect(ok(a3, /佐賀〜長崎|熊本〜長崎/)).toBe(true); expect(a3.projects.some((p) => /鹿児島西岸〜鹿児島東岸/.test(p.name ?? ""))).toBe(true);   // (Kinko Bay: conceived; whether it is finished is cost against a small traffic)
+    expect(ok(a3, /神奈川〜千葉海底トンネル/)).toBe(true); expect(ok(a3, /名古屋東岸〜名古屋西岸|三重〜愛知/)).toBe(true); expect(ok(a3, /佐賀〜長崎|熊本〜長崎/)).toBe(true);   // (Kinko Bay and 九州〜四国 come later and are checked over the long run: tests/unit/stage14.test.ts)
   });
   it("technology at 1x gets fewer of them, and later", () => {
     const n = (r: ReturnType<typeof runWater>) => r.projects.filter((p) => p.state === "open").length;
     expect(n(a3)).toBeGreaterThan(n(a1));
-    const years = (r: ReturnType<typeof runWater>) => r.projects.filter((p) => p.state === "open").map((p) => Math.min(...(p.hist as any[]).filter((h) => String(h[1]).startsWith("op")).map((h) => h[0] as number))), mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const years = (r: ReturnType<typeof runWater>) => r.projects.filter((p) => p.state === "open" && (p.hist as any[]).some((h) => String(h[1]).startsWith("op"))).map((p) => Math.min(...(p.hist as any[]).filter((h) => String(h[1]).startsWith("op")).map((h) => h[0] as number))), mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
     expect(mean(years(a3))).toBeLessThan(mean(years(a1)));   // the faster technology opens its projects earlier on the whole (a single project's year moves with the random stream)
   });
   it("every candidate evaluated says why it is, or is not, one; and a far pair of ports is not a crossing", () => {
@@ -170,7 +169,7 @@ describe("Stage 13: the water-tunnel games plan by money, not by a count of two"
     sim.dials.hwyBuild = 1; sim.dials.railBuild = 1; sim.macro.budgetBu = 1e6;
     for (const e of Object.values(sim.edges)) if (e.facility === "ferry" && e.state === "open") e.through = capacityOf(e) * 1.5;
     for (let i = 0; i < 12; i++) planCrossings(sim, w, 1960);
-    for (const m of ["road", "rail"] as const) { const act = Object.values(sim.projects).filter((p) => isCrossingProject(p) && modeOf(p) === m && ["concept", "planned", "building", "suspended"].includes(p.status)); expect(act.length).toBeLessThanOrEqual(MAX_ACTIVE_WATER); const keys = act.map((p) => `${p.from}>${p.to}`); expect(new Set(keys).size).toBe(keys.length); }
+    for (const m of ["road", "rail"] as const) { const act = Object.values(sim.projects).filter((p) => isCrossingProject(p) && modeOf(p) === m && ["concept", "planned", "building", "suspended"].includes(p.status)); expect(act.filter((p) => !p.reason.includes("【島間】")).length).toBeLessThanOrEqual(MAX_ACTIVE_WATER); expect(act.filter((p) => p.reason.includes("【島間】")).length).toBeLessThanOrEqual(6);   /* (Stage 15: the island links have places of their own, one per pair of main islands, beside the six shared) */ const keys = act.map((p) => `${p.from}>${p.to}`); expect(new Set(keys).size).toBe(keys.length); }
     expect(Object.values(sim.projects).filter(isCrossingProject).length).toBeGreaterThan(2);   // the Stage 11 cap of two is gone
   });
   it("the older rule is still there for a game made without the water rule (waterK 0): two projects at most, no bay ferries, no water tunnel price", () => {

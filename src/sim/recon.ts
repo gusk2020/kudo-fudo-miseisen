@@ -21,6 +21,15 @@ import type { World } from "./world";
 
 export const RECON_LABEL = { pacific: "太平洋側重視", japansea: "日本海側重視", concentrate: "一極集中", disperse: "地方分散" } as const;
 export const RECON_GROWTH = 0.0035, RECON_INDUSTRY = 0.08, RECON_SHARE = 0.25, RECON_PLAN = 0.25, CORE_KM = 150, SUB_CORE = 0.7;
+/** Stage 14 (Issue #35): measured at Stage 13, choosing 日本海側重視 moved the Sea-of-Japan side's share of the nation's people by about two points in fifty years and its road and rail by nothing --
+ * the four terms above were far smaller than the demand-driven planner and the economy they sit on. A game made from Stage 14 on takes them RECON_BOOST times as strong. The terms are still
+ * leans, not orders: a city's own geography, its distances and the economy decide the rest, so the Pacific side still grows where it has the demand, and the order of the two coasts changes
+ * with the policy and the conditions, it is not fixed. Older games keep the strength they were made with. */
+export const RECON_BOOST = 2.5;
+/** Stage 15: the policy is also a PRIORITY, not only a multiplier on demand. A multiplier of at most ~1.6 cannot lift a corridor whose demand is a third of a Pacific-belt corridor's, and the planner builds one or two new links a year
+ * nationwide, so a policy that only scaled the score never reached the small cities of the other coast. Games from Stage 15 on add RECON_ADD x boost x lean to the corridor's score as well (in the score's own units: a typical new corridor scores 0.5 to 2.5). */
+export const RECON_ADD = 0.35;
+const boost = (sim: SimState) => (sim.seats14 ? RECON_BOOST : 1);
 export const reconFade = (y: number) => (y < 1975 ? 1 : y < 2000 ? 1 - 0.5 * ((y - 1975) / 25) : 0.5);
 export const reconText = (r: Recon) => `${RECON_LABEL[r.coast]}・${RECON_LABEL[r.focus]}`;
 
@@ -76,21 +85,39 @@ function meanCoreOf(sim: SimState, w: World): number { let s = 0, p = 0; for (co
 /** The yearly growth difference of every city (population-weighted mean 0: people move, the nation does not grow). Empty without a policy. */
 export function reconGrowth(sim: SimState, w: World, y: number): Map<string, number> {
   const r = reconOf(sim), out = new Map<string, number>(); if (!r) return out; const f = reconFade(y), mc = meanCoreOf(sim, w); let s = 0, p = 0;
-  for (const c of w.cities) { const l = lean(sim, w, r, c.id, mc), g = RECON_GROWTH * f * (l.coast + l.focus), n = sim.cities[c.id]?.pop ?? 0; out.set(c.id, g); s += g * n; p += n; }
+  for (const c of w.cities) { const l = lean(sim, w, r, c.id, mc), g = RECON_GROWTH * boost(sim) * f * (l.coast + l.focus), n = sim.cities[c.id]?.pop ?? 0; out.set(c.id, g); s += g * n; p += n; }
   const mean = p ? s / p : 0; for (const [k, v] of out) out.set(k, v - mean); return out;
 }
 /** Added to the industry level a city grows toward. */
 export function reconIndustry(sim: SimState, w: World, cityId: string, y: number, meanCore?: number): number {
-  const r = reconOf(sim); if (!r) return 0; const l = lean(sim, w, r, cityId, meanCore ?? meanCoreOf(sim, w)); return RECON_INDUSTRY * reconFade(y) * (l.coast + l.focus);
+  const r = reconOf(sim); if (!r) return 0; const l = lean(sim, w, r, cityId, meanCore ?? meanCoreOf(sim, w)); return RECON_INDUSTRY * boost(sim) * reconFade(y) * (l.coast + l.focus);
 }
 /** Multiplies a city's weight in the regional budget split (the shares are renormalised, so only the split changes). */
 export function reconShare(sim: SimState, w: World, cityId: string, y: number, meanCore?: number): number {
-  const r = reconOf(sim); if (!r) return 1; const l = lean(sim, w, r, cityId, meanCore ?? meanCoreOf(sim, w)); return Math.max(0.3, 1 + RECON_SHARE * reconFade(y) * (l.coast + l.focus));
+  const r = reconOf(sim); if (!r) return 1; const l = lean(sim, w, r, cityId, meanCore ?? meanCoreOf(sim, w)); return Math.max(sim.seats14 ? 0.25 : 0.3, 1 + RECON_SHARE * boost(sim) * reconFade(y) * (l.coast + l.focus));
 }
 export const reconMeanCore = meanCoreOf;
 /** Priority factor of a new link between cities i and j, and the words for the plan's reason. */
-export function reconCorridor(sim: SimState, w: World, i: number, j: number, y: number, meanCore: number): { f: number; why: string } {
-  const r = reconOf(sim); if (!r) return { f: 1, why: "" }; const a = w.cities[i], b = w.cities[j], la = lean(sim, w, r, a.id, meanCore), lb = lean(sim, w, r, b.id, meanCore);
-  const v = ((la.coast + lb.coast) / 2) * 1 + (la.focus + lb.focus) / 2, f = Math.max(0.5, 1 + RECON_PLAN * reconFade(y) * v);
-  return { f, why: Math.abs(f - 1) >= 0.05 ? `復興方針(${reconText(r)})により${f > 1 ? "優先" : "後回し"}` : "" };
+export function reconCorridor(sim: SimState, w: World, i: number, j: number, y: number, meanCore: number): { f: number; why: string; add: number } {
+  const r = reconOf(sim); if (!r) return { f: 1, why: "", add: 0 }; const a = w.cities[i], b = w.cities[j], la = lean(sim, w, r, a.id, meanCore), lb = lean(sim, w, r, b.id, meanCore);
+  const v = ((la.coast + lb.coast) / 2) * 1 + (la.focus + lb.focus) / 2, f = Math.max(sim.seats14 ? 0.25 : 0.5, 1 + RECON_PLAN * boost(sim) * reconFade(y) * v);
+  const add = sim.pop15 ? RECON_ADD * boost(sim) * reconFade(y) * v : 0, eff = f + (add ? add / 2 : 0);
+  return { f, add, why: Math.abs(eff - 1) >= 0.05 ? `復興方針(${reconText(r)})により${eff > 1 ? "優先" : "後回し"}` : "" };
 }
+
+/** Stage 15: how far a region (prefecture) as a whole is favoured by the policy, -1..1: the people-weighted mean of its cities' lean (the same lean the budget, growth and corridor terms use). */
+export function reconRegionLean(sim: SimState, w: World, region: string, meanCore: number): number {
+  const r = reconOf(sim); if (!r) return 0; let s = 0, p = 0;
+  for (const c of w.cities) if (c.pref === region) { const l = lean(sim, w, r, c.id, meanCore), n = sim.cities[c.id]?.pop ?? 0; s += n * (l.coast + l.focus); p += n; }
+  return p ? s / p : 0;
+}
+/** Regions the policy favours work faster: one more new link a year and one more job at a time (Stage 15 games). */
+export const FAVOURED_LEAN = 0.5;
+/** Stage 15: in a region the policy favours, a paved two-lane trunk road that carries POLICY_TRUNK_MIN vehicles a day or more is built up to an ordinary road at the priority POLICY_TRUNK_SCORE (a typical jam-driven job scores 3 or more, a paving job 1 to 2), fading with the policy. */
+export const POLICY_TRUNK_MIN = 30, POLICY_TRUNK_SCORE = 2.4;
+
+/** Stage 16 (phone check: the 日本海側 policy moved the statistics but not the map -- the national railway was laid in 1950 and the busy-corridor planner never reaches a coast with little traffic): in a region the policy
+ * favours, the trunk lines are built UP AHEAD of the jam, at the policy's own priority, the way the Stage 15 paving rule already did for the roads. An ordinary two-lane road that carries POLICY_HWY_SHARE of its capacity
+ * becomes an expressway, a conventional railway that carries POLICY_RAIL_SHARE of its capacity a high-speed line; both at a score that a typical jam-driven job (3 or more) still beats, so the policy goes first where
+ * nothing is jammed and never ahead of a real jam. Fading with the policy like every other term. Games from Stage 16 on (those whose world carries the provincial towns). */
+export const POLICY_HWY_SHARE = 0.1, POLICY_HWY_SCORE = 2.9, POLICY_RAIL_SHARE = 0.05, POLICY_RAIL_SCORE = 3.3, POLICY_TRUNK_KM = 10;

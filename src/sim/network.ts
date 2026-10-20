@@ -28,9 +28,34 @@ export function pushHist(sim: SimState, e: SimEdge, t: string) { e.hist.push({ m
  * `nodeByCell` and the edge maps are per mode (a rail line is not broken by a road junction it merely crosses); `anyNode` is every node
  * on the map, so a cell never gets two nodes. A city is a node for both modes. `mode` omitted = roads (every pre-Stage-3 caller).
  */
-export interface NetIndex { nodeByCell: Map<number, string>; anyNode: Map<number, string>; cellEdge: Map<number, string>; step: Map<string, { edge: string; i: number }>; roadCells: Set<number> }
+export interface NetIndex { nodeByCell: Map<number, string>; anyNode: Map<number, string>; cellEdge: Map<number, string>; step: Map<number, { edge: string; i: number }>; roadCells: Set<number>; own?: boolean }
+/**
+ * Stage 16: the index is rebuilt from every edge and node, and the planners ask for it several times per candidate (and `layPath` once per breakpoint): on a game with a hundred and sixty
+ * cities that was a fifth of all the time. It only depends on which nodes and edges exist and on the cells of each edge, and every change to those goes through a new id (a split makes a
+ * new edge, a new junction a new node) or is announced (`netRemoved`, a removal), so the two id counters and the removal epoch identify the state. The object is shared: a caller that adds to it
+ * (a node it has just made) changes a state whose key is gone the moment that node exists, so nothing stale is ever read. The two maps callers add to are copied on the way out.
+ */
+const indexCache = new WeakMap<SimState, { key: string; byMode: Partial<Record<Mode, NetIndex>> }>(), netEpoch = new WeakMap<SimState, number>();
+/** Call after removing an edge or a node from the network: a removal changes no id counter, so it must be announced. (Only three places remove one.) */
+export const netRemoved = (sim: SimState): void => { netEpoch.set(sim, (netEpoch.get(sim) ?? 0) + 1); };
+/** A step from cell a to cell b as one number (a map keyed by numbers is several times cheaper to build than one keyed by "a:b" strings, and it is built thousands of times a game). */
+export const stepKey = (a: number, b: number): number => a * 4194304 + b;
 export function buildIndex(sim: SimState, mode: Mode = "road"): NetIndex {
-  const nodeByCell = new Map<number, string>(), anyNode = new Map<number, string>(), cellEdge = new Map<number, string>(), step = new Map<string, { edge: string; i: number }>(), roadCells = new Set<number>();
+  const key = `${sim.next.edge}:${sim.next.node}:${netEpoch.get(sim) ?? 0}`;
+  let c = indexCache.get(sim); if (!c || c.key !== key) { c = { key, byMode: {} }; indexCache.set(sim, c); }
+  return { ...(c.byMode[mode] ??= buildIndexRaw(sim, mode)), own: false };   // (a shell over the shared maps: a caller that changes them must take its own copy first -- `ownIndex`)
+}
+/** Copy the maps of an index so that it can be changed (a node just made, an edge just laid) without touching the shared one other callers read. */
+export function ownIndex(idx: NetIndex): NetIndex {
+  if (idx.own) return idx; idx.nodeByCell = new Map(idx.nodeByCell); idx.anyNode = new Map(idx.anyNode); idx.cellEdge = new Map(idx.cellEdge); idx.step = new Map(idx.step); idx.roadCells = new Set(idx.roadCells); idx.own = true; return idx;
+}
+/** Put an edge into an index the way `buildIndexRaw` would: its cells, its interior cells and its steps. */
+function indexEdge(idx: NetIndex, e: Pick<SimEdge, "id" | "cells">): void {
+  const c = e.cells, last = c.length - 1;
+  for (let i = 0; i <= last; i++) { idx.roadCells.add(c[i]); if (i > 0 && i < last) idx.cellEdge.set(c[i], e.id); if (i < last) { idx.step.set(stepKey(c[i], c[i + 1]), { edge: e.id, i }); idx.step.set(stepKey(c[i + 1], c[i]), { edge: e.id, i }); } }
+}
+function buildIndexRaw(sim: SimState, mode: Mode = "road"): NetIndex {
+  const nodeByCell = new Map<number, string>(), anyNode = new Map<number, string>(), cellEdge = new Map<number, string>(), step = new Map<number, { edge: string; i: number }>(), roadCells = new Set<number>();
   const used = new Set<string>(), other = new Set<string>();
   for (const e of Object.values(sim.edges)) { const s = modeOf(e) === mode ? used : other; s.add(e.a); s.add(e.b); }
   for (const n of Object.values(sim.nodes)) {
@@ -40,7 +65,7 @@ export function buildIndex(sim: SimState, mode: Mode = "road"): NetIndex {
   }
   for (const e of Object.values(sim.edges)) {
     if (modeOf(e) !== mode) continue;
-    for (let i = 0; i < e.cells.length; i++) { roadCells.add(e.cells[i]); if (i > 0 && i < e.cells.length - 1) cellEdge.set(e.cells[i], e.id); if (i + 1 < e.cells.length) { step.set(`${e.cells[i]}:${e.cells[i + 1]}`, { edge: e.id, i }); step.set(`${e.cells[i + 1]}:${e.cells[i]}`, { edge: e.id, i }); } }
+    for (let i = 0; i < e.cells.length; i++) { roadCells.add(e.cells[i]); if (i > 0 && i < e.cells.length - 1) cellEdge.set(e.cells[i], e.id); if (i + 1 < e.cells.length) { step.set(stepKey(e.cells[i], e.cells[i + 1]), { edge: e.id, i }); step.set(stepKey(e.cells[i + 1], e.cells[i]), { edge: e.id, i }); } }
   }
   return { nodeByCell, anyNode, cellEdge, step, roadCells };
 }
@@ -77,10 +102,10 @@ export function maxGradePct(w: World, cells: number[]): number {
 export function nodeAtCell(sim: SimState, w: World, idx: NetIndex, cell: number, kind: SimNode["kind"] = "junction"): string {
   let have = idx.anyNode.get(cell);
   if (!have) for (const n of Object.values(sim.nodes)) if (n.cell === cell) { have = n.id; break; }   // the caller's index can be stale: one node per cell, always
-  if (have) { idx.nodeByCell.set(cell, have); idx.anyNode.set(cell, have); return have; }
+  if (have) { ownIndex(idx); idx.nodeByCell.set(cell, have); idx.anyNode.set(cell, have); return have; }
   const city = w.cityByCell.get(cell), id = newId(sim, "node");
   sim.nodes[id] = city ? { id, kind: "city", cell, pos: city.pos, cityId: city.id, name: city.name } : { id, kind, cell, pos: w.cellPos(cell) };
-  idx.nodeByCell.set(cell, id); idx.anyNode.set(cell, id); return id;
+  ownIndex(idx); idx.nodeByCell.set(cell, id); idx.anyNode.set(cell, id); return id;
 }
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 /** Stage 9: a node at this cell that every edge passing through it is actually split at (a ferry or bridge end placed on an existing road must join it, not float on it). */
@@ -152,9 +177,9 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
   const chain: RouteEdgeRef[] = [], created: string[] = [];
   if (cells.length < 2 || cells[0] === cells[cells.length - 1]) return { chain, created };
   const mode = o.mode ?? "road", forced = new Map<number, string>();   // nodes chosen as breakpoints stay visible to this mode even when only the other mode used them so far
-  const reindex = () => { const x = buildIndex(sim, mode); for (const [c, id] of forced) x.nodeByCell.set(c, id); return x; };
-  let idx = reindex(); const n = cells.length;
-  const shared = (i: number) => idx.step.has(`${cells[i]}:${cells[i + 1]}`);       // step i -> i+1
+  // The index is taken once and kept up to date by hand (a node made, an edge split, an edge laid): rebuilding it from every edge after each of those cost a fifth of the whole game.
+  let idx = ownIndex(buildIndex(sim, mode)); const n = cells.length;
+  const shared = (i: number) => idx.step.has(stepKey(cells[i], cells[i + 1]));       // step i -> i+1
   // 1) make sure every breakpoint cell is a node (splitting existing edges where a path touches their interior)
   const bp: number[] = [];
   for (let i = 0; i < n; i++) {
@@ -164,9 +189,9 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
   for (const i of bp) {
     const c = cells[i]; if (idx.nodeByCell.has(c) && !idx.cellEdge.has(c)) continue;   // a node that another mode put on this cell does not break an edge that merely passes through it: split it
     const eid = idx.cellEdge.get(c);
-    if (eid) { const e = sim.edges[eid], at = e.cells.indexOf(c); const nid = nodeAtCell(sim, w, idx, c, "junction"); splitEdge(sim, w, eid, at, nid); }
+    if (eid) { const e = sim.edges[eid], at = e.cells.indexOf(c); const nid = nodeAtCell(sim, w, idx, c, "junction"); const id2 = splitEdge(sim, w, eid, at, nid); indexEdge(idx, sim.edges[id2]); idx.cellEdge.delete(c); }
     else nodeAtCell(sim, w, idx, c, i === 0 || i === n - 1 ? "end" : "junction");
-    forced.set(c, idx.nodeByCell.get(c)!); idx = reindex();
+    forced.set(c, idx.nodeByCell.get(c)!);
   }
   // 2) walk breakpoint to breakpoint
   const addNew = (seg: number[]) => {
@@ -190,12 +215,12 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
     }
     void a; void b;
   };
-  idx = reindex();
   for (let q = 0; q + 1 < bp.length; q++) {
     const s = bp[q], t = bp[q + 1], seg = cells.slice(s, t + 1);
-    if (shared(s)) { const hit = idx.step.get(`${cells[s]}:${cells[s + 1]}`)!, e = sim.edges[hit.edge]; chain.push({ edgeId: e.id, dir: idx.nodeByCell.get(cells[s]) === e.a ? 1 : -1 }); }
-    else { addNew(seg); idx = reindex(); }
+    if (shared(s)) { const hit = idx.step.get(stepKey(cells[s], cells[s + 1]))!, e = sim.edges[hit.edge]; chain.push({ edgeId: e.id, dir: idx.nodeByCell.get(cells[s]) === e.a ? 1 : -1 }); }
+    else { const before = created.length; addNew(seg); for (let k = before; k < created.length; k++) indexEdge(idx, sim.edges[created[k]]); }
   }
+  if (process.env.KFM_CHECK_INDEX) { const f = buildIndexRaw(sim, mode); for (const [c, id] of forced) f.nodeByCell.set(c, id); const same = (a: Map<unknown, unknown>, b: Map<unknown, unknown>) => a.size === b.size && [...a].every(([k, v]) => JSON.stringify(b.get(k)) === JSON.stringify(v)); if (!same(f.cellEdge, idx.cellEdge) || !same(f.step, idx.step) || f.roadCells.size !== idx.roadCells.size || !same(f.nodeByCell, idx.nodeByCell)) throw new Error("layPath: the hand-kept index differs from a rebuilt one"); }
   return { chain, created };
 }
 /** Structural self-check used by tests and by load: returns a list of problems (empty = consistent). */

@@ -45,6 +45,9 @@ test("era choice, 開通の儀 and a running 1950 world with railways; the old f
   expect(km.rail).toBeGreaterThan(60); expect(km.road).toBeGreaterThan(200); expect(km.routes).toBeGreaterThan(20); expect(km.ops).toBeGreaterThan(2);
   expect(await page.textContent("#status")).toContain("神和");
   expect(await app(page, "a => Object.values(a.sim.routes).filter(r => r.grade === 'national' && r.number === 1).length")).toBe(1);
+  // Stage 16: a new game runs on the world with the provincial towns of its two seats' prefectures, and the sim says which
+  expect(await app(page, "a => a.sim.towns16 && a.sim.towns16.length")).toBeGreaterThan(10);
+  expect(await app(page, "a => a.world.townIds.join() === a.sim.towns16.join() && a.world.cities.filter(c => c.kind === 'town').length === a.sim.towns16.length")).toBe(true);
   expect(errs).toEqual([]);
 });
 
@@ -94,6 +97,8 @@ test("the real-Japan game survives a reload; if the latest save is corrupt the b
   await page.evaluate(async () => { const a = (window as any).__kfm; a.lastBackup = -1e9; await a.persist(true); });
   await page.waitForTimeout(300); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.sim.month")).toBe(month); expect(await app(page, "a => a.sim.era")).toBe("shubun");
+  // Stage 16: the loaded game gets the same towns it was made with (a save never meets a different world)
+  expect(await app(page, "a => a.sim.towns16.length > 10 && a.world.townIds.join() === a.sim.towns16.join()")).toBe(true);
   // corrupt the latest save (as if the phone lost power mid-write) and reload
   await page.evaluate(() => { (window as any).__kfm.persist = () => Promise.resolve(true); });
   await page.evaluate(() => new Promise<void>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const tx = r.result.transaction("saves", "readwrite"); tx.objectStore("saves").put("{ this is not json", "s3:auto"); tx.oncomplete = () => res(); }; }));
@@ -133,7 +138,9 @@ test("reload at ×20 keeps the game; a save whose roads cannot be attached is qu
   const month = await app(page, "a => a.sim.month") as number;
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.sim.month")).toBeGreaterThanOrEqual(month);
-  // make the stored roads unattachable (terrain hash mismatch) and reload
+  // make the stored roads unattachable (terrain hash mismatch) and reload. First stop the clock and let the last save land: a save still in flight at x20 on a slow runner could otherwise overwrite the tampered copy and make the check below compare the app's own re-save with it
+  await page.evaluate(async () => { const a = (window as any).__kfm; a.setSpeed(0); await a.persist(true); });
+  await page.waitForTimeout(1500);
   await page.evaluate(() => { (window as any).__kfm.persist = () => Promise.resolve(true); });
   await page.evaluate(() => new Promise<void>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const st = r.result.transaction("saves", "readwrite").objectStore("saves"); const g = st.get("s3:auto"); g.onsuccess = () => { const o = JSON.parse(g.result); o.save.sim.terrainHash = "tampered"; st.put(JSON.stringify(o), "s3:auto"); res(); }; }; }));
   const before = await idbGet(page, "s3:auto");
@@ -686,6 +693,9 @@ test("Stage 12: 地図帳に都市の栄枯盛衰(伸びた・縮んだ都市と
   await expect(page.locator("#eco-up")).toContainText("▲"); await expect(page.locator("#eco-down")).toContainText("▼");
   // Stage 13: the metropolitan areas (one count per person, area and radius in km, the prefectures they cross) are in the atlas; the legend names them
   expect(await app(page, "a => !!a.sim.metro && a.sim.metro.list.length > 10")).toBe(true);
+  // Stage 14: the seats head the city order (one artificial rule, stated in the atlas), and the circles are drawn on top
+  await expect(page.locator("#eco-seats")).toContainText("人為的な規則"); expect(await page.locator("#eco-seats .issue").count()).toBe(2); await expect(page.locator("#eco-seats")).toContainText("全国1位"); await expect(page.locator("#eco-seats")).toContainText("全国2位");
+  expect(await app(page, "a => !!a.sim.seats14")).toBe(true);
   expect(await page.locator("#eco-metro .issue").count()).toBeGreaterThanOrEqual(5); await expect(page.locator("#eco-metro")).toContainText("km²"); await expect(page.locator("#eco-metro")).toContainText("府県にまたがり");
   await page.click("#eco-detail summary"); await expect(page.locator("#eco-chart")).toBeVisible(); await expect(page.locator("#eco-out")).toContainText("集積");
   await page.selectOption("#eco-city", { index: 3 }); expect(await page.locator("#eco-chart polyline").count()).toBe(1);

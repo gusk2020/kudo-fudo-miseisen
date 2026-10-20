@@ -1,5 +1,6 @@
 import raw from "../data/japan.json";
 import extraRaw from "../data/islands-extra.json";
+import townsRaw from "../data/towns.json";
 import { centroid, densify } from "./geom";
 import type { IslandId, Vec } from "./types";
 import { ISLAND_IDS } from "./types";
@@ -40,4 +41,7 @@ export { ISLAND_IDS };
 export interface ExtraIsland { name: string; pref: string; parts: Vec[][]; areaKm2: number }
 export interface ExtraData { islands: Record<string, ExtraIsland>; cities: (CityDef & { pop: number })[]; sources: { name: string; license: string; url: string }[] }
 export const EXTRA = extraRaw as unknown as ExtraData;
+/** Stage 16: real provincial towns (see src/data/towns.json). `pos` is the real-km projection, like a city's. */
+export interface TownDef { id: string; name: string; pos: Vec; kind: "town"; pref: null; island: IslandId; pop: number }
+export const TOWNS: TownDef[] = (townsRaw as unknown as { towns: { id: string; name: string; lon: number; lat: number; island: IslandId; pop: number }[] }).towns.map((t) => ({ id: t.id, name: t.name, pos: lonLatToReal(t.lon, t.lat), kind: "town" as const, pref: null, island: t.island, pop: t.pop }));
 export const EXTRA_IDS = ["sado", "awaji", "tsushima", "iki", "oki"] as const;

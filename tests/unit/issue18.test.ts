@@ -95,7 +95,7 @@ describe("Issue #18: development sites", () => {
     expect(Object.keys(SITE_WEIGHTS.palace)).toEqual(["tourism"]); expect(SITE_WEIGHTS.fuji.commerce).toBeUndefined();
   });
   it("the passenger flow into a capital's prefecture and the regional budget share both rise (quantified)", () => {
-    const a = stage3Sim("heisei", 7, false, 0, 2, true, { capital: "JP-13", sub: "JP-27" }), b = stage3Sim("heisei", 7, false, 0, 2, true, { capital: nagoya, sub: "JP-27" });
+    const old = { pop15: false }, a = stage3Sim("heisei", 7, false, 0, 2, true, { capital: "JP-13", sub: "JP-27" }, undefined, old), b = stage3Sim("heisei", 7, false, 0, 2, true, { capital: nagoya, sub: "JP-27" }, undefined, old);   // (the Stage 10 start: from Stage 15 on the Tokaido through traffic crosses Aichi either way; see stage15.test.ts for the census start)
     const flow = (x: typeof a) => { analyze(x.sim, x.w); return Object.values(x.sim.edges).filter((e) => e.region === nagoya).reduce((t, e) => t + e.through + e.freight, 0); };
     const fa = flow(a), fb = flow(b); expect(fb).toBeGreaterThan(fa * 1.02);
     updateRegionShares(a.sim, a.w); updateRegionShares(b.sim, b.w); expect(b.sim.regionShare[nagoya]).toBeGreaterThan(a.sim.regionShare[nagoya]);

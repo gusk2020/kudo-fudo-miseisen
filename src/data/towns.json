@@ -1,0 +1,2429 @@
+{
+"note": "Stage 16: real provincial towns (not designated cities) beside the 55 cities of japan.json. Names and rough positions are real; populations are approximate municipal figures. Used only by games made from Stage 16 on (world option towns).",
+"towns": [
+{
+"id": "T-001",
+"name": "旭川市",
+"lon": 142.37,
+"lat": 43.77,
+"island": "hokkaido",
+"pop": 340000
+},
+{
+"id": "T-002",
+"name": "釧路市",
+"lon": 144.38,
+"lat": 42.98,
+"island": "hokkaido",
+"pop": 175000
+},
+{
+"id": "T-003",
+"name": "帯広市",
+"lon": 143.2,
+"lat": 42.92,
+"island": "hokkaido",
+"pop": 168000
+},
+{
+"id": "T-004",
+"name": "苫小牧市",
+"lon": 141.6,
+"lat": 42.63,
+"island": "hokkaido",
+"pop": 174000
+},
+{
+"id": "T-005",
+"name": "小樽市",
+"lon": 141.0,
+"lat": 43.19,
+"island": "hokkaido",
+"pop": 121000
+},
+{
+"id": "T-006",
+"name": "室蘭市",
+"lon": 140.97,
+"lat": 42.32,
+"island": "hokkaido",
+"pop": 88000
+},
+{
+"id": "T-007",
+"name": "北見市",
+"lon": 143.9,
+"lat": 43.8,
+"island": "hokkaido",
+"pop": 118000
+},
+{
+"id": "T-008",
+"name": "八戸市",
+"lon": 141.49,
+"lat": 40.51,
+"island": "honshu",
+"pop": 232000
+},
+{
+"id": "T-009",
+"name": "弘前市",
+"lon": 140.47,
+"lat": 40.6,
+"island": "honshu",
+"pop": 177000
+},
+{
+"id": "T-010",
+"name": "一関市",
+"lon": 141.13,
+"lat": 38.93,
+"island": "honshu",
+"pop": 115000
+},
+{
+"id": "T-011",
+"name": "花巻市",
+"lon": 141.12,
+"lat": 39.39,
+"island": "honshu",
+"pop": 97000
+},
+{
+"id": "T-012",
+"name": "大館市",
+"lon": 140.56,
+"lat": 40.27,
+"island": "honshu",
+"pop": 75000
+},
+{
+"id": "T-013",
+"name": "横手市",
+"lon": 140.56,
+"lat": 39.31,
+"island": "honshu",
+"pop": 92000
+},
+{
+"id": "T-014",
+"name": "鶴岡市",
+"lon": 139.83,
+"lat": 38.73,
+"island": "honshu",
+"pop": 125000
+},
+{
+"id": "T-015",
+"name": "酒田市",
+"lon": 139.84,
+"lat": 38.91,
+"island": "honshu",
+"pop": 106000
+},
+{
+"id": "T-016",
+"name": "米沢市",
+"lon": 140.12,
+"lat": 37.92,
+"island": "honshu",
+"pop": 83000
+},
+{
+"id": "T-017",
+"name": "石巻市",
+"lon": 141.3,
+"lat": 38.43,
+"island": "honshu",
+"pop": 147000
+},
+{
+"id": "T-018",
+"name": "大崎市",
+"lon": 140.96,
+"lat": 38.58,
+"island": "honshu",
+"pop": 135000
+},
+{
+"id": "T-019",
+"name": "郡山市",
+"lon": 140.38,
+"lat": 37.4,
+"island": "honshu",
+"pop": 325000
+},
+{
+"id": "T-020",
+"name": "会津若松市",
+"lon": 139.93,
+"lat": 37.49,
+"island": "honshu",
+"pop": 121000
+},
+{
+"id": "T-021",
+"name": "つくば市",
+"lon": 140.08,
+"lat": 36.08,
+"island": "honshu",
+"pop": 227000
+},
+{
+"id": "T-022",
+"name": "日立市",
+"lon": 140.65,
+"lat": 36.6,
+"island": "honshu",
+"pop": 180000
+},
+{
+"id": "T-023",
+"name": "古河市",
+"lon": 139.7,
+"lat": 36.18,
+"island": "honshu",
+"pop": 142000
+},
+{
+"id": "T-024",
+"name": "小山市",
+"lon": 139.8,
+"lat": 36.31,
+"island": "honshu",
+"pop": 167000
+},
+{
+"id": "T-025",
+"name": "足利市",
+"lon": 139.45,
+"lat": 36.34,
+"island": "honshu",
+"pop": 148000
+},
+{
+"id": "T-026",
+"name": "那須塩原市",
+"lon": 140.02,
+"lat": 36.96,
+"island": "honshu",
+"pop": 117000
+},
+{
+"id": "T-027",
+"name": "高崎市",
+"lon": 139.0,
+"lat": 36.32,
+"island": "honshu",
+"pop": 370000
+},
+{
+"id": "T-028",
+"name": "太田市",
+"lon": 139.46,
+"lat": 36.29,
+"island": "honshu",
+"pop": 222000
+},
+{
+"id": "T-029",
+"name": "桐生市",
+"lon": 139.33,
+"lat": 36.41,
+"island": "honshu",
+"pop": 111000
+},
+{
+"id": "T-030",
+"name": "川口市",
+"lon": 139.72,
+"lat": 35.81,
+"island": "honshu",
+"pop": 600000
+},
+{
+"id": "T-031",
+"name": "熊谷市",
+"lon": 139.39,
+"lat": 36.15,
+"island": "honshu",
+"pop": 196000
+},
+{
+"id": "T-032",
+"name": "所沢市",
+"lon": 139.47,
+"lat": 35.8,
+"island": "honshu",
+"pop": 340000
+},
+{
+"id": "T-033",
+"name": "船橋市",
+"lon": 139.98,
+"lat": 35.69,
+"island": "honshu",
+"pop": 630000
+},
+{
+"id": "T-034",
+"name": "柏市",
+"lon": 139.97,
+"lat": 35.87,
+"island": "honshu",
+"pop": 420000
+},
+{
+"id": "T-035",
+"name": "市原市",
+"lon": 140.12,
+"lat": 35.5,
+"island": "honshu",
+"pop": 275000
+},
+{
+"id": "T-036",
+"name": "木更津市",
+"lon": 139.92,
+"lat": 35.38,
+"island": "honshu",
+"pop": 135000
+},
+{
+"id": "T-037",
+"name": "立川市",
+"lon": 139.41,
+"lat": 35.7,
+"island": "honshu",
+"pop": 184000
+},
+{
+"id": "T-038",
+"name": "町田市",
+"lon": 139.45,
+"lat": 35.55,
+"island": "honshu",
+"pop": 430000
+},
+{
+"id": "T-039",
+"name": "藤沢市",
+"lon": 139.49,
+"lat": 35.34,
+"island": "honshu",
+"pop": 430000
+},
+{
+"id": "T-040",
+"name": "小田原市",
+"lon": 139.16,
+"lat": 35.26,
+"island": "honshu",
+"pop": 190000
+},
+{
+"id": "T-041",
+"name": "横須賀市",
+"lon": 139.67,
+"lat": 35.28,
+"island": "honshu",
+"pop": 400000
+},
+{
+"id": "T-042",
+"name": "長岡市",
+"lon": 138.85,
+"lat": 37.45,
+"island": "honshu",
+"pop": 270000
+},
+{
+"id": "T-043",
+"name": "上越市",
+"lon": 138.24,
+"lat": 37.15,
+"island": "honshu",
+"pop": 190000
+},
+{
+"id": "T-044",
+"name": "高岡市",
+"lon": 137.02,
+"lat": 36.75,
+"island": "honshu",
+"pop": 170000
+},
+{
+"id": "T-045",
+"name": "小松市",
+"lon": 136.45,
+"lat": 36.41,
+"island": "honshu",
+"pop": 108000
+},
+{
+"id": "T-046",
+"name": "七尾市",
+"lon": 136.97,
+"lat": 37.05,
+"island": "honshu",
+"pop": 52000
+},
+{
+"id": "T-047",
+"name": "敦賀市",
+"lon": 136.06,
+"lat": 35.65,
+"island": "honshu",
+"pop": 66000
+},
+{
+"id": "T-048",
+"name": "越前市",
+"lon": 136.17,
+"lat": 35.9,
+"island": "honshu",
+"pop": 85000
+},
+{
+"id": "T-049",
+"name": "松本市",
+"lon": 137.97,
+"lat": 36.24,
+"island": "honshu",
+"pop": 243000
+},
+{
+"id": "T-050",
+"name": "上田市",
+"lon": 138.25,
+"lat": 36.4,
+"island": "honshu",
+"pop": 155000
+},
+{
+"id": "T-051",
+"name": "飯田市",
+"lon": 137.82,
+"lat": 35.52,
+"island": "honshu",
+"pop": 100000
+},
+{
+"id": "T-052",
+"name": "大垣市",
+"lon": 136.61,
+"lat": 35.36,
+"island": "honshu",
+"pop": 160000
+},
+{
+"id": "T-053",
+"name": "高山市",
+"lon": 137.25,
+"lat": 36.15,
+"island": "honshu",
+"pop": 89000
+},
+{
+"id": "T-054",
+"name": "沼津市",
+"lon": 138.86,
+"lat": 35.1,
+"island": "honshu",
+"pop": 195000
+},
+{
+"id": "T-055",
+"name": "富士市",
+"lon": 138.68,
+"lat": 35.16,
+"island": "honshu",
+"pop": 252000
+},
+{
+"id": "T-056",
+"name": "磐田市",
+"lon": 137.85,
+"lat": 34.72,
+"island": "honshu",
+"pop": 168000
+},
+{
+"id": "T-057",
+"name": "豊橋市",
+"lon": 137.39,
+"lat": 34.77,
+"island": "honshu",
+"pop": 375000
+},
+{
+"id": "T-058",
+"name": "岡崎市",
+"lon": 137.17,
+"lat": 34.95,
+"island": "honshu",
+"pop": 385000
+},
+{
+"id": "T-059",
+"name": "豊田市",
+"lon": 137.16,
+"lat": 35.08,
+"island": "honshu",
+"pop": 420000
+},
+{
+"id": "T-060",
+"name": "一宮市",
+"lon": 136.8,
+"lat": 35.3,
+"island": "honshu",
+"pop": 385000
+},
+{
+"id": "T-061",
+"name": "四日市市",
+"lon": 136.62,
+"lat": 34.97,
+"island": "honshu",
+"pop": 310000
+},
+{
+"id": "T-062",
+"name": "伊勢市",
+"lon": 136.71,
+"lat": 34.49,
+"island": "honshu",
+"pop": 125000
+},
+{
+"id": "T-063",
+"name": "彦根市",
+"lon": 136.26,
+"lat": 35.28,
+"island": "honshu",
+"pop": 113000
+},
+{
+"id": "T-064",
+"name": "長浜市",
+"lon": 136.27,
+"lat": 35.38,
+"island": "honshu",
+"pop": 118000
+},
+{
+"id": "T-065",
+"name": "福知山市",
+"lon": 135.12,
+"lat": 35.3,
+"island": "honshu",
+"pop": 78000
+},
+{
+"id": "T-066",
+"name": "舞鶴市",
+"lon": 135.39,
+"lat": 35.47,
+"island": "honshu",
+"pop": 83000
+},
+{
+"id": "T-067",
+"name": "東大阪市",
+"lon": 135.6,
+"lat": 34.68,
+"island": "honshu",
+"pop": 490000
+},
+{
+"id": "T-068",
+"name": "枚方市",
+"lon": 135.65,
+"lat": 34.82,
+"island": "honshu",
+"pop": 400000
+},
+{
+"id": "T-069",
+"name": "姫路市",
+"lon": 134.69,
+"lat": 34.82,
+"island": "honshu",
+"pop": 535000
+},
+{
+"id": "T-070",
+"name": "尼崎市",
+"lon": 135.41,
+"lat": 34.73,
+"island": "honshu",
+"pop": 460000
+},
+{
+"id": "T-071",
+"name": "豊岡市",
+"lon": 134.82,
+"lat": 35.54,
+"island": "honshu",
+"pop": 82000
+},
+{
+"id": "T-072",
+"name": "橿原市",
+"lon": 135.79,
+"lat": 34.51,
+"island": "honshu",
+"pop": 121000
+},
+{
+"id": "T-073",
+"name": "田辺市",
+"lon": 135.38,
+"lat": 33.73,
+"island": "honshu",
+"pop": 76000
+},
+{
+"id": "T-074",
+"name": "米子市",
+"lon": 133.34,
+"lat": 35.43,
+"island": "honshu",
+"pop": 147000
+},
+{
+"id": "T-075",
+"name": "倉吉市",
+"lon": 133.82,
+"lat": 35.43,
+"island": "honshu",
+"pop": 47000
+},
+{
+"id": "T-076",
+"name": "出雲市",
+"lon": 132.76,
+"lat": 35.37,
+"island": "honshu",
+"pop": 172000
+},
+{
+"id": "T-077",
+"name": "浜田市",
+"lon": 132.08,
+"lat": 34.9,
+"island": "honshu",
+"pop": 57000
+},
+{
+"id": "T-078",
+"name": "益田市",
+"lon": 131.84,
+"lat": 34.68,
+"island": "honshu",
+"pop": 48000
+},
+{
+"id": "T-079",
+"name": "倉敷市",
+"lon": 133.77,
+"lat": 34.6,
+"island": "honshu",
+"pop": 480000
+},
+{
+"id": "T-080",
+"name": "津山市",
+"lon": 134.0,
+"lat": 35.07,
+"island": "honshu",
+"pop": 100000
+},
+{
+"id": "T-081",
+"name": "福山市",
+"lon": 133.36,
+"lat": 34.49,
+"island": "honshu",
+"pop": 465000
+},
+{
+"id": "T-082",
+"name": "呉市",
+"lon": 132.57,
+"lat": 34.25,
+"island": "honshu",
+"pop": 230000
+},
+{
+"id": "T-083",
+"name": "東広島市",
+"lon": 132.74,
+"lat": 34.43,
+"island": "honshu",
+"pop": 196000
+},
+{
+"id": "T-084",
+"name": "下関市",
+"lon": 130.94,
+"lat": 33.96,
+"island": "honshu",
+"pop": 268000
+},
+{
+"id": "T-085",
+"name": "宇部市",
+"lon": 131.25,
+"lat": 33.95,
+"island": "honshu",
+"pop": 165000
+},
+{
+"id": "T-086",
+"name": "周南市",
+"lon": 131.81,
+"lat": 34.05,
+"island": "honshu",
+"pop": 144000
+},
+{
+"id": "T-087",
+"name": "萩市",
+"lon": 131.4,
+"lat": 34.41,
+"island": "honshu",
+"pop": 50000
+},
+{
+"id": "T-088",
+"name": "阿南市",
+"lon": 134.66,
+"lat": 33.92,
+"island": "shikoku",
+"pop": 72000
+},
+{
+"id": "T-089",
+"name": "丸亀市",
+"lon": 133.8,
+"lat": 34.29,
+"island": "shikoku",
+"pop": 110000
+},
+{
+"id": "T-090",
+"name": "今治市",
+"lon": 133.0,
+"lat": 34.07,
+"island": "shikoku",
+"pop": 155000
+},
+{
+"id": "T-091",
+"name": "新居浜市",
+"lon": 133.28,
+"lat": 33.96,
+"island": "shikoku",
+"pop": 120000
+},
+{
+"id": "T-092",
+"name": "宇和島市",
+"lon": 132.56,
+"lat": 33.22,
+"island": "shikoku",
+"pop": 76000
+},
+{
+"id": "T-093",
+"name": "南国市",
+"lon": 133.64,
+"lat": 33.58,
+"island": "shikoku",
+"pop": 49000
+},
+{
+"id": "T-094",
+"name": "久留米市",
+"lon": 130.52,
+"lat": 33.32,
+"island": "kyushu",
+"pop": 305000
+},
+{
+"id": "T-095",
+"name": "飯塚市",
+"lon": 130.69,
+"lat": 33.65,
+"island": "kyushu",
+"pop": 127000
+},
+{
+"id": "T-096",
+"name": "大牟田市",
+"lon": 130.45,
+"lat": 33.03,
+"island": "kyushu",
+"pop": 116000
+},
+{
+"id": "T-097",
+"name": "唐津市",
+"lon": 129.97,
+"lat": 33.45,
+"island": "kyushu",
+"pop": 122000
+},
+{
+"id": "T-098",
+"name": "佐世保市",
+"lon": 129.72,
+"lat": 33.18,
+"island": "kyushu",
+"pop": 255000
+},
+{
+"id": "T-099",
+"name": "諫早市",
+"lon": 130.05,
+"lat": 32.84,
+"island": "kyushu",
+"pop": 138000
+},
+{
+"id": "T-100",
+"name": "八代市",
+"lon": 130.6,
+"lat": 32.51,
+"island": "kyushu",
+"pop": 128000
+},
+{
+"id": "T-101",
+"name": "別府市",
+"lon": 131.49,
+"lat": 33.28,
+"island": "kyushu",
+"pop": 117000
+},
+{
+"id": "T-102",
+"name": "中津市",
+"lon": 131.19,
+"lat": 33.6,
+"island": "kyushu",
+"pop": 84000
+},
+{
+"id": "T-103",
+"name": "佐伯市",
+"lon": 131.9,
+"lat": 32.96,
+"island": "kyushu",
+"pop": 70000
+},
+{
+"id": "T-104",
+"name": "都城市",
+"lon": 131.06,
+"lat": 31.72,
+"island": "kyushu",
+"pop": 165000
+},
+{
+"id": "T-105",
+"name": "延岡市",
+"lon": 131.66,
+"lat": 32.58,
+"island": "kyushu",
+"pop": 125000
+},
+{
+"id": "T-106",
+"name": "鹿屋市",
+"lon": 130.85,
+"lat": 31.38,
+"island": "kyushu",
+"pop": 103000
+},
+{
+"id": "T-107",
+"name": "霧島市",
+"lon": 130.76,
+"lat": 31.74,
+"island": "kyushu",
+"pop": 125000
+},
+{
+"id": "T-108",
+"name": "薩摩川内市",
+"lon": 130.3,
+"lat": 31.81,
+"island": "kyushu",
+"pop": 95000
+},
+{
+"id": "T-109",
+"name": "江別市",
+"lon": 141.54,
+"lat": 43.1,
+"island": "hokkaido",
+"pop": 120000
+},
+{
+"id": "T-110",
+"name": "千歳市",
+"lon": 141.65,
+"lat": 42.82,
+"island": "hokkaido",
+"pop": 97000
+},
+{
+"id": "T-111",
+"name": "恵庭市",
+"lon": 141.57,
+"lat": 42.88,
+"island": "hokkaido",
+"pop": 70000
+},
+{
+"id": "T-112",
+"name": "北広島市",
+"lon": 141.56,
+"lat": 42.98,
+"island": "hokkaido",
+"pop": 60000
+},
+{
+"id": "T-113",
+"name": "岩見沢市",
+"lon": 141.76,
+"lat": 43.2,
+"island": "hokkaido",
+"pop": 80000
+},
+{
+"id": "T-114",
+"name": "登別市",
+"lon": 141.15,
+"lat": 42.41,
+"island": "hokkaido",
+"pop": 50000
+},
+{
+"id": "T-115",
+"name": "北斗市",
+"lon": 140.65,
+"lat": 41.89,
+"island": "hokkaido",
+"pop": 46000
+},
+{
+"id": "T-116",
+"name": "十和田市",
+"lon": 141.21,
+"lat": 40.61,
+"island": "honshu",
+"pop": 60000
+},
+{
+"id": "T-117",
+"name": "五所川原市",
+"lon": 140.44,
+"lat": 40.81,
+"island": "honshu",
+"pop": 55000
+},
+{
+"id": "T-118",
+"name": "むつ市",
+"lon": 141.21,
+"lat": 41.29,
+"island": "honshu",
+"pop": 56000
+},
+{
+"id": "T-119",
+"name": "北上市",
+"lon": 141.12,
+"lat": 39.29,
+"island": "honshu",
+"pop": 93000
+},
+{
+"id": "T-120",
+"name": "奥州市",
+"lon": 141.14,
+"lat": 39.14,
+"island": "honshu",
+"pop": 113000
+},
+{
+"id": "T-121",
+"name": "宮古市",
+"lon": 141.96,
+"lat": 39.64,
+"island": "honshu",
+"pop": 51000
+},
+{
+"id": "T-122",
+"name": "釜石市",
+"lon": 141.88,
+"lat": 39.28,
+"island": "honshu",
+"pop": 33000
+},
+{
+"id": "T-123",
+"name": "塩竈市",
+"lon": 141.02,
+"lat": 38.31,
+"island": "honshu",
+"pop": 54000
+},
+{
+"id": "T-124",
+"name": "多賀城市",
+"lon": 141.0,
+"lat": 38.29,
+"island": "honshu",
+"pop": 63000
+},
+{
+"id": "T-125",
+"name": "名取市",
+"lon": 140.89,
+"lat": 38.17,
+"island": "honshu",
+"pop": 79000
+},
+{
+"id": "T-126",
+"name": "登米市",
+"lon": 141.24,
+"lat": 38.69,
+"island": "honshu",
+"pop": 79000
+},
+{
+"id": "T-127",
+"name": "気仙沼市",
+"lon": 141.57,
+"lat": 38.91,
+"island": "honshu",
+"pop": 63000
+},
+{
+"id": "T-128",
+"name": "能代市",
+"lon": 140.03,
+"lat": 40.21,
+"island": "honshu",
+"pop": 52000
+},
+{
+"id": "T-129",
+"name": "由利本荘市",
+"lon": 140.05,
+"lat": 39.38,
+"island": "honshu",
+"pop": 75000
+},
+{
+"id": "T-130",
+"name": "大仙市",
+"lon": 140.48,
+"lat": 39.45,
+"island": "honshu",
+"pop": 80000
+},
+{
+"id": "T-131",
+"name": "湯沢市",
+"lon": 140.49,
+"lat": 39.16,
+"island": "honshu",
+"pop": 42000
+},
+{
+"id": "T-132",
+"name": "天童市",
+"lon": 140.38,
+"lat": 38.36,
+"island": "honshu",
+"pop": 62000
+},
+{
+"id": "T-133",
+"name": "東根市",
+"lon": 140.4,
+"lat": 38.43,
+"island": "honshu",
+"pop": 47000
+},
+{
+"id": "T-134",
+"name": "寒河江市",
+"lon": 140.28,
+"lat": 38.41,
+"island": "honshu",
+"pop": 40000
+},
+{
+"id": "T-135",
+"name": "上山市",
+"lon": 140.27,
+"lat": 38.15,
+"island": "honshu",
+"pop": 30000
+},
+{
+"id": "T-136",
+"name": "新庄市",
+"lon": 140.3,
+"lat": 38.76,
+"island": "honshu",
+"pop": 36000
+},
+{
+"id": "T-137",
+"name": "二本松市",
+"lon": 140.43,
+"lat": 37.58,
+"island": "honshu",
+"pop": 55000
+},
+{
+"id": "T-138",
+"name": "須賀川市",
+"lon": 140.37,
+"lat": 37.29,
+"island": "honshu",
+"pop": 77000
+},
+{
+"id": "T-139",
+"name": "白河市",
+"lon": 140.21,
+"lat": 37.13,
+"island": "honshu",
+"pop": 60000
+},
+{
+"id": "T-140",
+"name": "南相馬市",
+"lon": 140.96,
+"lat": 37.64,
+"island": "honshu",
+"pop": 57000
+},
+{
+"id": "T-141",
+"name": "伊達市",
+"lon": 140.57,
+"lat": 37.8,
+"island": "honshu",
+"pop": 62000
+},
+{
+"id": "T-142",
+"name": "土浦市",
+"lon": 140.2,
+"lat": 36.08,
+"island": "honshu",
+"pop": 140000
+},
+{
+"id": "T-143",
+"name": "取手市",
+"lon": 140.05,
+"lat": 35.91,
+"island": "honshu",
+"pop": 107000
+},
+{
+"id": "T-144",
+"name": "ひたちなか市",
+"lon": 140.53,
+"lat": 36.4,
+"island": "honshu",
+"pop": 158000
+},
+{
+"id": "T-145",
+"name": "鹿嶋市",
+"lon": 140.64,
+"lat": 35.97,
+"island": "honshu",
+"pop": 68000
+},
+{
+"id": "T-146",
+"name": "笠間市",
+"lon": 140.3,
+"lat": 36.38,
+"island": "honshu",
+"pop": 74000
+},
+{
+"id": "T-147",
+"name": "佐野市",
+"lon": 139.58,
+"lat": 36.31,
+"island": "honshu",
+"pop": 118000
+},
+{
+"id": "T-148",
+"name": "鹿沼市",
+"lon": 139.74,
+"lat": 36.57,
+"island": "honshu",
+"pop": 95000
+},
+{
+"id": "T-149",
+"name": "日光市",
+"lon": 139.62,
+"lat": 36.75,
+"island": "honshu",
+"pop": 83000
+},
+{
+"id": "T-150",
+"name": "真岡市",
+"lon": 140.01,
+"lat": 36.44,
+"island": "honshu",
+"pop": 79000
+},
+{
+"id": "T-151",
+"name": "伊勢崎市",
+"lon": 139.2,
+"lat": 36.31,
+"island": "honshu",
+"pop": 212000
+},
+{
+"id": "T-152",
+"name": "館林市",
+"lon": 139.53,
+"lat": 36.24,
+"island": "honshu",
+"pop": 76000
+},
+{
+"id": "T-153",
+"name": "渋川市",
+"lon": 139.0,
+"lat": 36.49,
+"island": "honshu",
+"pop": 78000
+},
+{
+"id": "T-154",
+"name": "春日部市",
+"lon": 139.75,
+"lat": 35.98,
+"island": "honshu",
+"pop": 230000
+},
+{
+"id": "T-155",
+"name": "草加市",
+"lon": 139.8,
+"lat": 35.83,
+"island": "honshu",
+"pop": 247000
+},
+{
+"id": "T-156",
+"name": "上尾市",
+"lon": 139.59,
+"lat": 35.97,
+"island": "honshu",
+"pop": 225000
+},
+{
+"id": "T-157",
+"name": "久喜市",
+"lon": 139.67,
+"lat": 36.07,
+"island": "honshu",
+"pop": 150000
+},
+{
+"id": "T-158",
+"name": "狭山市",
+"lon": 139.41,
+"lat": 35.85,
+"island": "honshu",
+"pop": 150000
+},
+{
+"id": "T-159",
+"name": "深谷市",
+"lon": 139.28,
+"lat": 36.2,
+"island": "honshu",
+"pop": 140000
+},
+{
+"id": "T-160",
+"name": "松戸市",
+"lon": 139.9,
+"lat": 35.79,
+"island": "honshu",
+"pop": 495000
+},
+{
+"id": "T-161",
+"name": "市川市",
+"lon": 139.93,
+"lat": 35.72,
+"island": "honshu",
+"pop": 490000
+},
+{
+"id": "T-162",
+"name": "成田市",
+"lon": 140.32,
+"lat": 35.78,
+"island": "honshu",
+"pop": 130000
+},
+{
+"id": "T-163",
+"name": "佐倉市",
+"lon": 140.22,
+"lat": 35.72,
+"island": "honshu",
+"pop": 172000
+},
+{
+"id": "T-164",
+"name": "茂原市",
+"lon": 140.29,
+"lat": 35.43,
+"island": "honshu",
+"pop": 88000
+},
+{
+"id": "T-165",
+"name": "館山市",
+"lon": 139.87,
+"lat": 34.99,
+"island": "honshu",
+"pop": 46000
+},
+{
+"id": "T-166",
+"name": "府中市",
+"lon": 139.48,
+"lat": 35.67,
+"island": "honshu",
+"pop": 260000
+},
+{
+"id": "T-167",
+"name": "調布市",
+"lon": 139.54,
+"lat": 35.65,
+"island": "honshu",
+"pop": 230000
+},
+{
+"id": "T-168",
+"name": "青梅市",
+"lon": 139.28,
+"lat": 35.79,
+"island": "honshu",
+"pop": 135000
+},
+{
+"id": "T-169",
+"name": "武蔵野市",
+"lon": 139.57,
+"lat": 35.71,
+"island": "honshu",
+"pop": 150000
+},
+{
+"id": "T-170",
+"name": "平塚市",
+"lon": 139.35,
+"lat": 35.33,
+"island": "honshu",
+"pop": 260000
+},
+{
+"id": "T-171",
+"name": "厚木市",
+"lon": 139.36,
+"lat": 35.44,
+"island": "honshu",
+"pop": 225000
+},
+{
+"id": "T-172",
+"name": "秦野市",
+"lon": 139.22,
+"lat": 35.37,
+"island": "honshu",
+"pop": 165000
+},
+{
+"id": "T-173",
+"name": "大和市",
+"lon": 139.46,
+"lat": 35.49,
+"island": "honshu",
+"pop": 232000
+},
+{
+"id": "T-174",
+"name": "茅ヶ崎市",
+"lon": 139.4,
+"lat": 35.33,
+"island": "honshu",
+"pop": 240000
+},
+{
+"id": "T-175",
+"name": "鎌倉市",
+"lon": 139.55,
+"lat": 35.32,
+"island": "honshu",
+"pop": 172000
+},
+{
+"id": "T-176",
+"name": "三条市",
+"lon": 139.16,
+"lat": 37.63,
+"island": "honshu",
+"pop": 97000
+},
+{
+"id": "T-177",
+"name": "新発田市",
+"lon": 139.33,
+"lat": 37.95,
+"island": "honshu",
+"pop": 98000
+},
+{
+"id": "T-178",
+"name": "柏崎市",
+"lon": 138.56,
+"lat": 37.37,
+"island": "honshu",
+"pop": 83000
+},
+{
+"id": "T-179",
+"name": "燕市",
+"lon": 138.88,
+"lat": 37.68,
+"island": "honshu",
+"pop": 78000
+},
+{
+"id": "T-180",
+"name": "村上市",
+"lon": 139.48,
+"lat": 38.22,
+"island": "honshu",
+"pop": 58000
+},
+{
+"id": "T-181",
+"name": "南魚沼市",
+"lon": 138.88,
+"lat": 37.07,
+"island": "honshu",
+"pop": 55000
+},
+{
+"id": "T-182",
+"name": "射水市",
+"lon": 137.08,
+"lat": 36.7,
+"island": "honshu",
+"pop": 92000
+},
+{
+"id": "T-183",
+"name": "魚津市",
+"lon": 137.41,
+"lat": 36.82,
+"island": "honshu",
+"pop": 41000
+},
+{
+"id": "T-184",
+"name": "黒部市",
+"lon": 137.45,
+"lat": 36.87,
+"island": "honshu",
+"pop": 40000
+},
+{
+"id": "T-185",
+"name": "砺波市",
+"lon": 136.96,
+"lat": 36.64,
+"island": "honshu",
+"pop": 49000
+},
+{
+"id": "T-186",
+"name": "氷見市",
+"lon": 136.99,
+"lat": 36.86,
+"island": "honshu",
+"pop": 47000
+},
+{
+"id": "T-187",
+"name": "南砺市",
+"lon": 136.87,
+"lat": 36.55,
+"island": "honshu",
+"pop": 50000
+},
+{
+"id": "T-188",
+"name": "白山市",
+"lon": 136.57,
+"lat": 36.51,
+"island": "honshu",
+"pop": 110000
+},
+{
+"id": "T-189",
+"name": "野々市市",
+"lon": 136.61,
+"lat": 36.52,
+"island": "honshu",
+"pop": 57000
+},
+{
+"id": "T-190",
+"name": "加賀市",
+"lon": 136.31,
+"lat": 36.3,
+"island": "honshu",
+"pop": 65000
+},
+{
+"id": "T-191",
+"name": "能美市",
+"lon": 136.47,
+"lat": 36.42,
+"island": "honshu",
+"pop": 49000
+},
+{
+"id": "T-192",
+"name": "かほく市",
+"lon": 136.7,
+"lat": 36.72,
+"island": "honshu",
+"pop": 35000
+},
+{
+"id": "T-193",
+"name": "坂井市",
+"lon": 136.23,
+"lat": 36.22,
+"island": "honshu",
+"pop": 90000
+},
+{
+"id": "T-194",
+"name": "鯖江市",
+"lon": 136.18,
+"lat": 35.96,
+"island": "honshu",
+"pop": 68000
+},
+{
+"id": "T-195",
+"name": "あわら市",
+"lon": 136.23,
+"lat": 36.21,
+"island": "honshu",
+"pop": 28000
+},
+{
+"id": "T-196",
+"name": "甲斐市",
+"lon": 138.57,
+"lat": 35.67,
+"island": "honshu",
+"pop": 75000
+},
+{
+"id": "T-197",
+"name": "南アルプス市",
+"lon": 138.45,
+"lat": 35.6,
+"island": "honshu",
+"pop": 72000
+},
+{
+"id": "T-198",
+"name": "笛吹市",
+"lon": 138.65,
+"lat": 35.65,
+"island": "honshu",
+"pop": 68000
+},
+{
+"id": "T-199",
+"name": "富士吉田市",
+"lon": 138.81,
+"lat": 35.49,
+"island": "honshu",
+"pop": 49000
+},
+{
+"id": "T-200",
+"name": "都留市",
+"lon": 138.9,
+"lat": 35.55,
+"island": "honshu",
+"pop": 30000
+},
+{
+"id": "T-201",
+"name": "佐久市",
+"lon": 138.48,
+"lat": 36.25,
+"island": "honshu",
+"pop": 100000
+},
+{
+"id": "T-202",
+"name": "塩尻市",
+"lon": 137.95,
+"lat": 36.12,
+"island": "honshu",
+"pop": 67000
+},
+{
+"id": "T-203",
+"name": "伊那市",
+"lon": 137.95,
+"lat": 35.83,
+"island": "honshu",
+"pop": 68000
+},
+{
+"id": "T-204",
+"name": "茅野市",
+"lon": 138.17,
+"lat": 35.99,
+"island": "honshu",
+"pop": 55000
+},
+{
+"id": "T-205",
+"name": "安曇野市",
+"lon": 137.88,
+"lat": 36.3,
+"island": "honshu",
+"pop": 96000
+},
+{
+"id": "T-206",
+"name": "岡谷市",
+"lon": 138.05,
+"lat": 36.06,
+"island": "honshu",
+"pop": 50000
+},
+{
+"id": "T-207",
+"name": "各務原市",
+"lon": 136.85,
+"lat": 35.4,
+"island": "honshu",
+"pop": 145000
+},
+{
+"id": "T-208",
+"name": "多治見市",
+"lon": 137.13,
+"lat": 35.33,
+"island": "honshu",
+"pop": 110000
+},
+{
+"id": "T-209",
+"name": "可児市",
+"lon": 137.06,
+"lat": 35.43,
+"island": "honshu",
+"pop": 100000
+},
+{
+"id": "T-210",
+"name": "関市",
+"lon": 136.92,
+"lat": 35.5,
+"island": "honshu",
+"pop": 87000
+},
+{
+"id": "T-211",
+"name": "掛川市",
+"lon": 138.01,
+"lat": 34.77,
+"island": "honshu",
+"pop": 116000
+},
+{
+"id": "T-212",
+"name": "焼津市",
+"lon": 138.32,
+"lat": 34.87,
+"island": "honshu",
+"pop": 140000
+},
+{
+"id": "T-213",
+"name": "藤枝市",
+"lon": 138.26,
+"lat": 34.87,
+"island": "honshu",
+"pop": 143000
+},
+{
+"id": "T-214",
+"name": "富士宮市",
+"lon": 138.62,
+"lat": 35.22,
+"island": "honshu",
+"pop": 130000
+},
+{
+"id": "T-215",
+"name": "三島市",
+"lon": 138.92,
+"lat": 35.12,
+"island": "honshu",
+"pop": 110000
+},
+{
+"id": "T-216",
+"name": "御殿場市",
+"lon": 138.93,
+"lat": 35.31,
+"island": "honshu",
+"pop": 88000
+},
+{
+"id": "T-217",
+"name": "伊東市",
+"lon": 139.1,
+"lat": 34.97,
+"island": "honshu",
+"pop": 70000
+},
+{
+"id": "T-218",
+"name": "春日井市",
+"lon": 136.97,
+"lat": 35.25,
+"island": "honshu",
+"pop": 310000
+},
+{
+"id": "T-219",
+"name": "安城市",
+"lon": 137.08,
+"lat": 34.96,
+"island": "honshu",
+"pop": 187000
+},
+{
+"id": "T-220",
+"name": "刈谷市",
+"lon": 137.0,
+"lat": 35.0,
+"island": "honshu",
+"pop": 150000
+},
+{
+"id": "T-221",
+"name": "小牧市",
+"lon": 136.91,
+"lat": 35.29,
+"island": "honshu",
+"pop": 150000
+},
+{
+"id": "T-222",
+"name": "瀬戸市",
+"lon": 137.08,
+"lat": 35.22,
+"island": "honshu",
+"pop": 128000
+},
+{
+"id": "T-223",
+"name": "半田市",
+"lon": 136.94,
+"lat": 34.89,
+"island": "honshu",
+"pop": 118000
+},
+{
+"id": "T-224",
+"name": "西尾市",
+"lon": 137.06,
+"lat": 34.87,
+"island": "honshu",
+"pop": 170000
+},
+{
+"id": "T-225",
+"name": "鈴鹿市",
+"lon": 136.58,
+"lat": 34.88,
+"island": "honshu",
+"pop": 200000
+},
+{
+"id": "T-226",
+"name": "松阪市",
+"lon": 136.53,
+"lat": 34.58,
+"island": "honshu",
+"pop": 160000
+},
+{
+"id": "T-227",
+"name": "桑名市",
+"lon": 136.68,
+"lat": 35.07,
+"island": "honshu",
+"pop": 140000
+},
+{
+"id": "T-228",
+"name": "名張市",
+"lon": 136.11,
+"lat": 34.63,
+"island": "honshu",
+"pop": 80000
+},
+{
+"id": "T-229",
+"name": "伊賀市",
+"lon": 136.13,
+"lat": 34.77,
+"island": "honshu",
+"pop": 91000
+},
+{
+"id": "T-230",
+"name": "草津市",
+"lon": 135.96,
+"lat": 35.02,
+"island": "honshu",
+"pop": 135000
+},
+{
+"id": "T-231",
+"name": "東近江市",
+"lon": 136.2,
+"lat": 35.11,
+"island": "honshu",
+"pop": 115000
+},
+{
+"id": "T-232",
+"name": "近江八幡市",
+"lon": 136.1,
+"lat": 35.13,
+"island": "honshu",
+"pop": 82000
+},
+{
+"id": "T-233",
+"name": "甲賀市",
+"lon": 136.17,
+"lat": 34.97,
+"island": "honshu",
+"pop": 90000
+},
+{
+"id": "T-234",
+"name": "守山市",
+"lon": 135.99,
+"lat": 35.06,
+"island": "honshu",
+"pop": 80000
+},
+{
+"id": "T-235",
+"name": "宇治市",
+"lon": 135.8,
+"lat": 34.88,
+"island": "honshu",
+"pop": 185000
+},
+{
+"id": "T-236",
+"name": "亀岡市",
+"lon": 135.57,
+"lat": 35.01,
+"island": "honshu",
+"pop": 88000
+},
+{
+"id": "T-237",
+"name": "長岡京市",
+"lon": 135.69,
+"lat": 34.93,
+"island": "honshu",
+"pop": 80000
+},
+{
+"id": "T-238",
+"name": "豊中市",
+"lon": 135.47,
+"lat": 34.78,
+"island": "honshu",
+"pop": 400000
+},
+{
+"id": "T-239",
+"name": "吹田市",
+"lon": 135.52,
+"lat": 34.76,
+"island": "honshu",
+"pop": 385000
+},
+{
+"id": "T-240",
+"name": "高槻市",
+"lon": 135.62,
+"lat": 34.85,
+"island": "honshu",
+"pop": 350000
+},
+{
+"id": "T-241",
+"name": "茨木市",
+"lon": 135.57,
+"lat": 34.82,
+"island": "honshu",
+"pop": 280000
+},
+{
+"id": "T-242",
+"name": "岸和田市",
+"lon": 135.37,
+"lat": 34.46,
+"island": "honshu",
+"pop": 195000
+},
+{
+"id": "T-243",
+"name": "寝屋川市",
+"lon": 135.63,
+"lat": 34.77,
+"island": "honshu",
+"pop": 230000
+},
+{
+"id": "T-244",
+"name": "八尾市",
+"lon": 135.6,
+"lat": 34.63,
+"island": "honshu",
+"pop": 265000
+},
+{
+"id": "T-245",
+"name": "西宮市",
+"lon": 135.34,
+"lat": 34.74,
+"island": "honshu",
+"pop": 485000
+},
+{
+"id": "T-246",
+"name": "明石市",
+"lon": 134.99,
+"lat": 34.65,
+"island": "honshu",
+"pop": 300000
+},
+{
+"id": "T-247",
+"name": "加古川市",
+"lon": 134.84,
+"lat": 34.76,
+"island": "honshu",
+"pop": 265000
+},
+{
+"id": "T-248",
+"name": "宝塚市",
+"lon": 135.35,
+"lat": 34.8,
+"island": "honshu",
+"pop": 230000
+},
+{
+"id": "T-249",
+"name": "伊丹市",
+"lon": 135.4,
+"lat": 34.78,
+"island": "honshu",
+"pop": 200000
+},
+{
+"id": "T-250",
+"name": "三田市",
+"lon": 135.23,
+"lat": 34.89,
+"island": "honshu",
+"pop": 110000
+},
+{
+"id": "T-251",
+"name": "丹波市",
+"lon": 135.04,
+"lat": 35.09,
+"island": "honshu",
+"pop": 65000
+},
+{
+"id": "T-252",
+"name": "生駒市",
+"lon": 135.7,
+"lat": 34.69,
+"island": "honshu",
+"pop": 118000
+},
+{
+"id": "T-253",
+"name": "大和郡山市",
+"lon": 135.78,
+"lat": 34.65,
+"island": "honshu",
+"pop": 85000
+},
+{
+"id": "T-254",
+"name": "天理市",
+"lon": 135.84,
+"lat": 34.6,
+"island": "honshu",
+"pop": 65000
+},
+{
+"id": "T-255",
+"name": "桜井市",
+"lon": 135.84,
+"lat": 34.52,
+"island": "honshu",
+"pop": 55000
+},
+{
+"id": "T-256",
+"name": "橋本市",
+"lon": 135.61,
+"lat": 34.31,
+"island": "honshu",
+"pop": 63000
+},
+{
+"id": "T-257",
+"name": "海南市",
+"lon": 135.2,
+"lat": 34.16,
+"island": "honshu",
+"pop": 50000
+},
+{
+"id": "T-258",
+"name": "境港市",
+"lon": 133.23,
+"lat": 35.54,
+"island": "honshu",
+"pop": 34000
+},
+{
+"id": "T-259",
+"name": "安来市",
+"lon": 133.25,
+"lat": 35.43,
+"island": "honshu",
+"pop": 38000
+},
+{
+"id": "T-260",
+"name": "大田市",
+"lon": 132.5,
+"lat": 35.19,
+"island": "honshu",
+"pop": 35000
+},
+{
+"id": "T-261",
+"name": "総社市",
+"lon": 133.75,
+"lat": 34.67,
+"island": "honshu",
+"pop": 69000
+},
+{
+"id": "T-262",
+"name": "笠岡市",
+"lon": 133.51,
+"lat": 34.51,
+"island": "honshu",
+"pop": 48000
+},
+{
+"id": "T-263",
+"name": "尾道市",
+"lon": 133.2,
+"lat": 34.41,
+"island": "honshu",
+"pop": 138000
+},
+{
+"id": "T-264",
+"name": "廿日市市",
+"lon": 132.33,
+"lat": 34.35,
+"island": "honshu",
+"pop": 115000
+},
+{
+"id": "T-265",
+"name": "三原市",
+"lon": 133.08,
+"lat": 34.4,
+"island": "honshu",
+"pop": 95000
+},
+{
+"id": "T-266",
+"name": "三次市",
+"lon": 132.85,
+"lat": 34.8,
+"island": "honshu",
+"pop": 52000
+},
+{
+"id": "T-267",
+"name": "岩国市",
+"lon": 132.22,
+"lat": 34.17,
+"island": "honshu",
+"pop": 135000
+},
+{
+"id": "T-268",
+"name": "防府市",
+"lon": 131.57,
+"lat": 34.05,
+"island": "honshu",
+"pop": 115000
+},
+{
+"id": "T-269",
+"name": "山陽小野田市",
+"lon": 131.18,
+"lat": 34.0,
+"island": "honshu",
+"pop": 62000
+},
+{
+"id": "T-270",
+"name": "光市",
+"lon": 131.94,
+"lat": 33.96,
+"island": "honshu",
+"pop": 50000
+},
+{
+"id": "T-271",
+"name": "鳴門市",
+"lon": 134.61,
+"lat": 34.17,
+"island": "shikoku",
+"pop": 58000
+},
+{
+"id": "T-272",
+"name": "坂出市",
+"lon": 133.86,
+"lat": 34.31,
+"island": "shikoku",
+"pop": 52000
+},
+{
+"id": "T-273",
+"name": "観音寺市",
+"lon": 133.66,
+"lat": 34.13,
+"island": "shikoku",
+"pop": 58000
+},
+{
+"id": "T-274",
+"name": "三豊市",
+"lon": 133.72,
+"lat": 34.18,
+"island": "shikoku",
+"pop": 63000
+},
+{
+"id": "T-275",
+"name": "西条市",
+"lon": 133.18,
+"lat": 33.92,
+"island": "shikoku",
+"pop": 108000
+},
+{
+"id": "T-276",
+"name": "四国中央市",
+"lon": 133.55,
+"lat": 33.98,
+"island": "shikoku",
+"pop": 86000
+},
+{
+"id": "T-277",
+"name": "大洲市",
+"lon": 132.54,
+"lat": 33.51,
+"island": "shikoku",
+"pop": 43000
+},
+{
+"id": "T-278",
+"name": "八幡浜市",
+"lon": 132.42,
+"lat": 33.46,
+"island": "shikoku",
+"pop": 33000
+},
+{
+"id": "T-279",
+"name": "四万十市",
+"lon": 132.93,
+"lat": 32.99,
+"island": "shikoku",
+"pop": 34000
+},
+{
+"id": "T-280",
+"name": "須崎市",
+"lon": 133.29,
+"lat": 33.39,
+"island": "shikoku",
+"pop": 23000
+},
+{
+"id": "T-281",
+"name": "香南市",
+"lon": 133.67,
+"lat": 33.55,
+"island": "shikoku",
+"pop": 33000
+},
+{
+"id": "T-282",
+"name": "直方市",
+"lon": 130.73,
+"lat": 33.74,
+"island": "kyushu",
+"pop": 56000
+},
+{
+"id": "T-283",
+"name": "春日市",
+"lon": 130.47,
+"lat": 33.53,
+"island": "kyushu",
+"pop": 112000
+},
+{
+"id": "T-284",
+"name": "筑紫野市",
+"lon": 130.52,
+"lat": 33.5,
+"island": "kyushu",
+"pop": 103000
+},
+{
+"id": "T-285",
+"name": "宗像市",
+"lon": 130.54,
+"lat": 33.81,
+"island": "kyushu",
+"pop": 97000
+},
+{
+"id": "T-286",
+"name": "行橋市",
+"lon": 130.99,
+"lat": 33.73,
+"island": "kyushu",
+"pop": 70000
+},
+{
+"id": "T-287",
+"name": "柳川市",
+"lon": 130.4,
+"lat": 33.16,
+"island": "kyushu",
+"pop": 65000
+},
+{
+"id": "T-288",
+"name": "鳥栖市",
+"lon": 130.52,
+"lat": 33.38,
+"island": "kyushu",
+"pop": 73000
+},
+{
+"id": "T-289",
+"name": "伊万里市",
+"lon": 129.88,
+"lat": 33.27,
+"island": "kyushu",
+"pop": 53000
+},
+{
+"id": "T-290",
+"name": "武雄市",
+"lon": 130.02,
+"lat": 33.19,
+"island": "kyushu",
+"pop": 49000
+},
+{
+"id": "T-291",
+"name": "大村市",
+"lon": 129.96,
+"lat": 32.92,
+"island": "kyushu",
+"pop": 95000
+},
+{
+"id": "T-292",
+"name": "島原市",
+"lon": 130.37,
+"lat": 32.79,
+"island": "kyushu",
+"pop": 45000
+},
+{
+"id": "T-293",
+"name": "天草市",
+"lon": 130.19,
+"lat": 32.46,
+"island": "kyushu",
+"pop": 78000
+},
+{
+"id": "T-294",
+"name": "玉名市",
+"lon": 130.56,
+"lat": 32.93,
+"island": "kyushu",
+"pop": 65000
+},
+{
+"id": "T-295",
+"name": "荒尾市",
+"lon": 130.43,
+"lat": 32.99,
+"island": "kyushu",
+"pop": 52000
+},
+{
+"id": "T-296",
+"name": "合志市",
+"lon": 130.79,
+"lat": 32.88,
+"island": "kyushu",
+"pop": 63000
+},
+{
+"id": "T-297",
+"name": "日田市",
+"lon": 130.94,
+"lat": 33.32,
+"island": "kyushu",
+"pop": 64000
+},
+{
+"id": "T-298",
+"name": "臼杵市",
+"lon": 131.85,
+"lat": 33.12,
+"island": "kyushu",
+"pop": 37000
+},
+{
+"id": "T-299",
+"name": "日向市",
+"lon": 131.63,
+"lat": 32.42,
+"island": "kyushu",
+"pop": 60000
+},
+{
+"id": "T-300",
+"name": "日南市",
+"lon": 131.38,
+"lat": 31.6,
+"island": "kyushu",
+"pop": 53000
+},
+{
+"id": "T-301",
+"name": "小林市",
+"lon": 130.97,
+"lat": 31.99,
+"island": "kyushu",
+"pop": 44000
+},
+{
+"id": "T-302",
+"name": "姶良市",
+"lon": 130.62,
+"lat": 31.73,
+"island": "kyushu",
+"pop": 77000
+},
+{
+"id": "T-303",
+"name": "出水市",
+"lon": 130.35,
+"lat": 32.09,
+"island": "kyushu",
+"pop": 53000
+}
+]
+}

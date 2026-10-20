@@ -6,7 +6,7 @@
 import { cityBoost, settlementBoost } from "./sites";
 import { dist } from "../core/geom";
 import { JAPAN } from "../core/data";
-import { buildIndex, checkIntegrity, edgePoints, layPath, newEdgeDefaults, newId, pushHist, setEdgeState } from "./network";
+import { buildIndex, checkIntegrity, netRemoved, edgePoints, layPath, newEdgeDefaults, newId, pushHist, setEdgeState } from "./network";
 import { analyze, analyzeGen, capacityOf, RAIL_PAX, passable, strandedWithout, zeroDemand, type Analysis } from "./demand";
 import { ERAS, composeDials, eraKeyOf, type EraKey } from "./eras";
 import { applyYearEvents } from "./events";
@@ -24,6 +24,7 @@ import { homeCity, subCity, tokyoCity } from "./ceremony";
 import { siteCapacity, upkeepMult } from "./land";
 import { ecoIndustry, ecoYear } from "./econ";
 import { computeMetros } from "./metro";
+import { applySeatOrder } from "./seats14";
 import { basePop, capitalPref, computeRoles, roleIndustry } from "./roles";
 import { reconGrowth, reconIndustry, reconMeanCore, reconOf, reconShare } from "./recon";
 import { DEFAULT_CAPITAL, DEFAULT_SUB, DEFAULT_PALACE, prefOfSeat } from "../core/seat";
@@ -91,7 +92,7 @@ export function projectTimeMult(sim: SimState, p: SimProject): number {
 }
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
-export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
+export interface SimOpts { era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
   w.barrier = !!opts.stage3;   // Stage 9: the mountain barrier is part of the real-map game
   w.land12 = !!(opts.stage3 && opts.firstEra !== undefined);   // Stage 12: every game started from the era timeline (Stage 10 onward flow) uses the land model
@@ -106,8 +107,8 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   };
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
-  if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE); }
-  if (firstCand) sim.econ = true;   // Stage 12
+  if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false); }
+  if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds];   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
   const tokyoId = sim.roles ? undefined : tokyoCity(w)?.id;
   for (const c of w.cities) sim.cities[c.id] = { pop: basePop(sim, w, c), popSource: c.popSource, lowAccessYears: 0, industry: Math.round(Math.max(0.05, Math.min(1, 0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim) + roleIndustry(sim, w, c))) * 1000) / 1000 };
   // (older games) a moved capital draws people and industry to itself and costs the old one some; a sub-capital gains a little (fictional, modest, provisional)
@@ -236,8 +237,12 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   const realRate = sim.stage3 === true && y <= 2026; let natNum = 0, natDen = 0, curNum = 0, curDen = 0;
   if (sim.econ) for (const c of w.cities) { const b = basePop(sim, w, c), p = sim.cities[c.id].pop; natNum += b * popRate(y, b, realRate); natDen += b; curNum += p * popRate(y, p, realRate); curDen += p; }
   const natRate = natDen ? natNum / natDen : 0, curRate = curDen ? curNum / curDen : 0;
+  // Stage 14: in a game where the seats head the city order, what access and the regional boosts add to a city's growth only moves people between cities (the population-weighted mean is taken out, as the
+  // migration and the policy already do); the nation then follows its demographic course, and the redistribution of the seats' people (seats14.ts) cannot make the total drift.
+  const totalBefore = sim.seats14 ? w.cities.reduce((t, c) => t + sim.cities[c.id].pop, 0) : 0;
+  let accMean = 0.4, boostMean = 0; if (sim.seats14) { let pw = 0, a = 0, b = 0; w.cities.forEach((c, i) => { const p = sim.cities[c.id].pop, bo = cityBoost(sim, w, c.id); pw += p; a += p * an.acc[i]; b += p * (bo.commerce + bo.industry + bo.manufacturing) / 3; }); accMean = pw ? a / pw : 0.4; boostMean = pw ? b / pw : 0; }
   w.cities.forEach((c, i) => {
-    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), hb = hubBoost(sim, c.id), before = st.pop, g = (sim.econ ? natRate + popRate(y, st.pop, realRate) - curRate : popRate(y, st.pop, sim.stage3 === true && y <= 2026)) + hb.growth - hbMean + 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3 - (sim.stage3 ? crowding(st.pop, sim.econ ? basePop(sim, w, c) * siteCapacity(w, c) : basePop(sim, w, c), c.plains) : 0) + (rg.get(c.id) ?? 0) + (eco?.get(c.id) ?? 0) + (rand(sim) - 0.5) * 0.008;
+    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), hb = hubBoost(sim, c.id), before = st.pop, g = (sim.econ ? natRate + popRate(y, st.pop, realRate) - curRate : popRate(y, st.pop, sim.stage3 === true && y <= 2026)) + hb.growth - hbMean + (sim.seats14 ? 0.012 * (an.acc[i] - accMean) + 0.004 * ((bo.commerce + bo.industry + bo.manufacturing) / 3 - boostMean) : 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3) - (sim.stage3 ? crowding(st.pop, sim.econ ? basePop(sim, w, c) * siteCapacity(w, c) : basePop(sim, w, c), c.plains) : 0) + (rg.get(c.id) ?? 0) + (eco?.get(c.id) ?? 0) + (rand(sim) - 0.5) * 0.008;
     st.pop = Math.max(2000, Math.round(st.pop * (1 + g)));
     const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + roleIndustry(sim, w, c) + 0.9 * an.acc[i] + 0.5 * bo.industry + hb.industry + (rg.size ? reconIndustry(sim, w, c.id, y, rmc) : 0) + (sim.econ ? ecoIndustry(w, c) : 0)); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
     st.lowAccessYears = an.acc[i] < 0.02 ? st.lowAccessYears + 1 : 0; const base = basePop(sim, w, c);
@@ -245,6 +250,13 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     if (before < 2 * base && st.pop >= 2 * base) ev(sim, "city", `${c.name}の人口が1950年の2倍に`, an.acc[i] > 0.1 ? "道路網で結ばれ産業が集積" : "全国的な人口増", { city: c.id });
     if (before > 0.7 * base && st.pop <= 0.7 * base) ev(sim, "city", `${c.name}の人口が3割減`, st.lowAccessYears > 3 ? "幹線から外れ孤立" : "人口減少局面", { city: c.id });
   });
+  if (sim.seats14) {
+    applySeatOrder(sim, w, an, y);
+    // the nation follows its demographic course (natRate: the rate of its 1950 make-up), whatever the shocks, the access terms and the seats' redistribution did this year: the people who are
+    // moved between cities add up, and the total is brought back onto that course by one common factor (births and deaths, not a transfer)
+    const tot = w.cities.reduce((t, c) => t + sim.cities[c.id].pop, 0), want = totalBefore * (1 + natRate), f = tot > 0 ? want / tot : 1;
+    if (Math.abs(f - 1) > 1e-9) for (const c of w.cities) { const st = sim.cities[c.id]; st.pop = Math.max(2000, Math.round(st.pop * f)); }
+  }
   const nodeCells = new Set(Object.values(sim.nodes).map((n) => n.cell));
   // Stage 3: a village that a railway or a proper road passes keeps its people better (empirical, not a statistic): this is the feedback that lets local transport pay back
   const railCells = new Set<number>(), goodCells = new Set<number>();
@@ -418,10 +430,10 @@ function resolveConcepts(sim: SimState) {
   for (const p of Object.values(sim.projects)) {
     if (p.status !== "concept" || sim.month - p.statusSince < 18) continue;
     const appetite = modeOf(p) === "rail" ? sim.dials.railBuild : sim.dials.hwyBuild;
-    if (appetite >= 0.25 && rand(sim) < 0.7) { p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
+    if (appetite >= 0.25 && (rand(sim) < 0.7 || p.reason.includes("【島間】")))  { /* a link between two main islands is not dropped at random: STRATEGIC_TAG in crossing.ts */ p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
     else {
       p.status = "abolished"; p.statusSince = sim.month;
-      for (const id of p.edgeIds) { const e = sim.edges[id]; if (e && e.built < 1 && !Object.values(sim.routes).some((r) => r.edges.some((x) => x.edgeId === id)) && !Object.values(sim.projects).some((q) => q !== p && (q.edgeIds.includes(id) || q.chain.some((c) => c.edgeId === id) || q.replaces.includes(id)))) delete sim.edges[id]; }
+      for (const id of p.edgeIds) { const e = sim.edges[id]; if (e && e.built < 1 && !Object.values(sim.routes).some((r) => r.edges.some((x) => x.edgeId === id)) && !Object.values(sim.projects).some((q) => q !== p && (q.edgeIds.includes(id) || q.chain.some((c) => c.edgeId === id) || q.replaces.includes(id)))) { delete sim.edges[id]; netRemoved(sim); } }
       p.edgeIds = p.edgeIds.filter((id) => sim.edges[id]); p.chain = [];
       ev(sim, "project", `構想のまま立ち消え: ${projLabel(sim, p)}`, appetite < 0.25 ? "建設への意欲が下がり、計画に進まなかった" : "財政・世論の判断で計画に進まなかった", { project: p.id });
     }

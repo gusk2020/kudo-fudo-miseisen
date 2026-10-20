@@ -50,7 +50,8 @@ describe("Stage 9: a drawn mountain range is a real barrier", () => {
     expect(mountainBarrier(0.9, 2400)).toBeGreaterThan(3 * mountainBarrier(0.9, 1500)); expect(mountainBarrier(0.1, 3000)).toBe(0);
   });
   it("1950-1975: a range across the Tokaido makes Tokyo-Nagoya clearly slower by road and by rail (until tunnels come); one across the Sanyo lengthens the Okayama-Hiroshima way", () => {
-    const run = (base: ReturnType<typeof realWorld>, y1: number) => { const { sim, w } = stage3SimOn(base); advance(sim, w, 12 * (y1 - 1950)); return { an: analyze(sim, w), w }; };
+    const run = (base: ReturnType<typeof realWorld>, y1: number) => { const { sim, w } = stage3SimOn(base, 0, 7, { pop15: false });   // (the 1950 network as Stage 9 knew it: the Stage 15 start adds coastal gap links, which give Tokyo-Nagoya detours of their own)
+     advance(sim, w, 12 * (y1 - 1950)); return { an: analyze(sim, w), w }; };
     const t = (r: ReturnType<typeof run>, x: string, y: string, rail = false) => { const nc = r.w.cities.length, i = r.w.cities.findIndex((c) => c.name === x), j = r.w.cities.findIndex((c) => c.name === y); return (rail ? r.an.TT : r.an.T)[i * nc + j]; };
     for (const y of [1960, 1975]) {
       const none = run(realWorld(true), y), ne = run(ridgeWorld({ ne: NE }), y);

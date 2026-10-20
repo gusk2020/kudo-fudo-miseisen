@@ -9,7 +9,7 @@
  */
 import { capitalPref } from "./roles";
 import { dist } from "../core/geom";
-import { realToLonLat } from "../core/data";
+import { lonLatToReal, realToLonLat } from "../core/data";
 import { pathfind } from "./world";
 import { sidePops, waterLinks } from "./waterlink";
 import type { Vec } from "../core/types";
@@ -225,7 +225,7 @@ export const lakeEdge = (sim: SimState, c: LakeCrossing): SimEdge | null => Obje
 export function connectPort(sim: SimState, w: World, cell: number, known?: ReturnType<typeof buildIndex>): number {
   const idx = known ?? buildIndex(sim, "road"), R = Math.ceil(LAKE_SNAP_KM / w.cell), ci = cell % w.nx, cj = (cell / w.nx) | 0, lay = (to: number, margin: number) => { const path = pathfind(w, cell, to, { margin }); if (path && path.length > 1) layPath(sim, w, path, { open: true, surface: "unpaved", quality: 40, built: 1, month: sim.month, standard: "rural" }); };
   if (idx.nodeByCell.has(cell)) return cell;
-  let best = -1, bd = Infinity; for (const q of idx.nodeByCell.keys()) { if (w.lm[q] !== w.lm[cell]) continue; const d = Math.hypot((q % w.nx) - ci, ((q / w.nx) | 0) - cj); if (d < bd) { bd = d; best = q; } }
+  let best = -1, bd = Infinity; for (const q of idx.nodeByCell.keys()) { if (w.t.island[q] !== w.t.island[cell]) continue;   /* (the island, not the grid's land mass: a headland the grid cuts off still belongs to its island's roads) */ const d = Math.hypot((q % w.nx) - ci, ((q / w.nx) | 0) - cj); if (d < bd) { bd = d; best = q; } }
   if (best >= 0) lay(best, bd <= R ? 6 : 24);   // an existing road node within reach, else the nearest one (a longer access road)
   return cell;
 }
@@ -293,24 +293,70 @@ function lakeCentre(w: World): Vec { let x = 0, y = 0, c = 0; for (let k = 0; k 
 export const LAKE_LINK_MAX_KM = 40;
 /** Seeding is spread over the first years (each access road costs a pass over the whole network): this many at the start, this many each year after, for BAY_YEARS years. */
 export const BAY_FIRST = 12, BAY_PER_YEAR = 4, BAY_YEARS = 10;
+export const MAIN_ISLAND_CELLS = 300;
+/** The shortest sea crossing between each two main islands, between the two ISLANDS' MAIN land masses (the biggest piece of each, by the grid's island and mass ids, never by name): a headland the
+ * 5 km grid has cut off from its island carries no road, so a crossing that ends on it would join nothing. */
+const mainMemo = new WeakMap<World, ReturnType<typeof waterLinks>>();
+/** The narrowest strait between each two main islands, once per world: it is a pure function of the terrain, and the all-pairs search below is the costliest thing the yearly step could repeat. */
+export function mainStraitLinks(w: World, links: ReturnType<typeof waterLinks>): ReturnType<typeof waterLinks> {
+  let m = mainMemo.get(w); if (!m) { m = mainStraitLinksRaw(w, links); mainMemo.set(w, m); } return m;
+}
+function mainStraitLinksRaw(w: World, links: ReturnType<typeof waterLinks>): ReturnType<typeof waterLinks> {
+  const cells = new Map<number, Map<number, number[]>>();   // island -> mass -> land cells
+  for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1) { const i = w.t.island[k]; let m = cells.get(i); if (!m) cells.set(i, (m = new Map())); const l = m.get(w.lm[k]); if (l) l.push(k); else m.set(w.lm[k], [k]); }
+  const main = new Map<number, { lm: number; cells: number[]; total: number }>();
+  for (const [i, m] of cells) { let total = 0, bl = -1, bc: number[] = []; for (const [l, c] of m) { total += c.length; if (c.length > bc.length) { bc = c; bl = l; } } if (total >= MAIN_ISLAND_CELLS) main.set(i, { lm: bl, cells: bc, total }); }
+  const out: ReturnType<typeof waterLinks> = [], ids = [...main.keys()].sort((a, b) => a - b), seen = (a: number, b: number) => links.find((l) => l.kind === "sea" && ((w.lm[l.a] === main.get(a)!.lm && w.lm[l.b] === main.get(b)!.lm) || (w.lm[l.b] === main.get(a)!.lm && w.lm[l.a] === main.get(b)!.lm)));
+  for (let x = 0; x < ids.length; x++) for (let y = x + 1; y < ids.length; y++) {
+    const A = main.get(ids[x])!, B = main.get(ids[y])!; let bd = Infinity, ba = -1, bb = -1;
+    for (const a of A.cells) { const pa = w.cellPos(a); for (const b of B.cells) { const pb = w.cellPos(b), dx = Math.abs(pa[0] - pb[0]), dy = Math.abs(pa[1] - pb[1]); if (dx + dy > bd * 1.5) continue; const d = Math.hypot(dx, dy); if (d < bd) { bd = d; ba = a; bb = b; } } }
+    if (ba < 0 || bd > MAX_MAIN_STRAIT_KM) continue;
+    const known = seen(ids[x], ids[y]); const km = Math.round(bd * 10) / 10;
+    // (a candidate the coast-shape search already found for the same two masses at about this length is used as it stands)
+    out.push(known && Math.abs(known.km - km) < 1 ? known : { id: `main:${ba}:${bb}`, a: ba, b: bb, kind: "sea", km, landKm: null, lmA: A.lm, lmB: B.lm, nameA: "", nameB: "", saving: 400 - km } as ReturnType<typeof waterLinks>[0]);
+  }
+  return out;
+}
+/** Stage 16: straits the player knows by name. Both ports of a corridor lie within NAMED_STRAIT_KM of the two ends, so the project, the map label and the timeline say where it really is
+ *  (the Hoyo strait: Saganoseki, Oita -- Sadamisaki, Ehime, 14 km) instead of "Oita-Ehime". */
+export const NAMED_STRAITS: { name: string; a: [number, number, string]; b: [number, number, string] }[] = [
+  { name: "豊予海峡", a: [131.88, 33.24, "佐賀関"], b: [132.01, 33.34, "佐田岬"] },
+];
+export const NAMED_STRAIT_KM = 14;
+export function namedStrait(w: World, c: { a: { cell: number }; b: { cell: number } }): { name: string; a: string; b: string } | null {
+  const pa = w.cellPos(c.a.cell), pb = w.cellPos(c.b.cell);
+  for (const n of NAMED_STRAITS) {
+    const ra = lonLatToReal(n.a[0], n.a[1]), rb = lonLatToReal(n.b[0], n.b[1]), d = (p: Vec, q: Vec) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d(pa, ra) < NAMED_STRAIT_KM && d(pb, rb) < NAMED_STRAIT_KM) return { name: n.name, a: n.a[2], b: n.b[2] };
+    if (d(pa, rb) < NAMED_STRAIT_KM && d(pb, ra) < NAMED_STRAIT_KM) return { name: n.name, a: n.b[2], b: n.a[2] };
+  }
+  return null;
+}
+export const MAX_MAIN_STRAIT_KM = 80;
 export const BAY_TAG = "湾岸航路", BAY_MIN_SAVING = 55, BAY_MIN_POP = 40000, BAY_MAX = 64, BAY_DUP_KM = 25;
 export const isBayFerry = (e: SimEdge) => e.facility === "ferry" && (e.facilityName ?? "").endsWith(BAY_TAG);
 export function seedBayFerries(sim: SimState, w: World, maxNew = BAY_MAX): number {
   const near = (a: Vec, b: Vec) => dist(a, b) < BAY_DUP_KM;
   let n = 0, idx = buildIndex(sim, "road"); const have = Object.values(sim.edges).filter((e) => isBayFerry(e) || (e.facilityName ?? "").endsWith("湖岸航路")).length;
-  for (const l of waterLinks(w)) {
-    if (n >= maxNew || have + n >= BAY_MAX) break; if (l.saving < BAY_MIN_SAVING || (l.kind === "lake" && l.km > LAKE_LINK_MAX_KM)) continue;
+  // Stage 14: the narrowest strait between every two MAIN islands (Honshu, Hokkaido, Shikoku, Kyushu: the 4 with at least MAIN_ISLAND_CELLS cells) always has a ferry in the 1950s, however few
+  // people live on its shores: the ferries between the islands' big cities are 100+ km, and a tunnel is planned only where a crossing exists to replace. (Hoyo: Kyushu-Shikoku.)
+  const links = waterLinks(w), mainList = mainStraitLinks(w, links), mainPairs = new Set(mainList);
+  // (the road ferries there already are, as the positions of their two ends: a few dozen, where the edges are a thousand -- this test ran for every one of several hundred links)
+  const ferryEnds: [Vec, Vec][] = Object.values(sim.edges).filter((e) => e.facility === "ferry" && modeOf(e) === "road" && e.cells.length >= 2).map((e) => [w.cellPos(e.cells[0]), w.cellPos(e.cells[e.cells.length - 1])]);
+  for (const l of [...mainList, ...links.filter((x) => !mainPairs.has(x))]) {
+    if (n >= maxNew || have + n >= BAY_MAX) break; const main = mainPairs.has(l); if (!main && (l.saving < BAY_MIN_SAVING || (l.kind === "lake" && l.km > LAKE_LINK_MAX_KM))) continue;
     const pa = w.cellPos(l.a), pb = w.cellPos(l.b);
-    if (Object.values(sim.edges).some((e) => e.facility === "ferry" && modeOf(e) === "road" && e.cells.length >= 2 && ((near(w.cellPos(e.cells[0]), pa) && near(w.cellPos(e.cells[e.cells.length - 1]), pb)) || (near(w.cellPos(e.cells[0]), pb) && near(w.cellPos(e.cells[e.cells.length - 1]), pa))))) continue;
-    if (Math.min(...sidePops(sim, w, l.a, l.b)) < BAY_MIN_POP) continue;
+    if (ferryEnds.some(([x, y]) => (near(x, pa) && near(y, pb)) || (near(x, pb) && near(y, pa)))) continue;
+    if (!main && Math.min(...sidePops(sim, w, l.a, l.b)) < BAY_MIN_POP) continue;
     const nodes0 = Object.keys(sim.nodes).length, ca = connectPort(sim, w, l.a, idx), cb = connectPort(sim, w, l.b, idx);
     if (Object.keys(sim.nodes).length !== nodes0) idx = buildIndex(sim, "road");   // (the index is rebuilt only when a port's access road has added nodes)
-    makeFerryAt(sim, w, { cell: ca, pos: w.cellPos(ca) }, { cell: cb, pos: w.cellPos(cb) }, "road", `${l.kind === "lake" ? "湖の" : "湾・海峡の"}航路(1950年の既存の連絡。陸路は${Math.round(l.landKm ?? 0)}kmの遠回り、海上は${l.km}km)`, l.kind === "lake" ? `ferry:${LAKE_TAG}${shoreNames(w, l.a, l.b).join("〜")}湖岸航路` : `ferry:${shoreNames(w, l.a, l.b).join("〜")}${BAY_TAG}`); n++;
+    makeFerryAt(sim, w, { cell: ca, pos: w.cellPos(ca) }, { cell: cb, pos: w.cellPos(cb) }, "road", `${l.kind === "lake" ? "湖の" : "湾・海峡の"}航路(1950年の既存の連絡。陸路は${Math.round(l.landKm ?? 0)}kmの遠回り、海上は${l.km}km)`, l.kind === "lake" ? `ferry:${LAKE_TAG}${shoreNames(w, l.a, l.b).join("〜")}湖岸航路` : `ferry:${ferryTitle(w, l.a, l.b)}${BAY_TAG}`); n++; ferryEnds.push([w.cellPos(ca), w.cellPos(cb)]);
   }
   if (n && have === 0) ev(sim, "seed", `1950年代の湾・海峡の航路: 最初の${n}本(残りは続く数年で加わる。陸路が遠回りの海を船で渡る)`, "初期条件。海岸線の形から向かい合う岸を探した(合成。実在の航路表ではない)", {});
   return n;
 }
 
+const ferryTitle = (w: World, a: number, b: number): string => { const ns = namedStrait(w, { a: { cell: a }, b: { cell: b } }); return ns ? `${ns.name}(${ns.a}〜${ns.b})` : shoreNames(w, a, b).join("〜"); };
 /** Names for the two shores of water: the prefectures when they differ ("千葉〜神奈川"), else the nearest town with the side it lies on ("知多東岸"). Cities keep their own names. */
 export function shoreNames(w: World, ca: number, cb: number): [string, string] {
   const pa = w.prefOf(ca), pb = w.prefOf(cb), short = (id: string) => prefName(id).replace(/[都道府県]$/, "");

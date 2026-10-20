@@ -22,6 +22,8 @@ import type { SimState } from "./types";
 import type { World } from "./world";
 
 export const AREA_K = 800, AREA_POW = 0.8, PLAIN_F = 1.5, LOW_F = 1, HIGH_F = 0.5, PLAIN_M = 120, PLAIN_SLOPE = 4, LOW_M = 500, MAX_H = 1.5;
+/** Stage 15: a town within SAT_H_15 hours of a city 1.5x its size is its satellite in a Stage 15 game (a commute of an hour and a half by the network as it is). */
+export const SAT_H_15 = 1.5;
 export const SAT_RATIO = 1.5, SAT_H = 1.0, OFF_KMH = 12, HISTORY_KEEP = 40;
 export interface MetroInfo { core: string; members: string[]; pop: number; areaKm2: number; radiusKm: number; cells: number[]; prefs: string[]; outsidePct: number; budgetKm2: number }
 export interface MetroState { year: number; list: MetroInfo[]; of: Record<string, string>; h: Record<string, [number, number, number][]> }
@@ -60,8 +62,9 @@ export function computeMetros(sim: SimState, w: World, an: { T: Float64Array; TT
   // 1. satellites: the root of each city
   const root = new Array<number>(nc).fill(-1);
   for (const i of order) {
-    let best = -1, bt = SAT_H;
-    for (const j of order) { if (P[j] < SAT_RATIO * P[i]) break; if (j === i) continue; const t = Math.min(an.T[i * nc + j], an.TT[i * nc + j] + 0.4); if (t < bt) { bt = t; best = j; } }
+    let best = -1, bt = sim.pop15 ? SAT_H_15 : SAT_H;
+    for (const j of order) { if (P[j] < SAT_RATIO * P[i]) break; if (j === i || root[j] < 0) continue;   // (a city with no people yet has nobody to attach to: only cities already placed can be a centre)
+      const t = Math.min(an.T[i * nc + j], an.TT[i * nc + j] + 0.4); if (t < bt) { bt = t; best = j; } }
     root[i] = best < 0 ? i : root[best];
   }
   const roots = order.filter((i) => root[i] === i), slot = new Map<number, number>(); roots.forEach((r, n) => slot.set(r, n));
