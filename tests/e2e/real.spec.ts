@@ -133,7 +133,9 @@ test("reload at ×20 keeps the game; a save whose roads cannot be attached is qu
   const month = await app(page, "a => a.sim.month") as number;
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.sim.month")).toBeGreaterThanOrEqual(month);
-  // make the stored roads unattachable (terrain hash mismatch) and reload
+  // make the stored roads unattachable (terrain hash mismatch) and reload. First stop the clock and let the last save land: a save still in flight at x20 on a slow runner could otherwise overwrite the tampered copy and make the check below compare the app's own re-save with it
+  await page.evaluate(async () => { const a = (window as any).__kfm; a.setSpeed(0); await a.persist(true); });
+  await page.waitForTimeout(1500);
   await page.evaluate(() => { (window as any).__kfm.persist = () => Promise.resolve(true); });
   await page.evaluate(() => new Promise<void>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const st = r.result.transaction("saves", "readwrite").objectStore("saves"); const g = st.get("s3:auto"); g.onsuccess = () => { const o = JSON.parse(g.result); o.save.sim.terrainHash = "tampered"; st.put(JSON.stringify(o), "s3:auto"); res(); }; }; }));
   const before = await idbGet(page, "s3:auto");
