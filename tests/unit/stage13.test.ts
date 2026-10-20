@@ -169,7 +169,7 @@ describe("Stage 13: the water-tunnel games plan by money, not by a count of two"
     sim.dials.hwyBuild = 1; sim.dials.railBuild = 1; sim.macro.budgetBu = 1e6;
     for (const e of Object.values(sim.edges)) if (e.facility === "ferry" && e.state === "open") e.through = capacityOf(e) * 1.5;
     for (let i = 0; i < 12; i++) planCrossings(sim, w, 1960);
-    for (const m of ["road", "rail"] as const) { const act = Object.values(sim.projects).filter((p) => isCrossingProject(p) && modeOf(p) === m && ["concept", "planned", "building", "suspended"].includes(p.status)); expect(act.length).toBeLessThanOrEqual(MAX_ACTIVE_WATER); const keys = act.map((p) => `${p.from}>${p.to}`); expect(new Set(keys).size).toBe(keys.length); }
+    for (const m of ["road", "rail"] as const) { const act = Object.values(sim.projects).filter((p) => isCrossingProject(p) && modeOf(p) === m && ["concept", "planned", "building", "suspended"].includes(p.status)); expect(act.filter((p) => !p.reason.includes("【島間】")).length).toBeLessThanOrEqual(MAX_ACTIVE_WATER); expect(act.filter((p) => p.reason.includes("【島間】")).length).toBeLessThanOrEqual(6);   /* (Stage 15: the island links have places of their own, one per pair of main islands, beside the six shared) */ const keys = act.map((p) => `${p.from}>${p.to}`); expect(new Set(keys).size).toBe(keys.length); }
     expect(Object.values(sim.projects).filter(isCrossingProject).length).toBeGreaterThan(2);   // the Stage 11 cap of two is gone
   });
   it("the older rule is still there for a game made without the water rule (waterK 0): two projects at most, no bay ferries, no water tunnel price", () => {

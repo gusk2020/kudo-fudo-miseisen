@@ -55,12 +55,21 @@ function spanning(w: World): Set<string> {
   return keys;
 }
 
+/** Stage 15: the longest gap a quarter-of-the-compass neighbour may be joined across in the 1950 network (km). */
+export const GAP_KM = 230;
 export function* seedRailGen(sim: SimState, w: World): Generator<number> {
   const ref = referenceGrids(w), bias = refBias(ref.rail), mst = spanning(w);
   const cand: [WCity, WCity][] = [], keys = new Set<string>();
   const add = (a: WCity, b: WCity) => { const [x, y] = a.id < b.id ? [a, b] : [b, a], k = x.id + y.id; if (!keys.has(k)) { keys.add(k); cand.push([x, y]); } };
   for (const a of w.cities) for (const b of w.cities) if (a.id < b.id && a.island === b.island && mst.has(a.id + b.id)) add(a, b);
   for (const a of w.cities) for (const b of [...w.cities].filter((x) => x.id !== a.id && x.island === a.island).sort((p, q) => dist(a.pos, p.pos) - dist(a.pos, q.pos) || (p.id < q.id ? -1 : 1)).slice(0, 3)) if (dist(a.pos, b.pos) <= 130) add(a, b);
+  // Stage 15: a gap between two cities of one coast is not a reason for there to be no railway: a city also joins the nearest city of each quarter of the compass within GAP_KM, however far the other
+  // three are. (Before, only the three nearest within 130 km were tried, and a sparse coast -- Tottori-Matsue 153 km, Niigata-Toyama 212 km -- got no trunk at all in 1950: the San'in coast had 46 km of railway for the whole century.)
+  if (sim.pop15) for (const a of w.cities) {
+    const near: (WCity | null)[] = [null, null, null, null], nd = [Infinity, Infinity, Infinity, Infinity];
+    for (const b of w.cities) { if (b.id === a.id || b.island !== a.island) continue; const d = dist(a.pos, b.pos); if (d > GAP_KM) continue; const q = Math.min(3, Math.floor(((Math.atan2(b.pos[1] - a.pos[1], b.pos[0] - a.pos[0]) + Math.PI) / (Math.PI / 2)))); if (d < nd[q]) { nd[q] = d; near[q] = b; } }
+    for (const b of near) if (b) add(a, b);
+  }
   yield 0.05;
   const links: Link[] = [], operators = new Map<string, Operator>(), railCells = new Set<number>();
   const opFor = (a: WCity, b: WCity, len: number, r: number): string => {

@@ -136,6 +136,10 @@ export function isStrategic(w: World, c: Corridor): boolean {
   let m = mainMemo.get(w); if (!m) { m = new Map(); for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1) m.set(w.t.island[k], (m.get(w.t.island[k]) ?? 0) + 1); mainMemo.set(w, m); }
   const i = w.t.island[c.a.cell], j = w.t.island[c.b.cell]; return i !== j && (m.get(i) ?? 0) >= MAIN_ISLAND_CELLS && (m.get(j) ?? 0) >= MAIN_ISLAND_CELLS;
 }
+/** Stage 15 (phone check: the Kyushu-Shikoku tunnel got built, but 15-20 years after every other strait): measured, it waited behind (1) the funds test -- a 47 km tunnel was asked to be paid for in 19 months, so it
+ * could not start until the pool had grown -- and (2) the six places shared by every crossing of the nation, which the many short crossings filled for ten more years. A national island link is a decade-long
+ * national programme: its funds are tested over STRATEGIC_MONTHS times the usual months, and the island links have their own places (STRATEGIC_ACTIVE at a time) beside the six. Stage 15 games only. */
+export const STRATEGIC_MONTHS = 2.5, STRATEGIC_ACTIVE = 2;
 export const STRATEGIC_TAG = "【島間】", STRATEGIC_SCORE = 1.6, STRATEGIC_BAR = 0.7, STRATEGIC_RANK = 2, STRATEGIC_FUND = 1.5, STRATEGIC_COOLING_YEARS = 4;
 let islMemo: { sim: SimState; month: number; map: Map<number, number> } | null = null;
 export function islandPop(sim: SimState, w: World, isl: number): number {
@@ -172,7 +176,7 @@ export function evalCorridor(sim: SimState, w: World, c: Corridor, mode: Mode, y
   const side = sidePops(sim, w, c.a.cell, c.b.cell), mpA = wk === undefined ? massPop(sim, w, w.lm[c.a.cell]) : Math.max(massPop(sim, w, w.lm[c.a.cell]), islandPop(sim, w, w.t.island[c.a.cell])), mpB = wk === undefined ? massPop(sim, w, w.lm[c.b.cell]) : Math.max(massPop(sim, w, w.lm[c.b.cell]), islandPop(sim, w, w.t.island[c.b.cell])), popSmall = c.kind !== "strait" ? Math.min(...side) : wk === undefined ? Math.min(mpA, mpB) : Math.min(Math.max(mpA, side[0]), Math.max(mpB, side[1]));   // (a headland the 5 km grid cuts off from its island is a mass of nobody: its own people count)
   if (popSmall < POP_PER_KM * cheap * Math.max(c.span, 1)) return { ok: false, why: "pop", s };   // too few people on the small shore for this much water
   const tm = s.fac === "tunnel" && wk !== undefined ? waterTechAt(wk, y).timeMult : techAt(sim.tech!.k, y).timeMult;
-  const months = Math.max(24, c.span * 0.8) * tm, need = s.cost / months, pool = sim.macro.budgetBu * (mode === "road" ? dl.roadShare * dl.austerity : 1 - dl.roadShare) * (mode === "road" ? 0.2 : 0.6);
+  const months = Math.max(24, c.span * 0.8 * (sim.pop15 && wk !== undefined && isStrategic(w, c) ? STRATEGIC_MONTHS : 1)) * tm, need = s.cost / months, pool = sim.macro.budgetBu * (mode === "road" ? dl.roadShare * dl.austerity : 1 - dl.roadShare) * (mode === "road" ? 0.2 : 0.6);
   const strat = wk !== undefined && isStrategic(w, c);
   if (need + committed > FUND_SHARE * (strat ? STRATEGIC_FUND : 1) * pool) return { ok: false, why: "funds", s, need, fund: FUND_SHARE * pool };
   const load = Math.max(ferryLoad(ferry) * (modeOf(ferry) !== mode ? RAIL_FROM_ROAD : 1), c.kind === "strait" ? 0 : virtualTrips(sim, w, c.a.cell, c.b.cell, c.km, mode) / (mode === "rail" ? 6000 : 3000));
@@ -189,7 +193,7 @@ export function planCrossings(sim: SimState, w: World, y: number): SimProject[] 
     const appetite = (mode === "road" ? dl.hwyBuild : dl.railBuild) * (1 + 0.5 * dl.hsr) * (1 - 0.35 * Math.min(1, dl.seaBias)); if (appetite < 0.15) continue;
     let pool: Corridor[] | undefined; const fixed = fixedLinksOf(sim, mode);
     for (let round = 0; round < (wk !== undefined ? STARTS_PER_YEAR_WATER : 1); round++) {
-      if (proj.filter((p) => modeOf(p) === mode && ACTIVE.has(p.status)).length + started.filter((p) => modeOf(p) === mode).length >= maxActive) break;
+      if (proj.filter((p) => modeOf(p) === mode && ACTIVE.has(p.status) && !(sim.pop15 && p.reason.includes(STRATEGIC_TAG))).length + started.filter((p) => modeOf(p) === mode && !(sim.pop15 && p.reason.includes(STRATEGIC_TAG))).length >= maxActive) break;
       let best: { c: Corridor; s: { fac: "bridge" | "tunnel"; cost: number }; score: number; rank: number } | null = null;
       // (a second start in the same year only has to look again at the best few of the first look: what was not a candidate then cannot become one by money being committed)
       const field: { c: Corridor; rank: number }[] = [];
@@ -201,6 +205,16 @@ export function planCrossings(sim: SimState, w: World, y: number): SimProject[] 
       pool = field.sort((a, b) => b.rank - a.rank).slice(0, LOOK_AGAIN).map((x) => x.c);
       if (!best) break;
       const sp = startCrossing(sim, w, best.c, best.s, best.c.ferry, mode, best.score, y); if (sp) started.push(sp); else break;
+    }
+    // Stage 15: each PAIR of main islands that no link joins yet and none is building for has a place of its own: its best island-link corridor starts, whatever the six shared places hold (at most STRATEGIC_ACTIVE starts a year)
+    if (sim.pop15 && wk !== undefined) {
+      const key = (c: Corridor) => { const a = w.t.island[c.a.cell], b = w.t.island[c.b.cell]; return a < b ? `${a}:${b}` : `${b}:${a}`; };
+      const busyPair = new Set<string>();
+      for (const p of [...proj, ...started]) if (modeOf(p) === mode && ACTIVE.has(p.status) && p.reason.includes(STRATEGIC_TAG)) { const e = sim.edges[p.edgeIds[0]]; if (e) { const a = w.t.island[e.cells[0]], b = w.t.island[e.cells[e.cells.length - 1]]; busyPair.add(a < b ? `${a}:${b}` : `${b}:${a}`); } }
+      for (const e of fixed) { const a = w.t.island[e.cells[0]], b = w.t.island[e.cells[e.cells.length - 1]]; busyPair.add(a < b ? `${a}:${b}` : `${b}:${a}`); }
+      const best = new Map<string, { c: Corridor; s: { fac: "bridge" | "tunnel"; cost: number }; score: number; rank: number }>();
+      for (const c of corridorsOf(sim, w, mode)) { if (!isStrategic(w, c) || busyPair.has(key(c))) continue; const ev = evalCorridor(sim, w, c, mode, y, appetite, started, proj, fixed); const b = best.get(key(c)); if (ev.ok && (!b || ev.rank! > b.rank)) best.set(key(c), { c, s: ev.s!, score: ev.score!, rank: ev.rank! }); }
+      let n = 0; for (const b of [...best.values()].sort((p, q) => q.rank - p.rank)) { if (n >= STRATEGIC_ACTIVE) break; const sp = startCrossing(sim, w, b.c, b.s, b.c.ferry, mode, b.score, y); if (sp) { started.push(sp); n++; } }
     }
   }
   return started;
