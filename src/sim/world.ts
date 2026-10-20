@@ -1,6 +1,6 @@
 /** Static, derived-from-the-map context for the simulation. Rebuilt on load; never saved. */
 import { MinHeap } from "../core/heap";
-import { EXTRA, JAPAN, TOWNS } from "../core/data";
+import { EXTRA, JAPAN, TOWNS, lonLatToReal } from "../core/data";
 import { mulberry32 } from "../core/rng";
 import type { TerrainResult } from "../core/terrain";
 import type { Vec } from "../core/types";
@@ -42,7 +42,35 @@ export function townsForSeats(t: TerrainResult, prefs: string[]): string[] {
   return (t.towns ?? []).filter((c) => keep.has(c.id)).map((c) => c.id);   // (in the order of the data file, so a world is the same wherever it is built)
 }
 export const TOWNS_PER_PREF = 5, TOWN_MAX = 40;
-export function buildWorld(t: TerrainResult, seed: number, withTowns: string[] | false = false): World {
+/** Stage 16: land the 5 km grid cannot hold. The Sadamisaki peninsula is 40 km long and a few km wide, so the grid keeps only its tip and a few cells of its root as separate specks
+ *  (the tip is a single cell with no prefecture); a road cannot reach the tip, and the Kyushu-Shikoku strait the grid sees is the 47 km one from Nobeoka, not the 14 km Hoyo strait the
+ *  real ferry crosses. Each line below is the spine of such a strip (lon,lat); the sea cells it passes through are made hilly land of the prefecture at its landward end. Applied to the
+ *  world only (never to the terrain, so the terrain hash and every older save are untouched), and only for the towns world a new game gets. */
+export const SUBGRID_LAND: { name: string; spine: [number, number][]; pref: string }[] = [
+  { name: "佐田岬半島", spine: [[132.03, 33.36], [132.09, 33.385], [132.20, 33.43], [132.30, 33.47], [132.364, 33.495]], pref: "JP-38" },
+];
+export function withSubgridLand(t: TerrainResult): TerrainResult {
+  const { nx, ny, cell, x0, y0 } = t.grid; let land: Uint8Array | null = null, island: Uint8Array | null = null, elev: Float32Array | null = null, pref: Uint8Array | null = null;
+  for (const s of SUBGRID_LAND) {
+    const pi = t.prefOrder.indexOf(s.pref) + 1; if (pi <= 0) continue;
+    const pts = s.spine.map(([lon, lat]) => lonLatToReal(lon, lat));
+    // the island is that of the landward end's cell
+    const endCell = (p: Vec) => { const i = Math.floor((p[0] - x0) / cell), j = Math.floor((p[1] - y0) / cell); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };
+    const ek = endCell(pts[pts.length - 1]); if (ek < 0 || t.land[ek] !== 1) continue; const isl = t.island[ek];
+    for (let n = 1; n < pts.length; n++) {
+      const a = pts[n - 1], b = pts[n], steps = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (cell / 2)));
+      for (let q = 0; q <= steps; q++) {
+        const k = endCell([a[0] + ((b[0] - a[0]) * q) / steps, a[1] + ((b[1] - a[1]) * q) / steps]); if (k < 0) continue;
+        if (t.land[k] === 1 && t.pref[k]) continue;
+        if (!land) { land = t.land.slice(); island = t.island.slice(); elev = t.elev.slice(); pref = t.pref.slice(); }
+        land[k] = 1; island![k] = isl; elev![k] = Math.max(elev![k], 250); pref![k] = pi;
+      }
+    }
+  }
+  return land ? { ...t, land, island: island!, elev: elev!, pref: pref! } : t;
+}
+export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false): World {
+  const t = withTowns ? withSubgridLand(t0) : t0;
   const { nx, ny, cell, x0, y0 } = t.grid, N = nx * ny;
   const cellPos = (k: number): Vec => [x0 + ((k % nx) + 0.5) * cell, y0 + (((k / nx) | 0) + 0.5) * cell];
   const cellOf = (p: Vec) => { const i = Math.floor((p[0] - x0) / cell), j = Math.floor((p[1] - y0) / cell); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };

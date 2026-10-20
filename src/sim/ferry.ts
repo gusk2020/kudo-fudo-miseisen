@@ -9,7 +9,7 @@
  */
 import { capitalPref } from "./roles";
 import { dist } from "../core/geom";
-import { realToLonLat } from "../core/data";
+import { lonLatToReal, realToLonLat } from "../core/data";
 import { pathfind } from "./world";
 import { sidePops, waterLinks } from "./waterlink";
 import type { Vec } from "../core/types";
@@ -317,6 +317,21 @@ function mainStraitLinksRaw(w: World, links: ReturnType<typeof waterLinks>): Ret
   }
   return out;
 }
+/** Stage 16: straits the player knows by name. Both ports of a corridor lie within NAMED_STRAIT_KM of the two ends, so the project, the map label and the timeline say where it really is
+ *  (the Hoyo strait: Saganoseki, Oita -- Sadamisaki, Ehime, 14 km) instead of "Oita-Ehime". */
+export const NAMED_STRAITS: { name: string; a: [number, number, string]; b: [number, number, string] }[] = [
+  { name: "豊予海峡", a: [131.88, 33.24, "佐賀関"], b: [132.01, 33.34, "佐田岬"] },
+];
+export const NAMED_STRAIT_KM = 14;
+export function namedStrait(w: World, c: { a: { cell: number }; b: { cell: number } }): { name: string; a: string; b: string } | null {
+  const pa = w.cellPos(c.a.cell), pb = w.cellPos(c.b.cell);
+  for (const n of NAMED_STRAITS) {
+    const ra = lonLatToReal(n.a[0], n.a[1]), rb = lonLatToReal(n.b[0], n.b[1]), d = (p: Vec, q: Vec) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d(pa, ra) < NAMED_STRAIT_KM && d(pb, rb) < NAMED_STRAIT_KM) return { name: n.name, a: n.a[2], b: n.b[2] };
+    if (d(pa, rb) < NAMED_STRAIT_KM && d(pb, ra) < NAMED_STRAIT_KM) return { name: n.name, a: n.b[2], b: n.a[2] };
+  }
+  return null;
+}
 export const MAX_MAIN_STRAIT_KM = 80;
 export const BAY_TAG = "湾岸航路", BAY_MIN_SAVING = 55, BAY_MIN_POP = 40000, BAY_MAX = 64, BAY_DUP_KM = 25;
 export const isBayFerry = (e: SimEdge) => e.facility === "ferry" && (e.facilityName ?? "").endsWith(BAY_TAG);
@@ -335,12 +350,13 @@ export function seedBayFerries(sim: SimState, w: World, maxNew = BAY_MAX): numbe
     if (!main && Math.min(...sidePops(sim, w, l.a, l.b)) < BAY_MIN_POP) continue;
     const nodes0 = Object.keys(sim.nodes).length, ca = connectPort(sim, w, l.a, idx), cb = connectPort(sim, w, l.b, idx);
     if (Object.keys(sim.nodes).length !== nodes0) idx = buildIndex(sim, "road");   // (the index is rebuilt only when a port's access road has added nodes)
-    makeFerryAt(sim, w, { cell: ca, pos: w.cellPos(ca) }, { cell: cb, pos: w.cellPos(cb) }, "road", `${l.kind === "lake" ? "湖の" : "湾・海峡の"}航路(1950年の既存の連絡。陸路は${Math.round(l.landKm ?? 0)}kmの遠回り、海上は${l.km}km)`, l.kind === "lake" ? `ferry:${LAKE_TAG}${shoreNames(w, l.a, l.b).join("〜")}湖岸航路` : `ferry:${shoreNames(w, l.a, l.b).join("〜")}${BAY_TAG}`); n++; ferryEnds.push([w.cellPos(ca), w.cellPos(cb)]);
+    makeFerryAt(sim, w, { cell: ca, pos: w.cellPos(ca) }, { cell: cb, pos: w.cellPos(cb) }, "road", `${l.kind === "lake" ? "湖の" : "湾・海峡の"}航路(1950年の既存の連絡。陸路は${Math.round(l.landKm ?? 0)}kmの遠回り、海上は${l.km}km)`, l.kind === "lake" ? `ferry:${LAKE_TAG}${shoreNames(w, l.a, l.b).join("〜")}湖岸航路` : `ferry:${ferryTitle(w, l.a, l.b)}${BAY_TAG}`); n++; ferryEnds.push([w.cellPos(ca), w.cellPos(cb)]);
   }
   if (n && have === 0) ev(sim, "seed", `1950年代の湾・海峡の航路: 最初の${n}本(残りは続く数年で加わる。陸路が遠回りの海を船で渡る)`, "初期条件。海岸線の形から向かい合う岸を探した(合成。実在の航路表ではない)", {});
   return n;
 }
 
+const ferryTitle = (w: World, a: number, b: number): string => { const ns = namedStrait(w, { a: { cell: a }, b: { cell: b } }); return ns ? `${ns.name}(${ns.a}〜${ns.b})` : shoreNames(w, a, b).join("〜"); };
 /** Names for the two shores of water: the prefectures when they differ ("千葉〜神奈川"), else the nearest town with the side it lies on ("知多東岸"). Cities keep their own names. */
 export function shoreNames(w: World, ca: number, cb: number): [string, string] {
   const pa = w.prefOf(ca), pb = w.prefOf(cb), short = (id: string) => prefName(id).replace(/[都道府県]$/, "");

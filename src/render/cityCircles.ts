@@ -1,7 +1,7 @@
 /**
  * Stage 14 (Issue #35): which cities get a circle on the map. Pure (no drawing), so a test can ask it. The metropolitan area (metro.ts) is a faint scale indicator on the bottom layer; THESE are the
  * circles of the cities themselves, drawn on top of the roads:
- *   always      the two seats of government (a gold ring), the cores of the ten biggest metropolises, and the towns of the seats' metropolises that are big enough to read (150,000 or more):
+ *   always      the two seats of government (a gold ring), the cores of the ten biggest metropolises, and the towns of the seats' metropolises that are big enough to read (150,000 or more; 40,000 for the real provincial towns of Stage 16):
  *               the commuter belt round a capital is made of towns, not of one disc;
  *   then        the biggest cities by size (10 in the light view, 18 zoomed out, 36 zoomed in), and the clear movers (the four that gained most and the four that lost most on the nation).
  * Colour is the city's own growth against the nation over twenty years (green / red / grey); the radius grows with the square root of its people. No triangles.
@@ -10,6 +10,8 @@ import { homeCity, subCity } from "../sim/ceremony";
 import type { SimState } from "../sim/types";
 import type { World } from "../sim/world";
 
+/** Stage 16: a provincial town of a seat's metropolis gets its circle from this size (the commuter belt is made of small towns: 150,000 would hide all of them). */
+export const SATELLITE_MIN = 40000;
 export interface CityCircle { id: string; x: number; y: number; p: number; rel: number; seat: boolean }
 export function pickCityCircles(sim: SimState, w: World, zoom: number, year: number | null, lite: boolean): CityCircle[] {
   const c12 = sim.city12; if (!c12) return [];
@@ -25,7 +27,7 @@ export function pickCityCircles(sim: SimState, w: World, zoom: number, year: num
   if (M && year === null) {
     const top = [...M.list].sort((a, b) => b.pop - a.pop);
     for (const m of top.slice(0, 10)) { const r = byId.get(m.core); if (r) keep.add(r); }
-    for (const m of top) if (m.members.some((id) => seat.has(id))) for (const id of m.members) { const r = byId.get(id); if (r && r.p >= 150000) keep.add(r); }
+    for (const m of top) if (m.members.some((id) => seat.has(id))) for (const id of m.members) { const r = byId.get(id); if (r && r.p >= (w.cityById.get(id)?.kind === "town" ? SATELLITE_MIN : 150000)) keep.add(r); }
   }
   const bySize = [...rows].sort((p, q) => q.p - p.p); for (const r of bySize.slice(0, lite ? 10 : zoom < 0.5 ? 18 : 36)) keep.add(r);
   for (const r of [...rows].sort((p, q) => q.rel - p.rel).slice(0, 4)) if (r.rel > 1.1 && r.p > 5e4) keep.add(r);

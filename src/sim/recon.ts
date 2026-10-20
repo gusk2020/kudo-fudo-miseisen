@@ -115,3 +115,9 @@ export function reconRegionLean(sim: SimState, w: World, region: string, meanCor
 export const FAVOURED_LEAN = 0.5;
 /** Stage 15: in a region the policy favours, a paved two-lane trunk road that carries POLICY_TRUNK_MIN vehicles a day or more is built up to an ordinary road at the priority POLICY_TRUNK_SCORE (a typical jam-driven job scores 3 or more, a paving job 1 to 2), fading with the policy. */
 export const POLICY_TRUNK_MIN = 30, POLICY_TRUNK_SCORE = 2.4;
+
+/** Stage 16 (phone check: the 日本海側 policy moved the statistics but not the map -- the national railway was laid in 1950 and the busy-corridor planner never reaches a coast with little traffic): in a region the policy
+ * favours, the trunk lines are built UP AHEAD of the jam, at the policy's own priority, the way the Stage 15 paving rule already did for the roads. An ordinary two-lane road that carries POLICY_HWY_SHARE of its capacity
+ * becomes an expressway, a conventional railway that carries POLICY_RAIL_SHARE of its capacity a high-speed line; both at a score that a typical jam-driven job (3 or more) still beats, so the policy goes first where
+ * nothing is jammed and never ahead of a real jam. Fading with the policy like every other term. Games from Stage 16 on (those whose world carries the provincial towns). */
+export const POLICY_HWY_SHARE = 0.1, POLICY_HWY_SCORE = 2.9, POLICY_RAIL_SHARE = 0.05, POLICY_RAIL_SCORE = 3.3, POLICY_TRUNK_KM = 10;

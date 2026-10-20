@@ -18,7 +18,7 @@ import { UNIT, RAIL_UNIT, createProject, facCost } from "./planning";
 import { dist } from "../core/geom";
 import type { Vec } from "../core/types";
 import { buildIndex, layPath, netRemoved, nodeAtCell, setEdgeState } from "./network";
-import { MAIN_ISLAND_CELLS, isLakeFerry, nearTown, shoreNames } from "./ferry";
+import { MAIN_ISLAND_CELLS, isLakeFerry, namedStrait, nearTown, shoreNames } from "./ferry";
 import { pathfind } from "./world";
 import { waterTechAt } from "./tech";
 import { RAIL_FROM_ROAD, sidePops, virtualTrips } from "./waterlink";
@@ -250,13 +250,13 @@ export function ensureAccess(sim: SimState, w: World, cell: number): void {
 }
 export const STRANDED_NODES = 20, ACCESS_REACH_KM = 120;
 function startCrossing(sim: SimState, w: World, c: Corridor, s: { fac: "bridge" | "tunnel"; cost: number }, ferry: SimEdge, mode: Mode, score: number, y: number): SimProject | null {
-  const rail = mode === "rail", a = c.a.name.replace(/市$/, ""), b = c.b.name.replace(/市$/, ""), sea = c.kind === "lake" ? "湖底" : "海底";
+  const rail = mode === "rail", ns = namedStrait(w, c), a = ns ? ns.a : c.a.name.replace(/市$/, ""), b = ns ? ns.b : c.b.name.replace(/市$/, ""), sea = c.kind === "lake" ? "湖底" : "海底";
   // a railway tunnel needs the railway to reach both shores; the approach lines are part of the project (and of its price)
   type Ap = NonNullable<ReturnType<typeof railApproach>>; let approachA: Ap | null = { created: [], chain: [], km: 0 }, approachB: Ap | null = approachA;
   if (rail && sim.tech?.wk !== undefined && ferry.mode !== "rail") { approachA = railApproach(sim, w, c.a.cell, true, y, c.b.cell); approachB = railApproach(sim, w, c.b.cell, false, y, c.a.cell); if (!approachA || !approachB) { for (const ap of [approachA, approachB]) if (ap) for (const id of ap.created) delete sim.edges[id]; netRemoved(sim); return null; } }
   if (!rail && sim.tech?.wk !== undefined) { ensureAccess(sim, w, c.a.cell); ensureAccess(sim, w, c.b.cell); }
   const id = newId(sim, "edge");
-  const e: SimEdge = { ...newEdgeDefaults(), id, a: ferry.a, b: ferry.b, cells: [...ferry.cells], lengthKm: ferry.lengthKm, surface: "paved", quality: 92, built: 0, open: false, state: "closed", standard: "standard", maxGradePct: 1, builtMonth: null, region: ferry.region, facility: s.fac, facilityName: `link:${a}〜${b}${s.fac === "bridge" ? "大橋" : `${sea}トンネル`}`, ...(rail ? { mode: "rail" as const, op: ferry.op ?? "jnr" } : {}) };
+  const e: SimEdge = { ...newEdgeDefaults(), id, a: ferry.a, b: ferry.b, cells: [...ferry.cells], lengthKm: ferry.lengthKm, surface: "paved", quality: 92, built: 0, open: false, state: "closed", standard: "standard", maxGradePct: 1, builtMonth: null, region: ferry.region, facility: s.fac, facilityName: `link:${ns ? `${ns.name}(${a}〜${b})` : `${a}〜${b}`}${s.fac === "bridge" ? "大橋" : `${sea}トンネル`}`, ...(rail ? { mode: "rail" as const, op: ferry.op ?? "jnr" } : {}) };
   sim.edges[id] = e;
   const approachKm = approachA!.km + approachB!.km, cost = s.cost + approachKm * RAIL_UNIT.standard, edgeIds = [id, ...approachA!.created, ...approachB!.created], chain = [...approachA!.chain, { edgeId: id, dir: 1 as const }, ...approachB!.chain];
   const reason = `${CROSSING_TAG}${wk14Strategic(w, c) ? STRATEGIC_TAG : ""}${a}〜${b}の${rail ? "鉄道" : "道路"}${rail && ferry.mode !== "rail" ? "輸送" : "連絡船"}は混雑(${Math.round(ferryLoad(ferry) * 100)}%)。${c.kind === "lake" ? "湖面" : "海峡"}${c.span}kmは${s.fac === "bridge" ? "橋" : sea + "トンネル"}で結べる技術がある`;

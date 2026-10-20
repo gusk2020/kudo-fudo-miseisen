@@ -3,7 +3,7 @@
  * Cost control ("performance budget"): at most MAX_PATHFINDS route searches per year, regions take turns.
  */
 import { basePop, capitalPref } from "./roles";
-import { FAVOURED_LEAN, POLICY_TRUNK_MIN, POLICY_TRUNK_SCORE, reconCorridor, reconFade, reconMeanCore, reconOf, reconRegionLean, reconText } from "./recon";
+import { FAVOURED_LEAN, POLICY_HWY_SCORE, POLICY_HWY_SHARE, POLICY_RAIL_SCORE, POLICY_RAIL_SHARE, POLICY_TRUNK_KM, POLICY_TRUNK_MIN, POLICY_TRUNK_SCORE, reconCorridor, reconFade, reconMeanCore, reconOf, reconRegionLean, reconText } from "./recon";
 import { dist } from "../core/geom";
 import { refBias, referenceGrids } from "./reference";
 import { buildIndex, facilitySplit, layPath, newId, nodeAtCell, stepKey } from "./network";
@@ -69,7 +69,7 @@ export function competeWeight(dl: { carBias: number; railBias: number }, other: 
 }
 export const MAX_PATHFINDS = 12, REGIONS_PER_YEAR = 14, MAX_PATHFINDS_S3 = 16, REGIONS_PER_YEAR_S3 = 18, MAX_ACTIVE_PER_REGION = 2;
 export const UNIT: Record<Standard, number> = { rural: 1, standard: 1.8, highgrade: 4 };
-interface Cand { score: number; kind: ProjectKind; edge?: SimEdge; vid?: string; a?: number; b?: number; reason: string; toCell?: number; toName?: string; local?: boolean; fromCell?: number; fromName?: string }
+interface Cand { score: number; kind: ProjectKind; edge?: SimEdge; vid?: string; a?: number; b?: number; reason: string; toCell?: number; toName?: string; local?: boolean; fromCell?: number; fromName?: string; pol?: true }
 /** Projects born as local branch lines/connectors carry this prefix in their reason (no new save field needed). */
 export const LOCAL_TAG = "【地方】";
 
@@ -115,6 +115,7 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
       if (e.state === "open" && e.congYears >= 2 && e.standard !== "highgrade") cands.push({ score: 3 + (e.through / CAPACITY[e.standard]) * 3, kind: e.standard === "rural" && e.maxGradePct < 5 && e.lengthKm < 25 ? "improve" : "bypass", edge: e, reason: `通過交通が容量の${Math.round((e.through / CAPACITY[e.standard]) * 100)}%に達し${e.congYears}年混雑` });
       else if (fav && rc && e.state === "open" && e.surface !== "paved" && d >= POLICY_TRUNK_MIN && e.quality < 80) cands.push({ score: POLICY_TRUNK_SCORE * reconFade(y), kind: "upgrade", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線の舗装(需要${Math.round(d)}台/日)` });
       else if (fav && rc && e.state === "open" && e.standard === "rural" && e.surface === "paved" && d >= POLICY_TRUNK_MIN && e.lengthKm >= 8) cands.push({ score: POLICY_TRUNK_SCORE * reconFade(y), kind: "improve", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線の整備(需要${Math.round(d)}台/日)` });   // Stage 15: a region the policy favours gets its busy trunk roads built up without waiting for the jam
+      else if (fav && sim.towns16 && rc && e.state === "open" && e.standard === "standard" && e.surface === "paved" && e.lengthKm >= POLICY_TRUNK_KM && d >= POLICY_HWY_SHARE * CAPACITY.standard) cands.push({ score: POLICY_HWY_SCORE * reconFade(y), kind: "improve", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線の高規格化(需要${Math.round(d)}台/日)` });
       else if (sim.stage3 && e.state === "open" && e.standard === "rural" && e.surface === "paved" && e.local >= 250 && e.quality >= 50) cands.push({ score: 1.2 + e.local / 800, kind: "improve", edge: e, reason: `${LOCAL_TAG}沿線の生活需要${Math.round(e.local)}台/日が細道の容量に近づいている` });
       else if (e.state === "open" && e.surface !== "paved" && d >= 150 && e.quality < 80) cands.push({ score: 1 + d / 400, kind: "upgrade", edge: e, reason: `需要${Math.round(d)}台/日で未舗装・砂利のため舗装化` });
       else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && e.region === r) cands.push({ score: 2.5 + (an.potential.get(e.id) ?? 0) / 60, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}台/日が${e.reviveYears}年続いている` });
@@ -179,9 +180,11 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
   const liveNew = live.filter((p) => p.kind === "new" && !p.reason.startsWith(LOCAL_TAG)).length, liveUp = live.filter((p) => p.kind !== "new").length, maxNew = 1 + Math.round(dl.railBuild * 2), maxUp = 2 + Math.round(dl.railBuild * 2);
   if (liveNew >= maxNew && liveUp >= maxUp && live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length >= 1 + Math.round(dl.railBuild * 3)) return;
   const busy = new Set(live.flatMap((p) => p.edgeIds)), nc = w.cities.length, cands: (Cand & { op?: string; std?: Standard })[] = [];
+  const rcr = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined, favMemo = new Map<string, boolean>(), favRegion = (r: string) => { let v = favMemo.get(r); if (v === undefined) { v = !!rcr && reconRegionLean(sim, w, r, rcr.meanCore) >= FAVOURED_LEAN; favMemo.set(r, v); } return v; };
   for (const e of Object.values(sim.edges)) {
     if (modeOf(e) !== "rail" || e.facility === "ferry" || busy.has(e.id) || e.built < 1) continue;
     if (e.state === "open" && e.congYears >= 2 && e.standard !== "highgrade" && (e.standard === "rural" || dl.hsr > 0.4)) cands.push({ score: 3.2 + Math.min(3, (e.through / RAIL_CAPACITY_OF(e)) * 0.3), kind: "electrify", edge: e, reason: `輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%に達し${e.congYears}年混雑(${e.standard === "rural" ? "電化・複線化" : "高速化"})` });
+    else if (sim.towns16 && rcr && e.state === "open" && e.standard !== "highgrade" && e.lengthKm >= POLICY_TRUNK_KM && e.through >= POLICY_RAIL_SHARE * RAIL_CAPACITY_OF(e) && favRegion(w.prefOf(e.cells[e.cells.length >> 1]) ?? e.region)) cands.push({ pol: true, score: POLICY_RAIL_SCORE * reconFade(y), kind: "electrify", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線鉄道の${e.standard === "rural" ? "電化・複線化" : "高速化"}(輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%)` });
     else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && dl.railBuild > 0.3 && !e.convertedTo) cands.push({ score: 2 + (an.potential.get(e.id) ?? 0) / 90, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}人/日が${e.reviveYears}年続いている` });
   }
   const dens = (c: { pop: number }) => c.pop, rdef = accessDeficit(w, an), rc = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined;
@@ -218,16 +221,19 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
   cands.sort((p, q) => q.score - p.score || (p.kind < q.kind ? -1 : 1) || (p.a ?? 0) - (q.a ?? 0) || (p.b ?? 0) - (q.b ?? 0) || (p.fromCell ?? 0) - (q.fromCell ?? 0));
   if ((globalThis as any).__DBG) console.log(y, "cands", cands.filter(c => c.kind === "new").length, cands.slice(0, 5).map(c => c.kind + ":" + c.score.toFixed(2)), "live", live.length, "liveNew", liveNew, "maxNew", maxNew, "up", liveUp, maxUp);
   let made = 0, pf = MAX_RAIL_PATHFINDS, nNew = 0, nUp = 0, nLocal = 0; const liveLocal = live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length, maxLocal = 1 + Math.round(dl.railBuild * 3); const wantNew = dl.railBuild > 0.9 ? 2 : 1, wantUp = Math.max(1, Math.round(0.3 + 1.2 * dl.railBuild));
-  const ranked = [...cands.filter((c) => c.kind === "new" && !c.local).slice(0, 25), ...cands.filter((c) => c.local).slice(0, 8), ...cands.filter((c) => c.kind !== "new").slice(0, 12)].sort((p, q) => q.score - p.score);
+  // Stage 16: the policy's own trunk upgrades have a turn of their own (one a year, two at a time), or the jammed Pacific belt's never-ending list of congested lines takes every turn there is
+  const livePol = live.filter((p) => p.kind !== "new" && p.reason.includes("復興方針")).length; let nPol = 0;
+  const ranked = [...cands.filter((c) => c.kind === "new" && !c.local).slice(0, 25), ...cands.filter((c) => c.local).slice(0, 8), ...cands.filter((c) => c.kind !== "new" && !c.pol).slice(0, 12), ...cands.filter((c) => c.pol).slice(0, 6)].sort((p, q) => q.score - p.score);
   for (const c of ranked) {
     if (nNew >= wantNew && nUp >= wantUp && nLocal >= 1) break;
     if (c.score < 0.25) break;
-    if (c.local) { if (nLocal >= 1 || liveLocal + nLocal >= maxLocal) continue; }
+    if (c.pol) { if (nPol >= 1 || livePol + nPol >= 2) continue; }
+    else if (c.local) { if (nLocal >= 1 || liveLocal + nLocal >= maxLocal) continue; }
     else if (c.kind === "new" ? nNew >= wantNew || liveNew + nNew >= maxNew : nUp >= wantUp || liveUp + nUp >= maxUp) continue;   // new lines and upgrades each get their own quota, so upgrades cannot crowd out new lines for ever
     if (c.edge && (c.kind === "electrify" || c.kind === "restore")) {
       const e = c.edge, cost = e.lengthKm * (c.kind === "restore" ? (e.state === "lost" ? 2.4 : 1.2) : e.standard === "rural" ? 1.3 : 3.2) * mtnCost(w, sim, "rail", e.cells, y);   // Stage 9: upgrading a line through drawn mountains costs as much more as building it
       const p = createProject(sim, c.kind, "JP", e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], cost, c.reason, c.score); p.mode = "rail"; p.op = e.op ?? "jnr";
-      ev(sim, "project", `${c.kind === "restore" ? "復活計画" : e.standard === "rural" ? "電化・複線化計画" : "高速化計画"}: ${projLabel(sim, p)}`, c.reason, { project: p.id, edge: e.id }); made++; nUp++; yield; continue;
+      ev(sim, "project", `${c.kind === "restore" ? "復活計画" : e.standard === "rural" ? "電化・複線化計画" : "高速化計画"}: ${projLabel(sim, p)}`, c.reason, { project: p.id, edge: e.id }); made++; if (c.pol) nPol++; else nUp++; yield; continue;
     }
     if ((globalThis as any).__DBG) console.log("cand", c.kind, c.score.toFixed(2), c.a, c.b, "pf", pf, "nNew", nNew, nUp);
     if (c.kind === "new" && c.a !== undefined && (c.b !== undefined || c.toCell !== undefined) && pf-- > 0) {
