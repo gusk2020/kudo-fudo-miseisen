@@ -67,13 +67,16 @@ export function applySeatOrder(sim: SimState, w: World, an: { T: Float64Array; T
     const x = excess * flow, sw = rec.reduce((a, r) => a + r.wt, 0); add(s, -x); for (const r of rec) add(r.j, (x * r.wt) / sw);
   }
   if (delta.size) { apply(sim, w, delta); delta.clear(); for (let i = 0; i < nc; i++) P[i] = sim.cities[w.cities[i].id]?.pop ?? 0; }
-  // 2. the order
+  // 2. the order. Everybody who is not a seat stays under the smaller seat; and (Stage 15) the sub-capital stays under the capital: the nation's biggest city is the capital the player chose (phone check: a
+  // capital in Kanazawa was second to Osaka, which has the better land). What the sub-capital sheds goes to the towns round it (its metropolis keeps its people; only the head count of the one city falls).
+  const capIdx = hc ? idx.get(hc.id)! : -1, subIdx = sc ? idx.get(sc.id)! : -1, ordered = !!sim.pop15 && capIdx >= 0 && subIdx >= 0 && capIdx !== subIdx;
   const line = SEAT_MARGIN * Math.min(...seats.map((s) => P[s]));
   for (let i = 0; i < nc; i++) {
-    if (isSeat.has(i) || P[i] <= line) continue; const shed = Math.min(P[i] - line, SHED_MAX * P[i]); if (shed < 1) continue;
+    const lim = ordered && i === subIdx ? SEAT_MARGIN * P[capIdx] : line;
+    if ((isSeat.has(i) && !(ordered && i === subIdx)) || P[i] <= lim) continue; const shed = Math.min(P[i] - lim, SHED_MAX * P[i]); if (shed < 1) continue;
     let rec: { j: number; wt: number }[] = [];
-    for (let j = 0; j < nc; j++) { if (j === i || P[j] >= 0.9 * line || P[j] < MIN_SUBURB_POP) continue; const h = t(i, j); if (isFinite(h) && h <= SHED_H) rec.push({ j, wt: Math.exp(-h / 0.8) * (0.3 + siteCapacity(w, w.cities[j])) * Math.sqrt(P[j] + 5e4) }); }
-    if (!rec.length) for (let j = 0; j < nc; j++) if (j !== i && P[j] < 0.9 * line) rec.push({ j, wt: Math.sqrt(P[j] + 5e4) });
+    for (let j = 0; j < nc; j++) { if (j === i || isSeat.has(j) || P[j] >= 0.9 * lim || P[j] < MIN_SUBURB_POP) continue; const h = t(i, j); if (isFinite(h) && h <= SHED_H) rec.push({ j, wt: Math.exp(-h / 0.8) * (0.3 + siteCapacity(w, w.cities[j])) * Math.sqrt(P[j] + 5e4) }); }
+    if (!rec.length) for (let j = 0; j < nc; j++) if (j !== i && !isSeat.has(j) && P[j] < 0.9 * lim) rec.push({ j, wt: Math.sqrt(P[j] + 5e4) });
     if (!rec.length) continue; const sw = rec.reduce((a, r) => a + r.wt, 0); add(i, -shed); for (const r of rec) add(r.j, (shed * r.wt) / sw);
   }
   if (delta.size) apply(sim, w, delta); void y;
@@ -82,4 +85,9 @@ export function applySeatOrder(sim: SimState, w: World, an: { T: Float64Array; T
 export function cityOrderBreaches(sim: SimState, w: World): number {
   const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital); const seats = [hc, sc].filter(Boolean).map((c) => sim.cities[c!.id]?.pop ?? 0); if (!seats.length) return 0; const m = Math.min(...seats);
   const ids = new Set([hc?.id, sc?.id]); return w.cities.filter((c) => !ids.has(c.id) && (sim.cities[c.id]?.pop ?? 0) > m).length;
+}
+/** Stage 15: the capital is the biggest city of the country (a Stage 15 game): true when the capital's city has at least as many people as the sub-capital's. */
+export function capitalFirst(sim: SimState, w: World): boolean {
+  const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital); if (!hc || !sc || hc.id === sc.id) return true;
+  return (sim.cities[hc.id]?.pop ?? 0) >= (sim.cities[sc.id]?.pop ?? 0);
 }
