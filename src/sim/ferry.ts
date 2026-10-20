@@ -296,7 +296,12 @@ export const BAY_FIRST = 12, BAY_PER_YEAR = 4, BAY_YEARS = 10;
 export const MAIN_ISLAND_CELLS = 300;
 /** The shortest sea crossing between each two main islands, between the two ISLANDS' MAIN land masses (the biggest piece of each, by the grid's island and mass ids, never by name): a headland the
  * 5 km grid has cut off from its island carries no road, so a crossing that ends on it would join nothing. */
+const mainMemo = new WeakMap<World, ReturnType<typeof waterLinks>>();
+/** The narrowest strait between each two main islands, once per world: it is a pure function of the terrain, and the all-pairs search below is the costliest thing the yearly step could repeat. */
 export function mainStraitLinks(w: World, links: ReturnType<typeof waterLinks>): ReturnType<typeof waterLinks> {
+  let m = mainMemo.get(w); if (!m) { m = mainStraitLinksRaw(w, links); mainMemo.set(w, m); } return m;
+}
+function mainStraitLinksRaw(w: World, links: ReturnType<typeof waterLinks>): ReturnType<typeof waterLinks> {
   const cells = new Map<number, Map<number, number[]>>();   // island -> mass -> land cells
   for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1) { const i = w.t.island[k]; let m = cells.get(i); if (!m) cells.set(i, (m = new Map())); const l = m.get(w.lm[k]); if (l) l.push(k); else m.set(w.lm[k], [k]); }
   const main = new Map<number, { lm: number; cells: number[]; total: number }>();
