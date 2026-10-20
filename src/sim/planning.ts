@@ -3,7 +3,7 @@
  * Cost control ("performance budget"): at most MAX_PATHFINDS route searches per year, regions take turns.
  */
 import { basePop, capitalPref } from "./roles";
-import { FAVOURED_LEAN, reconCorridor, reconMeanCore, reconOf, reconRegionLean } from "./recon";
+import { FAVOURED_LEAN, POLICY_TRUNK_MIN, POLICY_TRUNK_SCORE, reconCorridor, reconFade, reconMeanCore, reconOf, reconRegionLean, reconText } from "./recon";
 import { dist } from "../core/geom";
 import { refBias, referenceGrids } from "./reference";
 import { buildIndex, facilitySplit, layPath, newId, nodeAtCell } from "./network";
@@ -113,6 +113,8 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
     for (const e of edgesBy.get(r) ?? []) {
       if (busy.has(e.id) || e.built < 1) continue; const d = e.through + e.local;
       if (e.state === "open" && e.congYears >= 2 && e.standard !== "highgrade") cands.push({ score: 3 + (e.through / CAPACITY[e.standard]) * 3, kind: e.standard === "rural" && e.maxGradePct < 5 && e.lengthKm < 25 ? "improve" : "bypass", edge: e, reason: `通過交通が容量の${Math.round((e.through / CAPACITY[e.standard]) * 100)}%に達し${e.congYears}年混雑` });
+      else if (fav && rc && e.state === "open" && e.surface !== "paved" && d >= POLICY_TRUNK_MIN && e.quality < 80) cands.push({ score: POLICY_TRUNK_SCORE * reconFade(y), kind: "upgrade", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線の舗装(需要${Math.round(d)}台/日)` });
+      else if (fav && rc && e.state === "open" && e.standard === "rural" && e.surface === "paved" && d >= POLICY_TRUNK_MIN && e.lengthKm >= 8) cands.push({ score: POLICY_TRUNK_SCORE * reconFade(y), kind: "improve", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線の整備(需要${Math.round(d)}台/日)` });   // Stage 15: a region the policy favours gets its busy trunk roads built up without waiting for the jam
       else if (sim.stage3 && e.state === "open" && e.standard === "rural" && e.surface === "paved" && e.local >= 250 && e.quality >= 50) cands.push({ score: 1.2 + e.local / 800, kind: "improve", edge: e, reason: `${LOCAL_TAG}沿線の生活需要${Math.round(e.local)}台/日が細道の容量に近づいている` });
       else if (e.state === "open" && e.surface !== "paved" && d >= 150 && e.quality < 80) cands.push({ score: 1 + d / 400, kind: "upgrade", edge: e, reason: `需要${Math.round(d)}台/日で未舗装・砂利のため舗装化` });
       else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && e.region === r) cands.push({ score: 2.5 + (an.potential.get(e.id) ?? 0) / 60, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}台/日が${e.reviveYears}年続いている` });

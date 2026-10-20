@@ -113,3 +113,5 @@ export function reconRegionLean(sim: SimState, w: World, region: string, meanCor
 }
 /** Regions the policy favours work faster: one more new link a year and one more job at a time (Stage 15 games). */
 export const FAVOURED_LEAN = 0.5;
+/** Stage 15: in a region the policy favours, a paved two-lane trunk road that carries POLICY_TRUNK_MIN vehicles a day or more is built up to an ordinary road at the priority POLICY_TRUNK_SCORE (a typical jam-driven job scores 3 or more, a paving job 1 to 2), fading with the policy. */
+export const POLICY_TRUNK_MIN = 30, POLICY_TRUNK_SCORE = 2.4;

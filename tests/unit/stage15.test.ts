@@ -6,7 +6,7 @@ import { advance, createSim, updateRegionShares } from "../../src/sim/engine";
 import { computeMetros } from "../../src/sim/metro";
 import { reconCorridor, reconMeanCore, reconRegionLean, FAVOURED_LEAN } from "../../src/sim/recon";
 import { basePop } from "../../src/sim/roles";
-import { cityOrderBreaches, prefAdjacency } from "../../src/sim/seats14";
+import { capitalFirst, cityOrderBreaches, prefAdjacency } from "../../src/sim/seats14";
 import { modeOf } from "../../src/sim/types";
 import { runWater } from "../study/water13lib";
 import { realWorld, stage3Sim } from "./simhelp";
@@ -69,6 +69,13 @@ describe("Stage 15: the policy is a priority, regions it favours work faster, an
     expect(new Set(big.map((id) => x.w.prefOf(x.w.cityById.get(id)!.cell))).size).toBeGreaterThanOrEqual(3);
     const sub = subCity(x.w, x.sim.subCapital)!, ms = x.sim.metro!.list.find((q) => q.members.includes(sub.id))!; expect(ms.members.filter((id) => id !== sub.id && x.sim.cities[id].pop >= 300000).length).toBeGreaterThanOrEqual(3);
   });
+  it("a capital placed away from Tokyo is the biggest city, the sub-capital the second, and no other city is above them (30 years, three capitals)", () => {
+    for (const cap of ["JP-17", "JP-04", "JP-40"]) {
+      const x = stage3Sim("heisei", 7, true, 0, 2, true, { capital: cap, sub: "JP-27" }); x.sim.policy!.mode = "auto"; advance(x.sim, x.w, 12 * 30);
+      expect(cityOrderBreaches(x.sim, x.w), cap).toBe(0); expect(capitalFirst(x.sim, x.w), cap).toBe(true);
+      const rank = x.w.cities.map((c) => ({ id: c.id, p: x.sim.cities[c.id].pop })).sort((a, b) => b.p - a.p).map((r) => r.id); expect(rank[0], cap).toBe(homeCity(x.w, x.sim.capital)!.id); expect(rank[1], cap).toBe(subCity(x.w, x.sim.subCapital)!.id);
+    }
+  }, 600000);
   it("a city with nobody in it does not break the metropolis count (the centre of a satellite is a city already placed)", () => {
     const x = stage3Sim("heisei", 7, false, 0, 2, true), n = x.w.cities.length, an = { T: new Float64Array(n * n).fill(0.4), TT: new Float64Array(n * n).fill(0.4) };
     for (const c of x.w.cities.slice(0, 5)) x.sim.cities[c.id].pop = 0; expect(() => computeMetros(x.sim, x.w, an, 1960)).not.toThrow();
