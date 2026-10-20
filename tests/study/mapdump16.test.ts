@@ -13,6 +13,6 @@ describe.skipIf(!process.env.STUDY)("mapdump", () => { it("x", () => {
     const cities = w.cities.map((c: any) => ({ n: c.name, k: c.kind, p: Math.round(sim.cities[c.id].pop / 1000), ll: ll(c.cell), pref: c.pref }));
     dump[y] = { edges, cities, metro: (sim.metro?.list ?? []).map((m: any) => ({ core: w.cityById.get(m.core)?.name, pop: Math.round(m.pop / 1000), members: m.members.length })) };
   };
-  run14({ seed, firstEra: +(process.env.ERA ?? 0), capital: process.env.CAP || undefined, sub: process.env.SUB || undefined, until, hook: (sim: any, w: any, y: number) => { if (y === 1970 || y === 1990 || y === 2020 || y === 2050) { if (!dump[y]) snap(sim, w, y); } } } as any);
+  run14({ seed, firstEra: +(process.env.ERA ?? 0), capital: process.env.CAP || undefined, sub: process.env.SUB || undefined, until, hook: (sim: any, w: any, y: number) => { if (y === 1951 || y === 1970 || y === 1990 || y === 2020 || y === 2050) { if (!dump[y]) snap(sim, w, y); } } } as any);
   const dir = process.env.OUT ?? "/tmp/claude-0/MD"; mkdirSync(dir, { recursive: true }); writeFileSync(`${dir}/m-${process.env.TAG ?? "x"}-${seed}.json`, JSON.stringify(dump));
 }, 3600000); });

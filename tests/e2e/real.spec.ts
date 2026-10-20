@@ -45,6 +45,9 @@ test("era choice, 開通の儀 and a running 1950 world with railways; the old f
   expect(km.rail).toBeGreaterThan(60); expect(km.road).toBeGreaterThan(200); expect(km.routes).toBeGreaterThan(20); expect(km.ops).toBeGreaterThan(2);
   expect(await page.textContent("#status")).toContain("神和");
   expect(await app(page, "a => Object.values(a.sim.routes).filter(r => r.grade === 'national' && r.number === 1).length")).toBe(1);
+  // Stage 16: a new game runs on the world with the provincial towns of its two seats' prefectures, and the sim says which
+  expect(await app(page, "a => a.sim.towns16 && a.sim.towns16.length")).toBeGreaterThan(10);
+  expect(await app(page, "a => a.world.townIds.join() === a.sim.towns16.join() && a.world.cities.filter(c => c.kind === 'town').length === a.sim.towns16.length")).toBe(true);
   expect(errs).toEqual([]);
 });
 
@@ -94,6 +97,8 @@ test("the real-Japan game survives a reload; if the latest save is corrupt the b
   await page.evaluate(async () => { const a = (window as any).__kfm; a.lastBackup = -1e9; await a.persist(true); });
   await page.waitForTimeout(300); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.sim.month")).toBe(month); expect(await app(page, "a => a.sim.era")).toBe("shubun");
+  // Stage 16: the loaded game gets the same towns it was made with (a save never meets a different world)
+  expect(await app(page, "a => a.sim.towns16.length > 10 && a.world.townIds.join() === a.sim.towns16.join()")).toBe(true);
   // corrupt the latest save (as if the phone lost power mid-write) and reload
   await page.evaluate(() => { (window as any).__kfm.persist = () => Promise.resolve(true); });
   await page.evaluate(() => new Promise<void>((res) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const tx = r.result.transaction("saves", "readwrite"); tx.objectStore("saves").put("{ this is not json", "s3:auto"); tx.oncomplete = () => res(); }; }));
