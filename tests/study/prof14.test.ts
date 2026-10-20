@@ -7,7 +7,7 @@ import { realWorld } from "../unit/simhelp";
 const on = process.env.STUDY === "1";
 (on ? it : it.skip)("prof", () => {
   const { w, hash } = realWorld(true), out: string[] = [];
-  for (const s14 of [true, false]) {
+  for (const s14 of [true]) {
     const sim = createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27", seats14: s14 });
     const a = homeCity(w, sim.capital)!.pos, b = subCity(w, sim.subCapital)!.pos;
     const p = previewNational(w, Array.from({ length: 21 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / 20, a[1] + ((b[1] - a[1]) * i) / 20] as [number, number]), sim.capital, sim.subCapital); performNational(sim, w, p);
