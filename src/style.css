@@ -74,3 +74,4 @@ body.real #sheet { max-height: 62dvh; }
 .era-btn.on { border-color:#f2c200; background:#2b4f73; }
 .era-card { display:flex; flex-direction:column; gap:4px; } .era-card .era-btn { width:100%; background:#245a8c; }
 .era-current { margin:4px 0; padding:6px 8px; border-radius:6px; background:#2b4f73; border-left:4px solid #f2c200; font-weight:700; font-size:14px; }
+.era-card[hidden] { display:none; }

@@ -50,6 +50,8 @@ test("era choice, 開通の儀 and a running 1950 world with railways; the old f
   expect(await app(page, "a => a.sim.pot17.order.length === 49 && Object.values(a.sim.pot17.shown).length === 49")).toBe(true);
   // Stage 16: a new game runs on the world with the provincial towns of its two seats' prefectures, and the sim says which
   expect(await app(page, "a => a.sim.towns16 && a.sim.towns16.length")).toBeGreaterThan(10);
+  // Stage 18: the base map names the 49 capitals and nothing else at the start (no Kawasaki, Saitama-area towns ... from the first day)
+  expect(await app(page, "a => a.r.capitalsOnly")).toBe(true); expect(await app(page, "a => { const caps = new Set(a.world.cities.filter((c) => c.kind === 'capital').map((c) => c.name)), t = a.r.labels.children.map((x) => x.text).filter((x) => x && !/首都|皇居/.test(x)); return t.length <= 49 && t.every((x) => caps.has(x)); }")).toBe(true);
   expect(await app(page, "a => a.world.townIds.join() === a.sim.towns16.join() && a.world.cities.filter(c => c.kind === 'town').length === a.sim.towns16.length")).toBe(true);
   expect(errs).toEqual([]);
 });
@@ -209,6 +211,9 @@ test("改元: time stops at 1989, the sheet opens by itself, the choice is kept 
     await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
     expect(await app(page, "a => a.sim.kaigen.pending && a.sim.kaigen.pending.year")).toBe(1989);
     await page.evaluate(() => { (window as any).__kfm.sheet = "kaigen"; (window as any).__kfm.buildSheet(); });
+    // Stage 18: the candidates are in two tabs (道路系 / 鉄道系); the pick buttons are large enough for a thumb
+    expect(await page.locator("#kaigen-tab-road").isVisible() && await page.locator("#kaigen-tab-rail").isVisible()).toBe(true); expect(await page.textContent("#kaigen-current")).toContain("現在の元号");
+    expect((await page.locator("#kaigen-pick-1").boundingBox())!.height).toBeGreaterThanOrEqual(44); await page.click("#kaigen-tab-rail"); expect(await page.locator("#kaigen-pick-2").isVisible()).toBe(true); expect(await page.locator("#kaigen-pick-1").isVisible()).toBe(false); await page.click("#kaigen-tab-road");
     await page.click("#kaigen-pick-1");
     expect(await app(page, "a => a.sim.kaigen.eras.map((e) => e.name).join()")).toBe("神化,修文");
     expect(await app(page, "a => a.sim.kaigen.pending")).toBeNull();

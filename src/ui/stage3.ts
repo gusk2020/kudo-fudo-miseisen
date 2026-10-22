@@ -53,7 +53,7 @@ export function buildKaigen(app: App, body: HTMLElement) {
     const box = h("div", { id: "kaigen-box", class: "era-box" }); let tab: EraGroup = eraGroup(p.cands[0].stance); const groups: EraGroup[] = ["road", "rail"], count = (g: EraGroup) => p.cands.filter((c) => eraGroup(c.stance) === g).length;
     const draw = () => {
       box.replaceChildren(h("div", { class: "era-seg", role: "tablist" }, ...groups.map((g) => h("button", { type: "button", id: "kaigen-tab-" + g, role: "tab", "aria-selected": String(tab === g), class: "era-tab" + (tab === g ? " on" : ""), disabled: count(g) === 0 ? "" : null, onclick: () => { tab = g; draw(); } }, `${ERA_GROUP_LABEL[g]}(${count(g)})`))));
-      p.cands.forEach((c, i) => { if (eraGroup(c.stance) !== tab) return; box.append(h("div", { class: "issue era-card", id: "kaigen-cand-" + i }, h("button", { type: "button", id: "kaigen-pick-" + i, class: "era-btn", onclick: () => app.chooseKaigen(i) }, h("b", {}, `${c.name}にする`), h("span", {}, `${ERA_GROUP_LABEL[eraGroup(c.stance)]}・${STANCE_LABEL[c.stance]}${c.real ? "" : "【暫定規則】"}`)), h("small", {}, `${c.note}。${ERAS[c.stance].focus}`))); });
+      p.cands.forEach((c, i) => { box.append(h("div", { class: "issue era-card", id: "kaigen-cand-" + i, hidden: eraGroup(c.stance) !== tab ? "" : null }, h("button", { type: "button", id: "kaigen-pick-" + i, class: "era-btn", onclick: () => app.chooseKaigen(i) }, h("b", {}, `${c.name}にする`), h("span", {}, `${ERA_GROUP_LABEL[eraGroup(c.stance)]}・${STANCE_LABEL[c.stance]}${c.real ? "" : "【暫定規則】"}`)), h("small", {}, `${c.note}。${ERAS[c.stance].focus}`))); });
     };
     draw(); body.append(box);
   }
