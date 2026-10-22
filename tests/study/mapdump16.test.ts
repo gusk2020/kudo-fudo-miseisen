@@ -10,7 +10,7 @@ describe.skipIf(!process.env.STUDY)("mapdump", () => { it("x", () => {
     const ll = (k: number) => realToLonLat(w.cellPos(k) as [number, number]).map((x) => +x.toFixed(2));
     const edges: any[] = [];
     for (const e of Object.values(sim.edges) as any[]) { if (e.built < 1 || e.state !== "open") continue; const step = Math.max(1, Math.floor(e.cells.length / 12)); const pts: number[][] = []; for (let i = 0; i < e.cells.length; i += step) pts.push(ll(e.cells[i])); pts.push(ll(e.cells[e.cells.length - 1])); edges.push({ L: e.lengthKm, pr: w.prefOf(e.cells[Math.floor(e.cells.length / 2)]), m: modeOf(e), s: e.standard, f: e.facility ?? "", p: pts }); }
-    const cities = w.cities.map((c: any) => ({ n: c.name, k: c.kind, p: Math.round(sim.cities[c.id].pop / 1000), ll: ll(c.cell), pref: c.pref }));
+    const cities = w.cities.filter((c: any) => !sim.pot17 || (sim.pot17.shown[c.id] ?? 0) > 0).map((c: any) => ({ n: c.name, k: c.kind, p: Math.round(sim.cities[c.id].pop / 1000), ll: ll(c.cell), pref: c.pref }));
     dump[y] = { edges, cities, metro: (sim.metro?.list ?? []).map((m: any) => ({ core: w.cityById.get(m.core)?.name, pop: Math.round(m.pop / 1000), members: m.members.length })) };
   };
   run14({ seed, firstEra: +(process.env.ERA ?? 0), capital: process.env.CAP || undefined, sub: process.env.SUB || undefined, until, hook: (sim: any, w: any, y: number) => { if (y === 1951 || y === 1970 || y === 1990 || y === 2020 || y === 2050) { if (!dump[y]) snap(sim, w, y); } } } as any);

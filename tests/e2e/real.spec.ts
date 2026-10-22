@@ -45,6 +45,8 @@ test("era choice, 開通の儀 and a running 1950 world with railways; the old f
   expect(km.rail).toBeGreaterThan(60); expect(km.road).toBeGreaterThan(200); expect(km.routes).toBeGreaterThan(20); expect(km.ops).toBeGreaterThan(2);
   expect(await page.textContent("#status")).toContain("神和");
   expect(await app(page, "a => Object.values(a.sim.routes).filter(r => r.grade === 'national' && r.number === 1).length")).toBe(1);
+  // Stage 17: a new game starts from the 49 prefectural capitals, with a development order of the 49 prefectures
+  expect(await app(page, "a => a.sim.pot17.order.length === 49 && Object.values(a.sim.pot17.shown).length === 49")).toBe(true);
   // Stage 16: a new game runs on the world with the provincial towns of its two seats' prefectures, and the sim says which
   expect(await app(page, "a => a.sim.towns16 && a.sim.towns16.length")).toBeGreaterThan(10);
   expect(await app(page, "a => a.world.townIds.join() === a.sim.towns16.join() && a.world.cities.filter(c => c.kind === 'town').length === a.sim.towns16.length")).toBe(true);
