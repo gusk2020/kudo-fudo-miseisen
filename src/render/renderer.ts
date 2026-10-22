@@ -39,6 +39,8 @@ export class Renderer {
   app!: Application;
   view: View = { cx: 0, cy: 0, zoom: 0.3 };
   capitalsOnly = true;
+  /** Stage 19: a seat point chosen on the map and not yet confirmed (a crosshair) */
+  seatPending: Vec | null = null;
   private root = new Container(); private base = new Container(); private overlay = new Container(); private labels = new Container();
   /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
   ridgeHandles = false;
@@ -187,7 +189,8 @@ export class Renderer {
     const at = (pref: string): Vec | null => { const c = t?.cities.find((x) => x.pref === pref && x.kind === "capital"); return c ? c.pos : prefPoint(s, pref); };
     const star = (p: Vec, col: number, r: number) => { const pts: number[] = []; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r; pts.push(p[0] + Math.cos(a) * rr, -p[1] + Math.sin(a) * rr); } g.poly(pts).fill({ color: col }).stroke({ width: px(1.2), color: 0xffffff }); };
     const label = (p: Vec, text: string, dy: number) => { const tx = new Text({ text, style: { fontSize: 11, fontWeight: "700", fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(p[0] + px(10), -p[1] + px(dy)); this.labels.addChild(tx); };
-    const cp = at(seats.capital), sp = at(seats.sub), pp = s.palacePos ?? at(seats.palace);
+    const cp = s.capitalPos ?? at(seats.capital), sp = s.subPos ?? at(seats.sub), pp = s.palacePos ?? at(seats.palace);
+    if (this.seatPending) { const q = this.seatPending, r = px(11); g.circle(q[0], -q[1], r).stroke({ width: px(2), color: 0xff7a00 }); g.moveTo(q[0] - r * 1.6, -q[1]).lineTo(q[0] + r * 1.6, -q[1]).moveTo(q[0], -q[1] - r * 1.6).lineTo(q[0], -q[1] + r * 1.6).stroke({ width: px(2), color: 0xff7a00 }); label(q, "候補", 6); }
     if (cp) { star(cp, 0xd62828, px(10)); label(cp, "首都", -14); }
     if (sp) { star(sp, 0x1f6fd0, px(9)); label(sp, "副首都", -14); }
     if (pp) { const r = px(7); g.poly([pp[0], -pp[1] - r, pp[0] + r, -pp[1], pp[0], -pp[1] + r, pp[0] - r, -pp[1]]).fill({ color: 0xf2c200 }).stroke({ width: px(1.4), color: 0x5a3b00 }); label(pp, "皇居", 2); }

@@ -55,5 +55,9 @@ export function prefPoint(s: Pick<ProjectState, "bodies">, prefId: string): Vec 
 export function palaceWorld(s: Pick<ProjectState, "bodies" | "capital" | "subCapital" | "palace" | "palacePos">): Vec | null {
   if (s.palacePos && s.palacePos.length === 2) return s.palacePos; return prefPoint(s, seatsOf(s).palace);
 }
+/** Stage 19: where the capital / sub-capital stand: the point chosen on the map, else the 県庁所在地. */
+export function seatPos(s: Pick<ProjectState, "bodies" | "capital" | "subCapital" | "capitalPos" | "subPos">, which: "capital" | "sub"): Vec | null {
+  const p = which === "capital" ? s.capitalPos : s.subPos; if (p && p.length === 2) return p; return prefPoint(s, seatsOf(s)[which]);
+}
 /** Extension point: effects of where the palace stands on politics / traffic demand. Deliberately empty -- the brief says not to link them yet. */
 export const PALACE_LINKS: { id: string; note: string }[] = [];
