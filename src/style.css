@@ -62,15 +62,17 @@ body.real #sheet { max-height: 62dvh; }
 #seats label.seat { display: grid; grid-template-columns: 4.5em 1fr; align-items: center; gap: 8px; white-space: nowrap; width: 100%; }
 #seats label.seat select { min-width: 0; width: 100%; }
 
-/* Stage 19: era list (one candidate per line) and the setup tabs */
-.era-current { margin:4px 0; padding:6px 8px; border-radius:6px; background:#2b4f73; border-left:4px solid #f2c200; font-weight:700; font-size:14px; }
-.era-list-box { margin:6px 0; } .era-head { margin:8px 0 2px; padding:2px 6px; font-size:13px; font-weight:700; color:#f2c200; border-bottom:1px solid #4f7aa3; }
-.era-row { display:flex; justify-content:space-between; gap:8px; width:100%; min-height:44px; align-items:center; padding:6px 10px; margin:2px 0; border-radius:6px; border:1px solid #4f7aa3; background:#1d3a55; color:#fff; font-size:14px; text-align:left; }
-.era-row b { font-size:16px; } .era-row span { font-size:11px; opacity:.85; text-align:right; }
+/* Stage 20: era list, setup tabs -- the chosen button is the game's blue (as every pressed button) */
+.era-list-box { margin:6px 0; } .era-list-box.scroll { max-height:46vh; overflow-y:auto; }
+.era-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin:8px 0 2px; padding:2px 6px; font-size:13px; color:#f2c200; border-bottom:1px solid #4f7aa3; } .era-head span { font-size:11px; color:#cfe2f3; text-align:right; }
+.era-row { display:flex; justify-content:space-between; gap:8px; width:100%; min-height:44px; align-items:center; padding:6px 10px; margin:2px 0; border-radius:6px; border:2px solid #4f7aa3; background:#1d3a55; color:#fff; font-size:14px; text-align:left; }
+.era-row b { font-size:16px; } .era-row span { font-size:12px; opacity:.92; text-align:right; }
+.era-row.on { background:#1f6fd1; border-color:#9cc8ff; color:#fff; }
 .setup-tabs { display:flex; gap:4px; width:100%; }
-.setup-tab { flex:1 1 0; min-width:0; min-height:40px; padding:4px 2px; font-size:14px; font-weight:700; border-radius:8px; border:2px solid #4f7aa3; background:#16304a; color:#e8f1fa; white-space:nowrap; }
-.setup-tab.on { background:#f2c200; color:#111; border-color:#f2c200; }
+.setup-tab { flex:1 1 0; min-width:0; min-height:44px; padding:4px 2px; font-size:14px; font-weight:700; border-radius:8px; border:2px solid #4f7aa3; background:#16304a; color:#e8f1fa; white-space:nowrap; }
+.setup-tab.on { background:#1f6fd1; color:#fff; border-color:#9cc8ff; }
 #setup-panel { margin:4px 0; padding:6px; border-radius:8px; background:#12283d; border:1px solid #4f7aa3; }
-#setup-panel .row2 { display:flex; gap:6px; margin:4px 0; } #setup-panel .row2 button { flex:1; min-height:44px; font-weight:700; }
-#setup-panel select { max-width:100%; min-height:40px; font-size:14px; }
-#setup-close { min-height:36px; margin-top:4px; }
+#setup-panel .row2 { display:flex; gap:6px; margin:4px 0; } #setup-panel .row2 button { flex:1; min-height:44px; font-weight:700; border:2px solid #4f7aa3; background:#1d3a55; color:#fff; border-radius:8px; }
+#setup-panel .row2 button.on { background:#1f6fd1; border-color:#9cc8ff; }
+#setup-panel select { max-width:100%; min-height:44px; font-size:14px; }
+#setup-close { min-height:40px; margin-top:4px; }

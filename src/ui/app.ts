@@ -735,7 +735,6 @@ export class App {
       panel.append(h("div", { class: "grp", id: "bg-choice" }, h("span", {}, "地図の表示"), ...(["roadmap", "terrain"] as const).map((m) => h("button", { id: "bg-" + m, type: "button", class: this.bg === m ? "mode on" : "mode", "aria-pressed": this.bg === m ? "true" : "false", onclick: () => { this.setBg(m); this.buildToolbar(); } }, m === "roadmap" ? "道路図" : "地形図"))));
     } else {
       const which = tab, label = { capital: "首都", sub: "副首都", palace: "皇居" }[which];
-      panel.append(h("div", { class: "era-current", id: "seat-current" }, `${label}: ${where(which)}`));
       panel.append(h("div", { class: "row2" }, h("button", { id: "seat-mode-list", type: "button", class: this.seatMode === "list" ? "mode on" : "mode", onclick: () => this.chooseSeatMode("list") }, "A 府県から選ぶ"), h("button", { id: "seat-mode-map", type: "button", class: this.seatMode === "map" ? "mode on" : "mode", onclick: () => this.chooseSeatMode("map") }, "B 地図から選ぶ")));
       if (this.seatMode === "list") {
         const sel = h("select", { id: "seat-" + which, "aria-label": label, onchange: (e: Event) => { this.setSeat(which, (e.target as HTMLSelectElement).value); } }) as HTMLSelectElement;
@@ -746,7 +745,7 @@ export class App {
         panel.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${ll(p.w)}(まだ決まっていません。地図をタップし直すと動かせます)` : `${label}にしたい場所を、地図の陸地でタップしてください(府県内ならどこでも。海は選べません)`));
         panel.append(h("div", { class: "row2" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => { this.cancelSeatPick(); } }, "取り消し")));
       }
-      if ((which === "capital" && this.s.capitalPos) || (which === "sub" && this.s.subPos) || (which === "palace" && this.s.palacePos)) panel.append(h("button", { id: "seat-reset", type: "button", onclick: () => this.resetSeatPos(which) }, "県庁所在地に戻す"));
+      if ((which === "capital" && this.s.capitalPos) || (which === "sub" && this.s.subPos) || (which === "palace" && this.s.palacePos)) panel.append(h("div", { class: "note", id: "seat-current" }, `地図で指定: ${where(which)}`), h("button", { id: "seat-reset", type: "button", onclick: () => this.resetSeatPos(which) }, "県庁所在地に戻す"));
     }
     panel.append(h("button", { id: "setup-close", type: "button", onclick: () => this.openSetupTab(null) }, "✕ 設定欄を閉じる"));
     tb.append(panel);

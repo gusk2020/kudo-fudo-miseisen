@@ -5,7 +5,7 @@ import { DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey
 import { effectText } from "../sim/events";
 import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
-import { CAND_1945, ERA_GROUPS, ERA_GROUP_LABEL, STANCE_LABEL, eraGroup, type EraCand } from "../sim/kaigen";
+import { CAND_1945, ERA_GROUPS, ERA_GROUP_LABEL, ERA_GROUP_NOTE, STANCE_LABEL, eraGroup, type EraCand } from "../sim/kaigen";
 import { potentialWeights } from "../sim/potential17";
 import { reconText } from "../sim/recon";
 import { homeCity, subCity } from "../sim/ceremony";
@@ -19,22 +19,24 @@ export const ui3 = { tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fa
 const ym = (sim: SimState, m: number) => { const { year, month } = monthToYM(sim.startYear, m); return `${year}年${month}月`; };
 const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) * 10)) + "□".repeat(10 - Math.round(Math.max(0, Math.min(1, v)) * 10));
 
-/** Short effect text of a candidate, one line: its main policy (and the reconstruction policy of a first-era candidate). */
-const effectLine = (c: EraCand) => `${ERAS[c.stance].focus}${c.recon ? "・" + reconText(c.recon) : ""}`;
-/** Stage 19: the first-era list, in the form of the prefecture list: one native list, a heading per transport group, one candidate per line (name -- main effect). */
+/** What is particular to one candidate (the group heading already says the transport policy): the reconstruction policy of a first-era name, "暫定" for a name made by the game's rule. */
+const specific = (c: EraCand) => c.recon ? reconText(c.recon) : c.real ? "" : "暫定規則の名";
+/** Stage 20: the first-era list -- a heading per transport group (said once), one candidate per line with only its own condition, the chosen line blue. */
 export function eraPicker(app: App, tb: HTMLElement, current: number, pick: (i: number) => void) {
-  const c = CAND_1945[current] ?? CAND_1945[0];
-  tb.append(h("div", { id: "era-current", class: "era-current" }, `選択中: ${c.name}(${ERA_GROUP_LABEL[eraGroup(c.stance)]}・${effectLine(c)})`));
-  const sel = h("select", { id: "era-first", "aria-label": "最初の元号", onchange: (e: Event) => pick(+(e.target as HTMLSelectElement).value) }) as HTMLSelectElement;
-  for (const g of ERA_GROUPS) { const idx = CAND_1945.map((x, i) => i).filter((i) => eraGroup(CAND_1945[i].stance) === g); if (!idx.length) continue; const og = h("optgroup", { label: ERA_GROUP_LABEL[g] }); for (const i of idx) og.append(h("option", { value: String(i), ...(i === current ? { selected: "" } : {}) }, `${CAND_1945[i].name} ─ ${effectLine(CAND_1945[i])}`)); sel.append(og); }
-  tb.append(h("div", { class: "grp" }, sel), h("div", { id: "era-desc", class: "note" }, `${c.note}／方針: ${STANCE_LABEL[c.stance]}${c.recon ? `／復興方針: ${reconText(c.recon)}(1945年の最初の元号だけが持ち、1950年以降の人口・産業・予算・建設の優先度に長く効く。太平洋側・日本海側は実際の海の位置で決まる)` : ""}(割り当てはゲーム上の仮のもの。1989・2019年にも改元があります)`));
+  const c = CAND_1945[current] ?? CAND_1945[0], box = h("div", { id: "era-list", class: "era-list-box scroll", role: "listbox", "aria-label": "最初の元号" });
+  for (const g of ERA_GROUPS) {
+    const idx = CAND_1945.map((x, i) => i).filter((i) => eraGroup(CAND_1945[i].stance) === g); if (!idx.length) continue;
+    box.append(h("div", { class: "era-head" }, h("b", {}, ERA_GROUP_LABEL[g]), h("span", {}, ERA_GROUP_NOTE[g])));
+    for (const i of idx) box.append(h("button", { type: "button", id: "era-opt-" + i, role: "option", class: "era-row" + (i === current ? " on" : ""), "aria-selected": String(i === current), "aria-pressed": String(i === current), onclick: () => pick(i) }, h("b", {}, `${i === current ? "✔ " : ""}${CAND_1945[i].name}`), h("span", {}, specific(CAND_1945[i]))));
+  }
+  tb.append(box, h("div", { id: "era-desc", class: "note" }, c.recon ? `復興方針: ${reconText(c.recon)}(1945年の最初の元号だけが持ち、1950年以降の人口・産業・予算・建設の優先度に長く効く。太平洋側・日本海側は実際の海の位置で決まる)` : c.note));
   void app;
 }
 /** The era-change sheet: opens by itself when a kaigen is due; time is stopped until a name is chosen. */
 export function buildKaigen(app: App, body: HTMLElement) {
   const sim = app.sim, k = sim?.kaigen; if (!sim || !k) { body.append(h("small", {}, "このデータには改元の仕組みがありません(旧形式のセーブ)")); return; }
   body.append(h("h3", {}, "改元"));
-  body.append(h("div", { class: "issue", id: "kaigen-current" }, h("b", {}, `現在の元号: ${k.eras[k.eras.length - 1].name}(${ERA_GROUP_LABEL[eraGroup(k.eras[k.eras.length - 1].stance)]}・${STANCE_LABEL[k.eras[k.eras.length - 1].stance]})`)));
+  body.append(h("div", { class: "issue", id: "kaigen-current" }, h("b", {}, `現在の元号: ${k.eras[k.eras.length - 1].name}`)));
   body.append(h("div", { class: "issue", id: "kaigen-history" }, "元号の履歴: " + k.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → "), ...(k.recon ? [h("br"), h("small", { id: "kaigen-recon" }, `復興方針(1945年に決定・以後も持続): ${reconText(k.recon)}`)] : [])));
   if (!k.pending) { body.append(h("div", { class: "issue" }, `次の改元: ${k.next}年ごろ(27〜33年間隔の暫定規則)`)); return; }
   const p = k.pending, real = p.year === 1989 || p.year === 2019;
@@ -43,8 +45,8 @@ export function buildKaigen(app: App, body: HTMLElement) {
     const box = h("div", { id: "kaigen-box", class: "era-list-box" });
     for (const g of ERA_GROUPS) {
       const idx = p.cands.map((c, i) => i).filter((i) => eraGroup(p.cands[i].stance) === g); if (!idx.length) continue;
-      box.append(h("div", { class: "era-head", id: "kaigen-group-" + g }, ERA_GROUP_LABEL[g]));
-      for (const i of idx) { const c = p.cands[i]; box.append(h("button", { type: "button", id: "kaigen-pick-" + i, class: "era-row", title: c.note, onclick: () => app.chooseKaigen(i) }, h("b", {}, c.name), h("span", {}, `${ERAS[c.stance].focus}${c.real ? "" : "【暫定】"}`))); }
+      box.append(h("div", { class: "era-head", id: "kaigen-group-" + g }, h("b", {}, ERA_GROUP_LABEL[g]), h("span", {}, ERA_GROUP_NOTE[g])));
+      for (const i of idx) { const c = p.cands[i]; box.append(h("button", { type: "button", id: "kaigen-pick-" + i, class: "era-row", title: c.note, onclick: () => app.chooseKaigen(i) }, h("b", {}, c.name), h("span", {}, specific(c)))); }
     }
     body.append(box);
   }
