@@ -26,6 +26,7 @@ import { terrainGate } from "./land";
 import type { Vec } from "../core/types";
 import { ev } from "./engine";
 import { buildIndex, layPath } from "./network";
+import { hubAppetite18, hubThreshold18 } from "./policy18";
 import { goodsPull, paxPull } from "./sites";
 import { modeOf, type AirportState, type HubRoute, type HubsState, type PortState, type SimState } from "./types";
 import { pathfind, type World } from "./world";
@@ -158,7 +159,7 @@ const buildYears = (_sim: SimState, _y: number, base: number) => base;
 
 export function reviewHubs(sim: SimState, w: World, tot: HubTotals | undefined, y: number): number {
   const h = ensureHubs(sim, w, y); if (!h || !tot) return 0;
-  const dl = sim.dials, seaApp = 0.5 + 0.5 * Math.min(1.5, dl.seaBias) + 0.2 * (dl.growth - 1), airApp = 0.5 + 0.5 * Math.min(1.5, dl.airBias) + 0.2 * (dl.growth - 1);
+  const dl = sim.dials, seaApp0 = 0.5 + 0.5 * Math.min(1.5, dl.seaBias) + 0.2 * (dl.growth - 1), airApp0 = 0.5 + 0.5 * Math.min(1.5, dl.airBias) + 0.2 * (dl.growth - 1), [sk, ak] = hubAppetite18(sim), seaApp = seaApp0 * sk, airApp = airApp0 * ak;   // (Stage 18: the policy scales what is NEW; the shrink rules below read the unscaled appetite so a policy never closes anything)
   let n = 0;
   // finish works
   for (const p of Object.values(h.ports)) if (p.build && p.build.done <= y) { p.tier = p.build.to; hubLog(p, y, `${PORT_TIER_LABEL[p.tier]}に拡張(完成)`); ev(sim, "port", `${portName(w, p.city)}の拡張が完成: ${PORT_TIER_LABEL[p.tier]}`, `能力${PORT_CAP[p.tier]}(貨物/日)`, { city: p.city }); delete p.build; n++; }
@@ -172,19 +173,19 @@ export function reviewHubs(sim: SimState, w: World, tot: HubTotals | undefined, 
     if (!p.build && p.hi >= 2 && !top) {
       const to = p.tier + 1, cost = 0.4 * to * costMult(sim, y);
       if (affordable(sim, cost, seaApp)) { const yrs = buildYears(sim, y, to >= 4 ? 6 : 4); p.build = { to, done: y + yrs }; hubLog(p, y, `${PORT_TIER_LABEL[to]}への拡張に着工`); ev(sim, "port", `${portName(w, p.city)}の拡張に着工(${to >= 4 ? "コンテナ埠頭" : "岸壁の増設"})`, `取扱が能力の${Math.round(p.load * 100)}%で2年続いた。完成予定${y + yrs}年・工費${Math.round(cost * 100) / 100}`, { city: p.city }); n++; }
-    } else if (!p.build && p.lo >= 10 && p.tier >= 2 && seaApp < 1.2) {
+    } else if (!p.build && p.lo >= 10 && p.tier >= 2 && seaApp0 < 1.2) {
       p.tier--; p.lo = 0; hubLog(p, y, `${PORT_TIER_LABEL[p.tier]}に縮小`); ev(sim, "port", `${portName(w, p.city)}を縮小: ${PORT_TIER_LABEL[p.tier]}`, `取扱が能力の2割以下で10年続いた`, { city: p.city }); n++;
     } else if (p.tier === 1 && p.lo >= 15 && y >= 1990 && p.cargo < 0.05 * PORT_CAP[1]) {
       p.until = y; hubLog(p, y, "閉港"); ev(sim, "port", `${portName(w, p.city)}を閉港`, `取扱がほとんどない状態が15年続いた`, { city: p.city }); n++;
     }
   }
   if (y >= 1955 && Object.values(h.ports).filter((p) => p.until === undefined).length < PORT_MAX) {
-    const c = w.cities.filter((c) => c.coastal && !h.ports[c.id] && nearestKm(w, c.id, Object.keys(h.ports)) >= PORT_SPACING_KM && (sim.cities[c.id]?.pop ?? 0) >= PORT_NEW_POP * (1 - 0.25 * Math.min(1, dl.seaBias))).sort((a, b) => sim.cities[b.id].pop * (0.3 + sim.cities[b.id].industry) - sim.cities[a.id].pop * (0.3 + sim.cities[a.id].industry) || (a.id < b.id ? -1 : 1))[0];
+    const c = w.cities.filter((c) => c.coastal && !h.ports[c.id] && nearestKm(w, c.id, Object.keys(h.ports)) >= PORT_SPACING_KM && (sim.cities[c.id]?.pop ?? 0) >= PORT_NEW_POP * hubThreshold18(sim)[0] * (1 - 0.25 * Math.min(1, dl.seaBias))).sort((a, b) => sim.cities[b.id].pop * (0.3 + sim.cities[b.id].industry) - sim.cities[a.id].pop * (0.3 + sim.cities[a.id].industry) || (a.id < b.id ? -1 : 1))[0];
     if (c && affordable(sim, 0.3 * costMult(sim, y), seaApp)) { h.ports[c.id] = { city: c.id, tier: 1, since: y, cargo: 0, pax: 0, load: 0, hi: 0, lo: 0, hist: [{ y, t: "開港(地方港湾)" }] }; ev(sim, "port", `${portName(w, c.id)}が開港`, `人口${Math.round(sim.cities[c.id].pop / 1000)}千人の臨海都市。海路の選好${dl.seaBias.toFixed(2)}`, { city: c.id }); n++; }
   }
   // ---- airports ----
   for (const c of [...w.cities].sort((p, q) => (sim.cities[q.id]?.pop ?? 0) - (sim.cities[p.id]?.pop ?? 0) || (p.id < q.id ? -1 : 1))) {   // biggest first; the opening rule that Stage 3 used, now as a facility (a poorer or less air-minded era opens later)
-    const st = sim.cities[c.id]; if (!st || h.airports[c.id]) continue; const b = dl.airBias, f = 1 - 0.25 * b;
+    const st = sim.cities[c.id]; if (!st || h.airports[c.id]) continue; const b = dl.airBias, f = (1 - 0.25 * b) * hubThreshold18(sim)[1];
     const due = (st.pop > 400000 * f && y >= 1958 - Math.round(8 * b)) || (st.pop > 200000 * f && y >= 1972 - Math.round(8 * b)) || (st.pop > 100000 * f && y >= 1988 - Math.round(8 * b));
     if (!due || !affordable(sim, 0.25 * costMult(sim, y), airApp)) continue;
     const near = nearestKm(w, c.id, Object.values(h.airports).filter((a) => a.until === undefined).map((a) => a.city)); if (near < AIR_SPACING_KM && !(st.pop >= AIR_SPACING_POP && near >= 25)) continue;   // a neighbouring city's airport already serves it
