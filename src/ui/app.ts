@@ -176,6 +176,7 @@ export class App {
     return this.world;
   }
   renderRoads() {
+    { const co = !this.sim || !!this.sim.pot17; if (this.r.capitalsOnly !== co) { this.r.capitalsOnly = co; this.render(); } }   // Stage 18: the base map names only the capitals in a Stage 17 game
     const w0 = this.world, cerTool = this.tool === "cer-kokudo1" || this.tool === "cer-fudo1", cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ strokes: d!.strokes, handles: cerTool && this.cerMode !== "draw", sel: cerTool ? this.cerSel : null, pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok, segs: (d!.prev as NatPreview).segments && w0 ? (d!.prev as NatPreview).segments.map((sg) => ({ pts: sg.cells.map((c) => w0.cellPos(c)), ferry: sg.ferry })) : undefined }));
     if (this.cerLive) cer.push({ strokes: [this.cerLive], handles: false, sel: null, pts: this.cerLive, path: undefined as any, ok: true, segs: undefined });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;

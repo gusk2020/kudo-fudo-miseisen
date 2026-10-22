@@ -38,6 +38,7 @@ export function terrainCanvas(t: TerrainResult): HTMLCanvasElement {
 export class Renderer {
   app!: Application;
   view: View = { cx: 0, cy: 0, zoom: 0.3 };
+  capitalsOnly = true;
   private root = new Container(); private base = new Container(); private overlay = new Container(); private labels = new Container();
   /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
   ridgeHandles = false;
@@ -195,8 +196,10 @@ export class Renderer {
   private drawCities(s: ProjectState, t: TerrainResult | null, showTerrain: boolean, px: (n: number) => number) {
     const g = new Graphics(), z = this.view.zoom;
     let list: { name: string; p: Vec; cap: boolean }[];
-    if (showTerrain && t) list = t.cities.map((c) => ({ name: c.name, p: c.pos, cap: c.kind === "capital" }));
-    else list = JAPAN.cities.map((c) => { const id = (c.island === "okinawa" ? "kyushu" : c.island) as IslandId; return { name: c.name, p: realToWorld(id, s.bodies[id], c.pos), cap: c.kind === "capital" }; });
+    // Stage 18: the base map names the 49 prefectural capitals and nothing else (the other places of the data -- Kawasaki, Himeji ... -- are named only once the game has grown them into cities, by the road layer)
+    const only = this.capitalsOnly;   // (games from before Stage 17 keep every city dot and name on the base map)
+    if (showTerrain && t) list = t.cities.filter((c) => !only || c.kind === "capital").map((c) => ({ name: c.name, p: c.pos, cap: c.kind === "capital" }));
+    else list = JAPAN.cities.filter((c) => !only || c.kind === "capital").map((c) => { const id = (c.island === "okinawa" ? "kyushu" : c.island) as IslandId; return { name: c.name, p: realToWorld(id, s.bodies[id], c.pos), cap: c.kind === "capital" }; });
     for (const c of list) {
       g.circle(c.p[0], -c.p[1], px(c.cap ? 3.2 : 2.4)).fill({ color: c.cap ? 0xffd23a : 0xffffff }).stroke({ width: px(1), color: 0x222222 });
       if (z > 0.55 && (c.cap || z > 1.1)) {

@@ -3,6 +3,7 @@
  * Cost control ("performance budget"): at most MAX_PATHFINDS route searches per year, regions take turns.
  */
 import { basePop, capitalPref } from "./roles";
+import { RAIL_NEW_FACTOR, RAIL_UPGRADE_FACTOR, stance18 } from "./policy18";
 import { FAVOURED_LEAN, POLICY_HWY_SCORE, POLICY_HWY_SHARE, POLICY_RAIL_SCORE, POLICY_RAIL_SHARE, POLICY_TRUNK_KM, POLICY_TRUNK_MIN, POLICY_TRUNK_SCORE, reconCorridor, reconFade, reconMeanCore, reconOf, reconRegionLean, reconText } from "./recon";
 import { dist } from "../core/geom";
 import { refBias, referenceGrids } from "./reference";
@@ -180,11 +181,12 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
   const liveNew = live.filter((p) => p.kind === "new" && !p.reason.startsWith(LOCAL_TAG)).length, liveUp = live.filter((p) => p.kind !== "new").length, maxNew = 1 + Math.round(dl.railBuild * 2), maxUp = 2 + Math.round(dl.railBuild * 2);
   if (liveNew >= maxNew && liveUp >= maxUp && live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length >= 1 + Math.round(dl.railBuild * 3)) return;
   const busy = new Set(live.flatMap((p) => p.edgeIds)), nc = w.cities.length, cands: (Cand & { op?: string; std?: Standard })[] = [];
+  const rail18 = stance18(sim) !== null;   // Stage 18: 海路重視 / 空路重視 hold railway building back
   const rcr = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined, favMemo = new Map<string, boolean>(), favRegion = (r: string) => { let v = favMemo.get(r); if (v === undefined) { v = !!rcr && reconRegionLean(sim, w, r, rcr.meanCore) >= FAVOURED_LEAN; favMemo.set(r, v); } return v; };
   for (const e of Object.values(sim.edges)) {
     if (modeOf(e) !== "rail" || e.facility === "ferry" || busy.has(e.id) || e.built < 1) continue;
-    if (e.state === "open" && e.congYears >= 2 && e.standard !== "highgrade" && (e.standard === "rural" || dl.hsr > 0.4)) cands.push({ score: 3.2 + Math.min(3, (e.through / RAIL_CAPACITY_OF(e)) * 0.3), kind: "electrify", edge: e, reason: `輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%に達し${e.congYears}年混雑(${e.standard === "rural" ? "電化・複線化" : "高速化"})` });
-    else if (sim.towns16 && rcr && e.state === "open" && e.standard !== "highgrade" && e.lengthKm >= POLICY_TRUNK_KM && e.through >= POLICY_RAIL_SHARE * RAIL_CAPACITY_OF(e) && favRegion(w.prefOf(e.cells[e.cells.length >> 1]) ?? e.region)) cands.push({ pol: true, score: POLICY_RAIL_SCORE * reconFade(y), kind: "electrify", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線鉄道の${e.standard === "rural" ? "電化・複線化" : "高速化"}(輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%)` });
+    if (e.state === "open" && e.congYears >= 2 && e.standard !== "highgrade" && (e.standard === "rural" || dl.hsr > 0.4) && !(rail18 && e.standard !== "rural")) cands.push({ score: (rail18 ? RAIL_UPGRADE_FACTOR : 1) * 3.2 + Math.min(3, (e.through / RAIL_CAPACITY_OF(e)) * 0.3), kind: "electrify", edge: e, reason: `輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%に達し${e.congYears}年混雑(${e.standard === "rural" ? "電化・複線化" : "高速化"})` });
+    else if (sim.towns16 && !rail18 && rcr && e.state === "open" && e.standard !== "highgrade" && e.lengthKm >= POLICY_TRUNK_KM && e.through >= POLICY_RAIL_SHARE * RAIL_CAPACITY_OF(e) && favRegion(w.prefOf(e.cells[e.cells.length >> 1]) ?? e.region)) cands.push({ pol: true, score: POLICY_RAIL_SCORE * reconFade(y), kind: "electrify", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線鉄道の${e.standard === "rural" ? "電化・複線化" : "高速化"}(輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%)` });
     else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && dl.railBuild > 0.3 && !e.convertedTo) cands.push({ score: 2 + (an.potential.get(e.id) ?? 0) / 90, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}人/日が${e.reviveYears}年続いている` });
   }
   const dens = (c: { pop: number }) => c.pop, rdef = accessDeficit(w, an), rc = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined;
@@ -194,7 +196,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     const pa = dens(sim.cities[a.id]), pb = dens(sim.cities[b.id]), unmet = (Math.pow(pa * pb, 0.65) / Math.pow(d, 1.25)) * (1 - svc) * 1e-3;
     const big = Math.min(pa, pb) > 400000, std: Standard = dl.hsr > 0.45 && y >= 1955 && big && d >= 120 ? "highgrade" : y >= 1960 ? "standard" : "rural";
     const cf = corridorFactor(sim, w, rdef, i, j, rc);
-    cands.push({ score: (Math.log10(1 + unmet * 30) * (0.5 + dl.railBuild) + (std === "highgrade" ? 0.5 * dl.hsr : 0)) * cf.f + cf.add, kind: "new", a: i, b: j, std, reason: `${a.name}〜${b.name}間(${Math.round(d)}km)の鉄道が${isFinite(tt) ? `所要${tt.toFixed(1)}時間` : "未整備"}${cf.why}` });
+    cands.push({ score: (Math.log10(1 + unmet * 30) * (0.5 + dl.railBuild) + (std === "highgrade" ? 0.5 * dl.hsr : 0)) * cf.f * (rail18 ? RAIL_NEW_FACTOR : 1) + (rail18 ? 0 : cf.add), kind: "new", a: i, b: j, std: rail18 && std === "highgrade" ? "standard" : std, reason: `${a.name}〜${b.name}間(${Math.round(d)}km)の鉄道が${isFinite(tt) ? `所要${tt.toFixed(1)}時間` : "未整備"}${cf.why}` });
   }
   // 地方支線: a city the railway does not reach is tied to the nearest existing line by a short rural branch (quota of its own below)
   const railNodes: { cell: number; pos: [number, number]; name: string; isl: number }[] = [], seenN = new Set<string>();

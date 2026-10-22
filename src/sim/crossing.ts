@@ -21,6 +21,7 @@ import { buildIndex, layPath, netRemoved, nodeAtCell, setEdgeState } from "./net
 import { MAIN_ISLAND_CELLS, isLakeFerry, namedStrait, nearTown, shoreNames } from "./ferry";
 import { pathfind } from "./world";
 import { waterTechAt } from "./tech";
+import { EXC_TAG, stance18, tunnelException18 } from "./policy18";
 import { RAIL_FROM_ROAD, sidePops, virtualTrips } from "./waterlink";
 import type { WCity } from "./world";
 import { capacityOf } from "./demand";
@@ -187,6 +188,8 @@ export function evalCorridor(sim: SimState, w: World, c: Corridor, mode: Mode, y
   const score = Math.min(2, load) * appetite * (strat ? STRATEGIC_SCORE : 1), bar = (SCORE_MIN + c.span / SPAN_SCORE_KM) * cheap * (strat ? STRATEGIC_BAR : 1) * (sim.pot17 && wk !== undefined && s.fac === "tunnel" && !strat ? TUNNEL_BAR_17 : 1);
   // (Stage 13: with a limited number of projects at a time, the planner takes the best return for the money -- traffic against the square root of the price -- not simply the busiest: a modest strait with a cheap crossing is not starved for a century by the great ones)
   const rank = (wk !== undefined ? score / Math.sqrt(Math.max(1, s.cost) / 50) : score) * (strat ? STRATEGIC_RANK : 1);
+  // Stage 18: under 海路重視 / 空路重視 a water tunnel is the exception, not the rule
+  if (s.fac === "tunnel" && wk !== undefined && stance18(sim) && !tunnelException18(sim, load, c.span, y)) return { ok: false, why: "policy18", s, score, rank, bar };
   return score >= bar ? { ok: true, why: "ok", s, score, rank, bar } : { ok: false, why: "score", s, score, rank, bar };
 }
 export function planCrossings(sim: SimState, w: World, y: number): SimProject[] {
@@ -262,8 +265,9 @@ function startCrossing(sim: SimState, w: World, c: Corridor, s: { fac: "bridge" 
   const id = newId(sim, "edge");
   const e: SimEdge = { ...newEdgeDefaults(), id, a: ferry.a, b: ferry.b, cells: [...ferry.cells], lengthKm: ferry.lengthKm, surface: "paved", quality: 92, built: 0, open: false, state: "closed", standard: "standard", maxGradePct: 1, builtMonth: null, region: ferry.region, facility: s.fac, facilityName: `link:${ns ? `${ns.name}(${a}〜${b})` : `${a}〜${b}`}${s.fac === "bridge" ? "大橋" : `${sea}トンネル`}`, ...(rail ? { mode: "rail" as const, op: ferry.op ?? "jnr" } : {}) };
   sim.edges[id] = e;
+  const exc18 = s.fac === "tunnel" && stance18(sim) !== null; if (exc18) sim.lastTunnelException18 = y;
   const approachKm = approachA!.km + approachB!.km, cost = s.cost + approachKm * RAIL_UNIT.standard, edgeIds = [id, ...approachA!.created, ...approachB!.created], chain = [...approachA!.chain, { edgeId: id, dir: 1 as const }, ...approachB!.chain];
-  const reason = `${CROSSING_TAG}${wk14Strategic(w, c) ? STRATEGIC_TAG : ""}${a}〜${b}の${rail ? "鉄道" : "道路"}${rail && ferry.mode !== "rail" ? "輸送" : "連絡船"}は混雑(${Math.round(ferryLoad(ferry) * 100)}%)。${c.kind === "lake" ? "湖面" : "海峡"}${c.span}kmは${s.fac === "bridge" ? "橋" : sea + "トンネル"}で結べる技術がある`;
+  const reason = `${CROSSING_TAG}${exc18 ? EXC_TAG : ""}${wk14Strategic(w, c) ? STRATEGIC_TAG : ""}${a}〜${b}の${rail ? "鉄道" : "道路"}${rail && ferry.mode !== "rail" ? "輸送" : "連絡船"}は混雑(${Math.round(ferryLoad(ferry) * 100)}%)。${c.kind === "lake" ? "湖面" : "海峡"}${c.span}kmは${s.fac === "bridge" ? "橋" : sea + "トンネル"}で結べる技術がある`;
   // a route is one unbroken chain: if the approaches do not join up end to end, nothing is started (and nothing is left behind)
   const joins = chain.every((x, i) => { if (i === 0) return true; const q = chain[i - 1], pe = sim.edges[q.edgeId], ce = sim.edges[x.edgeId]; return !!pe && !!ce && (q.dir === 1 ? pe.b : pe.a) === (x.dir === 1 ? ce.a : ce.b); });
   if (!joins) { if (process.env.DBG13) (globalThis as any).__dbg13 = ((globalThis as any).__dbg13 ?? []).concat(`${c.a.name}>${c.b.name} ` + chain.map((x) => { const q = sim.edges[x.edgeId]; return `${x.edgeId}/${x.dir}:${q?.a}>${q?.b}`; }).join(" ")); for (const eid of edgeIds) delete sim.edges[eid]; netRemoved(sim); return null; }

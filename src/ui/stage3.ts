@@ -5,7 +5,7 @@ import { DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey
 import { effectText } from "../sim/events";
 import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
-import { CAND_1945, STANCE_LABEL } from "../sim/kaigen";
+import { CAND_1945, ERA_GROUP_LABEL, STANCE_LABEL, eraGroup, type EraCand, type EraGroup } from "../sim/kaigen";
 import { potentialWeights } from "../sim/potential17";
 import { reconText } from "../sim/recon";
 import { homeCity, subCity } from "../sim/ceremony";
@@ -19,23 +19,44 @@ export const ui3 = { tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fa
 const ym = (sim: SimState, m: number) => { const { year, month } = monthToYM(sim.startYear, m); return `${year}年${month}月`; };
 const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) * 10)) + "□".repeat(10 - Math.round(Math.max(0, Math.min(1, v)) * 10));
 
+/** Stage 18: two groups (道路系 / 鉄道系) as big segmented buttons, then one large button per candidate. `cands` are the candidates, `chosen` the selected index (or -1), `onPick` chooses one. */
+function eraButtons(prefix: string, cands: EraCand[], chosen: number, onPick: (i: number) => void, detail: (c: EraCand, i: number) => string): HTMLElement {
+  const wrap = h("div", { id: prefix + "-box", class: "era-box" }), groups: EraGroup[] = ["road", "rail"], count = (g: EraGroup) => cands.filter((c) => eraGroup(c.stance) === g).length;
+  let tab: EraGroup = eraGroup((cands[Math.max(0, chosen)] ?? cands[0]).stance);
+  const draw = () => {
+    wrap.replaceChildren();
+    wrap.append(h("div", { class: "era-seg", role: "tablist" }, ...groups.map((g) => h("button", { type: "button", id: `${prefix}-tab-${g}`, role: "tab", "aria-selected": String(tab === g), class: "era-tab" + (tab === g ? " on" : ""), disabled: count(g) === 0 ? "" : null, onclick: () => { tab = g; draw(); } }, `${ERA_GROUP_LABEL[g]}(${count(g)})`))));
+    const list = h("div", { class: "era-list" });
+    cands.forEach((c, i) => { if (eraGroup(c.stance) !== tab) return; list.append(h("button", { type: "button", id: `${prefix}-btn-${i}`, class: "era-btn" + (i === chosen ? " on" : ""), "aria-pressed": String(i === chosen), onclick: () => onPick(i) }, h("b", {}, `${i === chosen ? "✔ " : ""}${c.name}`), h("span", {}, detail(c, i)))); });
+    wrap.append(list);
+  };
+  draw(); return wrap;
+}
 export function eraPicker(app: App, tb: HTMLElement, current: number, pick: (i: number) => void) {
-  tb.append(h("div", { id: "era-pick", class: "note" }, "最初の元号(1926年の昭和改元で実際に挙がった案)"));
-  const sel = h("select", { id: "era-first", "aria-label": "最初の元号", onchange: (e: Event) => pick(+(e.target as HTMLSelectElement).value) }) as HTMLSelectElement;
-  CAND_1945.forEach((c, i) => sel.append(h("option", { value: String(i), ...(i === current ? { selected: "" } : {}) }, `${c.name}(${STANCE_LABEL[c.stance]}${c.recon ? "・" + reconText(c.recon) : ""})`)));
   const c = CAND_1945[current] ?? CAND_1945[0];
-  tb.append(h("div", { class: "grp" }, sel), h("div", { id: "era-desc", class: "note" }, `${c.note}／方針: ${STANCE_LABEL[c.stance]}${c.recon ? `／復興方針: ${reconText(c.recon)}(1945年の最初の元号だけが持ち、1950年以降の人口・産業・予算・建設の優先度に長く効く。太平洋側・日本海側は実際の海の位置で決まる)` : ""}(割り当てはゲーム上の仮のもの。1989・2019年にも改元があります)`));
+  tb.append(h("div", { id: "era-pick", class: "note" }, "最初の元号を選んでください(1926年の昭和改元で実際に挙がった案)"));
+  tb.append(h("div", { id: "era-current", class: "era-current" }, `選択中: ${c.name}(${ERA_GROUP_LABEL[eraGroup(c.stance)]}・${STANCE_LABEL[c.stance]}${c.recon ? "・" + reconText(c.recon) : ""})`));
+  tb.append(eraButtons("era", CAND_1945, current, pick, (x) => `${STANCE_LABEL[x.stance]}${x.recon ? "・" + reconText(x.recon) : ""}`));
+  tb.append(h("div", { id: "era-desc", class: "note" }, `${c.note}／方針: ${STANCE_LABEL[c.stance]}${c.recon ? `／復興方針: ${reconText(c.recon)}(1945年の最初の元号だけが持ち、1950年以降の人口・産業・予算・建設の優先度に長く効く。太平洋側・日本海側は実際の海岸線で、一極集中・地方分散は首都・副首都の近さで決まる)` : ""}`));
   void app;
 }
 /** The era-change sheet: opens by itself when a kaigen is due; time is stopped until a name is chosen. */
 export function buildKaigen(app: App, body: HTMLElement) {
   const sim = app.sim, k = sim?.kaigen; if (!sim || !k) { body.append(h("small", {}, "このデータには改元の仕組みがありません(旧形式のセーブ)")); return; }
   body.append(h("h3", {}, "改元"));
+  body.append(h("div", { class: "issue", id: "kaigen-current" }, h("b", {}, `現在の元号: ${k.eras[k.eras.length - 1].name}(${ERA_GROUP_LABEL[eraGroup(k.eras[k.eras.length - 1].stance)]}・${STANCE_LABEL[k.eras[k.eras.length - 1].stance]})`)));
   body.append(h("div", { class: "issue", id: "kaigen-history" }, "元号の履歴: " + k.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → "), ...(k.recon ? [h("br"), h("small", { id: "kaigen-recon" }, `復興方針(1945年に決定・以後も持続): ${reconText(k.recon)}`)] : [])));
   if (!k.pending) { body.append(h("div", { class: "issue" }, `次の改元: ${k.next}年ごろ(27〜33年間隔の暫定規則)`)); return; }
   const p = k.pending, real = p.year === 1989 || p.year === 2019;
   body.append(h("div", { class: "issue warn", id: "kaigen-window" }, `${p.year}年: 新しい元号を選んでください。時間は止まっています。`, h("br"), h("small", {}, real ? "候補は史実でこの年に挙がった案です(最初が実際に選ばれた元号)。方針の割り当てはゲーム上の仮のものです。" : "候補は暫定の生成規則による名前です(いろは順の漢字化+改元年の干支、画数の少ない順)。実在の元号ではありません。")));
-  p.cands.forEach((c, i) => body.append(h("div", { class: "issue", id: "kaigen-cand-" + i }, `${c.name}(${STANCE_LABEL[c.stance]}) ${c.real ? "" : "【暫定規則】"}`, h("br"), h("small", {}, `${c.note}。${ERAS[c.stance].focus}`), h("div", { class: "row" }, h("button", { id: "kaigen-pick-" + i, onclick: () => app.chooseKaigen(i) }, `${c.name}にする`)))));
+  {   // Stage 18: the two groups as big tabs, one card per candidate with a large button (the candidates of the other group are folded away)
+    const box = h("div", { id: "kaigen-box", class: "era-box" }); let tab: EraGroup = eraGroup(p.cands[0].stance); const groups: EraGroup[] = ["road", "rail"], count = (g: EraGroup) => p.cands.filter((c) => eraGroup(c.stance) === g).length;
+    const draw = () => {
+      box.replaceChildren(h("div", { class: "era-seg", role: "tablist" }, ...groups.map((g) => h("button", { type: "button", id: "kaigen-tab-" + g, role: "tab", "aria-selected": String(tab === g), class: "era-tab" + (tab === g ? " on" : ""), disabled: count(g) === 0 ? "" : null, onclick: () => { tab = g; draw(); } }, `${ERA_GROUP_LABEL[g]}(${count(g)})`))));
+      p.cands.forEach((c, i) => { box.append(h("div", { class: "issue era-card", id: "kaigen-cand-" + i, hidden: eraGroup(c.stance) !== tab ? "" : null }, h("button", { type: "button", id: "kaigen-pick-" + i, class: "era-btn", onclick: () => app.chooseKaigen(i) }, h("b", {}, `${c.name}にする`), h("span", {}, `${ERA_GROUP_LABEL[eraGroup(c.stance)]}・${STANCE_LABEL[c.stance]}${c.real ? "" : "【暫定規則】"}`)), h("small", {}, `${c.note}。${ERAS[c.stance].focus}`))); });
+    };
+    draw(); body.append(box);
+  }
   body.append(h("small", {}, "これまでの元号の方針は、新しい元号のあとも一部が残って効き続けます。"));
 }
 
