@@ -2,10 +2,11 @@
 import { writeFileSync } from "node:fs";
 import { describe, it } from "vitest";
 import { realToLonLat } from "../../src/core/data";
+import { modeOf } from "../../src/sim/types";
 import { run14 } from "./lib14";
 describe.skipIf(!process.env.STUDY)("hoyorun", () => { it("x", () => {
   const out: string[] = [], seed = +(process.env.SEED ?? 7);
-  const { sim, w, wallS } = run14({ seed, until: +(process.env.UNTIL ?? 2000), capital: process.env.CAP, sub: process.env.SUB });
+  const { sim, w, wallS } = run14({ seed, until: +(process.env.UNTIL ?? 2000), capital: process.env.CAP, sub: process.env.SUB, pot17: process.env.P17 === "0" ? false : undefined });
   const ll = (k: number) => realToLonLat(w.cellPos(k) as [number, number]).map((x) => +x.toFixed(3)).join(",");
   const kyu = (k: number) => w.t.island[k] === 3, shi = (k: number) => w.t.island[k] === 4;
   for (const e of Object.values(sim.edges)) {
@@ -17,6 +18,8 @@ describe.skipIf(!process.env.STUDY)("hoyorun", () => { it("x", () => {
   const reach = (from: string) => { const seen = new Set([from]), q = [from]; while (q.length) { const n = q.pop()!; for (const m of adj.get(n) ?? []) if (!seen.has(m)) { seen.add(m); q.push(m); } } return seen; };
   const tun = Object.values(sim.edges).find((e) => e.facility === "tunnel" && /豊予/.test(e.facilityName ?? ""));
   if (tun) { out.push(`tunnel ends degree a=${adj.get(tun.a)?.length ?? 0} b=${adj.get(tun.b)?.length ?? 0}`); const R = reach(tun.a), R2 = reach(tun.b); for (const nm of ["大分市", "松山市", "高松市", "福岡市", "大阪市"]) { const c = w.cities.find((x) => x.name === nm); const nd = c ? Object.values(sim.nodes).find((x) => x.cell === c.cell)?.id : null; out.push(`reach ${nm}: kyushuSide=${nd ? R.has(nd) : "nonode"} shikokuSide=${nd ? R2.has(nd) : "nonode"}`); } }
+  { const open = Object.values(sim.edges).filter((e) => e.facility === "tunnel" && e.state === "open" && /海底|湖底/.test(e.facilityName ?? "")); out.push(`WATERTUNNELS open=${open.length} road=${open.filter((e) => modeOf(e) === "road").length} rail=${open.filter((e) => modeOf(e) === "rail").length}`); }
+  for (const e of Object.values(sim.edges)) if (e.facility === "tunnel" && e.state === "open" && /海底|湖底/.test(e.facilityName ?? "")) out.push(`WT ${1950 + Math.floor((e.builtMonth ?? 0) / 12)} ${modeOf(e)} ${e.facilityName} ${e.lengthKm}km`);
   out.push(`wall ${wallS}s towns=${sim.towns16?.length}`);
   writeFileSync(`/tmp/claude-0/hoyorun-${process.env.TAG ?? seed}.txt`, out.join("\n"));
 }, 3000000); });

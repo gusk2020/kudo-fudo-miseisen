@@ -7,6 +7,7 @@
  * Colour is the city's own growth against the nation over twenty years (green / red / grey); the radius grows with the square root of its people. No triangles.
  */
 import { homeCity, subCity } from "../sim/ceremony";
+import { SHOW_ON, isCapitalCity, isShown } from "../sim/city17";
 import type { SimState } from "../sim/types";
 import type { World } from "../sim/world";
 
@@ -18,7 +19,9 @@ export function pickCityCircles(sim: SimState, w: World, zoom: number, year: num
   const rows: { id: string; x: number; y: number; p: number; rel: number }[] = []; let s0 = 0, s1 = 0; const raw: { id: string; x: number; y: number; p1: number; p0: number }[] = [];
   for (const c of w.cities) {
     const h = c12[c.id]?.h; if (!h || h.length < 2) continue; let k = h.length - 1; if (year !== null) k = Math.max(1, Math.min(h.length - 1, Math.floor((year - sim.startYear) / 5)));
-    const p1 = year === null ? sim.cities[c.id]?.pop ?? h[k] : h[k], p0 = h[Math.max(0, k - 4)]; raw.push({ id: c.id, x: c.pos[0], y: c.pos[1], p1, p0 }); s0 += p0; s1 += p1;
+    const p1 = year === null ? sim.cities[c.id]?.pop ?? h[k] : h[k], p0 = h[Math.max(0, k - 4)];
+    if (sim.pot17 && !isCapitalCity(c) && (year === null ? !isShown(sim, c.id) : p1 < SHOW_ON)) continue;   // Stage 17: the candidates that have not (yet) grown into cities are not on the map
+    raw.push({ id: c.id, x: c.pos[0], y: c.pos[1], p1, p0 }); s0 += p0; s1 += p1;
   }
   const nat = s0 > 0 ? s1 / s0 : 1; for (const r of raw) rows.push({ id: r.id, x: r.x, y: r.y, p: r.p1, rel: r.p0 > 0 ? r.p1 / r.p0 / nat : 1 });
   const byId = new Map(rows.map((r) => [r.id, r])), keep = new Set<(typeof rows)[0]>(), seat = new Set<string>();

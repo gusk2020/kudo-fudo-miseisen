@@ -6,6 +6,7 @@ import { effectText } from "../sim/events";
 import { prefName, routeLabel } from "../sim/engine";
 import { codesAt, numberHistory } from "../sim/ledger";
 import { CAND_1945, STANCE_LABEL } from "../sim/kaigen";
+import { potentialWeights } from "../sim/potential17";
 import { reconText } from "../sim/recon";
 import { homeCity, subCity } from "../sim/ceremony";
 import { ECO_LABEL, ECO_PARTS, mainCause } from "../sim/econ";
@@ -208,6 +209,16 @@ export function buildCityEconomy(app: App, sim: SimState, body: HTMLElement, yea
       const nm = w.cityById.get(m.core)?.name ?? m.core, r = Math.sqrt(v.area / Math.PI);
       return h("div", { class: "issue" }, `${nm}圏 ${(v.pop / 1e6).toFixed(2)}百万人・${Math.round(v.area).toLocaleString()}km²(半径${Math.round(r)}km)${year === null ? `・衛星${m.members.length - 1}市・${m.prefs.length}府県にまたがり、本拠の府県の外が${Math.round(m.outsidePct * 100)}%` : ""}`);
     })));
+  }
+  if (sim.pot17) {   // Stage 17: the development-potential order of the 49 prefectures, and the places that grew into cities (and the ones that lost their name)
+    const P = sim.pot17, W = potentialWeights(P.order), nm = (id: string) => prefName(id), cityName = (id: string) => w.cityById.get(id)?.name ?? id;
+    body.append(h("div", { id: "pot17" }, h("b", {}, "府県の発展ポテンシャル順位(人口の順位ではなく、発展しやすさ。上位ほど強く、中位以下の差はわずか)"),
+      h("div", { class: "issue", id: "pot17-top" }, "上位: " + P.order.slice(0, 12).map((p, i) => `${i + 1}${nm(p)}`).join(" ")),
+      h("small", {}, `重み(平均1): 1位${W[P.order[0]].toFixed(2)}・7位${W[P.order[6]].toFixed(2)}・25位${W[P.order[24]].toFixed(2)}・49位${W[P.order[48]].toFixed(2)}。今効いている重みは順位替えのあと年々なだらかに動く`),
+      ...P.hist.map((x) => h("div", { class: "issue" }, `${x.y}年 ${x.why}: 1〜6位 ${x.order.slice(0, 6).map(nm).join("・")}`))));
+    const born = Object.entries(P.shown).filter(([id]) => !(w.cityById.get(id)?.kind === "capital")).sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]) || (a[0] < b[0] ? -1 : 1));
+    body.append(h("div", { id: "city17" }, h("b", {}, `都市の誕生(県庁所在地のほか${born.filter(([, v]) => v > 0).length}市が都市として現れ、${born.filter(([, v]) => v < 0).length}市が表示を外れた)`),
+      ...born.slice(-30).map(([id, v]) => h("div", { class: "issue" }, `${Math.abs(v)}年 ${cityName(id)} ${v > 0 ? "が都市として現れた" : "は表示を外れた(住民は残る)"}(今 ${Math.round((sim.cities[id]?.pop ?? 0) / 1000).toLocaleString()}千人)`))));
   }
   const det = h("details", { id: "eco-detail" }, h("summary", {}, "都市を選んで推移と原因を見る")) as HTMLDetailsElement, sel = h("select", { id: "eco-city", "aria-label": "都市" }) as HTMLSelectElement;
   for (const r of [...rows].sort((p, q) => q.p1 - p.p1).slice(0, 40)) sel.append(h("option", { value: r.id }, `${r.name} ${Math.round(r.p1 / 1000).toLocaleString()}千人`));
