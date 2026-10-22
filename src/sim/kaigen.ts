@@ -21,7 +21,7 @@
  *  - 令和 (2019): 「令和・英弘・久化・広至・万保」 (one English-language source prints 万和 beside 万保, which looks like a slip) -- news.livedoor.com/article/detail/17083568,
  *    kanpai-japan.com. 「天翔」 was reported as a front-runner but was not one of the five put to the Cabinet.
  */
-import type { EraKey } from "./eras";
+import { baseDials, type EraKey } from "./eras";
 
 export interface EraCand { name: string; stance: EraKey; real: boolean; note: string; recon?: Recon }
 /** Stage 10: the 1945 reconstruction policy (recon.ts). Only the first era choice carries one. */
@@ -32,6 +32,10 @@ export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands:
 /** The policy stances a candidate can carry, in the order they are handed out. Issue #15 added 空路重視 and 海路重視 to the original three. */
 export const STANCES: EraKey[] = ["heisei", "shubun", "shoka", "kuuro", "kairo"];
 const CYCLE = STANCES;
+/** Stage 18: which of the two groups a stance belongs to on the era sheets, from what it actually does: it is a railway stance when its railway building appetite averages 0.5 or more over 1950-2100 (鉄道重視: 0.67; 均衡 0.38, 道路重視 0.17, 空路重視 0.31, 海路重視 0.33), otherwise a road stance. 空路 and 海路 build less railway than 均衡 (and from Stage 18 suppress new railway and high-speed lines altogether), so they sit with the road side. */
+export type EraGroup = "road" | "rail";
+export const ERA_GROUP_LABEL: Record<EraGroup, string> = { road: "道路系", rail: "鉄道系" };
+export function eraGroup(stance: EraKey): EraGroup { let t = 0, n = 0; for (let y = 1950; y <= 2100; y += 5) { t += baseDials(stance, y).railBuild; n++; } return t / n >= 0.5 ? "rail" : "road"; }
 export const STANCE_LABEL: Record<EraKey, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kuuro: "空路重視", kairo: "海路重視", kobun: "旧版" };
 /**
  * ERA -> STANCE TABLE (the one place that says which candidate leans which way). PROVISIONAL, and not historical: the real candidates keep their real names, and the

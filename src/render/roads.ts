@@ -62,8 +62,9 @@ export class RoadLayer {
   container = new Container(); private last: RoadArgs | null = null; private sig = "";
   // Everything below is created once and reused: creating and destroying Graphics/Text on every redraw leaked ~130 KB each time (Issue #7).
   private g = Object.fromEntries(KEYS.map((k) => [k, new Graphics()])) as Record<string, Graphics>;
-  private signLayer = new Container(); private signs: { c: Container; bg: Graphics; t: Text; nk: Text }[] = [];
-  constructor() { for (const k of KEYS.filter((k) => k !== "ov")) this.container.addChild(this.g[k]); this.container.addChild(this.signLayer, this.g.ov); }
+  private nameLayer = new Container(); private names: Text[] = []; private signLayer = new Container(); private signs: { c: Container; bg: Graphics; t: Text; nk: Text }[] = [];
+  constructor() { for (const k of KEYS.filter((k) => k !== "ov")) this.container.addChild(this.g[k]); this.container.addChild(this.signLayer, this.nameLayer, this.g.ov); }
+  private nameText(i: number): Text { let t = this.names[i]; if (!t) { t = new Text({ text: "", style: { fontSize: 12, fontWeight: "700", fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); this.names[i] = t; this.nameLayer.addChild(t); } return t; }
   private sign(i: number) {
     let s = this.signs[i];
     if (!s) { const c = new Container(), bg = new Graphics(), t = new Text({ text: "", style: { fontSize: 10, fontWeight: "700", fill: 0xffffff } }), nk = new Text({ text: "", style: { fontSize: 9, fontWeight: "700", fill: 0xffffff, stroke: { color: 0x000000, width: 3 } } }); t.anchor.set(0.5); nk.anchor.set(0.5); nk.position.set(0, 16); c.addChild(bg, t, nk); this.signLayer.addChild(c); s = this.signs[i] = { c, bg, t, nk }; }
@@ -128,11 +129,13 @@ export class RoadLayer {
    * Colour is the same as the metropolis's: green gained on the nation over twenty years, red lost, grey about even; radius grows with the square root of the city's own people. No triangles.
    */
   private drawCityCircles(sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
-    const g = this.g.cityTop;
+    const g = this.g.cityTop; let nn = 0;
     for (const r of pickCityCircles(sim, w, zoom, year, lite)) {
       const col = r.rel > 1.08 ? 0x2fbf5f : r.rel < 0.93 ? 0xe0463c : 0x9aa4ad, rad = Math.min(px(3 + 4 * Math.sqrt(r.p / 1e5)), px(r.seat ? 34 : 28));
       g.circle(r.x, -r.y, rad).fill({ color: col, alpha: 0.3 }).stroke({ width: px(1.6), color: col, alpha: 1 });
       if (r.seat) g.circle(r.x, -r.y, rad + px(2.5)).stroke({ width: px(1.8), color: 0xffc83a, alpha: 0.95 });
+      // Stage 18: a place that has grown into a city shows its name (the 49 capitals are named by the base map); the circle already says how big it is
+      const wc = w.cityById.get(r.id); if (wc && wc.kind !== "capital" && zoom >= 0.55 && sim.pot17) { const t = this.nameText(nn++); t.text = wc.name; t.visible = true; t.scale.set(1 / zoom); t.position.set(r.x + rad + px(2), -r.y - px(6)); }
     }
   }
   /** Stage 8/9: ports and airports, each in two sizes only (large: 国際拠点港湾以上 / 国際ハブ空港; small: the rest), and the busiest domestic flights.
@@ -151,7 +154,7 @@ export class RoadLayer {
   set(a: RoadArgs, zoom: number) { this.last = a; const sg = RoadLayer.signature(a, zoom); if (sg === this.sig) return false; this.sig = sg; this.draw(a, zoom); return true; }
   redraw(zoom: number) { if (this.last) { this.sig = ""; this.set(this.last, zoom); } }
   private draw(a: RoadArgs, zoom: number) {
-    for (const k of Object.keys(this.g)) this.g[k].clear();
+    for (const k of Object.keys(this.g)) this.g[k].clear(); for (const t of this.names) t.visible = false;
     let count = 0;
     const px = (n: number) => n / zoom, { sim, w } = a;
     if (sim && w) {

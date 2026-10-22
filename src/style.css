@@ -61,3 +61,16 @@ body.real #sheet { max-height: 62dvh; }
 #seats { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 #seats label.seat { display: grid; grid-template-columns: 4.5em 1fr; align-items: center; gap: 8px; white-space: nowrap; width: 100%; }
 #seats label.seat select { min-width: 0; width: 100%; }
+
+/* Stage 18: era choice -- two big tabs and large touch targets */
+.era-box { margin:6px 0; }
+.era-seg { display:flex; gap:6px; margin-bottom:6px; }
+.era-tab { flex:1; min-height:44px; font-size:15px; font-weight:700; border-radius:8px; border:2px solid #4f7aa3; background:#16304a; color:#e8f1fa; }
+.era-tab.on { background:#f2c200; color:#111; border-color:#f2c200; }
+.era-tab:disabled { opacity:.4; }
+.era-list { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.era-btn { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-height:48px; padding:6px 10px; border-radius:8px; border:2px solid #4f7aa3; background:#1d3a55; color:#fff; text-align:left; font-size:14px; }
+.era-btn b { font-size:16px; } .era-btn span { font-size:11px; opacity:.85; }
+.era-btn.on { border-color:#f2c200; background:#2b4f73; }
+.era-card { display:flex; flex-direction:column; gap:4px; } .era-card .era-btn { width:100%; background:#245a8c; }
+.era-current { margin:4px 0; padding:6px 8px; border-radius:6px; background:#2b4f73; border-left:4px solid #f2c200; font-weight:700; font-size:14px; }
