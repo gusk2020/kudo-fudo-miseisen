@@ -51,7 +51,7 @@ export function settleCities(sim: SimState, w: World, an: Analysis, y: number): 
   }
   // who is shown: a place appears when it is big enough and has grown, and loses its name when it shrinks well below that; the people stay either way
   for (const c of w.cities) {
-    if (isCapitalCity(c)) continue; const st = sim.cities[c.id], was = pot.shown[c.id] !== undefined && pot.shown[c.id] > 0;
+    if (isCapitalCity(c) || y <= sim.startYear) continue; const st = sim.cities[c.id], was = pot.shown[c.id] !== undefined && pot.shown[c.id] > 0;
     const born = startOf(sim, w, c);
     if (!was && st.pop >= SHOW_ON && st.pop >= SHOW_GROWTH * born) { pot.shown[c.id] = y; ev(sim, "city", `${c.name}が都市として現れた(人口${Math.round(st.pop / 1000)}千人)`, `${c.pref ? "同じ府県の県庁所在地から人が移り、" : ""}平地・交通・産業の条件がそろった`, { city: c.id }); }
     else if (was && st.pop < SHOW_OFF) { pot.shown[c.id] = -y; ev(sim, "city", `${c.name}の人口が減り、都市の表示を外れた(人口${Math.round(st.pop / 1000)}千人)`, "条件が悪化し、人は周辺や県庁所在地へ移った(住民は残っている)", { city: c.id }); }

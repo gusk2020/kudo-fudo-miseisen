@@ -37,6 +37,8 @@ export const MAX_ACTIVE_PER_MODE = 2, COOLING_YEARS = 12, FUND_SHARE = 0.6, SCOR
 export const SPAN_SCORE_KM = 60;
 /** Stage 13: crossing projects running at once per mode with the water-tunnel rule (the named straits are many); a railway tunnel planned from a road ferry sees this share of its load. */
 export const MAX_ACTIVE_WATER = 6, STARTS_PER_YEAR_WATER = 2, LAKE_TUNNEL_MAX_KM = 40;
+/** Stage 17 (too many sea and lake tunnels: ~45 opened between 1961 and 1995 in a Stage 16 game): in a game with development potentials an ordinary (not island-link) tunnel must clear a bar this much higher, and fewer run at once and start per year. The technology (3x speed, 3x reach, half cost, half time) is untouched, and the island links (Hoyo included) keep their own places. */
+export const TUNNEL_BAR_17 = 4, MAX_ACTIVE_WATER_17 = 2, STARTS_PER_YEAR_WATER_17 = 1;
 /** A fixed link must serve people: the smaller shore's population (cities and villages) has to reach this many per km of open water. 10 km of strait needs 35,000 on the small side, 50 km needs 175,000. */
 export const POP_PER_KM = 3500;
 /** Stage 13: what a project already under way takes of the yearly budget, per month (its price over a typical building time); the water-tunnel games limit what is started by this, not by a count. */
@@ -170,6 +172,8 @@ export function evalCorridor(sim: SimState, w: World, c: Corridor, mode: Mode, y
   if (proj.some((p) => modeOf(p) === mode && p.from === ferry.a && p.to === ferry.b && (ACTIVE.has(p.status) || yearOf(sim) - (sim.startYear + Math.floor(p.statusSince / 12)) < (p.reason.includes(STRATEGIC_TAG) ? STRATEGIC_COOLING_YEARS : COOLING_YEARS)))) return { ok: false, why: "recent" };
   // (Stage 13: a link is a crossing of water, not a second trunk road: where the two ports are far apart by land, the ordinary road between them comes first and the crossing is planned between nearer shores)
   if (wk !== undefined && c.km - c.span > LAND_PART_MAX_KM) return { ok: false, why: "far-ports" };
+  // Stage 17: one fixed link of a mode per pair of prefectures (the same two shores were bridged or tunnelled again and again by neighbouring ports): the first link of each island pair keeps its own place
+  if (sim.pot17 && wk !== undefined) { const pk = (a: number, b: number) => { const x = w.prefOf(a) ?? "-", z = w.prefOf(b) ?? "-"; return x < z ? `${x}|${z}` : `${z}|${x}`; }, mine = pk(c.a.cell, c.b.cell); for (const p of proj) { if (modeOf(p) !== mode) continue; const e = sim.edges[p.edgeIds[0]]; if (e && (ACTIVE.has(p.status) || e.state === "open") && pk(e.cells[0], e.cells[e.cells.length - 1]) === mine) return { ok: false, why: "pair-taken" }; } }
   const s = chooseStructure(sim, c.span, c.km, mode, y); if (!s) return { ok: false, why: "no-structure" };
   // a cheaper structure needs fewer people and less traffic to be worth building: the bars scale with its price relative to the general one (0.5 for a water tunnel at wk 3)
   const cheap = s.fac === "tunnel" && wk !== undefined ? waterTechAt(wk, y).costMult : 1;
@@ -180,7 +184,7 @@ export function evalCorridor(sim: SimState, w: World, c: Corridor, mode: Mode, y
   const strat = wk !== undefined && isStrategic(w, c);
   if (need + committed > FUND_SHARE * (strat ? STRATEGIC_FUND : 1) * pool) return { ok: false, why: "funds", s, need, fund: FUND_SHARE * pool };
   const load = Math.max(ferryLoad(ferry) * (modeOf(ferry) !== mode ? RAIL_FROM_ROAD : 1), c.kind === "strait" ? 0 : virtualTrips(sim, w, c.a.cell, c.b.cell, c.km, mode) / (mode === "rail" ? 6000 : 3000));
-  const score = Math.min(2, load) * appetite * (strat ? STRATEGIC_SCORE : 1), bar = (SCORE_MIN + c.span / SPAN_SCORE_KM) * cheap * (strat ? STRATEGIC_BAR : 1);
+  const score = Math.min(2, load) * appetite * (strat ? STRATEGIC_SCORE : 1), bar = (SCORE_MIN + c.span / SPAN_SCORE_KM) * cheap * (strat ? STRATEGIC_BAR : 1) * (sim.pot17 && wk !== undefined && s.fac === "tunnel" && !strat ? TUNNEL_BAR_17 : 1);
   // (Stage 13: with a limited number of projects at a time, the planner takes the best return for the money -- traffic against the square root of the price -- not simply the busiest: a modest strait with a cheap crossing is not starved for a century by the great ones)
   const rank = (wk !== undefined ? score / Math.sqrt(Math.max(1, s.cost) / 50) : score) * (strat ? STRATEGIC_RANK : 1);
   return score >= bar ? { ok: true, why: "ok", s, score, rank, bar } : { ok: false, why: "score", s, score, rank, bar };
@@ -189,10 +193,10 @@ export function planCrossings(sim: SimState, w: World, y: number): SimProject[] 
   if (!sim.crossings || !sim.tech) return [];
   const dl = sim.dials, started: SimProject[] = [], proj = Object.values(sim.projects).filter(isCrossingProject), wk = sim.tech.wk;
   for (const mode of ["road", "rail"] as Mode[]) {
-    const maxActive = wk !== undefined ? MAX_ACTIVE_WATER : MAX_ACTIVE_PER_MODE;
+    const maxActive = wk !== undefined ? (sim.pot17 ? MAX_ACTIVE_WATER_17 : MAX_ACTIVE_WATER) : MAX_ACTIVE_PER_MODE;
     const appetite = (mode === "road" ? dl.hwyBuild : dl.railBuild) * (1 + 0.5 * dl.hsr) * (1 - 0.35 * Math.min(1, dl.seaBias)); if (appetite < 0.15) continue;
     let pool: Corridor[] | undefined; const fixed = fixedLinksOf(sim, mode);
-    for (let round = 0; round < (wk !== undefined ? STARTS_PER_YEAR_WATER : 1); round++) {
+    for (let round = 0; round < (wk !== undefined ? (sim.pot17 ? STARTS_PER_YEAR_WATER_17 : STARTS_PER_YEAR_WATER) : 1); round++) {
       if (proj.filter((p) => modeOf(p) === mode && ACTIVE.has(p.status) && !(sim.pop15 && wk !== undefined && p.reason.includes(STRATEGIC_TAG))).length + started.filter((p) => modeOf(p) === mode && !(sim.pop15 && wk !== undefined && p.reason.includes(STRATEGIC_TAG))).length >= maxActive) break;
       let best: { c: Corridor; s: { fac: "bridge" | "tunnel"; cost: number }; score: number; rank: number } | null = null;
       // (a second start in the same year only has to look again at the best few of the first look: what was not a candidate then cannot become one by money being committed)
