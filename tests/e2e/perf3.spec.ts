@@ -18,7 +18,7 @@ test("perf3: boot -> era -> ceremony -> x20 -> zoom/pan -> atlas -> save", async
   const cityPos = (n: string) => page.evaluate((x) => (window as any).__kfm.world.cities.find((c: any) => c.name === x).pos, n) as Promise<[number, number]>;
   const scr = (p: [number, number]) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p) as Promise<[number, number]>;
   const draw = async (a: [number, number], b: [number, number]) => { const s = await scr(a), e = await scr(b); await page.mouse.move(s[0], s[1]); await page.mouse.down(); await page.mouse.move(e[0], e[1], { steps: 10 }); await page.mouse.up(); };
-  await page.click("#setup-tab-era"); await page.selectOption("#era-first", "0"); await page.click("#setup-close"); const tokyo = await cityPos("東京"), osk = await cityPos("大阪市");
+  await page.click("#setup-tab-era"); await page.click("#era-opt-0"); await page.click("#setup-close"); const tokyo = await cityPos("東京"), osk = await cityPos("大阪市");
   await page.click("#tool-cer-kokudo1"); await draw(tokyo, osk);
   await stage("ceremony"); t = Date.now(); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 300000 }); out.stages.push({ name: "ceremony(1950 network)", ms: Date.now() - t }); out.heap.push(await heap("ceremony"));
   await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; });
