@@ -58,3 +58,49 @@ export function potentialOrder(inp: PotentialInput, d: PotentialData): string[] 
 }
 /** prefecture id -> rank (1 = strongest potential). */
 export const potentialRanks = (inp: PotentialInput, d: PotentialData): Record<string, number> => Object.fromEntries(potentialOrder(inp, d).map((p, i) => [p, i + 1]));
+
+// ---------------------------------------------------------------- step B: from ranks to a weight ----------
+/**
+ * The weight of a rank. A floor plus a fast-decaying part: the top few ranks are clearly stronger, ranks from about the 20th down differ only slightly, and the last rank is still POT_FLOOR (never zero:
+ * a prefecture at the bottom is slower, not unable to grow). Normalised so the 49 weights average exactly 1 (the national total of development power is the same whatever the order).
+ * Compared in docs/STAGE17_POTENTIAL.md with a linear, a power (Zipf) and a logistic curve.
+ */
+export const POT_FLOOR = 0.35, POT_DECAY = 6, POT_N = 49;
+const rawWeight = (rank: number) => POT_FLOOR + (1 - POT_FLOOR) * 2.5 * Math.exp(-(rank - 1) / POT_DECAY);
+export function potentialWeights(order: string[]): Record<string, number> {
+  const raw = order.map((_, i) => rawWeight(i + 1)), mean = raw.reduce((a, b) => a + b, 0) / raw.length;
+  return Object.fromEntries(order.map((p, i) => [p, raw[i] / mean]));
+}
+/** The rate (per year) at which the weights in force move toward the weights of the current order: a re-ordering reaches people, industry and roads over years, nothing jumps. */
+export const POT_GLIDE = 0.07;
+/** Growth added to a prefecture's cities per unit of weight above the mean, per year; applied with the population-weighted mean taken out (people move, the nation does not grow). */
+export const POT_GROWTH = 0.002;
+/** How strongly a prefecture's weight lifts its share of the regional construction budget (renormalised: only the split changes). */
+export const POT_SHARE = 0.2;
+
+export interface PotState { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number }
+const dataMemo = new WeakMap<TerrainResult, PotentialData>();
+export const potentialDataOf = (t: TerrainResult): PotentialData => { let d = dataMemo.get(t); if (!d) { d = potentialData(t); dataMemo.set(t, d); } return d; };
+/** The state of a new game: the order for the seats and the policy, in force from the first day. */
+export function initPotential(t: TerrainResult, seats: { capital: string; sub: string; palace: string }, mode: Dispersal, seed: number, year: number): PotState {
+  const order = potentialOrder({ ...seats, mode, seed: seed >>> 0 }, potentialDataOf(t));
+  return { order, cur: potentialWeights(order), hist: [{ y: year, order: [...order], why: "ゲーム開始" }], shown: {}, eras: 1 };
+}
+/** A new era (改元) re-draws the order: same seats and policy, a seed of the era's own, so the middle ranks move while the top (the seats and their neighbours) holds. The weights in force glide to it. */
+export function reassignPotential(st: PotState, t: TerrainResult, seats: { capital: string; sub: string; palace: string }, mode: Dispersal, seed: number, eraIndex: number, year: number, name: string): void {
+  const order = potentialOrder({ ...seats, mode, seed: (seed ^ Math.imul(eraIndex + 1, 0x9e3779b1)) >>> 0 }, potentialDataOf(t)); st.order = order; st.hist.push({ y: year, order: [...order], why: `改元(${name})` });
+}
+export function glidePotential(st: PotState): void { const target = potentialWeights(st.order); for (const p of Object.keys(target)) st.cur[p] = (st.cur[p] ?? 1) + POT_GLIDE * (target[p] - (st.cur[p] ?? 1)); }
+import type { SimState } from "./types";
+import type { World } from "./world";
+const seatCap = (order: string[]) => rawWeight(4) / (order.map((_, i) => rawWeight(i + 1)).reduce((a, b) => a + b, 0) / order.length);
+/** The yearly growth a prefecture's weight adds to its cities (population-weighted mean taken out: zero-sum). Empty for a game without potentials. */
+export function potGrowthOf(sim: SimState, w: World): Map<string, number> {
+  const out = new Map<string, number>(), st = sim.pot17; if (!st) return out; let s = 0, p = 0;
+  // the seats' own prefectures (ranks 1-3) already have the capital / sub-capital / palace functions of roles.ts, seats14.ts and the economy: here they count only as the 4th rank does
+  const cap = seatCap(st.order), seat = new Set(st.order.slice(0, 3));
+  for (const c of w.cities) { const g = c.pref ? POT_GROWTH * (Math.min(st.cur[c.pref] ?? 1, seat.has(c.pref) ? cap : 1e9) - 1) : 0, n = sim.cities[c.id]?.pop ?? 0; out.set(c.id, g); s += g * n; p += n; }
+  const mean = p ? s / p : 0; for (const [k, v] of out) out.set(k, v - mean); return out;
+}
+/** Multiplies a prefecture's weight in the regional budget split. */
+export const potShareOf = (sim: SimState, pref: string): number => { const st = sim.pot17; return st ? Math.max(0.4, 1 + POT_SHARE * ((st.cur[pref] ?? 1) - 1)) : 1; };

@@ -75,6 +75,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.seats14 !== undefined && raw.seats14 !== true) delete raw.seats14;   // Stage 14
   if (raw.pop15 !== undefined && raw.pop15 !== true) delete raw.pop15;   // Stage 15
   if (raw.towns16 !== undefined && !(Array.isArray(raw.towns16) && raw.towns16.length > 0 && raw.towns16.length < 400 && raw.towns16.every((x: unknown) => typeof x === "string" && x.length < 24))) delete raw.towns16;   // Stage 16
+  if (raw.pot17 !== undefined) { const q = raw.pot17, ok = q && typeof q === "object" && Array.isArray(q.order) && q.order.length === 49 && q.order.every((x: unknown) => typeof x === "string") && q.cur && typeof q.cur === "object" && Array.isArray(q.hist) && q.shown && typeof q.shown === "object"; if (!ok) delete raw.pot17; else { for (const k of Object.keys(q.cur)) if (!Number.isFinite(q.cur[k])) q.cur[k] = 1; } }   // Stage 17
   if (isRec(raw.kaigen) && raw.kaigen.recon !== undefined && !(isRec(raw.kaigen.recon) && ["pacific", "japansea"].includes(raw.kaigen.recon.coast) && ["concentrate", "disperse"].includes(raw.kaigen.recon.focus))) delete raw.kaigen.recon;
   // Stage 8: a lake bridge keeps only its two shore cells (an early Stage 8 build stored the water cells too, which the land check would refuse)
   for (const e of Object.values<any>(raw.edges)) if (e.facility === "bridge" && typeof e.facilityName === "string" && e.facilityName.includes("湖上大橋") && e.cells.length > 2) e.cells = [e.cells[0], e.cells[e.cells.length - 1]];
