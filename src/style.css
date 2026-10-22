@@ -62,16 +62,15 @@ body.real #sheet { max-height: 62dvh; }
 #seats label.seat { display: grid; grid-template-columns: 4.5em 1fr; align-items: center; gap: 8px; white-space: nowrap; width: 100%; }
 #seats label.seat select { min-width: 0; width: 100%; }
 
-/* Stage 18: era choice -- two big tabs and large touch targets */
-.era-box { margin:6px 0; }
-.era-seg { display:flex; gap:6px; margin-bottom:6px; }
-.era-tab { flex:1; min-height:44px; font-size:15px; font-weight:700; border-radius:8px; border:2px solid #4f7aa3; background:#16304a; color:#e8f1fa; }
-.era-tab.on { background:#f2c200; color:#111; border-color:#f2c200; }
-.era-tab:disabled { opacity:.4; }
-.era-list { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-.era-btn { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-height:48px; padding:6px 10px; border-radius:8px; border:2px solid #4f7aa3; background:#1d3a55; color:#fff; text-align:left; font-size:14px; }
-.era-btn b { font-size:16px; } .era-btn span { font-size:11px; opacity:.85; }
-.era-btn.on { border-color:#f2c200; background:#2b4f73; }
-.era-card { display:flex; flex-direction:column; gap:4px; } .era-card .era-btn { width:100%; background:#245a8c; }
+/* Stage 19: era list (one candidate per line) and the setup tabs */
 .era-current { margin:4px 0; padding:6px 8px; border-radius:6px; background:#2b4f73; border-left:4px solid #f2c200; font-weight:700; font-size:14px; }
-.era-card[hidden] { display:none; }
+.era-list-box { margin:6px 0; } .era-head { margin:8px 0 2px; padding:2px 6px; font-size:13px; font-weight:700; color:#f2c200; border-bottom:1px solid #4f7aa3; }
+.era-row { display:flex; justify-content:space-between; gap:8px; width:100%; min-height:44px; align-items:center; padding:6px 10px; margin:2px 0; border-radius:6px; border:1px solid #4f7aa3; background:#1d3a55; color:#fff; font-size:14px; text-align:left; }
+.era-row b { font-size:16px; } .era-row span { font-size:11px; opacity:.85; text-align:right; }
+.setup-tabs { display:flex; gap:4px; width:100%; }
+.setup-tab { flex:1 1 0; min-width:0; min-height:40px; padding:4px 2px; font-size:14px; font-weight:700; border-radius:8px; border:2px solid #4f7aa3; background:#16304a; color:#e8f1fa; white-space:nowrap; }
+.setup-tab.on { background:#f2c200; color:#111; border-color:#f2c200; }
+#setup-panel { margin:4px 0; padding:6px; border-radius:8px; background:#12283d; border:1px solid #4f7aa3; }
+#setup-panel .row2 { display:flex; gap:6px; margin:4px 0; } #setup-panel .row2 button { flex:1; min-height:44px; font-weight:700; }
+#setup-panel select { max-width:100%; min-height:40px; font-size:14px; }
+#setup-close { min-height:36px; margin-top:4px; }

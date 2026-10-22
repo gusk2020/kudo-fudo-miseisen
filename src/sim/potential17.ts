@@ -9,7 +9,7 @@ import type { TerrainResult } from "../core/terrain";
 import { seaClass } from "./recon";
 
 export type Dispersal = "concentrate" | "disperse";
-export interface PotentialInput { capital: string; sub: string; palace: string; mode: Dispersal; seed: number; /** Stage 18: the coast the era favours (applied after the order is fixed, to the random part only) */ coast?: "japansea" | "pacific" }
+export interface PotentialInput { capital: string; sub: string; palace: string; mode: Dispersal; seed: number; /** Stage 18: the coast the era favours (applied after the order is fixed, to the random part only) */ coast?: "japansea" | "pacific"; /** Stage 19: the exact lon/lat of a seat chosen on the map; the centroid of the three seats uses it (the rank order still uses the seat's prefecture) */ at?: { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } }
 export interface PotentialData { points: Record<string, [number, number]>; borders: Record<string, number>; coast?: Record<string, CoastCount> }
 /** Coastal land cells of a prefecture by the sea they face (see coastCounts). */
 export interface CoastCount { japansea: number; pacific: number }   // points: prefecture -> [lon, lat] of its 県庁所在地; borders: "a|b" (a<b) -> shared border length
@@ -40,7 +40,7 @@ export function potentialData(t?: TerrainResult): PotentialData {
 export function potentialOrder(inp: PotentialInput, d: PotentialData): string[] {
   const ids = PREF_IDS.filter((p) => d.points[p]), order: string[] = [], taken = new Set<string>(), pt = (p: string) => d.points[p];
   const take = (p: string | undefined) => { if (p && !taken.has(p)) { taken.add(p); order.push(p); return true; } return false; };
-  const centre = sphericalCentroid([inp.capital, inp.sub, inp.palace].map(pt));
+  const centre = sphericalCentroid([inp.at?.capital ?? pt(inp.capital), inp.at?.sub ?? pt(inp.sub), inp.at?.palace ?? pt(inp.palace)]);
   const free = () => ids.filter((p) => !taken.has(p));
   // 1-3: the seats (a prefecture already ranked is skipped; its place goes to the nearest free prefecture)
   for (const s of [inp.capital, inp.sub, inp.palace]) { if (!take(s)) { const near = free().sort((a, b) => greatCircleKm(pt(s), pt(a)) - greatCircleKm(pt(s), pt(b)) || (a < b ? -1 : 1))[0]; take(near); } }
@@ -58,21 +58,33 @@ export function potentialOrder(inp: PotentialInput, d: PotentialData): string[] 
   const rest = free(), rnd = mulberry32(inp.seed >>> 0); for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
   for (const p of rest) take(p);
   // Stage 18: the coast the era favours lifts its prefectures two places inside the random part only (ranks 17-49 under 一極集中, 11-49 under 地方分散)
-  if (inp.coast && d.coast) return coastBoost(order, inp.mode === "concentrate" ? 16 : 10, inp.coast, d.coast);
+  if (inp.coast) return coastBoost(order, inp.mode === "concentrate" ? 16 : 10, inp.coast);
   return order;
 }
 /** prefecture id -> rank (1 = strongest potential). */
 export const potentialRanks = (inp: PotentialInput, d: PotentialData): Record<string, number> => Object.fromEntries(potentialOrder(inp, d).map((p, i) => [p, i + 1]));
 
-// ---------------------------------------------------------------- Stage 18: the coast correction ----------
+// ---------------------------------------------------------------- Stage 18/19: the coast correction ----------
 /**
- * Which sea a prefecture faces, from the real coast of the terrain: every land cell of the prefecture with a sea cell beside it counts once toward the Sea of Japan or toward the Pacific side
- * (recon.ts `seaClass`: the Sea of Japan with its straits is one, everything else -- the Pacific, the Seto Inland Sea, the East China Sea -- is the other; the Sea of Okhotsk and lakes count for neither).
- * Rules (COAST_MIN, COAST_SHARE): fewer than COAST_MIN (15, about 75 km of coast) coastal cells = inland (no side); a side that holds at least COAST_SHARE of the counted coast is the prefecture's side;
- * a prefecture with both seas, neither reaching COAST_SHARE, is a "both" prefecture and has no side either. So Seto Inland Sea prefectures (Okayama, Hiroshima, Kagawa ...) are on the Pacific side, as in the
- * Stage 10 policy, and Niigata, Ishikawa, Shimane ... on the Sea of Japan side; Hokkaido's three prefectures are decided by their own coasts.
+ * Which sea a prefecture faces. Stage 18 counted the coastal cells of the 5 km terrain grid; that gave Nara a Pacific coast and Yamagata (a short coast) none, because the game's prefecture regions are
+ * generated and the grid is coarse. Stage 19 uses the real coast, as a table of facts that does not depend on any resolution (PREF_COAST), and keeps the grid count only as a cross-check in the tests.
+ * Rules: "japansea" = the prefecture's sea coast is the Sea of Japan only (with its straits and the Genkai sea); "pacific" = only the Pacific side, which includes the Seto Inland Sea, Osaka Bay, the Ariake and
+ * East China seas as in the Stage 10 policy (recon.ts `seaClass`); "both" = a coast on both (Aomori, Hokkaido's southwest, Hyogo, Yamaguchi, Fukuoka, Saga, Nagasaki): no side, no correction;
+ * "inland" = no sea coast (Lake Biwa is not sea). The Sea of Okhotsk counts for neither (Nemuro's Pacific coast makes it "pacific").
  */
-export const COAST_MIN = 15, COAST_SHARE = 0.65;
+export type CoastSide = "japansea" | "pacific" | "both" | "inland";
+export const PREF_COAST: Record<string, CoastSide> = {
+  "HK-SAP": "both", "HK-HAK": "both", "HK-NEM": "pacific",
+  "JP-02": "both", "JP-03": "pacific", "JP-04": "pacific", "JP-05": "japansea", "JP-06": "japansea", "JP-07": "pacific",
+  "JP-08": "pacific", "JP-09": "inland", "JP-10": "inland", "JP-11": "inland", "JP-12": "pacific", "JP-13": "pacific", "JP-14": "pacific",
+  "JP-15": "japansea", "JP-16": "japansea", "JP-17": "japansea", "JP-18": "japansea", "JP-19": "inland", "JP-20": "inland", "JP-21": "inland", "JP-22": "pacific", "JP-23": "pacific",
+  "JP-24": "pacific", "JP-25": "inland", "JP-26": "japansea", "JP-27": "pacific", "JP-28": "both", "JP-29": "inland", "JP-30": "pacific",
+  "JP-31": "japansea", "JP-32": "japansea", "JP-33": "pacific", "JP-34": "pacific", "JP-35": "both",
+  "JP-36": "pacific", "JP-37": "pacific", "JP-38": "pacific", "JP-39": "pacific",
+  "JP-40": "both", "JP-41": "both", "JP-42": "both", "JP-43": "pacific", "JP-44": "pacific", "JP-45": "pacific", "JP-46": "pacific", "JP-47": "pacific",
+};
+export const coastSideOf = (pref: string): "japansea" | "pacific" | null => { const c = PREF_COAST[pref]; return c === "japansea" || c === "pacific" ? c : null; };
+/** The grid count of Stage 18 (coastal land cells by the sea they face), kept for the tests: a cross-check of the table against the terrain, never the rule. */
 export function coastCounts(t: TerrainResult): Record<string, CoastCount> {
   const { nx, ny, x0, y0, cell } = t.grid, w = { t, cellPos: (k: number): [number, number] => [x0 + ((k % nx) + 0.5) * cell, y0 + (((k / nx) | 0) + 0.5) * cell] } as unknown as import("./world").World, out: Record<string, CoastCount> = {};
   for (let k = 0; k < nx * ny; k++) {
@@ -82,12 +94,9 @@ export function coastCounts(t: TerrainResult): Record<string, CoastCount> {
   }
   return out;
 }
-export function coastSideOf(c: CoastCount | undefined): "japansea" | "pacific" | null {
-  if (!c) return null; const n = c.japansea + c.pacific; if (n < COAST_MIN) return null; if (c.japansea / n >= COAST_SHARE) return "japansea"; if (c.pacific / n >= COAST_SHARE) return "pacific"; return null;
-}
-/** Moves the prefectures of the favoured coast two places up inside the random part of the order (`from` = the first random index), one after another in their order there: each is moved two places up in the list as it then stands, never above `from`; the others move down to make room. Always a permutation. */
-export function coastBoost(order: string[], from: number, side: "japansea" | "pacific", coast: Record<string, CoastCount>): string[] {
-  const out = [...order], prefer = order.slice(from).filter((p) => coastSideOf(coast[p]) === side); let floor = from;   // (floor: the favoured keep their order among themselves, so none is pushed down by another)
+/** Moves the prefectures of the favoured coast two places up inside the random part of the order (`from` = the first random index), one after another in their order there: each is moved two places up in the list as it then stands, never above `from` and never above a favoured prefecture processed before it; the others move down to make room. Always a permutation. */
+export function coastBoost(order: string[], from: number, side: "japansea" | "pacific"): string[] {
+  const out = [...order], prefer = order.slice(from).filter((p) => coastSideOf(p) === side); let floor = from;
   for (const p of prefer) { const at = out.indexOf(p), to = Math.max(floor, at - 2); if (to < at) { out.splice(at, 1); out.splice(to, 0, p); floor = to + 1; } else floor = at + 1; }
   return out;
 }
@@ -110,17 +119,17 @@ export const POT_GROWTH = 0.002;
 /** How strongly a prefecture's weight lifts its share of the regional construction budget (renormalised: only the split changes). */
 export const POT_SHARE = 0.2;
 
-export interface PotState { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true }
+export interface PotState { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true }
 const dataMemo = new WeakMap<TerrainResult, PotentialData>();
-export const potentialDataOf = (t: TerrainResult): PotentialData => { let d = dataMemo.get(t); if (!d) { d = potentialData(t); d.coast = coastCounts(t); dataMemo.set(t, d); } return d; };
+export const potentialDataOf = (t: TerrainResult): PotentialData => { let d = dataMemo.get(t); if (!d) { d = potentialData(t); dataMemo.set(t, d); } return d; };
 /** The state of a new game: the order for the seats and the policy, in force from the first day. */
-export function initPotential(t: TerrainResult, seats: { capital: string; sub: string; palace: string }, mode: Dispersal, seed: number, year: number, coast?: "japansea" | "pacific"): PotState {
-  const order = potentialOrder({ ...seats, mode, seed: seed >>> 0, ...(coast ? { coast } : {}) }, potentialDataOf(t));
-  return { order, cur: potentialWeights(order), hist: [{ y: year, order: [...order], why: coast ? `ゲーム開始(${coast === "japansea" ? "日本海側" : "太平洋側"}重視の補正あり)` : "ゲーム開始" }], shown: {}, eras: 1, ...(coast ? { c18: true as const } : {}) };
+export function initPotential(t: TerrainResult, seats: { capital: string; sub: string; palace: string }, mode: Dispersal, seed: number, year: number, coast?: "japansea" | "pacific", at?: PotentialInput["at"]): PotState {
+  const order = potentialOrder({ ...seats, mode, seed: seed >>> 0, ...(coast ? { coast } : {}), ...(at ? { at } : {}) }, potentialDataOf(t));
+  return { order, cur: potentialWeights(order), hist: [{ y: year, order: [...order], why: coast ? `ゲーム開始(${coast === "japansea" ? "日本海側" : "太平洋側"}重視の補正あり)` : "ゲーム開始" }], shown: {}, eras: 1, c19: true as const, ...(coast ? { c18: true as const } : {}) };
 }
 /** A new era (改元) re-draws the order: same seats and policy, a seed of the era's own, so the middle ranks move while the top (the seats and their neighbours) holds. The weights in force glide to it. */
-export function reassignPotential(st: PotState, t: TerrainResult, seats: { capital: string; sub: string; palace: string }, mode: Dispersal, seed: number, eraIndex: number, year: number, name: string, coast?: "japansea" | "pacific"): void {
-  const order = potentialOrder({ ...seats, mode, seed: (seed ^ Math.imul(eraIndex + 1, 0x9e3779b1)) >>> 0, ...(st.c18 && coast ? { coast } : {}) }, potentialDataOf(t)); st.order = order; st.hist.push({ y: year, order: [...order], why: `改元(${name})` });
+export function reassignPotential(st: PotState, t: TerrainResult, seats: { capital: string; sub: string; palace: string }, mode: Dispersal, seed: number, eraIndex: number, year: number, name: string, coast?: "japansea" | "pacific", at?: PotentialInput["at"]): void {
+  const order = potentialOrder({ ...seats, mode, seed: (seed ^ Math.imul(eraIndex + 1, 0x9e3779b1)) >>> 0, ...(st.c18 && coast ? { coast } : {}), ...(at ? { at } : {}) }, potentialDataOf(t)); st.order = order; st.hist.push({ y: year, order: [...order], why: `改元(${name})` });
 }
 export function glidePotential(st: PotState): void { const target = potentialWeights(st.order); for (const p of Object.keys(target)) st.cur[p] = (st.cur[p] ?? 1) + POT_GLIDE * (target[p] - (st.cur[p] ?? 1)); }
 import type { SimState } from "./types";

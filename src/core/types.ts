@@ -44,6 +44,9 @@ export interface ProjectState {
   subCapital?: string;
   palace?: string;
   palacePos?: Vec;
+  /** Stage 19: the exact points of the capital and the sub-capital when they were chosen on the map (anywhere on the land of their prefecture); absent = the prefecture's 県庁所在地. Like palacePos, never terrain. */
+  capitalPos?: Vec;
+  subPos?: Vec;
   layers: Record<string, boolean>;
 }
 

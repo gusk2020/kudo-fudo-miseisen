@@ -64,6 +64,8 @@ export function parseState(input: unknown): { state: ProjectState; problems: str
     ...(prefOfSeat(raw.subCapital) ? { subCapital: raw.subCapital } : {}),
     ...(prefOfSeat(raw.palace) ? { palace: raw.palace } : {}),
     ...(okVec(raw.palacePos) ? { palacePos: raw.palacePos } : {}),
+    ...(okVec(raw.capitalPos) && prefOfSeat(raw.capital) ? { capitalPos: raw.capitalPos } : {}),   // Stage 19
+    ...(okVec(raw.subPos) && prefOfSeat(raw.subCapital) ? { subPos: raw.subPos } : {}),
     layers: { ...d.layers },
   };
   if (raw.layers && typeof raw.layers === "object") for (const k of Object.keys(d.layers)) if (typeof raw.layers[k] === "boolean") s.layers[k] = raw.layers[k];

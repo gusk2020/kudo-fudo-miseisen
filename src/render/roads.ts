@@ -7,6 +7,7 @@ import { routeAtYear, type RouteView } from "../sim/ledger";
 import type { World } from "../sim/world";
 import { hubsAt } from "../sim/hubs";
 import { pickCityCircles } from "./cityCircles";
+import { LINE, nameWidth, placeNames, type Box, type NameCircle } from "./cityNames";
 import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
@@ -129,13 +130,18 @@ export class RoadLayer {
    * Colour is the same as the metropolis's: green gained on the nation over twenty years, red lost, grey about even; radius grows with the square root of the city's own people. No triangles.
    */
   private drawCityCircles(sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
-    const g = this.g.cityTop; let nn = 0;
-    for (const r of pickCityCircles(sim, w, zoom, year, lite)) {
+    const g = this.g.cityTop, circles = pickCityCircles(sim, w, zoom, year, lite);
+    const drawn: NameCircle[] = [];
+    for (const r of circles) {
       const col = r.rel > 1.08 ? 0x2fbf5f : r.rel < 0.93 ? 0xe0463c : 0x9aa4ad, rad = Math.min(px(3 + 4 * Math.sqrt(r.p / 1e5)), px(r.seat ? 34 : 28));
       g.circle(r.x, -r.y, rad).fill({ color: col, alpha: 0.3 }).stroke({ width: px(1.6), color: col, alpha: 1 });
       if (r.seat) g.circle(r.x, -r.y, rad + px(2.5)).stroke({ width: px(1.8), color: 0xffc83a, alpha: 0.95 });
-      // Stage 18: a place that has grown into a city shows its name (the 49 capitals are named by the base map); the circle already says how big it is
-      const wc = w.cityById.get(r.id); if (wc && wc.kind !== "capital" && zoom >= 0.55 && sim.pot17) { const t = this.nameText(nn++); t.text = wc.name; t.visible = true; t.scale.set(1 / zoom); t.position.set(r.x + rad + px(2), -r.y - px(6)); }
+      const wc = w.cityById.get(r.id); drawn.push({ x: r.x * zoom, y: -r.y * zoom, rad: rad * zoom, name: wc && wc.kind !== "capital" && sim.pot17 ? wc.name : null, seat: r.seat });
+    }
+    // Stage 18/19: names of the places that grew into cities (cityNames.ts): no overlaps, biggest first, fewer when zoomed out; the base map's names of the capitals (drawn from zoom 0.55) are in the way too
+    if (zoom >= 0.55 && sim.pot17) {
+      const fixed: Box[] = []; for (const c of w.cities) if (c.kind === "capital") { const x = c.pos[0] * zoom + 5, y = -c.pos[1] * zoom - 6; fixed.push([x, y, x + nameWidth(c.name), y + LINE]); }
+      let nn = 0; for (const p of placeNames(drawn, fixed, zoom)) { const t = this.nameText(nn++); t.text = drawn[p.i].name!; t.visible = true; t.scale.set(1 / zoom); t.position.set(p.x / zoom, p.y / zoom); }
     }
   }
   /** Stage 8/9: ports and airports, each in two sizes only (large: 国際拠点港湾以上 / 国際ハブ空港; small: the rest), and the busiest domestic flights.

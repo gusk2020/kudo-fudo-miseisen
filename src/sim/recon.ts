@@ -73,7 +73,7 @@ export function coastSide(w: World, cityId: string): number {
 }
 /** 0..1: how close a city stands to the seats of government chosen for this game. */
 export function coreness(sim: SimState, w: World, cityId: string): number {
-  const c = w.cityById.get(cityId); if (!c) return 0; const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital);
+  const c = w.cityById.get(cityId); if (!c) return 0; const hc0 = homeCity(w, sim.capital), sc0 = subCity(w, sim.subCapital), hc = sim.capitalPos && hc0 ? { ...hc0, pos: sim.capitalPos } : hc0, sc = sim.subPos && sc0 ? { ...sc0, pos: sim.subPos } : sc0;   // (Stage 19: a seat put on the map counts from that point)
   const f = (p: { pos: [number, number] | number[] } | null | undefined, wt: number) => (p ? wt * Math.exp(-Math.hypot(p.pos[0] - c.pos[0], p.pos[1] - c.pos[1]) / CORE_KM) : 0);
   return Math.max(f(hc, 1), f(sc, SUB_CORE));
 }

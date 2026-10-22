@@ -115,12 +115,13 @@ export interface SimState {
   crossings?: true;           // Issue #15: the game starts with ferries between land masses and plans strait links (bridge / tunnel / ferry); absent = older games
   subCapital?: string;        // Issue #15: prefecture ids of the sub-capital and the palace (administrative settings; the palace point is where it is drawn)
   palace?: { pref: string; pos: Vec };
+  capitalPos?: Vec; subPos?: Vec;   // Stage 19: where the capital / sub-capital were put on the map (world frame); absent = the 県庁所在地 (older games, and games that chose from the prefecture list)
   tech?: { k: number; wk?: number };       // Issue #13: bridge/tunnel technology rule (see tech.ts). Absent = older games, which keep the old fixed facility rules
   hubs?: HubsState;          // Stage 8: ports, airports and their routes (hubs.ts). Absent = older saves; created at the next yearly step
   kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
   city12?: Record<string, { p: number[]; h: number[]; adv: number }>;   // Stage 12: per city, the parts of its yearly migration advantage and its size every 5 years (econ.ts)
   metro?: import("./metro").MetroState;   // Stage 13: the metropolitan areas (metro.ts), rebuilt every year. Absent = older saves; created at the next yearly step
-  pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
+  pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
   lastTunnelException18?: number;   // Stage 18: the year the last sea/lake tunnel was allowed under 海路重視 / 空路重視 (policy18.ts)
   towns16?: string[];         // Stage 16: the provincial towns the game's world carries (ids; world.townIds): those of the seats' prefectures and the prefectures next to them. Absent = no towns (older games)
   pop15?: true;               // Stage 15: the cities start from the 1950 census (census50.ts) and the reconstruction policy also adds a priority to the corridors (recon.ts RECON_ADD). Absent = older games

@@ -1,37 +1,44 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeSim } from "../../src/core/save2";
 import { PREF_IDS } from "../../src/core/seat";
-import { CAND_1945, CAND_1989, CAND_2019, ERA_GROUP_LABEL, STANCE_LABEL, eraGroup } from "../../src/sim/kaigen";
-import { COAST_MIN, coastBoost, coastCounts, coastSideOf, potentialDataOf, potentialOrder, potentialWeights, reassignPotential } from "../../src/sim/potential17";
+import { CAND_1945, CAND_1989, CAND_2019, ERA_GROUP_LABEL, ERA_GROUPS, STANCE_LABEL, eraGroup } from "../../src/sim/kaigen";
+import { PREF_COAST, coastBoost, coastCounts, coastSideOf, potentialDataOf, potentialOrder, potentialWeights, reassignPotential } from "../../src/sim/potential17";
 import { EXC_GAP_YEARS, stance18, tunnelException18 } from "../../src/sim/policy18";
 import { modeOf } from "../../src/sim/types";
 import { createSim } from "../../src/sim/engine";
 import { run14 } from "../study/lib14";
 import { realWorld } from "./simhelp";
 
-const { w, hash } = realWorld(true, true), D = potentialDataOf(w.t), side = (p: string) => coastSideOf(D.coast![p]);
+const { w, hash } = realWorld(true, true), D = potentialDataOf(w.t), side = (p: string) => coastSideOf(p);
 const name = (p: string) => w.t.prefOrder.includes(p) ? p : p;
 
-describe("Stage 18: era groups (道路系 / 鉄道系)", () => {
-  it("each stance is in one group by what it does: only 鉄道重視 builds railway enough to be a railway stance", () => {
-    expect(eraGroup("shoka")).toBe("rail"); for (const s of ["heisei", "shubun", "kuuro", "kairo"] as const) expect(eraGroup(s)).toBe("road");
-    expect(ERA_GROUP_LABEL.road).toBe("道路系"); expect(ERA_GROUP_LABEL.rail).toBe("鉄道系");
+describe("Stage 19: era groups by transport stance (道路系 / 鉄道系 / 海路系 / 空路系 / 均衡系)", () => {
+  it("each stance is its own group", () => {
+    expect(eraGroup("shubun")).toBe("road"); expect(eraGroup("shoka")).toBe("rail"); expect(eraGroup("kairo")).toBe("sea"); expect(eraGroup("kuuro")).toBe("air"); expect(eraGroup("heisei")).toBe("balanced");
+    expect(ERA_GROUPS.map((g) => ERA_GROUP_LABEL[g])).toEqual(["道路系", "鉄道系", "海路系", "空路系", "均衡系"]);
   });
-  it("every candidate of every era list falls in a group and the lists keep their names and stances", () => {
-    for (const l of [CAND_1945, CAND_1989, CAND_2019]) for (const c of l) expect(["road", "rail"]).toContain(eraGroup(c.stance));
-    expect(CAND_1945.length).toBe(14); expect(CAND_1945.filter((c) => eraGroup(c.stance) === "rail").length).toBe(3); expect(CAND_1989.map((c) => c.name).slice(0, 3)).toEqual(["平成", "修文", "正化"]);
-    expect(STANCE_LABEL.kairo).toBe("海路重視"); expect(STANCE_LABEL.kuuro).toBe("空路重視");
+  it("every candidate of every era list is in a group; the lists keep their names and stances", () => {
+    for (const l of [CAND_1945, CAND_1989, CAND_2019]) for (const c of l) expect(ERA_GROUPS).toContain(eraGroup(c.stance));
+    expect(CAND_1945.length).toBe(14); expect(new Set(CAND_1945.map((c) => eraGroup(c.stance))).size).toBe(5); expect(CAND_1989.map((c) => c.name).slice(0, 3)).toEqual(["平成", "修文", "正化"]);
+    expect(CAND_1989.map((c) => eraGroup(c.stance))).toEqual(["balanced", "road", "rail"]); expect(STANCE_LABEL.kairo).toBe("海路重視"); expect(STANCE_LABEL.kuuro).toBe("空路重視");
   });
 });
 
-describe("Stage 18: which sea a prefecture faces, from the coast of the terrain", () => {
-  it("Sea of Japan, Pacific (Seto Inland Sea included), inland", () => {
-    for (const p of ["JP-15", "JP-16", "JP-17", "JP-18", "JP-31", "JP-32", "JP-05", "JP-26"]) expect(side(p), p).toBe("japansea");
-    for (const p of ["JP-12", "JP-14", "JP-30", "JP-22", "JP-33", "JP-34", "JP-37", "JP-39", "JP-03", "JP-07", "JP-02"]) expect(side(p), p).toBe("pacific");
-    for (const p of ["JP-09", "JP-10", "JP-11", "JP-19", "JP-20", "JP-21", "JP-25", "JP-35", "JP-40", "JP-42", "HK-SAP", "HK-HAK"]) expect(side(p), p).toBeNull();   // inland (Tochigi Gunma Saitama Yamanashi Nagano Gifu Shiga) or both seas (Yamaguchi Fukuoka Nagasaki, Hokkaido south and west)
-    expect(COAST_MIN).toBeGreaterThan(0); expect(Object.keys(D.coast!).length).toBeGreaterThan(30);
+describe("Stage 19: which sea a prefecture faces (the real coast, as a table; not the grid)", () => {
+  it("all 49 prefectures are classified; the cases that went wrong with the grid are right", () => {
+    expect(Object.keys(PREF_COAST).sort()).toEqual([...PREF_IDS].sort());
+    expect(PREF_COAST["JP-29"]).toBe("inland"); expect(PREF_COAST["JP-06"]).toBe("japansea"); expect(PREF_COAST["JP-13"]).toBe("pacific"); expect(PREF_COAST["JP-27"]).toBe("pacific");
+    for (const p of ["JP-33", "JP-34", "JP-37", "JP-38"]) expect(PREF_COAST[p], p).toBe("pacific");   // the Seto Inland Sea side counts as the Pacific side
+    for (const p of ["JP-02", "JP-28", "JP-35", "JP-40", "JP-41", "JP-42", "HK-SAP", "HK-HAK"]) expect(PREF_COAST[p], p).toBe("both");
+    for (const p of ["JP-09", "JP-10", "JP-11", "JP-19", "JP-20", "JP-21", "JP-25", "JP-29"]) expect(PREF_COAST[p], p).toBe("inland");
+    for (const p of ["JP-05", "JP-06", "JP-15", "JP-16", "JP-17", "JP-18", "JP-26", "JP-31", "JP-32"]) expect(PREF_COAST[p], p).toBe("japansea");
+    expect(side("JP-02")).toBeNull(); expect(side("JP-29")).toBeNull(); expect(side("JP-06")).toBe("japansea");
   });
-  it("a prefecture with both seas and neither reaching 65% has no side", () => { expect(coastSideOf({ japansea: 40, pacific: 60 })).toBeNull(); expect(coastSideOf({ japansea: 70, pacific: 30 })).toBe("japansea"); expect(coastSideOf({ japansea: 1, pacific: 1 })).toBeNull(); expect(coastSideOf(undefined)).toBeNull(); expect(coastCounts(w.t)).toEqual(D.coast); });
+  it("cross-check with the terrain grid: where the grid shows a coast clearly, it agrees with the table (the exceptions are the grid's own artefacts)", () => {
+    const C = coastCounts(w.t), artefact = new Set(["JP-29", "JP-20", "JP-21", "JP-25", "JP-13", "JP-27"]);   // Nara, Nagano, Gifu, Shiga touch the sea a little in the generated regions; Tokyo, Osaka have short coasts
+    for (const p of PREF_IDS) { const c = C[p]; if (!c || artefact.has(p)) continue; const t = PREF_COAST[p]; if (t === "japansea") expect(c.japansea, p).toBeGreaterThanOrEqual(c.pacific); if (t === "pacific") expect(c.pacific, p).toBeGreaterThanOrEqual(c.japansea); }
+    expect(coastCounts(w.t)).toEqual(C);
+  });
 });
 
 describe("Stage 18: the coast correction of the potential order", () => {
@@ -48,10 +55,11 @@ describe("Stage 18: the coast correction of the potential order", () => {
     }
   });
   it("the range differs: 一極集中 starts at rank 17, 地方分散 at rank 11; at the head of the range the rise stops", () => {
-    const ids = ["a", "b", "c", "d", "e"], coast = { c: { japansea: 20, pacific: 0 }, b: { japansea: 20, pacific: 0 } } as never;
-    expect(coastBoost(ids, 0, "japansea", coast)).toEqual(["b", "c", "a", "d", "e"]);   // b is second: it can rise only to the head; c then rises two places (past a)
-    expect(coastBoost(ids, 1, "japansea", coast)).toEqual(["a", "b", "c", "d", "e"]);   // the head of the range is index 1: b is already there, c rises to it... but never above b
-    expect(coastBoost(ids, 2, "japansea", coast)).toEqual(["a", "b", "c", "d", "e"]);
+    const ids = ["JP-13", "JP-15", "JP-16", "JP-12", "JP-17"];   // Tokyo, Niigata, Toyama, Chiba, Ishikawa (the last three on the Sea of Japan)
+    expect(coastBoost(ids, 0, "japansea")).toEqual(["JP-15", "JP-16", "JP-17", "JP-13", "JP-12"]);   // Niigata rises to the head, Toyama behind it, Ishikawa two places
+    expect(coastBoost(ids, 1, "japansea")).toEqual(["JP-13", "JP-15", "JP-16", "JP-17", "JP-12"]);   // the head of the range is index 1: Niigata and Toyama are there already
+    expect(coastBoost(ids, 2, "japansea")).toEqual(["JP-13", "JP-15", "JP-16", "JP-17", "JP-12"]);
+    expect(coastBoost(ids, 0, "pacific")).toEqual(["JP-13", "JP-12", "JP-15", "JP-16", "JP-17"]);   // Tokyo is at the head already; Chiba rises to just behind it
   });
   it("a worked example: Tokyo/Osaka/Tokyo, 一極集中, seed 7", () => {
     const o = { capital: "JP-13", sub: "JP-27", palace: "JP-13", mode: "concentrate" as const, seed: 7 }, base = potentialOrder(o, D), js = potentialOrder({ ...o, coast: "japansea" }, D), pac = potentialOrder({ ...o, coast: "pacific" }, D);
