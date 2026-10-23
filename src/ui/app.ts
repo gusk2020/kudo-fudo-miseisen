@@ -29,7 +29,8 @@ import { COND, CASING } from "../render/roads";
 import { edgePoints } from "../sim/network";
 import { buildWorld, townsForSeats, type World } from "../sim/world";
 import { eraKeyOf, type EraKey } from "../sim/eras";
-import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraPicker } from "./stage3";
+import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraDescText, eraRadioGroups } from "./stage3";
+import { closeRadio, showRadio } from "./radioWin";
 import { CAND_1945 } from "../sim/kaigen";
 
 type Tool = "view" | "seatpick" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "ridge-pick" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
@@ -152,7 +153,7 @@ export class App {
   }
   render() { if (!isRidgeTool(this.tool) && this.bgBeforeRidge) { const b0 = this.bgBeforeRidge; this.bgBeforeRidge = null; this.bg = b0; this.r.setBg(b0); }   // leaving the range tools by any route puts the map back
     if (this.real && this.s.bg && this.s.bg !== this.bg && !this.bgBeforeRidge) { this.bg = this.s.bg; this.r.setBg(this.bg); }   // a loaded game brings its own map choice
-    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = seatsOf(this.s), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -438,16 +439,17 @@ export class App {
    * sub-capital must be different prefectures (refused with a message); the palace may share a prefecture with either. Choosing a palace prefecture
    * forgets a hand-placed palace point (it goes back to that prefecture's 県庁所在地).
    */
-  setSeat(which: "capital" | "sub" | "palace", pref: string): boolean {
+  setSeat(which: "capital" | "sub" | "palace", pref: string, keepOpen = false): boolean {
     if (!PREF_IDS.includes(pref)) return false; const cur = seatsOf(this.s);
     if ((which === "capital" && pref === cur.sub) || (which === "sub" && pref === cur.capital)) { this.toast("首都と副首都は別の府県にしてください"); this.buildToolbar(); return false; }
     const ok = this.commitEdit((s) => { if (which === "capital") s.capital = pref; else if (which === "sub") s.subCapital = pref; else { s.palace = pref; delete s.palacePos; } if (which === "capital") delete s.capitalPos; else if (which === "sub") delete s.subPos; });
-    this.seatMode = null; for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
+    if (!keepOpen) this.seatMode = null; for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
   }
   // ---- Stage 19: the setup tabs (元号 / 首都 / 副首都 / 皇居) and the choice of a seat on the map ----
   setupTab: "era" | "capital" | "sub" | "palace" | null = null; seatMode: "list" | "map" | null = null; seatPick: { w: Vec; pref: string; name?: string; near?: string; km?: number; islet?: string; claim?: string } | null = null;
   openSetupTab(tab: "era" | "capital" | "sub" | "palace" | null) {
-    this.setupTab = this.setupTab === tab ? null : tab; this.seatMode = this.setupTab && this.setupTab !== "era" ? "list" : null; this.seatPick = null;   // Stage 21: a seat tab opens its prefecture list at once this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view";
+    this.setupTab = this.setupTab === tab ? null : tab; this.seatMode = this.setupTab && this.setupTab !== "era" ? "list" : null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view";   // Stage 21: a seat tab opens its prefecture list at once
+    this.eraOpen = this.setupTab === "era";   // Stage 22: so does the era tab
     this.buildToolbar(); this.render();
   }
   chooseSeatMode(m: "list" | "map") {
@@ -676,7 +678,10 @@ export class App {
     if ((this.tool === "ridge-ne" || this.tool === "ridge-sw") && !this.sim && !this.pendingSim) { const key = this.tool === "ridge-ne" ? "ne" : "sw"; if (!this.s.alpsRemoved?.[key] && this.commitEdit((s) => { s.alpsRemoved = { ...s.alpsRemoved, [key]: true }; })) this.toast(`${key === "ne" ? "北アルプス(飛騨山脈)" : "南アルプス(赤石山脈)"}の元の山体を地形から取り除きました。描いた山脈だけが障壁になります(元に戻すで復元)`); }
     this.buildToolbar(); this.render();
   }
-  buildToolbar() {
+  /** Stage 22: the list window lives on <body>; it stays only while the toolbar that owns it asks for it. */
+  eraOpen = false; private radioShown = false;
+  buildToolbar() { this.radioShown = false; this.buildToolbarInner(); if (!this.radioShown) closeRadio(); }
+  private buildToolbarInner() {
     const tb = $("toolbar"); tb.replaceChildren(); tb.classList.remove("compact"); const st = this.stepId;
     const TOOL_NAMES: Record<Tool, string> = { seatpick: "首都・副首都・皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす", "ridge-pick": "山脈の区間を選ぶ" };
     if (this.store.locked && (st === "honshu" || st === "islands" || st === "features")) {
@@ -748,11 +753,12 @@ export class App {
     if (!this.setupTab) return;   // closed: only the four tabs (each tab's own panel shows what is chosen)
     const panel = h("div", { id: "setup-panel" }), tab = this.setupTab;
     if (tab === "era") {
-      eraPicker(this, panel, this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); });
+      panel.append(h("div", { class: "note", id: "era-now" }, `最初の元号: ${CAND_1945[this.firstEra]?.name ?? ""}`), h("button", { id: "era-open", type: "button", onclick: () => { this.eraOpen = true; this.buildToolbar(); } }, "元号を選ぶ"), h("div", { id: "era-desc", class: "note" }, eraDescText(this.firstEra)));
+      if (this.eraOpen) { this.radioShown = true; showRadio({ id: "era-list", title: "最初の元号(1926年の候補)", groups: eraRadioGroups(this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); }), close: () => { this.eraOpen = false; this.buildToolbar(); } }); }
       panel.append(h("div", { class: "grp", id: "bg-choice" }, h("span", {}, "地図の表示"), ...(["roadmap", "terrain"] as const).map((m) => h("button", { id: "bg-" + m, type: "button", class: this.bg === m ? "mode on" : "mode", "aria-pressed": this.bg === m ? "true" : "false", onclick: () => { this.setBg(m); this.buildToolbar(); } }, m === "roadmap" ? "道路図" : "地形図"))));
     } else {
       const which = tab, label = { capital: "首都", sub: "副首都", palace: "皇居" }[which];
-      if (this.seatMode === "list") tb.append(this.prefPicker(which, label, st, w));
+      if (this.seatMode === "list") { this.radioShown = true; this.showPrefRadio(which, label, st, w); }
       else if (this.seatMode !== "map") panel.append(h("div", { class: "note", id: "seat-now" }, `${label}: ${where(which)}`), h("button", { id: "seat-repick", type: "button", onclick: () => this.chooseSeatMode("list") }, "選び直す"));
       if (this.seatMode === "map") {
         const p = this.seatPick;
@@ -764,19 +770,13 @@ export class App {
     panel.append(h("button", { id: "setup-close", type: "button", onclick: () => this.openSetupTab(null) }, "✕ 設定欄を閉じる"));
     tb.append(panel);
   }
-  /** Stage 21: the prefecture list, back in the old form: a black window, white letters, one block per region; 地図で選ぶ / 戻る at the bottom. */
-  private prefPicker(which: "capital" | "sub" | "palace", label: string, st: { capital: string; sub: string; palace: string }, w: World | null): HTMLElement {
-    const box = h("div", { id: "pref-picker", role: "dialog", "aria-label": `${label}を選ぶ` }, h("div", { class: "pp-title" }, `${label}にする府県を選んでください`));
-    const body = h("div", { class: "pp-body" });
-    for (const blk of REGION_BLOCKS) {
-      body.append(h("div", { class: "pp-region" }, blk.name));
-      const row = h("div", { class: "pp-grid" });
-      for (const pid of blk.prefs) { const dis = (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital); row.append(h("button", { id: "pref-opt-" + pid, type: "button", class: "pp-opt" + (pid === st[which] ? " on" : ""), "aria-pressed": pid === st[which] ? "true" : "false", ...(dis ? { disabled: "" } : {}), onclick: () => { this.setSeat(which, pid); } }, `${seatPrefName(pid)}`, h("small", {}, w ? seatCity(w, pid)?.name ?? "" : ""))); }
-      body.append(row);
-    }
-    box.append(body, h("div", { class: "pp-foot" }, h("button", { id: "pref-map", type: "button", onclick: () => this.chooseSeatMode("map") }, "地図で選ぶ"), h("button", { id: "pref-back", type: "button", onclick: () => { this.seatMode = null; this.buildToolbar(); this.render(); } }, "戻る")));
-    return box;
+  /** Stage 22: the prefecture list -- one column, north to south block by block, ○/● to the left; choosing keeps it open; 地図で選ぶ / 閉じる at the foot. */
+  private showPrefRadio(which: "capital" | "sub" | "palace", label: string, st: { capital: string; sub: string; palace: string }, w: World | null) {
+    showRadio({ id: "pref-picker", title: `${label}にする府県`, close: () => { this.seatMode = null; this.buildToolbar(); this.render(); },
+      groups: REGION_BLOCKS.map((blk) => ({ head: blk.name, items: blk.prefs.map((pid) => ({ id: "pref-opt-" + pid, label: seatPrefName(pid), sub: w ? seatCity(w, pid)?.name ?? "" : "", on: pid === st[which] && !this.posOf(which), disabled: (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital), pick: () => { this.setSeat(which, pid, true); } })) })),
+      foot: [{ id: "pref-map", label: "地図で選ぶ", act: () => this.chooseSeatMode("map") }] });
   }
+  private posOf(which: "capital" | "sub" | "palace") { return which === "capital" ? this.s.capitalPos : which === "sub" ? this.s.subPos : this.s.palacePos; }
   unlockMap() {
     if (this.sim && !confirm("地図の編集を再開すると、作成済みの道路とシミュレーションは消えます。よろしいですか?")) return;
     this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.pin = null; this.store.unlock(); this.persist(); this.toast("ロックを解除しました");

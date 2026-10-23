@@ -1,3 +1,4 @@
+import { maxCapitalNames, placeNames } from "./cityNames";
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { realToWorld, worldParts } from "../core/body";
 import { BODY_DEFS, EXTRA, EXTRA_IDS, ISLAND_LABEL, JAPAN } from "../core/data";
@@ -42,6 +43,8 @@ export class Renderer {
   /** Stage 19: a seat point chosen on the map and not yet confirmed (a crosshair) */
   seatPending: Vec | null = null;
   /** Stage 20: the small islands (drawn as ellipses of their real size, at least a few pixels wide so the tiniest can be seen and tapped) */
+  /** Stage 22: the 県庁所在地 of the game's world (moved ones included), most important first; the base map names these, without overlaps */
+  baseNames: { name: string; p: Vec }[] | null = null;
   islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean }[] | null = null;
   private root = new Container(); private base = new Container(); private overlay = new Container(); private labels = new Container();
   /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
@@ -211,6 +214,11 @@ export class Renderer {
     const only = this.capitalsOnly;   // (games from before Stage 17 keep every city dot and name on the base map)
     if (showTerrain && t) list = t.cities.filter((c) => !only || c.kind === "capital").map((c) => ({ name: c.name, p: c.pos, cap: c.kind === "capital" }));
     else list = JAPAN.cities.filter((c) => !only || c.kind === "capital").map((c) => { const id = (c.island === "okinawa" ? "kyushu" : c.island) as IslandId; return { name: c.name, p: realToWorld(id, s.bodies[id], c.pos), cap: c.kind === "capital" }; });
+    if (only && this.baseNames) {   // Stage 22: the world's own capitals, named by priority with no overlaps
+      const bl = this.baseNames; for (const c of bl) g.circle(c.p[0], -c.p[1], px(3.2)).fill({ color: 0xffd23a }).stroke({ width: px(1), color: 0x222222 });
+      for (const q of placeNames(bl.map((c) => ({ x: c.p[0] * z, y: -c.p[1] * z, rad: 3.2, name: c.name, seat: false })), [], z, maxCapitalNames(z))) { const tx = new Text({ text: bl[q.i].name, style: { fontSize: 12, fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(q.x / z, q.y / z); this.labels.addChild(tx); }
+      this.overlay.addChild(g); return;
+    }
     for (const c of list) {
       g.circle(c.p[0], -c.p[1], px(c.cap ? 3.2 : 2.4)).fill({ color: c.cap ? 0xffd23a : 0xffffff }).stroke({ width: px(1), color: 0x222222 });
       if (z > 0.55 && (c.cap || z > 1.1)) {
