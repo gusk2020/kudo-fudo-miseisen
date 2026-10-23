@@ -123,6 +123,7 @@ export interface SimState {
   metro?: import("./metro").MetroState;   // Stage 13: the metropolitan areas (metro.ts), rebuilt every year. Absent = older saves; created at the next yearly step
   pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
   lastTunnelException18?: number;   // Stage 18: the year the last sea/lake tunnel was allowed under 海路重視 / 空路重視 (policy18.ts)
+  isl20?: true;               // Stage 20: the world carries the small and far islands (src/data/islets.json; the grid is widened). Absent = the older grid
   towns16?: string[];         // Stage 16: the provincial towns the game's world carries (ids; world.townIds): those of the seats' prefectures and the prefectures next to them. Absent = no towns (older games)
   pop15?: true;               // Stage 15: the cities start from the 1950 census (census50.ts) and the reconstruction policy also adds a priority to the corridors (recon.ts RECON_ADD). Absent = older games
   seats14?: true;             // Stage 14: the seats of government head the city order, and a seat's people live partly in the suburbs round it (seats14.ts). Absent = older games

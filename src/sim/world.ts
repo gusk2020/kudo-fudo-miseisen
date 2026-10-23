@@ -4,6 +4,7 @@ import { EXTRA, JAPAN, TOWNS, lonLatToReal } from "../core/data";
 import { mulberry32 } from "../core/rng";
 import type { TerrainResult } from "../core/terrain";
 import type { Vec } from "../core/types";
+import { withIslets, type IsletCell } from "./islands20";
 
 export interface WCity { id: string; name: string; cell: number; pos: Vec; pref: string | null; island: number; pop0: number; popSource: "ne" | "synthetic"; coastal: boolean; plains: number; kind: string }
 export interface World {
@@ -21,6 +22,8 @@ export interface World {
   hasTowns?: true;
   /** The ids of the towns this world carries (in `cities` after the 55 cities), recorded in the game as `sim.towns16`. */
   townIds?: string[];
+  /** Stage 20: the small and far islands (the grid is widened to hold them); recorded in the game as `sim.isl20`. */
+  islets?: IsletCell[];
 }
 export const POP_1950_SCALE = 0.32; // reference (modern) population -> 1950 level; a synthetic scaling, not a statistic
 
@@ -69,8 +72,8 @@ export function withSubgridLand(t: TerrainResult): TerrainResult {
   }
   return land ? { ...t, land, island: island!, elev: elev!, pref: pref! } : t;
 }
-export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false): World {
-  const t = withTowns ? withSubgridLand(t0) : t0;
+export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false, islets = false): World {
+  const t1 = withTowns ? withSubgridLand(t0) : t0, t = islets ? withIslets(t1) : t1;
   const { nx, ny, cell, x0, y0 } = t.grid, N = nx * ny;
   const cellPos = (k: number): Vec => [x0 + ((k % nx) + 0.5) * cell, y0 + (((k / nx) | 0) + 0.5) * cell];
   const cellOf = (p: Vec) => { const i = Math.floor((p[0] - x0) / cell), j = Math.floor((p[1] - y0) / cell); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };
@@ -115,7 +118,7 @@ export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] 
   }
   const cityById = new Map(cities.map((c) => [c.id, c])), cityByCell = new Map<number, WCity>();
   for (const c of cities) if (!cityByCell.has(c.cell)) cityByCell.set(c.cell, c);
-  return { t, nx, ny, cell, N, cities, cityById, cityByCell, lm, lmCount, river, cellPos, cellOf, ...(withTowns && t.towns && cities.some((c) => c.kind === "town") ? { hasTowns: true as const, townIds: cities.filter((c) => c.kind === "town").map((c) => c.id) } : {}), elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
+  return { t, nx, ny, cell, N, cities, ...(islets && t.islets ? { islets: t.islets } : {}), cityById, cityByCell, lm, lmCount, river, cellPos, cellOf, ...(withTowns && t.towns && cities.some((c) => c.kind === "town") ? { hasTowns: true as const, townIds: cities.filter((c) => c.kind === "town").map((c) => c.id) } : {}), elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
 }
 
 export interface PathOpts { bias?: (k: number) => number; allow?: (k: number) => boolean; roadCells?: { has(k: number): boolean }; margin?: number; rail?: boolean; ease?: number }   // ease 0..1: how much better tunnelling and bridging make mountains and rivers to cross (tech.ts); 0 = the older cost

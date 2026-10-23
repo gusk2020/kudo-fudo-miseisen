@@ -170,9 +170,11 @@ export class App {
     const sim = this.sim ?? this.pendingSim; if (sim) return sim.towns16 ?? false;
     if (!this.real || !this.terrain) return false; const st = seatsOf(this.s); const ids = townsForSeats(this.terrain, [st.capital, st.sub]); return ids.length ? ids : false;
   }
+  /** Stage 20: a running or loaded game keeps the grid it was started with (an older game has no islets); a game not yet started takes the islands. */
+  private isletsWanted(): boolean { const sim = this.sim ?? this.pendingSim; return sim ? !!sim.isl20 : !!this.real; }
   ensureWorld(): World | null {
-    if (!this.terrain) return null; const ids = this.townIdsWanted(), key = ids ? ids.join(",") : "";
-    if (this.worldRef !== this.terrain || this.worldKey !== key) { this.world = buildWorld(this.terrain, this.s.seed, ids); this.world.barrier = !!this.real; this.worldRef = this.terrain; this.worldKey = key; }
+    if (!this.terrain) return null; const ids = this.townIdsWanted(), isl = this.isletsWanted(), key = (ids ? ids.join(",") : "") + (isl ? "+isl" : "");
+    if (this.worldRef !== this.terrain || this.worldKey !== key) { this.world = buildWorld(this.terrain, this.s.seed, ids, isl); this.world.barrier = !!this.real; this.worldRef = this.terrain; this.worldKey = key; }
     return this.world;
   }
   renderRoads() {
