@@ -44,7 +44,8 @@ function apply(sim: SimState, w: World, delta: Map<number, number>) {
 }
 export function applySeatOrder(sim: SimState, w: World, an: { T: Float64Array; TT: Float64Array }, y: number): void {
   const nc = w.cities.length, idx = new Map(w.cities.map((c, i) => [c.id, i])), P = w.cities.map((c) => sim.cities[c.id]?.pop ?? 0);
-  const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital), seats = [hc, sc].filter((c, i, a): c is NonNullable<typeof c> => !!c && a.findIndex((d) => d?.id === c.id) === i).map((c) => idx.get(c.id)!);
+  const big = <T extends { capPop?: number }>(c: T | null | undefined) => (c && c.capPop !== undefined && c.capPop < 1_000_000 ? null : c);   // Stage 20: a seat on a tiny island cannot head the city order
+  const hc = big(homeCity(w, sim.capital)), sc = big(subCity(w, sim.subCapital)), seats = [hc, sc].filter((c, i, a): c is NonNullable<typeof c> => !!c && a.findIndex((d) => d?.id === c.id) === i).map((c) => idx.get(c.id)!);
   if (!seats.length) return; const isSeat = new Set(seats), t = (i: number, j: number) => Math.min(an.T[i * nc + j], an.TT[i * nc + j] + 0.4);
   const ind = (j: number) => sim.cities[w.cities[j].id]?.industry ?? 0.3;
   const delta = new Map<number, number>(); const add = (i: number, d: number) => delta.set(i, (delta.get(i) ?? 0) + d);
