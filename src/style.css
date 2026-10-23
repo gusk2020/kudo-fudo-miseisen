@@ -79,7 +79,7 @@ body.real #sheet { max-height: 62dvh; }
 #setup-close { min-height:40px; margin-top:4px; }
 
 /* Stage 21: the prefecture list -- the old black window with white letters, one block per region */
-#pref-picker { position:fixed; left:6px; right:6px; top:6px; bottom:6px; z-index:20; display:flex; flex-direction:column; background:#000; color:#fff; border:2px solid #fff; border-radius:10px; }
+#pref-picker { position:fixed; left:6px; right:6px; top:58px; bottom:calc(58px + env(safe-area-inset-bottom)); z-index:20; display:flex; flex-direction:column; background:#000; color:#fff; border:2px solid #fff; border-radius:10px; }
 #pref-picker .pp-title { padding:8px 10px; font-size:14px; font-weight:700; border-bottom:1px solid #666; }
 #pref-picker .pp-body { flex:1 1 auto; overflow:auto; padding:4px 8px; }
 #pref-picker .pp-region { margin:8px 0 3px; font-size:13px; font-weight:700; color:#ffd24a; }
