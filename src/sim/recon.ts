@@ -19,7 +19,7 @@ import type { Recon } from "./kaigen";
 import type { SimState } from "./types";
 import type { World } from "./world";
 
-export const RECON_LABEL = { pacific: "太平洋側重視", japansea: "日本海側重視", concentrate: "一極集中", disperse: "地方分散" } as const;
+export const RECON_LABEL = { pacific: "太平洋側重視", japansea: "日本海側重視", neutral: "海側は中立", concentrate: "一極集中", disperse: "地方分散" } as const;
 export const RECON_GROWTH = 0.0035, RECON_INDUSTRY = 0.08, RECON_SHARE = 0.25, RECON_PLAN = 0.25, CORE_KM = 150, SUB_CORE = 0.7;
 /** Stage 14 (Issue #35): measured at Stage 13, choosing 日本海側重視 moved the Sea-of-Japan side's share of the nation's people by about two points in fifty years and its road and rail by nothing --
  * the four terms above were far smaller than the demand-driven planner and the economy they sit on. A game made from Stage 14 on takes them RECON_BOOST times as strong. The terms are still
@@ -30,7 +30,8 @@ export const RECON_BOOST = 2.5;
  * nationwide, so a policy that only scaled the score never reached the small cities of the other coast. Games from Stage 15 on add RECON_ADD x boost x lean to the corridor's score as well (in the score's own units: a typical new corridor scores 0.5 to 2.5). */
 export const RECON_ADD = 0.35;
 const boost = (sim: SimState) => (sim.seats14 ? RECON_BOOST : 1);
-export const reconFade = (y: number) => (y < 1975 ? 1 : y < 2000 ? 1 - 0.5 * ((y - 1975) / 25) : 0.5);
+/** Strength over the years since the policy was set (Stage 22: a policy set in 2200 starts at full strength again; 1945 when not recorded). */
+export const reconFade = (y0: number, since = 1945) => { const y = y0 - since + 1945; return y < 1975 ? 1 : y < 2000 ? 1 - 0.5 * ((y - 1975) / 25) : 0.5; };
 export const reconText = (r: Recon) => `${RECON_LABEL[r.coast]}・${RECON_LABEL[r.focus]}`;
 
 // ---- the two seas, by real longitude / latitude (outlines of the sea areas; land inside them is ignored) ----
@@ -78,30 +79,30 @@ export function coreness(sim: SimState, w: World, cityId: string): number {
   return Math.max(f(hc, 1), f(sc, SUB_CORE));
 }
 export const reconOf = (sim: SimState): Recon | null => sim.kaigen?.recon ?? null;
-const sgnC = (r: Recon) => (r.coast === "pacific" ? 1 : -1), sgnF = (r: Recon) => (r.focus === "concentrate" ? 1 : -1);
+const sgnC = (r: Recon) => (r.coast === "pacific" ? 1 : r.coast === "neutral" ? 0 : -1), sgnF = (r: Recon) => (r.focus === "concentrate" ? 1 : -1);
 /** Per city: the raw lean of the policy (coast and focus terms), before the national mean is taken out. */
 function lean(sim: SimState, w: World, r: Recon, id: string, meanCore: number) { return { coast: sgnC(r) * coastSide(w, id), focus: sgnF(r) * (coreness(sim, w, id) - meanCore) }; }
 function meanCoreOf(sim: SimState, w: World): number { let s = 0, p = 0; for (const c of w.cities) { const n = sim.cities[c.id]?.pop ?? 0; s += n * coreness(sim, w, c.id); p += n; } return p ? s / p : 0; }
 /** The yearly growth difference of every city (population-weighted mean 0: people move, the nation does not grow). Empty without a policy. */
 export function reconGrowth(sim: SimState, w: World, y: number): Map<string, number> {
-  const r = reconOf(sim), out = new Map<string, number>(); if (!r) return out; const f = reconFade(y), mc = meanCoreOf(sim, w); let s = 0, p = 0;
+  const r = reconOf(sim), out = new Map<string, number>(); if (!r) return out; const f = reconFade(y, r.since), mc = meanCoreOf(sim, w); let s = 0, p = 0;
   for (const c of w.cities) { const l = lean(sim, w, r, c.id, mc), g = RECON_GROWTH * boost(sim) * f * (l.coast + l.focus), n = sim.cities[c.id]?.pop ?? 0; out.set(c.id, g); s += g * n; p += n; }
   const mean = p ? s / p : 0; for (const [k, v] of out) out.set(k, v - mean); return out;
 }
 /** Added to the industry level a city grows toward. */
 export function reconIndustry(sim: SimState, w: World, cityId: string, y: number, meanCore?: number): number {
-  const r = reconOf(sim); if (!r) return 0; const l = lean(sim, w, r, cityId, meanCore ?? meanCoreOf(sim, w)); return RECON_INDUSTRY * boost(sim) * reconFade(y) * (l.coast + l.focus);
+  const r = reconOf(sim); if (!r) return 0; const l = lean(sim, w, r, cityId, meanCore ?? meanCoreOf(sim, w)); return RECON_INDUSTRY * boost(sim) * reconFade(y, r.since) * (l.coast + l.focus);
 }
 /** Multiplies a city's weight in the regional budget split (the shares are renormalised, so only the split changes). */
 export function reconShare(sim: SimState, w: World, cityId: string, y: number, meanCore?: number): number {
-  const r = reconOf(sim); if (!r) return 1; const l = lean(sim, w, r, cityId, meanCore ?? meanCoreOf(sim, w)); return Math.max(sim.seats14 ? 0.25 : 0.3, 1 + RECON_SHARE * boost(sim) * reconFade(y) * (l.coast + l.focus));
+  const r = reconOf(sim); if (!r) return 1; const l = lean(sim, w, r, cityId, meanCore ?? meanCoreOf(sim, w)); return Math.max(sim.seats14 ? 0.25 : 0.3, 1 + RECON_SHARE * boost(sim) * reconFade(y, r.since) * (l.coast + l.focus));
 }
 export const reconMeanCore = meanCoreOf;
 /** Priority factor of a new link between cities i and j, and the words for the plan's reason. */
 export function reconCorridor(sim: SimState, w: World, i: number, j: number, y: number, meanCore: number): { f: number; why: string; add: number } {
   const r = reconOf(sim); if (!r) return { f: 1, why: "", add: 0 }; const a = w.cities[i], b = w.cities[j], la = lean(sim, w, r, a.id, meanCore), lb = lean(sim, w, r, b.id, meanCore);
-  const v = ((la.coast + lb.coast) / 2) * 1 + (la.focus + lb.focus) / 2, f = Math.max(sim.seats14 ? 0.25 : 0.5, 1 + RECON_PLAN * boost(sim) * reconFade(y) * v);
-  const add = sim.pop15 ? RECON_ADD * boost(sim) * reconFade(y) * v : 0, eff = f + (add ? add / 2 : 0);
+  const v = ((la.coast + lb.coast) / 2) * 1 + (la.focus + lb.focus) / 2, f = Math.max(sim.seats14 ? 0.25 : 0.5, 1 + RECON_PLAN * boost(sim) * reconFade(y, r.since) * v);
+  const add = sim.pop15 ? RECON_ADD * boost(sim) * reconFade(y, r.since) * v : 0, eff = f + (add ? add / 2 : 0);
   return { f, add, why: Math.abs(eff - 1) >= 0.05 ? `復興方針(${reconText(r)})により${eff > 1 ? "優先" : "後回し"}` : "" };
 }
 

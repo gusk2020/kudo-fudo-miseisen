@@ -3,6 +3,7 @@
  * Every change that matters appends an event with its cause and, for roads, an entry in the edge's own history.
  * All demand, population and budget figures are SYNTHETIC (a toy economy), not statistics.
  */
+import { apply2200, due2200, open2200 } from "./event2200";
 import { enforceCaps } from "./cap20";
 import type { SeatMove } from "./seatmove20";
 import { cityBoost, settlementBoost } from "./sites";
@@ -127,7 +128,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   if (sim.capital && tokyoId && sim.cities[tokyoId]) { const hc = homeCity(w, sim.capital); if (hc && sim.cities[hc.id] && hc.id !== tokyoId) { const c = sim.cities[hc.id], o = sim.cities[tokyoId]; c.pop = Math.round(c.pop * CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.15) * 1000) / 1000); if (!(sim.subCapital && subCity(w, sim.subCapital)?.id === tokyoId)) o.pop = Math.round(o.pop * CAPITAL_LOSS); } }
   if (sim.subCapital && !sim.roles) { const sc = subCity(w, sim.subCapital), hc = homeCity(w, sim.capital); if (sc && sim.cities[sc.id] && sc.id !== hc?.id) { const c = sim.cities[sc.id]; c.pop = Math.round(c.pop * SUB_CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.05) * 1000) / 1000); } }
   if (sim.econ) squeezeSites(sim, w);
-  if (firstCand && w.townIds && opts.pot17 !== false) { const seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; sim.pot17 = initPotential(w.t, seats, sim.kaigen?.recon?.focus ?? "concentrate", seed, sim.startYear, opts.coast18 === false ? undefined : sim.kaigen?.recon?.coast, seatLL(sim, w)); startCandidates(sim, w); }   // Stage 17   // Stage 12: a city whose land is far worse than any real city's starts smaller; the rest settle on the better land near it
+  if (firstCand && w.townIds && opts.pot17 !== false) { const seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; sim.pot17 = initPotential(w.t, seats, sim.kaigen?.recon?.focus ?? "concentrate", seed, sim.startYear, opts.coast18 === false || sim.kaigen?.recon?.coast === "neutral" ? undefined : sim.kaigen?.recon?.coast, seatLL(sim, w)); startCandidates(sim, w); }   // Stage 17   // Stage 12: a city whose land is far worse than any real city's starts smaller; the rest settle on the better land near it
   enforceCaps(sim, w);   // Stage 20
   if (sim.stage3) ensureHubs(sim, w, sim.startYear);   // Stage 8: the ports of 1950 (airports open from the late 1950s)
   yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); yield 1;
@@ -271,7 +272,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     const tot = w.cities.reduce((t, c) => t + sim.cities[c.id].pop, 0), want = totalBefore * (1 + natRate), f = tot > 0 ? want / tot : 1;
     if (Math.abs(f - 1) > 1e-9) for (const c of w.cities) { const st = sim.cities[c.id]; st.pop = Math.max(2000, Math.round(st.pop * f)); }
   }
-  if (sim.pot17) { const k = sim.kaigen; if (k && k.eras.length > (sim.pot17.eras ?? 1)) { const e = k.eras[k.eras.length - 1], seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; reassignPotential(sim.pot17, w.t, seats, k.recon?.focus ?? "concentrate", sim.seed, k.eras.length, y, e.name, k.recon?.coast, sim.pot17.c19 ? seatLL(sim, w) : undefined); ev(sim, "potential", `改元(${e.name})で府県の発展順位が組み替わった`, `上位は首都・副首都・皇居とその隣県。順位は${y}年から年々なだらかに効く`, {}); sim.pot17.eras = k.eras.length; } glidePotential(sim.pot17); settleCities(sim, w, an, y); }   // Stage 17: the weights glide toward the order in force; the capitals' people settle the candidate places
+  if (sim.pot17) { const k = sim.kaigen; if (k && k.eras.length > (sim.pot17.eras ?? 1)) { const e = k.eras[k.eras.length - 1], seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; reassignPotential(sim.pot17, w.t, seats, k.recon?.focus ?? "concentrate", sim.seed, k.eras.length, y, e.name, (k.recon?.coast === "neutral" ? undefined : k.recon?.coast), sim.pot17.c19 ? seatLL(sim, w) : undefined); ev(sim, "potential", `改元(${e.name})で府県の発展順位が組み替わった`, `上位は首都・副首都・皇居とその隣県。順位は${y}年から年々なだらかに効く`, {}); sim.pot17.eras = k.eras.length; } glidePotential(sim.pot17); settleCities(sim, w, an, y); }   // Stage 17: the weights glide toward the order in force; the capitals' people settle the candidate places
   enforceCaps(sim, w);   // Stage 20: a small island's city holds what the island can
   const nodeCells = new Set(Object.values(sim.nodes).map((n) => n.cell));
   // Stage 3: a village that a railway or a proper road passes keeps its people better (empirical, not a statistic): this is the feedback that lets local transport pay back
@@ -575,8 +576,9 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
 
 /** One simulated month as a series of short atoms (yield between them). */
 export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
-  if (sim.policy?.pending || sim.kaigen?.pending) return;   // waiting for the player at a policy window or an era change: time does not move
+  if (sim.policy?.pending || sim.kaigen?.pending || sim.e2200?.state === "pending") return;   // waiting for the player at a policy window or an era change: time does not move
   if (sim.month % 12 === 0) {
+    if (due2200(sim)) { open2200(sim); const pol = sim.policy; if (pol && (pol.mode === "auto" || (pol.mode === "idleAuto" && pol.away))) apply2200(sim, null, true); else return; }   // Stage 22
     if (kaigenDue(sim.kaigen, yearOf(sim))) { startKaigen(sim, yearOf(sim)); if (sim.kaigen!.pending) return; }
     if (windowDue(sim, yearOf(sim))) { openWindow(sim, w, yearOf(sim)); if (sim.policy!.pending) return; }
     yield* yearlyGen(sim, w);
@@ -598,7 +600,7 @@ export function settleKaigen(sim: SimState, idx: number, auto = false) {
 const STANCE_NAME: Record<string, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kobun: "旧版" };
 export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
 /** Fast-forward with no player (tests, tools): a policy window that opens is resolved by the world's own scores. */
-export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
+export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (sim.e2200?.state === "pending") { apply2200(sim, null, true); stepMonth(sim, w); } if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };
