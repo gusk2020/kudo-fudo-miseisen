@@ -16,12 +16,12 @@ async function bootReal(page: Page) {
 /** Stage 7: the terrain editor takes the whole toolbar while it is open, so it is closed first (the settings button lives outside it). */
 async function editor(page: Page, open: boolean) { const on = (await page.getAttribute("#terrain-edit-toggle", "aria-pressed")) === "true"; if (on !== open) await page.click("#terrain-edit-toggle"); }
 async function openTab(page: Page, tab: string) { if (!(await page.isVisible("#setup-tab-" + tab))) await editor(page, false); if ((await page.getAttribute("#setup-tab-" + tab, "aria-selected")) !== "true") await page.click("#setup-tab-" + tab); }
-async function openSetup(page: Page) { await openTab(page, "era"); await page.waitForSelector("#era-first"); }
+async function openSetup(page: Page) { await openTab(page, "era"); await page.waitForSelector("#era-list"); }
 async function openSeat(page: Page, which: string) { await openTab(page, which); if (!(await page.isVisible("#seat-" + which))) await page.click("#seat-mode-list"); await page.waitForSelector("#seat-" + which); }
 async function seatSelect(page: Page, which: string, val: string) { await openSeat(page, which); await page.selectOption("#seat-" + which, val); }
 async function closeSheet(page: Page) { if (await page.isVisible("#sheet-close")) await page.click("#sheet-close"); }
 async function closeSetup(page: Page) { if (await page.isVisible("#setup-close")) await page.click("#setup-close"); }
-async function clickEra(page: Page, i: number) { await page.selectOption("#era-first", String(i)); }
+async function clickEra(page: Page, i: number) { await page.click("#era-opt-" + i); }
 async function pickEra(page: Page, stance: string) { await openSetup(page); await clickEra(page, { heisei: 0, shubun: 1, shoka: 2 }[stance as "heisei"]); await closeSetup(page); }
 async function startReal(page: Page, era = "heisei") {
   await bootReal(page);
@@ -42,8 +42,10 @@ test("real Japan opens by default: finalised, step 6, no map-editing controls, e
     for (const [l, r, h] of boxes) { expect(l).toBeGreaterThanOrEqual(0); expect(r).toBeLessThanOrEqual(vw); expect(h).toBeGreaterThanOrEqual(36); } expect(await page.locator("#setup-panel").count()).toBe(0);
     await page.click("#setup-tab-capital"); expect(await page.locator("#setup-panel").count()).toBe(1); expect(await page.isVisible("#seat-mode-list") && await page.isVisible("#seat-mode-map")).toBe(true); expect(await page.locator("#seat-capital").count()).toBe(0);
     await page.click("#setup-tab-sub"); expect(await page.locator("#setup-panel").count()).toBe(1); expect(await page.getAttribute("#setup-tab-capital", "aria-selected")).toBe("false"); await page.click("#setup-close"); expect(await page.locator("#setup-panel").count()).toBe(0); }
-  await openSetup(page); expect(await page.isVisible("#era-current")).toBe(true);
-  { const groups = await page.locator("#era-first optgroup").evaluateAll((gs) => gs.map((g) => (g as HTMLOptGroupElement).label)); expect(groups).toEqual(["道路系", "鉄道系", "海路系", "空路系", "均衡系"]); expect(await page.locator("#era-first option").count()).toBe(14); expect(await page.textContent("#era-current")).toContain("選択中"); }
+  await openSetup(page); expect(await page.locator("#era-current").count()).toBe(0);
+  { const heads = await page.locator("#era-list .era-head b").allTextContents(); expect(heads).toEqual(["道路重視", "鉄道・公共交通重視", "海路重視", "空路重視", "均衡"]); expect(await page.locator("#era-list .era-row").count()).toBe(14); expect(await page.locator("#era-list .era-row.on").count()).toBe(1);
+    const rows = await page.locator("#era-list .era-row").allTextContents(); for (const r of rows) { expect(r).not.toMatch(/道路重視|鉄道|海路重視|空路重視|均衡/); }   // the group says the policy once; a row carries only its own conditions
+    const bg = await page.locator("#era-list .era-row.on").evaluate((e) => getComputedStyle(e).backgroundColor); expect(bg).toBe("rgb(31, 111, 209)"); }
   await closeSheet(page); expect(await page.isDisabled("#cer-go")).toBe(true);
   expect(await app(page, "a => a.world.cities.length")).toBeGreaterThan(40);
   expect(errs).toEqual([]);
@@ -635,7 +637,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   const groups = await page.locator("#seat-capital optgroup").evaluateAll((gs) => gs.map((g) => ({ l: (g as HTMLOptGroupElement).label, ids: [...g.querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value) })));
   expect(groups.map((g) => g.l)).toEqual(["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州", "沖縄"]);
   expect(groups.flatMap((g) => g.ids)).toHaveLength(49); expect(groups[0].ids.sort()).toEqual(["HK-HAK", "HK-NEM", "HK-SAP"]); expect(groups[3].ids).toContain("JP-15"); expect(groups[5].ids).toContain("JP-31");
-  await openSetup(page); expect(await page.locator("#era-first option").first().textContent()).toMatch(/神化|元化|神和|同和|継明|順明|明保|寛安|元安|立成|定業|光文|章明|協中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
+  await openSetup(page); expect(await page.locator("#era-list .era-row").first().textContent()).toMatch(/神化|元化|神和|同和|継明|順明|明保|寛安|元安|立成|定業|光文|章明|協中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
   await seatSelect(page, "capital", "HK-NEM"); expect(await app(page, "a => a.s.capital")).toBe("HK-NEM"); await seatSelect(page, "capital", "JP-13");
   await closeSheet(page);
   // 北 removes the real Hida range, and only that; one Undo brings it back
@@ -737,5 +739,46 @@ test("Stage 12: 地図帳に都市の栄枯盛衰(伸びた・縮んだ都市と
   expect(await page.locator("#eco-metro .issue").count()).toBeGreaterThanOrEqual(5); await expect(page.locator("#eco-metro")).toContainText("km²"); await expect(page.locator("#eco-metro")).toContainText("府県にまたがり");
   await page.click("#eco-detail summary"); await expect(page.locator("#eco-chart")).toBeVisible(); await expect(page.locator("#eco-out")).toContainText("集積");
   await page.selectOption("#eco-city", { index: 3 }); expect(await page.locator("#eco-chart polyline").count()).toBe(1);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 20: 離島(硫黄島)を地図で首都に選べる。最寄りの地名+市、旧東京は残り、国道1号が島まで届き、保存・再読み込みで残る", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await openTab(page, "capital"); await page.click("#seat-mode-map");
+  const spot = await app(page, "a => a.world.islets.find((s) => s.islet.name === '硫黄島').pos") as [number, number];
+  await page.evaluate((p) => { const a = (window as any).__kfm, H = window.innerHeight; a.r.setView({ cx: p[0], cy: p[1] + (200 - H / 2) / 0.6, zoom: 0.6 }, true); }, spot);
+  const [sx, sy] = await screenOf(page, [spot[0] + 4, spot[1] - 3]);   // a little off the island: the finger-wide hit area still picks it
+  await page.mouse.click(sx, sy); expect(await app(page, "a => a.seatPick && a.seatPick.islet")).toBe("硫黄島"); expect(await app(page, "a => a.seatPick.pref")).toBe("JP-13");
+  expect(await page.textContent("#seat-map-hint")).toContain("硫黄島市"); expect(await app(page, "a => a.s.capital")).toBeUndefined();   // proposed only
+  await page.click("#seat-confirm"); expect(await app(page, "a => a.s.capital")).toBe("JP-13");
+  expect(await app(page, "a => a.world.cities.filter((c) => c.pref === 'JP-13' && c.kind === 'capital').map((c) => c.name)")).toEqual(["硫黄島市"]);   // one 県庁所在地
+  expect(await app(page, "a => { const c = a.world.cityById.get('C-JP-13'); return c.kind + ':' + !!c.former; }")).toBe("city:true");   // the old one stays an ordinary city
+  await closeSetup(page); await editor(page, false);
+  expect(await page.textContent("#tool-cer-kokudo1")).toContain("硫黄島");
+  await page.click("#tool-cer-kokudo1");
+  const pts = await fitPts(page, ["硫黄島市", "東京", "大阪市"]);
+  for (const [x, y] of pts) { const hit = await page.evaluate(([px, py]) => (document.elementFromPoint(px, py) as HTMLElement)?.tagName ?? "", [x, y]); expect(hit, `(${x},${y}) is on the map`).toBe("CANVAS"); }
+  await stroke(page, pts);
+  expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true);
+  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
+  expect(await app(page, "a => a.sim.isl20 === true && a.sim.moves20.length === 1 && a.sim.moves20[0].pref === 'JP-13'")).toBe(true);
+  expect(await app(page, "a => { const c = a.world.cities.find((x) => x.name === '硫黄島市'); return a.sim.cities[c.id].pop <= c.capPop && a.sim.cities['C-JP-13'].pop > 100000; }")).toBe(true);   // the island city holds only what the island can; Tokyo still has its people
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.sim.moves20[0].pref === 'JP-13' && a.world.cities.some((c) => c.name === '硫黄島市' && c.kind === 'capital')")).toBe(true);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 20: 尖閣・竹島・北方四島・硫黄島はどれも地図で選べ、領有の事実が表示され、島は表示される", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await openTab(page, "palace"); await page.click("#seat-mode-map");
+  expect(await app(page, "a => a.r.islets.length")).toBeGreaterThan(80);
+  for (const [name, pref, claim] of [["魚釣島", "JP-47", "中国"], ["竹島", "JP-32", "韓国"], ["択捉島", "HK-NEM", "ロシア"], ["色丹島", "HK-NEM", "ロシア"], ["硫黄島", "JP-13", ""]] as const) {
+    const p = await app(page, `a => a.world.islets.find((s) => s.islet.name === '${name}').pos`) as [number, number];
+    await page.evaluate((q) => { const a = (window as any).__kfm, H = window.innerHeight; a.r.setView({ cx: q[0], cy: q[1] + (200 - H / 2) / 1.5, zoom: 1.5 }, true); }, p);
+    const [x, y] = await screenOf(page, p); await page.mouse.click(x, y);
+    expect(await app(page, "a => a.seatPick && a.seatPick.islet"), name).toBe(name); expect(await app(page, "a => a.seatPick.pref"), name).toBe(pref);
+    if (claim) expect(await page.textContent("#seat-map-hint"), name).toContain(claim);
+    await page.click("#seat-cancel");
+  }
   expect(errs).toEqual([]);
 });

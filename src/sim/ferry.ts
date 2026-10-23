@@ -23,6 +23,9 @@ import type { World, WCity } from "./world";
 
 /** The longest single crossing a ferry service will run. Okinawa to Kyushu is the longest the data needs (about 640 km). */
 export const MAX_FERRY_KM = 760;
+/** Stage 20: the far islands (Ogasawara is ~1000 km from Tokyo, Iwo Jima ~1200) are reached by a service that long; a world without the islands keeps 760. */
+export const MAX_FERRY_ISLES_KM = 1300;
+export const maxFerryKm = (w: { islets?: unknown }) => (w.islets ? MAX_FERRY_ISLES_KM : MAX_FERRY_KM);
 /** Pairs closer than this get a ferry even when they are already joined through another mass (short straits are served directly). */
 export const SHORT_STRAIT_KM = 120;
 export const FERRY_SPEED_KMH = 28, FERRY_WAIT_H = 0.7;
@@ -53,7 +56,7 @@ export function crossingPorts(w: World, la: number, lb: number): Crossing | null
     if (d < bd - 1e-9 || (Math.abs(d - bd) < 1e-9 && best && a.id + b.id < best.a.id + best.b.id)) { bd = d; best = { la: x, lb: y, a, b, km: Math.round(dist(a.pos, b.pos) * 10) / 10, gapKm: 0 }; }
   }
   if (best) best.gapKm = gapKm(w, x, y);
-  m.ports.set(key, best && best.km <= MAX_FERRY_KM ? best : null); return m.ports.get(key)!;
+  m.ports.set(key, best && best.km <= maxFerryKm(w) ? best : null); return m.ports.get(key)!;
 }
 /** The masses to pass through to get from `from` to `to` (inclusive), by total ferry distance; null when no chain of crossings reaches it. */
 export function massRoute(w: World, from: number, to: number): number[] | null {

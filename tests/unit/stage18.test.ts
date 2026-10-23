@@ -15,7 +15,7 @@ const name = (p: string) => w.t.prefOrder.includes(p) ? p : p;
 describe("Stage 19: era groups by transport stance (道路系 / 鉄道系 / 海路系 / 空路系 / 均衡系)", () => {
   it("each stance is its own group", () => {
     expect(eraGroup("shubun")).toBe("road"); expect(eraGroup("shoka")).toBe("rail"); expect(eraGroup("kairo")).toBe("sea"); expect(eraGroup("kuuro")).toBe("air"); expect(eraGroup("heisei")).toBe("balanced");
-    expect(ERA_GROUPS.map((g) => ERA_GROUP_LABEL[g])).toEqual(["道路系", "鉄道系", "海路系", "空路系", "均衡系"]);
+    expect(ERA_GROUPS.map((g) => ERA_GROUP_LABEL[g])).toEqual(["道路重視", "鉄道・公共交通重視", "海路重視", "空路重視", "均衡"]);
   });
   it("every candidate of every era list is in a group; the lists keep their names and stances", () => {
     for (const l of [CAND_1945, CAND_1989, CAND_2019]) for (const c of l) expect(ERA_GROUPS).toContain(eraGroup(c.stance));

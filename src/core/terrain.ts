@@ -26,6 +26,8 @@ export interface TerrainResult {
   cities: CityOut[];
   /** Stage 16: the provincial towns, placed like the cities but kept OUT of the terrain hash and of `cities`: only a world built with towns (games made from Stage 16 on) adds them. */
   towns?: CityOut[];
+  /** Stage 20: the small and far islands a world made from Stage 20 on carries (src/sim/islands20.ts); never part of the terrain hash. */
+  islets?: import("../sim/islands20").IsletCell[];
   prefOrder: string[];
   stats: Record<string, number>;
   warnings: string[];

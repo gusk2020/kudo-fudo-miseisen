@@ -4,8 +4,10 @@ import { EXTRA, JAPAN, TOWNS, lonLatToReal } from "../core/data";
 import { mulberry32 } from "../core/rng";
 import type { TerrainResult } from "../core/terrain";
 import type { Vec } from "../core/types";
+import { withIslets, type IsletCell } from "./islands20";
+import { applySeatMoves, PEOPLE_PER_KM2, type MoveResult, type SeatMove } from "./seatmove20";
 
-export interface WCity { id: string; name: string; cell: number; pos: Vec; pref: string | null; island: number; pop0: number; popSource: "ne" | "synthetic"; coastal: boolean; plains: number; kind: string }
+export interface WCity { id: string; name: string; cell: number; pos: Vec; pref: string | null; island: number; pop0: number; popSource: "ne" | "synthetic"; coastal: boolean; plains: number; kind: string; /** Stage 20: the city was the prefecture's 県庁所在地 before a seat was put elsewhere (it keeps its people) */ former?: true; /** Stage 20: the seat role whose point made this city the 県庁所在地 */ moved?: "capital" | "sub" | "palace"; /** Stage 20: the most people the place can hold (a small island); absent = no limit */ capPop?: number }
 export interface World {
   t: TerrainResult; nx: number; ny: number; cell: number; N: number;
   cities: WCity[]; cityById: Map<string, WCity>; cityByCell: Map<number, WCity>;
@@ -21,6 +23,10 @@ export interface World {
   hasTowns?: true;
   /** The ids of the towns this world carries (in `cities` after the 55 cities), recorded in the game as `sim.towns16`. */
   townIds?: string[];
+  /** Stage 20: the small and far islands (the grid is widened to hold them); recorded in the game as `sim.isl20`. */
+  islets?: IsletCell[];
+  /** Stage 20: what the seat points put on the map did to the 県庁所在地 (recorded in the game as `sim.moves20`). */
+  moves20?: MoveResult[]; moveSpec?: SeatMove[];
 }
 export const POP_1950_SCALE = 0.32; // reference (modern) population -> 1950 level; a synthetic scaling, not a statistic
 
@@ -69,8 +75,8 @@ export function withSubgridLand(t: TerrainResult): TerrainResult {
   }
   return land ? { ...t, land, island: island!, elev: elev!, pref: pref! } : t;
 }
-export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false): World {
-  const t = withTowns ? withSubgridLand(t0) : t0;
+export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false, islets = false, moves: SeatMove[] = []): World {
+  const t1 = withTowns ? withSubgridLand(t0) : t0, t = islets ? withIslets(t1) : t1;
   const { nx, ny, cell, x0, y0 } = t.grid, N = nx * ny;
   const cellPos = (k: number): Vec => [x0 + ((k % nx) + 0.5) * cell, y0 + (((k / nx) | 0) + 0.5) * cell];
   const cellOf = (p: Vec) => { const i = Math.floor((p[0] - x0) / cell), j = Math.floor((p[1] - y0) / cell); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };
@@ -108,6 +114,12 @@ export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] 
       cities.push({ id: c.id, name: c.name, cell: k, pos: c.pos, pref: c.prefIndex ? t.prefOrder[c.prefIndex - 1] : null, island: t.island[k], pop0: Math.round((popOf.get(c.id) ?? 50000) * POP_1950_SCALE), popSource: "ne", coastal, plains: cnt ? plain / cnt : 0, kind: "town" });
     }
   }
+  let moves20: MoveResult[] | undefined;
+  if (moves.length) {   // Stage 20: a seat put on the map makes that point its prefecture's 県庁所在地
+    const owner = new Map<number, IsletCell>(); for (const s of t.islets ?? []) for (const k of s.cells) owner.set(k, s);
+    const near = (k: number) => { let coastal = false, plain = 0, cnt = 0; for (let dj = -3; dj <= 3; dj++) for (let di = -3; di <= 3; di++) { const a = (k % nx) + di, b = ((k / nx) | 0) + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue; const q = b * nx + a; cnt++; if (t.plains[q]) plain++; if (Math.abs(di) <= 2 && Math.abs(dj) <= 2 && t.land[q] === 0) coastal = true; } return { coastal, plains: cnt ? plain / cnt : 0 }; };
+    moves20 = applySeatMoves(cities, t, cellOf, moves, (k) => { const o = owner.get(k); return o ? o.areaKm2 * PEOPLE_PER_KM2 : Infinity; }, near);
+  }
   const lm = new Uint16Array(N); let lmCount = 0; const stack: number[] = [];
   for (let k0 = 0; k0 < N; k0++) if (t.land[k0] === 1 && !lm[k0]) {
     lm[k0] = ++lmCount; stack.push(k0);
@@ -115,7 +127,7 @@ export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] 
   }
   const cityById = new Map(cities.map((c) => [c.id, c])), cityByCell = new Map<number, WCity>();
   for (const c of cities) if (!cityByCell.has(c.cell)) cityByCell.set(c.cell, c);
-  return { t, nx, ny, cell, N, cities, cityById, cityByCell, lm, lmCount, river, cellPos, cellOf, ...(withTowns && t.towns && cities.some((c) => c.kind === "town") ? { hasTowns: true as const, townIds: cities.filter((c) => c.kind === "town").map((c) => c.id) } : {}), elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
+  return { t, nx, ny, cell, N, cities, ...(islets && t.islets ? { islets: t.islets } : {}), ...(moves20 ? { moves20, moveSpec: moves } : {}), cityById, cityByCell, lm, lmCount, river, cellPos, cellOf, ...(withTowns && t.towns && cities.some((c) => c.kind === "town") ? { hasTowns: true as const, townIds: cities.filter((c) => c.kind === "town").map((c) => c.id) } : {}), elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
 }
 
 export interface PathOpts { bias?: (k: number) => number; allow?: (k: number) => boolean; roadCells?: { has(k: number): boolean }; margin?: number; rail?: boolean; ease?: number }   // ease 0..1: how much better tunnelling and bridging make mountains and rivers to cross (tech.ts); 0 = the older cost

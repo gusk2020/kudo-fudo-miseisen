@@ -20,14 +20,25 @@ export const SHOW_ON = 70000, SHOW_OFF = 50000, SHOW_GROWTH = 1.6;   // shown fr
 export const SEAT_REACH_KM = 80;
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 export const isCapitalCity = (c: { kind: string }) => c.kind === "capital";
+/** Stage 20: a capital that can only ever be small (a seat put on a tiny island) cannot hold its prefecture's city people: the former 県庁所在地 does, until the new one grows. */
+export const HOLDER_MIN_CAP = 1_000_000;
+export const smallSeat = (c: { kind: string; capPop?: number }) => c.kind === "capital" && c.capPop !== undefined && c.capPop < HOLDER_MIN_CAP;
+/** The city that holds a prefecture's city people (index in w.cities): its capital, or -- when that is a small-island seat -- the former capital. */
+const holdMemo = new WeakMap<World, Map<string, number>>();
+export function prefHolders(w: World): Map<string, number> {
+  let m = holdMemo.get(w); if (m) return m; m = new Map();
+  w.cities.forEach((c, i) => { if (c.pref && isCapitalCity(c)) m!.set(c.pref, i); });
+  w.cities.forEach((c, i) => { if (c.pref && c.former && m!.has(c.pref) && smallSeat(w.cities[m!.get(c.pref)!])) m!.set(c.pref, i); });
+  holdMemo.set(w, m); return m;
+}
 
 /** At the start: each prefecture keeps its total, but its candidates hold only LATENT_START of their size; the capital city holds the rest. */
 export function startCandidates(sim: SimState, w: World): void {
-  const cap = new Map<string, string>(); for (const c of w.cities) if (isCapitalCity(c) && c.pref) cap.set(c.pref, c.id);
+  const cap = new Map<string, string>(); for (const [p, i] of prefHolders(w)) cap.set(p, w.cities[i].id);
   const moved = new Map<string, number>();
-  for (const c of w.cities) { if (isCapitalCity(c) || !c.pref || !cap.has(c.pref)) continue; const st = sim.cities[c.id], take = Math.round(st.pop * (1 - LATENT_START)); st.pop -= take; moved.set(c.pref, (moved.get(c.pref) ?? 0) + take); }
+  for (const c of w.cities) { if (isCapitalCity(c) || c.former || !c.pref || !cap.has(c.pref) || cap.get(c.pref) === c.id) continue; const st = sim.cities[c.id], take = Math.round(st.pop * (1 - LATENT_START)); st.pop -= take; moved.set(c.pref, (moved.get(c.pref) ?? 0) + take); }
   for (const [pref, n] of moved) sim.cities[cap.get(pref)!].pop += n;
-  const shown = sim.pot17!.shown; for (const c of w.cities) if (isCapitalCity(c)) shown[c.id] = sim.startYear;
+  const shown = sim.pot17!.shown; for (const c of w.cities) if (isCapitalCity(c) || c.former) shown[c.id] = sim.startYear;
 }
 /** What the conditions are worth to a candidate: about 1 on average, 0.15 to 2.5. */
 export function suitability(sim: SimState, w: World, an: Analysis, i: number, parent: number, seats: { pos: number[] }[]): number {
@@ -40,18 +51,18 @@ export function suitability(sim: SimState, w: World, an: Analysis, i: number, pa
 /** Yearly: move people between each prefecture's capital city and its candidates, then update who is shown. Zero-sum within the prefecture. */
 export function settleCities(sim: SimState, w: World, an: Analysis, y: number): void {
   const pot = sim.pot17; if (!pot) return; const idx = new Map(w.cities.map((c, i) => [c.id, i])), cap = new Map<string, number>(), by = new Map<string, number[]>();
-  w.cities.forEach((c, i) => { if (!c.pref) return; if (isCapitalCity(c)) cap.set(c.pref, i); else (by.get(c.pref) ?? by.set(c.pref, []).get(c.pref)!).push(i); });
+  const hold = prefHolders(w); w.cities.forEach((c, i) => { if (!c.pref) return; if (hold.get(c.pref) === i) cap.set(c.pref, i); else (by.get(c.pref) ?? by.set(c.pref, []).get(c.pref)!).push(i); });
   const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital), seats = [sim.capitalPos ? { pos: sim.capitalPos as number[] } : hc, sim.subPos ? { pos: sim.subPos as number[] } : sc].filter(Boolean) as { pos: number[] }[];   // (Stage 19: from the point a seat was put at)
   for (const [pref, list] of by) {
     const p = cap.get(pref); if (p === undefined) continue; const capSt = sim.cities[w.cities[p].id];
-    const ws = list.map((i) => basePop(sim, w, w.cities[i]) * suitability(sim, w, an, i, p, seats)), wc = basePop(sim, w, w.cities[p]), tot = ws.reduce((a, b) => a + b, wc);
+    const ws = list.map((i) => Math.max(basePop(sim, w, w.cities[i]), 0.5 * (w.cities[i].capPop ?? 0)) * suitability(sim, w, an, i, p, seats)), wc = basePop(sim, w, w.cities[p]), tot = ws.reduce((a, b) => a + b, wc);
     const U = list.reduce((a, i) => a + sim.cities[w.cities[i].id].pop, capSt.pop); let pay = 0;
     list.forEach((i, k) => { const st = sim.cities[w.cities[i].id], target = (ws[k] / tot) * U; let d = Math.round(CITY_RATE * (target - st.pop)); if (st.pop + d < 2000) d = 2000 - st.pop; pay += d; st.pop += d; });
     capSt.pop -= pay; if (capSt.pop < 2000) { const f = (2000 - capSt.pop) / Math.max(1, pay); capSt.pop = 2000; void f; }
   }
   // who is shown: a place appears when it is big enough and has grown, and loses its name when it shrinks well below that; the people stay either way
   for (const c of w.cities) {
-    if (isCapitalCity(c) || y <= sim.startYear) continue; const st = sim.cities[c.id], was = pot.shown[c.id] !== undefined && pot.shown[c.id] > 0;
+    if (isCapitalCity(c) || (c.former && pot.shown[c.id] === undefined) || y <= sim.startYear) continue; const st = sim.cities[c.id], was = pot.shown[c.id] !== undefined && pot.shown[c.id] > 0;
     const born = startOf(sim, w, c);
     if (!was && st.pop >= SHOW_ON && st.pop >= SHOW_GROWTH * born) { pot.shown[c.id] = y; ev(sim, "city", `${c.name}が都市として現れた(人口${Math.round(st.pop / 1000)}千人)`, `${c.pref ? "同じ府県の県庁所在地から人が移り、" : ""}平地・交通・産業の条件がそろった`, { city: c.id }); }
     else if (was && st.pop < SHOW_OFF) { pot.shown[c.id] = -y; ev(sim, "city", `${c.name}の人口が減り、都市の表示を外れた(人口${Math.round(st.pop / 1000)}千人)`, "条件が悪化し、人は周辺や県庁所在地へ移った(住民は残っている)", { city: c.id }); }

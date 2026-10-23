@@ -74,6 +74,8 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.econ !== undefined && raw.econ !== true) delete raw.econ;
   if (raw.seats14 !== undefined && raw.seats14 !== true) delete raw.seats14;   // Stage 14
   if (raw.pop15 !== undefined && raw.pop15 !== true) delete raw.pop15;   // Stage 15
+  if (raw.isl20 !== undefined && raw.isl20 !== true) delete raw.isl20;   // Stage 20
+  if (raw.moves20 !== undefined && !(Array.isArray(raw.moves20) && raw.moves20.length > 0 && raw.moves20.length <= 3 && raw.moves20.every((m: any) => isRec(m) && typeof m.pref === "string" && m.pref.length < 12 && ["capital", "sub", "palace"].includes(m.by) && Array.isArray(m.pos) && m.pos.length === 2 && m.pos.every((x: unknown) => typeof x === "number" && Number.isFinite(x) && Math.abs(x as number) < 5000)))) delete raw.moves20;
   if (raw.towns16 !== undefined && !(Array.isArray(raw.towns16) && raw.towns16.length > 0 && raw.towns16.length < 400 && raw.towns16.every((x: unknown) => typeof x === "string" && x.length < 24))) delete raw.towns16;   // Stage 16
   for (const k of ["capitalPos", "subPos"]) if (raw[k] !== undefined && !(Array.isArray(raw[k]) && raw[k].length === 2 && raw[k].every((x: unknown) => typeof x === "number" && Number.isFinite(x) && Math.abs(x as number) < 5000))) delete raw[k];   // Stage 19
   if (raw.pot17 !== undefined) { const q = raw.pot17, ok = q && typeof q === "object" && Array.isArray(q.order) && q.order.length === 49 && q.order.every((x: unknown) => typeof x === "string") && q.cur && typeof q.cur === "object" && Array.isArray(q.hist) && q.shown && typeof q.shown === "object"; if (!ok) delete raw.pot17; else { for (const k of Object.keys(q.cur)) if (!Number.isFinite(q.cur[k])) q.cur[k] = 1; } }   // Stage 17
@@ -100,6 +102,8 @@ export function validateSimAgainstWorld(sim: SimState, w: World, terrainHash: st
   for (const e of Object.values(sim.edges)) for (const c of e.cells) if (c >= w.N || w.t.land[c] !== 1) return `道路が地形の外にあります(${e.id})`;
   for (const n of Object.values(sim.nodes)) if (n.cell >= w.N) return "ノードが地形の外にあります";
   if ((sim.towns16 ?? []).join(",") !== (w.townIds ?? []).join(",")) return "都市データの種類(町の有無)が保存時と一致しません";   // Stage 16
+  if (JSON.stringify(sim.moves20 ?? null) !== JSON.stringify(w.moveSpec ?? null)) return "県庁所在地の移転が保存時と一致しません";   // Stage 20
+  if (!!sim.isl20 !== !!w.islets) return "島のデータの種類(離島の有無)が保存時と一致しません";   // Stage 20
   return null;
 }
 export interface ParsedSave { map: ProjectState; sim: SimState | null; quarantine: unknown | null; problems: string[]; ok: boolean; migratedFrom: 1 | 2 | null }

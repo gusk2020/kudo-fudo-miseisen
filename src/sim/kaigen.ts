@@ -36,7 +36,9 @@ const CYCLE = STANCES;
  *  空路重視 = airports, 均衡 = roads and railways side by side), so each stance is its own group; a group with no candidate is not shown. */
 export type EraGroup = "road" | "rail" | "sea" | "air" | "balanced";
 export const ERA_GROUPS: EraGroup[] = ["road", "rail", "sea", "air", "balanced"];
-export const ERA_GROUP_LABEL: Record<EraGroup, string> = { road: "道路系", rail: "鉄道系", sea: "海路系", air: "空路系", balanced: "均衡系" };
+export const ERA_GROUP_LABEL: Record<EraGroup, string> = { road: "道路重視", rail: "鉄道・公共交通重視", sea: "海路重視", air: "空路重視", balanced: "均衡" };
+/** What a whole group means, said once on its heading (not repeated on the candidates). */
+export const ERA_GROUP_NOTE: Record<EraGroup, string> = { road: "道路・自動車を国策の柱に", rail: "鉄道と公共交通を国策の柱に", sea: "港湾・フェリー・海運を優先", air: "空港・航空路を優先", balanced: "道路と鉄道を並行して整備" };
 export function eraGroup(stance: EraKey): EraGroup { return stance === "shubun" ? "road" : stance === "shoka" ? "rail" : stance === "kairo" ? "sea" : stance === "kuuro" ? "air" : "balanced"; }
 export const STANCE_LABEL: Record<EraKey, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kuuro: "空路重視", kairo: "海路重視", kobun: "旧版" };
 /**

@@ -3,7 +3,7 @@ import { dist, pointSegDist } from "../core/geom";
 import type { Vec } from "../core/types";
 import { designate, ev, routeOfficial } from "./engine";
 import { buildIndex, layPath, nodeSplitAt } from "./network";
-import { LAKE_TAG, MAX_FERRY_KM, crossingPorts, findFerry, makeFerry, makeFerryAt, makeLakeBridgeAt, massRoute, nearTown, servedMasses } from "./ferry";
+import { LAKE_TAG, maxFerryKm, crossingPorts, findFerry, makeFerry, makeFerryAt, makeLakeBridgeAt, massRoute, nearTown, servedMasses } from "./ferry";
 import { techAt } from "./tech";
 import { DEFAULT_SUB, prefOfSeat } from "../core/seat";
 import { ERA, eraLabel, type SimState } from "./types";
@@ -169,7 +169,7 @@ export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: 
     const v = visits[i], nx = visits[i + 1], t1 = nx ? nx.t0 : len + 1;
     if (!nx) { legs.push({ lm: v.lm, vias: v.vias, t0: v.t0, t1, out: null }); break; }
     const near = nearestPair(w, v.lm, nx.lm, v.vias.length ? w.cellPos(v.vias[v.vias.length - 1].k) : w.cellPos(home.cell), nx.vias.length ? w.cellPos(nx.vias[0].k) : w.cellPos(dest.cell));
-    if (near && near.km <= MAX_FERRY_KM) { legs.push({ lm: v.lm, vias: v.vias, t0: v.t0, t1, out: { a: near.a, b: near.b, drawn: true, km: near.km } }); continue; }
+    if (near && near.km <= maxFerryKm(w)) { legs.push({ lm: v.lm, vias: v.vias, t0: v.t0, t1, out: { a: near.a, b: near.b, drawn: true, km: near.km } }); continue; }
     const chain = massRoute(w, v.lm, nx.lm); if (!chain) return bad(["航路でも結べない陸地をまたいでいます"]);
     for (let m = 0; m < chain.length - 1; m++) { const cx = crossingPorts(w, chain[m], chain[m + 1])!, ea = cx.la === chain[m] ? cx.a : cx.b, eb = cx.la === chain[m] ? cx.b : cx.a; legs.push({ lm: chain[m], vias: m === 0 ? v.vias : [], t0: m === 0 ? v.t0 : t1, t1, out: { a: ea.cell, b: eb.cell, drawn: false, km: cx.km } }); }
   }

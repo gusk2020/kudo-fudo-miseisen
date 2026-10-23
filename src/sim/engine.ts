@@ -3,6 +3,8 @@
  * Every change that matters appends an event with its cause and, for roads, an entry in the edge's own history.
  * All demand, population and budget figures are SYNTHETIC (a toy economy), not statistics.
  */
+import { enforceCaps } from "./cap20";
+import type { SeatMove } from "./seatmove20";
 import { cityBoost, settlementBoost } from "./sites";
 import { dist } from "../core/geom";
 import { JAPAN } from "../core/data";
@@ -95,7 +97,7 @@ export function projectTimeMult(sim: SimState, p: SimProject): number {
 }
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
-export interface SimOpts { capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
+export interface SimOpts { moves?: SeatMove[]; capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 /** Stage 19: the exact lon/lat of the seats put on the map (world = real for the real map); undefined when every seat stands at its 県庁所在地, so such a game orders the prefectures exactly as before. */
 function seatLL(sim: SimState, w: World): { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } | undefined {
   const ll = (p: Vec) => realToLonLat(p) as [number, number], o: { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } = {};
@@ -118,7 +120,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
   if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false); }
-  if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds];   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
+  if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.islets) sim.isl20 = true; if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
   const tokyoId = sim.roles ? undefined : tokyoCity(w)?.id;
   for (const c of w.cities) sim.cities[c.id] = { pop: basePop(sim, w, c), popSource: c.popSource, lowAccessYears: 0, industry: Math.round(Math.max(0.05, Math.min(1, 0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim) + roleIndustry(sim, w, c))) * 1000) / 1000 };
   // (older games) a moved capital draws people and industry to itself and costs the old one some; a sub-capital gains a little (fictional, modest, provisional)
@@ -126,6 +128,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   if (sim.subCapital && !sim.roles) { const sc = subCity(w, sim.subCapital), hc = homeCity(w, sim.capital); if (sc && sim.cities[sc.id] && sc.id !== hc?.id) { const c = sim.cities[sc.id]; c.pop = Math.round(c.pop * SUB_CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.05) * 1000) / 1000); } }
   if (sim.econ) squeezeSites(sim, w);
   if (firstCand && w.townIds && opts.pot17 !== false) { const seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; sim.pot17 = initPotential(w.t, seats, sim.kaigen?.recon?.focus ?? "concentrate", seed, sim.startYear, opts.coast18 === false ? undefined : sim.kaigen?.recon?.coast, seatLL(sim, w)); startCandidates(sim, w); }   // Stage 17   // Stage 12: a city whose land is far worse than any real city's starts smaller; the rest settle on the better land near it
+  enforceCaps(sim, w);   // Stage 20
   if (sim.stage3) ensureHubs(sim, w, sim.startYear);   // Stage 8: the ports of 1950 (airports open from the late 1950s)
   yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); yield 1;
   return sim;
@@ -269,6 +272,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     if (Math.abs(f - 1) > 1e-9) for (const c of w.cities) { const st = sim.cities[c.id]; st.pop = Math.max(2000, Math.round(st.pop * f)); }
   }
   if (sim.pot17) { const k = sim.kaigen; if (k && k.eras.length > (sim.pot17.eras ?? 1)) { const e = k.eras[k.eras.length - 1], seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; reassignPotential(sim.pot17, w.t, seats, k.recon?.focus ?? "concentrate", sim.seed, k.eras.length, y, e.name, k.recon?.coast, sim.pot17.c19 ? seatLL(sim, w) : undefined); ev(sim, "potential", `改元(${e.name})で府県の発展順位が組み替わった`, `上位は首都・副首都・皇居とその隣県。順位は${y}年から年々なだらかに効く`, {}); sim.pot17.eras = k.eras.length; } glidePotential(sim.pot17); settleCities(sim, w, an, y); }   // Stage 17: the weights glide toward the order in force; the capitals' people settle the candidate places
+  enforceCaps(sim, w);   // Stage 20: a small island's city holds what the island can
   const nodeCells = new Set(Object.values(sim.nodes).map((n) => n.cell));
   // Stage 3: a village that a railway or a proper road passes keeps its people better (empirical, not a statistic): this is the feedback that lets local transport pay back
   const railCells = new Set<number>(), goodCells = new Set<number>();

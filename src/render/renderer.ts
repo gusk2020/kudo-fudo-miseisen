@@ -41,6 +41,8 @@ export class Renderer {
   capitalsOnly = true;
   /** Stage 19: a seat point chosen on the map and not yet confirmed (a crosshair) */
   seatPending: Vec | null = null;
+  /** Stage 20: the small islands (drawn as ellipses of their real size, at least a few pixels wide so the tiniest can be seen and tapped) */
+  islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean }[] | null = null;
   private root = new Container(); private base = new Container(); private overlay = new Container(); private labels = new Container();
   /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
   ridgeHandles = false;
@@ -126,6 +128,12 @@ export class Renderer {
     if (s.islands) for (const id of EXTRA_IDS) for (const poly of EXTRA.islands[id].parts) {   // the added islands (world = real km; never deformed)
       if (landFlat) fills.poly(flat(poly)).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
       if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(1.4), color: 0x2c3e1f });
+    }
+    if (this.islets) for (const o of this.islets) {   // Stage 20
+      const a = Math.max(o.len / 2, px(3)), b = Math.max(o.wid / 2, px(3)), th = (o.bear * Math.PI) / 180, pts: number[] = [];
+      for (let q = 0; q < 20; q++) { const f = (q / 20) * Math.PI * 2, u = Math.cos(f) * a, v = Math.sin(f) * b; pts.push(o.pos[0] + u * Math.sin(th) - v * Math.cos(th), -(o.pos[1] + u * Math.cos(th) + v * Math.sin(th))); }
+      fills.poly(pts).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); coast.poly(pts).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f });
+      if (z > 0.9 || (z > 0.45 && o.len >= 12)) { const tx = new Text({ text: o.name, style: { fontSize: 10, fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(o.pos[0] + px(6), -o.pos[1] - px(5)); this.labels.addChild(tx); }
     }
     this.base.addChild(fills);
     // lakes & features
