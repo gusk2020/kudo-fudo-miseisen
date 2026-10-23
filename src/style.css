@@ -69,10 +69,24 @@ body.real #sheet { max-height: 62dvh; }
 .era-row b { font-size:16px; } .era-row span { font-size:12px; opacity:.92; text-align:right; }
 .era-row.on { background:#1f6fd1; border-color:#9cc8ff; color:#fff; }
 .setup-tabs { display:flex; gap:4px; width:100%; }
-.setup-tab { flex:1 1 0; min-width:0; min-height:44px; padding:4px 2px; font-size:14px; font-weight:700; border-radius:8px; border:2px solid #4f7aa3; background:#16304a; color:#e8f1fa; white-space:nowrap; }
-.setup-tab.on { background:#1f6fd1; color:#fff; border-color:#9cc8ff; }
+/* Stage 21: the same small tab as 地形 / 琵琶湖 / 富士山 */
+.setup-tab { flex:1 1 0; min-width:0; min-height:34px; padding:3px 5px; font-size:12.5px; border-radius:8px; white-space:nowrap; }
+.setup-tab.on { background:#1f6fd1; color:#fff; border-color:#9cc8ff; font-weight:700; }
 #setup-panel { margin:4px 0; padding:6px; border-radius:8px; background:#12283d; border:1px solid #4f7aa3; }
 #setup-panel .row2 { display:flex; gap:6px; margin:4px 0; } #setup-panel .row2 button { flex:1; min-height:44px; font-weight:700; border:2px solid #4f7aa3; background:#1d3a55; color:#fff; border-radius:8px; }
 #setup-panel .row2 button.on { background:#1f6fd1; border-color:#9cc8ff; }
 #setup-panel select { max-width:100%; min-height:44px; font-size:14px; }
 #setup-close { min-height:40px; margin-top:4px; }
+
+/* Stage 21: the prefecture list -- the old black window with white letters, one block per region */
+#pref-picker { position:fixed; left:6px; right:6px; top:58px; bottom:calc(58px + env(safe-area-inset-bottom)); z-index:20; display:flex; flex-direction:column; background:#000; color:#fff; border:2px solid #fff; border-radius:10px; }
+#pref-picker .pp-title { padding:8px 10px; font-size:14px; font-weight:700; border-bottom:1px solid #666; }
+#pref-picker .pp-body { flex:1 1 auto; overflow:auto; padding:4px 8px; }
+#pref-picker .pp-region { margin:8px 0 3px; font-size:13px; font-weight:700; color:#ffd24a; }
+#pref-picker .pp-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; }
+#pref-picker .pp-opt { min-height:38px; padding:2px 3px; font-size:13px; color:#fff; background:#000; border:1px solid #888; border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.15; }
+#pref-picker .pp-opt small { font-size:10px; color:#bbb; }
+#pref-picker .pp-opt.on { background:#1f6fd1; border:2px solid #9cc8ff; font-weight:700; }
+#pref-picker .pp-opt:disabled { color:#666; border-color:#444; background:#000; }
+#pref-picker .pp-foot { display:flex; gap:8px; padding:8px; border-top:1px solid #666; }
+#pref-picker .pp-foot button { flex:1; min-height:40px; color:#fff; background:#222; border:1px solid #aaa; }
