@@ -12,6 +12,9 @@ describe("Stage 20 C: islets on the world", () => {
     let n = 0; for (let k = 0; k < base.N; k += 7) { const p = base.cellPos(k), q = W.cellOf(p); expect(q).toBeGreaterThanOrEqual(0); if (base.t.land[k] !== 0) { expect(W.t.land[q]).toBe(base.t.land[k]); expect(W.t.island[q]).toBe(base.t.island[k]); } n++; }
     expect(n).toBeGreaterThan(1000);
   });
+  it("the Fuji summit cell index follows the widened grid", () => {
+    const a = base.cellPos(base.t.stats.fujiTopCell), b = W.cellPos(W.t.stats.fujiTopCell); expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeLessThan(0.01);
+  });
   it("every islet is on the grid, once, with land under it", () => {
     expect(W.islets!.length).toBe(ISLETS.length);
     const seen = new Set<number>();

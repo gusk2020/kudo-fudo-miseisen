@@ -38,5 +38,6 @@ export function withIslets(t: TerrainResult): TerrainResult {
     let cen = c0; if (mine.length && !mine.includes(c0)) { let bd = Infinity; for (const k of mine) { const d = Math.hypot(((k % nx2) + 0.5) * cell + X0 - p[0], (((k / nx2) | 0) + 0.5) * cell + Y0 - p[1]); if (d < bd) { bd = d; cen = k; } } }
     out.push({ islet: s, pos: p, cells: mine, cell: mine.length ? cen : c0, island: mine.length ? id : (c0 >= 0 ? island[c0] : id), existing: !mine.length, areaKm2: s.area });
   });
-  return { ...t, grid: { x0: X0, y0: Y0, cell, nx: nx2, ny: ny2 }, land, island, pref, plains, elev, ridge, barrier, islets: out };
+  const top = t.stats.fujiTopCell, stats = top >= 0 ? { ...t.stats, fujiTopCell: (((top / nx) | 0) + sy) * nx2 + (top % nx) + sx } : t.stats;   // (the one cell index the terrain keeps in its stats)
+  return { ...t, stats, grid: { x0: X0, y0: Y0, cell, nx: nx2, ny: ny2 }, land, island, pref, plains, elev, ridge, barrier, islets: out };
 }
