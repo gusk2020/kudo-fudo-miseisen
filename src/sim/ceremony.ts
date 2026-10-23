@@ -150,7 +150,7 @@ function nearestPair(w: World, la: number, lb: number, pa: Vec, pb: Vec): { a: n
 export const snapKmFor = (zoomPxPerKm: number) => Math.max(30, Math.min(90, 24 / Math.max(0.02, zoomPxPerKm)));
 /** A 県庁所在地 within this far of the drawn line is routed THROUGH if the detour it costs is at most VIA_DETOUR_KM, else given an access road if within SPUR_KM. */
 export const VIA_NEAR_KM = 20, VIA_DETOUR_KM = 15, SPUR_KM = 20, SPUR_MAX_KM = 30;
-export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: string, opts: { techK?: number; year?: number; snapKm?: number } = {}): NatPreview {
+export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: string, opts: { techK?: number; year?: number; snapKm?: number; /** Stage 21: route through / give access roads to 県庁所在地 near the line (the game turns it on; the older quantitative studies run without it) */ roadside?: boolean } = {}): NatPreview {
   const bad = (r: string[]): NatPreview => ({ ok: false, reasons: r, cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "", segments: [], ferries: [], from: "", to: "" });
   const home = homeCity(w, capital), dest = subCity(w, sub) ?? seatCity(w, DEFAULT_SUB); if (!home || !dest) return bad(["首都または副首都の県庁所在地が地図にありません"]);
   if (home.pref === dest.pref) return bad(["首都と副首都は別の府県にしてください"]);
@@ -173,7 +173,7 @@ export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: 
   // Stage 21: a 県庁所在地 close to the line is routed through when that costs a short detour (the line need not run through its centre)
   const prox = (p: Vec) => { let best = { d: Infinity, t: 0 }, acc = 0; for (let i = 0; i + 1 < drawn.length; i++) { const a = drawn[i], b = drawn[i + 1], sg = dist(a, b), u = sg ? Math.max(0, Math.min(1, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / (sg * sg))) : 0, d = dist(p, [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]); if (d < best.d) best = { d, t: acc + u * sg }; acc += sg; } return best; };
   const throughCities: string[] = [];
-  for (const c of w.cities.filter((x) => x.kind === "capital" && x !== home && x !== dest).map((x) => ({ x, ...prox(x.pos) })).filter((q) => q.d <= VIA_NEAR_KM).sort((a, b) => a.t - b.t)) {
+  for (const c of (opts.roadside ? w.cities : []).filter((x) => x.kind === "capital" && x !== home && x !== dest).map((x) => ({ x, ...prox(x.pos) })).filter((q) => q.d <= VIA_NEAR_KM).sort((a, b) => a.t - b.t)) {
     if (vias.some((v) => v.k === c.x.cell)) continue;
     let at = 0; while (at < vias.length && vias[at].t < c.t) at++;
     const pv = at > 0 ? vias[at - 1] : null, nv = at < vias.length ? vias[at] : null, pp = pv ? pv.p : home.pos, np = nv ? nv.p : dest.pos;
@@ -222,7 +222,7 @@ export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: 
   const passes = all.map((k) => w.cityByCell.get(k)?.name).filter((n): n is string => !!n);
   // Stage 21: a 県庁所在地 the road passes near but not through gets a short access road, if one can be made over land without a detour or a mountain wall. One road per city; none to a city on the way.
   const onWay = new Set(all), spurs: NonNullable<NatPreview["spurs"]> = [];
-  for (const c of w.cities) {
+  for (const c of opts.roadside ? w.cities : []) {
     if (c.kind !== "capital" || onWay.has(c.cell)) continue;
     let bk = -1, bd = Infinity; for (const k of all) { if (w.lm[k] !== w.lm[c.cell]) continue; const d = dist(w.cellPos(k), c.pos); if (d < bd) { bd = d; bk = k; } }
     if (bk < 0 || bd > SPUR_KM) continue;

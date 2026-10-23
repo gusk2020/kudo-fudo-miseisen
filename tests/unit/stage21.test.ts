@@ -10,7 +10,7 @@ const city = (n: string) => w.cities.find((c) => c.name === n)!;
 const poly = (pts: Vec[], step = 8): Vec[] => { const out: Vec[] = [pts[0]]; for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step)); for (let q = 1; q <= n; q++) out.push([a[0] + ((b[0] - a[0]) * q) / n, a[1] + ((b[1] - a[1]) * q) / n]); } return out; };
 const tokyo = homeCity(w, "JP-13")!, osaka = subCity(w, "JP-27")!, nagoya = city("名古屋市");
 const off = (p: Vec, dx: number, dy: number): Vec => [p[0] + dx, p[1] + dy];
-const run = (drawn: Vec[], opts = {}) => previewNational(w, drawn, "JP-13", "JP-27", opts);
+const run = (drawn: Vec[], opts = {}) => previewNational(w, drawn, "JP-13", "JP-27", { roadside: true, ...opts });
 
 describe("Stage 21: the drawn 国道1号", () => {
   const fwd = poly([tokyo.pos, nagoya.pos, osaka.pos]);
@@ -48,5 +48,11 @@ describe("Stage 21: the drawn 国道1号", () => {
     expect(r.spurs?.length ?? 0).toBeGreaterThan(0);
     for (const sp of r.spurs ?? []) expect(reach(w.cityById.get(sp.city)!.cell)).toBe(true);
     expect(Object.keys(sim.edges).length).toBeGreaterThan(before);
+  });
+  it("a 県庁所在地 moved by Stage 20 is treated like any other", () => {
+    const at: Vec = off(nagoya.pos, 12, 22), mv = [{ pref: "JP-23", pos: at, by: "capital" as const }], W2 = realWorld(true, true, true, mv).w, n2 = W2.cities.find((c) => c.kind === "capital" && c.pref === "JP-23")!;
+    expect(n2.id).toBe("M20-JP-23");
+    const t2 = homeCity(W2, "JP-13")!, o2 = subCity(W2, "JP-27")!, d = poly([t2.pos, off(n2.pos, 0, -6), o2.pos]), r = previewNational(W2, d, "JP-13", "JP-27", { roadside: true });
+    expect(r.ok, r.reasons.join()).toBe(true); expect([...(r.through ?? []), ...(r.spurs ?? []).map((q) => W2.cityById.get(q.city)!.name)]).toContain(n2.name);
   });
 });

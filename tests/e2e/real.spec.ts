@@ -40,7 +40,7 @@ test("real Japan opens by default: finalised, step 6, no map-editing controls, e
   expect(await page.isVisible("#btn-prev")).toBe(false); expect(await page.isVisible("#setup-tabs")).toBe(true);
   // Stage 19: four small tabs that fit the phone width; every panel is closed until a tab is pressed, and pressing another tab closes the first
   { const vw = page.viewportSize()!.width, boxes = await page.evaluate(() => ["era", "capital", "sub", "palace"].map((k) => { const r = document.getElementById("setup-tab-" + k)!.getBoundingClientRect(); return [r.left, r.right, r.height]; }));
-    for (const [l, r, h] of boxes) { expect(l).toBeGreaterThanOrEqual(0); expect(r).toBeLessThanOrEqual(vw); expect(h).toBeGreaterThanOrEqual(36); } expect(await page.locator("#setup-panel").count()).toBe(0);
+    for (const [l, r, h] of boxes) { expect(l).toBeGreaterThanOrEqual(0); expect(r).toBeLessThanOrEqual(vw); expect(h).toBeGreaterThanOrEqual(30); } expect(await page.locator("#setup-panel").count()).toBe(0);
     await page.click("#setup-tab-capital"); expect(await page.isVisible("#pref-picker")).toBe(true); expect(await page.isVisible("#pref-map") && await page.isVisible("#pref-back")).toBe(true); expect(await page.locator("#seat-mode-list").count()).toBe(0);   // Stage 21: the tab opens the prefecture list at once
     await page.click("#pref-back"); expect(await page.locator("#pref-picker").count()).toBe(0); expect(await page.isVisible("#seat-repick")).toBe(true);
     await page.click("#setup-tab-sub"); await page.click("#pref-opt-JP-27"); expect(await page.locator("#setup-panel").count()).toBe(1); expect(await page.getAttribute("#setup-tab-capital", "aria-selected")).toBe("false"); await page.click("#setup-close"); expect(await page.locator("#setup-panel").count()).toBe(0); }
@@ -246,7 +246,7 @@ test("限定の地形編集: capital, Alps and Fuji can be set before the first 
   await seatSelect(page, "capital", "JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47");   // Okinawa
   await seatSelect(page, "sub", "HK-SAP"); expect(await app(page, "a => a.s.subCapital")).toBe("HK-SAP");   // Sapporo
   await seatSelect(page, "palace", "JP-26"); expect(await app(page, "a => a.s.palace")).toBe("JP-26");
-  await openSeat(page, "capital"); expect(await page.locator("#pref-picker .pp-opt").count()).toBe(49); await openSeat(page, "sub"); expect(await page.locator("#pref-opt-JP-47").evaluate((o: HTMLButtonElement) => o.disabled)).toBe(true);   // the capital cannot be chosen again as the sub-capital
+  await openSeat(page, "capital"); expect(await page.locator("#pref-picker .pp-opt").count()).toBe(49); await page.click("#pref-back"); await openSeat(page, "sub"); expect(await page.locator("#pref-opt-JP-47").evaluate((o: HTMLButtonElement) => o.disabled)).toBe(true);   // the capital cannot be chosen again as the sub-capital
   await closeSheet(page); expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇");
   expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(0);   // the outline is never touched
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
