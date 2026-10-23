@@ -17,7 +17,7 @@ import { clampOp } from "../core/warp";
 import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
-import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
+import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, snapKmFor, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
 import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
 import { codesAt } from "../sim/ledger";
@@ -442,12 +442,12 @@ export class App {
     if (!PREF_IDS.includes(pref)) return false; const cur = seatsOf(this.s);
     if ((which === "capital" && pref === cur.sub) || (which === "sub" && pref === cur.capital)) { this.toast("首都と副首都は別の府県にしてください"); this.buildToolbar(); return false; }
     const ok = this.commitEdit((s) => { if (which === "capital") s.capital = pref; else if (which === "sub") s.subCapital = pref; else { s.palace = pref; delete s.palacePos; } if (which === "capital") delete s.capitalPos; else if (which === "sub") delete s.subPos; });
-    for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
+    this.seatMode = null; for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
   }
   // ---- Stage 19: the setup tabs (元号 / 首都 / 副首都 / 皇居) and the choice of a seat on the map ----
   setupTab: "era" | "capital" | "sub" | "palace" | null = null; seatMode: "list" | "map" | null = null; seatPick: { w: Vec; pref: string; name?: string; near?: string; km?: number; islet?: string; claim?: string } | null = null;
   openSetupTab(tab: "era" | "capital" | "sub" | "palace" | null) {
-    this.setupTab = this.setupTab === tab ? null : tab; this.seatMode = null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view";
+    this.setupTab = this.setupTab === tab ? null : tab; this.seatMode = this.setupTab && this.setupTab !== "era" ? "list" : null; this.seatPick = null;   // Stage 21: a seat tab opens its prefecture list at once this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view";
     this.buildToolbar(); this.render();
   }
   chooseSeatMode(m: "list" | "map") {
@@ -476,6 +476,8 @@ export class App {
     this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.seatMode = null;
     for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
   }
+  /** Stage 21: 戻る in the map choice: back to the prefecture list, nothing changed. */
+  backToSeatList() { this.seatPick = null; this.r.seatPending = null; this.seatMode = "list"; if (this.tool === "seatpick") this.tool = "view"; this.buildToolbar(); this.render(); }
   cancelSeatPick() { this.seatPick = null; this.r.seatPending = null; this.buildToolbar(); this.render(); }
   /** Back to the prefecture's 県庁所在地 for one seat. */
   resetSeatPos(which: "capital" | "sub" | "palace") { this.commitEdit((s) => { if (which === "capital") delete s.capitalPos; else if (which === "sub") delete s.subPos; else delete s.palacePos; }); this.buildToolbar(); this.render(); }
@@ -516,7 +518,7 @@ export class App {
     if (!d.strokes.length && !d.past.length && !d.redo.length) { delete this.cerDraft[kind]; this.saveCer(); return; }
     if (!d.strokes.length) { d.pts = []; d.prev = { ok: false, reasons: ["線がありません。描いてください"], cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "" }; this.saveCer(); return; }
     d.pts = d.strokes.flat(); const st = seatsOf(this.s);
-    d.prev = this.real ? previewNational(w, d.pts, st.capital, st.sub) : previewCeremony(w, kind, d.pts, this.s.capital); this.saveCer();
+    d.prev = this.real ? previewNational(w, d.pts, st.capital, st.sub, { snapKm: snapKmFor(this.r.view.zoom) }) : previewCeremony(w, kind, d.pts, this.s.capital); this.saveCer();
   }
   cerUndo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.past.length) return; d.redo.push(d.strokes); d.strokes = d.past.pop()!; this.cerSel = null; this.replanCer(kind); this.renderRoads(); this.buildUI(); }
   cerRedo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.redo.length) return; d.past.push(d.strokes); d.strokes = d.redo.pop()!; this.cerSel = null; this.replanCer(kind); this.renderRoads(); this.buildUI(); }
@@ -750,20 +752,30 @@ export class App {
       panel.append(h("div", { class: "grp", id: "bg-choice" }, h("span", {}, "地図の表示"), ...(["roadmap", "terrain"] as const).map((m) => h("button", { id: "bg-" + m, type: "button", class: this.bg === m ? "mode on" : "mode", "aria-pressed": this.bg === m ? "true" : "false", onclick: () => { this.setBg(m); this.buildToolbar(); } }, m === "roadmap" ? "道路図" : "地形図"))));
     } else {
       const which = tab, label = { capital: "首都", sub: "副首都", palace: "皇居" }[which];
-      panel.append(h("div", { class: "row2" }, h("button", { id: "seat-mode-list", type: "button", class: this.seatMode === "list" ? "mode on" : "mode", onclick: () => this.chooseSeatMode("list") }, "A 府県から選ぶ"), h("button", { id: "seat-mode-map", type: "button", class: this.seatMode === "map" ? "mode on" : "mode", onclick: () => this.chooseSeatMode("map") }, "B 地図から選ぶ")));
-      if (this.seatMode === "list") {
-        const sel = h("select", { id: "seat-" + which, "aria-label": label, onchange: (e: Event) => { this.setSeat(which, (e.target as HTMLSelectElement).value); } }) as HTMLSelectElement;
-        for (const blk of REGION_BLOCKS) { const g = h("optgroup", { label: blk.name }); for (const pid of blk.prefs) { const dis = (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital); g.append(h("option", { value: pid, ...(pid === st[which] ? { selected: "" } : {}), ...(dis ? { disabled: "" } : {}) }, `${seatPrefName(pid)}(${w ? seatCity(w, pid)?.name ?? "" : ""})`)); } sel.append(g); }
-        panel.append(sel, h("small", {}, which === "palace" ? "49府県から選びます(県庁所在地が位置になります)" : "49府県から選びます。首都と副首都は別の府県"));
-      } else if (this.seatMode === "map") {
+      if (this.seatMode === "list") tb.append(this.prefPicker(which, label, st, w));
+      else if (this.seatMode !== "map") panel.append(h("div", { class: "note", id: "seat-now" }, `${label}: ${where(which)}`), h("button", { id: "seat-repick", type: "button", onclick: () => this.chooseSeatMode("list") }, "選び直す"));
+      if (this.seatMode === "map") {
         const p = this.seatPick;
         panel.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」(最寄りの地名: ${p.near}${p.km ? ` ${p.km}km` : ""})` : ""} ${ll(p.w)}${p.claim ? `／${p.claim}(ゲーム内の府県は仮の設定)` : ""}(まだ決まっていません。地図をタップし直すと動かせます)` : `${label}にしたい場所を、地図の陸地でタップしてください(府県内ならどこでも。海は選べません)`));
-        panel.append(h("div", { class: "row2" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => { this.cancelSeatPick(); } }, "取り消し")));
+        panel.append(h("div", { class: "row2" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => { this.cancelSeatPick(); } }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.backToSeatList() }, "戻る")));
       }
       if ((which === "capital" && this.s.capitalPos) || (which === "sub" && this.s.subPos) || (which === "palace" && this.s.palacePos)) panel.append(h("div", { class: "note", id: "seat-current" }, `地図で指定: ${where(which)}`), h("button", { id: "seat-reset", type: "button", onclick: () => this.resetSeatPos(which) }, "県庁所在地に戻す"));
     }
     panel.append(h("button", { id: "setup-close", type: "button", onclick: () => this.openSetupTab(null) }, "✕ 設定欄を閉じる"));
     tb.append(panel);
+  }
+  /** Stage 21: the prefecture list, back in the old form: a black window, white letters, one block per region; 地図で選ぶ / 戻る at the bottom. */
+  private prefPicker(which: "capital" | "sub" | "palace", label: string, st: { capital: string; sub: string; palace: string }, w: World | null): HTMLElement {
+    const box = h("div", { id: "pref-picker", role: "dialog", "aria-label": `${label}を選ぶ` }, h("div", { class: "pp-title" }, `${label}にする府県を選んでください`));
+    const body = h("div", { class: "pp-body" });
+    for (const blk of REGION_BLOCKS) {
+      body.append(h("div", { class: "pp-region" }, blk.name));
+      const row = h("div", { class: "pp-grid" });
+      for (const pid of blk.prefs) { const dis = (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital); row.append(h("button", { id: "pref-opt-" + pid, type: "button", class: "pp-opt" + (pid === st[which] ? " on" : ""), "aria-pressed": pid === st[which] ? "true" : "false", ...(dis ? { disabled: "" } : {}), onclick: () => { this.setSeat(which, pid); } }, `${seatPrefName(pid)}`, h("small", {}, w ? seatCity(w, pid)?.name ?? "" : ""))); }
+      body.append(row);
+    }
+    box.append(body, h("div", { class: "pp-foot" }, h("button", { id: "pref-map", type: "button", onclick: () => this.chooseSeatMode("map") }, "地図で選ぶ"), h("button", { id: "pref-back", type: "button", onclick: () => { this.seatMode = null; this.buildToolbar(); this.render(); } }, "戻る")));
+    return box;
   }
   unlockMap() {
     if (this.sim && !confirm("地図の編集を再開すると、作成済みの道路とシミュレーションは消えます。よろしいですか?")) return;
@@ -781,7 +793,7 @@ export class App {
       const g = h("div", { class: "grp" });
       for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k], w2 = this.world; g.append(this.tbtn(this.real ? cerLabel(k, w2 ? homeCity(w2, seatsOf(this.s).capital) : null, w2 ? subCity(w2, seatsOf(this.s).sub) : null) + (d ? (d.prev.ok ? " 済" : " 要修正") : "") : CER_LABEL[k] + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
       tb.append(g);
-      for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const d = this.cerDraft[k], nat = d?.prev as NatPreview | undefined; if (d) tb.append(h("div", { id: "cer-status-" + k, class: "note " + (d.prev.ok ? "okc" : "badc") }, d.prev.ok ? `✓ ${this.real ? "国道1号" : CER_LABEL[k]}: 約${d.prev.lengthKm}km／終点: ${d.prev.endName}${nat?.ferries?.length ? `／フェリー${nat.ferries.length}本` : ""}${nat?.lakes?.length ? `／湖は${nat.lakes.map((l) => (l.kind === "bridge" ? "橋" : "湖上フェリー")).join("・")}で横断` : ""}` : `✗ ${d.prev.reasons[0] ?? "経路を作れません"}`)); }
+      for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const d = this.cerDraft[k], nat = d?.prev as NatPreview | undefined; if (d) tb.append(h("div", { id: "cer-status-" + k, class: "note " + (d.prev.ok ? "okc" : "badc") }, d.prev.ok ? `✓ ${this.real ? "国道1号" : CER_LABEL[k]}: 約${d.prev.lengthKm}km／終点: ${d.prev.endName}${nat?.ferries?.length ? `／フェリー${nat.ferries.length}本` : ""}${nat?.lakes?.length ? `／湖は${nat.lakes.map((l) => (l.kind === "bridge" ? "橋" : "湖上フェリー")).join("・")}で横断` : ""}${nat?.through?.length ? `／経由: ${nat.through.map((n) => n.replace(/市$/, "")).join("・")}` : ""}${nat?.spurs?.length ? `／取付路${nat.spurs.length}本` : ""}${nat?.reversed ? "／副首都側から描いた線を向き直しました" : ""}` : `✗ ${d.prev.reasons[0] ?? "経路を作れません"}`)); }
       const ak = this.tool === "cer-kokudo1" ? "kokudo1" : this.tool === "cer-fudo1" ? "fudo1" : null;
       // one compact row: [stroke count] undo / redo / restart / go -- the panel must stay short, or it covers the map being drawn on
       const dd = ak ? this.cerDraft[ak] : undefined, row = h("div", { class: "grp", id: "cer-controls" });
