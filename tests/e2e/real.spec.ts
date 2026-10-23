@@ -639,7 +639,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   const groups = await page.evaluate(() => [...document.querySelectorAll("#pref-picker .pp-region")].map((r) => ({ l: r.textContent, ids: [...(r.nextElementSibling as HTMLElement).querySelectorAll("button")].map((o) => o.id.replace("pref-opt-", "")) })));
   expect(groups.map((g) => g.l)).toEqual(["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州", "沖縄"]);
   expect(groups.flatMap((g) => g.ids)).toHaveLength(49); expect(groups[0].ids.sort()).toEqual(["HK-HAK", "HK-NEM", "HK-SAP"]); expect(groups[3].ids).toContain("JP-15"); expect(groups[5].ids).toContain("JP-31");
-  await openSetup(page); expect(await page.locator("#era-list .era-row").first().textContent()).toMatch(/神化|元化|神和|同和|継明|順明|明保|寛安|元安|立成|定業|光文|章明|協中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
+  await page.click("#pref-back"); await openSetup(page); expect(await page.locator("#era-list .era-row").first().textContent()).toMatch(/神化|元化|神和|同和|継明|順明|明保|寛安|元安|立成|定業|光文|章明|協中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
   await seatSelect(page, "capital", "HK-NEM"); expect(await app(page, "a => a.s.capital")).toBe("HK-NEM"); await seatSelect(page, "capital", "JP-13");
   await closeSheet(page);
   // 北 removes the real Hida range, and only that; one Undo brings it back
