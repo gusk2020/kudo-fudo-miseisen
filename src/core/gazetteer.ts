@@ -17,8 +17,8 @@ function places(): Place[] {
 export const cityNameOf = (name: string): string => (name.endsWith("市") ? name : name + "市");
 export interface NearName { name: string; place: string; km: number; kind: Place["kind"] }
 /** The nearest known place to a point (an island counts from its shore, so a point on an island is always that island's). */
-export function nearestPlace(p: Vec): NearName | null {
+export function nearestPlace(p: Vec, skip?: Set<string>): NearName | null {
   let best: Place | null = null, bd = Infinity;
-  for (const q of places()) { const d = Math.max(0, Math.hypot(q.pos[0] - p[0], q.pos[1] - p[1]) - q.reach); if (d < bd || (d === bd && best && q.kind === "islet")) { bd = d; best = q; } }
+  for (const q of places()) { if (skip?.has(q.name)) continue; const d = Math.max(0, Math.hypot(q.pos[0] - p[0], q.pos[1] - p[1]) - q.reach); if (d < bd || (d === bd && best && q.kind === "islet")) { bd = d; best = q; } }
   return best ? { name: cityNameOf(best.name), place: best.name, km: Math.round(bd * 10) / 10, kind: best.kind } : null;
 }

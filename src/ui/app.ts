@@ -152,7 +152,7 @@ export class App {
   }
   render() { if (!isRidgeTool(this.tool) && this.bgBeforeRidge) { const b0 = this.bgBeforeRidge; this.bgBeforeRidge = null; this.bg = b0; this.r.setBg(b0); }   // leaving the range tools by any route puts the map back
     if (this.real && this.s.bg && this.s.bg !== this.bg && !this.bgBeforeRidge) { this.bg = this.s.bg; this.r.setBg(this.bg); }   // a loaded game brings its own map choice
-    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.world?.islets; this.r.islets = this.real && wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -457,13 +457,17 @@ export class App {
   tapSeat(w: Vec): boolean {
     const world = this.ensureWorld(), which = this.setupTab; if (!world || !which || which === "era") return false;
     // Stage 20: the hit area is a finger wide (about 24 px) whatever the zoom; the nearest island within it is the one chosen, so a speck of an island can be hit and two close ones are told apart
-    const hitKm = 24 / Math.max(0.02, this.r.view.zoom); let pt: Vec = [w[0], w[1]], k = world.cellOf(pt), isl: { name: string; claim?: string } | undefined;
-    let bd = Infinity; for (const s of world.islets ?? []) { const d = Math.max(0, Math.hypot(s.pos[0] - w[0], s.pos[1] - w[1]) - Math.max(s.islet.len, s.islet.wid) / 2); if (d <= hitKm && d < bd) { bd = d; isl = { name: s.islet.name, claim: s.islet.claim }; if (k < 0 || world.t.land[k] !== 1 || world.t.island[k] !== s.island) { pt = [s.pos[0], s.pos[1]]; k = world.cellOf(pt); } } }
+    let k = world.cellOf(w); const zoom = Math.max(0.02, this.r.view.zoom), hitKm = 24 / zoom, onLand = k >= 0 && world.t.land[k] === 1; let pt: Vec = [w[0], w[1]], isl: { name: string; claim?: string } | undefined, bd = Infinity;
+    for (const s of world.islets ?? []) {
+      const d = Math.max(0, Math.hypot(s.pos[0] - w[0], s.pos[1] - w[1]) - Math.max(s.islet.len, s.islet.wid) / 2), own = onLand && s.cells.includes(k);
+      if ((own || d <= (onLand ? 8 : 24) / zoom) && (own ? -1 : d) < bd) { bd = own ? -1 : d; isl = { name: s.islet.name, claim: s.islet.claim }; if (!own) { pt = [s.pos[0], s.pos[1]]; k = world.cellOf(pt); } }
+    }
     if (!isl && (k < 0 || world.t.land[k] !== 1)) { let best = -1, bk = Infinity; const i0 = k % world.nx, j0 = (k / world.nx) | 0, r = Math.min(6, Math.ceil(hitKm / world.cell)); if (k >= 0) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const a = i0 + di, b = j0 + dj; if (a < 0 || b < 0 || a >= world.nx || b >= world.ny) continue; const q = b * world.nx + a; if (world.t.land[q] !== 1 || !world.prefOf(q)) continue; const c = world.cellPos(q), d = Math.hypot(c[0] - w[0], c[1] - w[1]); if (d <= hitKm && d < bk) { bk = d; best = q; } } if (best >= 0) { k = best; pt = world.cellPos(best); } }
     if (k < 0 || world.t.land[k] !== 1 || !world.prefOf(k)) { this.toast("陸地の点をタップしてください(海や対象外の場所は選べません)"); return false; }
     const pref = world.prefOf(k)!, cur = seatsOf(this.s);
     if ((which === "capital" && pref === cur.sub) || (which === "sub" && pref === cur.capital)) { this.toast("首都と副首都は別の府県にしてください"); return false; }
-    const np = nearestPlace(pt);
+    const inCity = world.cities.filter((c) => c.island === world.t.island[k] && Math.hypot(c.pos[0] - pt[0], c.pos[1] - pt[1]) <= 25).sort((p, q) => Math.hypot(p.pos[0] - pt[0], p.pos[1] - pt[1]) - Math.hypot(q.pos[0] - pt[0], q.pos[1] - pt[1]))[0];   // (a city of the game within 25 km is the place: the 県庁所在地 becomes that city)
+    const np = inCity ? { name: inCity.name, place: inCity.name, km: Math.round(Math.hypot(inCity.pos[0] - pt[0], inCity.pos[1] - pt[1]) * 10) / 10 } : nearestPlace(pt, new Set(world.cities.map((c) => c.name)));
     this.seatPick = { w: [pt[0], pt[1]], pref, ...(np ? { name: np.name, near: np.place, km: np.km } : {}), ...(isl ? { islet: isl.name, ...(isl.claim ? { claim: isl.claim } : {}) } : {}) }; this.r.seatPending = this.seatPick.w; this.buildToolbar(); this.render(); return true;
   }
   confirmSeatPick(): boolean {

@@ -10,7 +10,7 @@ import type { WCity } from "./world";
 export type SeatRole = "capital" | "sub" | "palace";
 export interface SeatMove { pref: string; pos: Vec; by: SeatRole }
 export interface MoveResult { pref: string; by: SeatRole; cityId: string; name: string; former: string | null; near: string; km: number; adopted: boolean }
-export const PEOPLE_PER_KM2 = 2500, MIN_CITY_POP = 2000, ADOPT_KM = 12, NEW_SHARE = 0.01, NEW_POP_MIN = 300, NEW_POP_MAX = 20000;
+export const PEOPLE_PER_KM2 = 2500, MIN_CITY_POP = 2000, ADOPT_KM = 25, NEW_SHARE = 0.01, NEW_POP_MIN = 300, NEW_POP_MAX = 20000;
 
 /** The moves a game's seat settings amount to: one per prefecture (a capital or sub-capital point first, then a palace point), only for points the player put on the map. */
 export function movesOfSettings(seats: { capital: string; sub: string; palace: string }, pos: { capitalPos?: Vec; subPos?: Vec; palacePos?: Vec }): SeatMove[] {
@@ -25,8 +25,8 @@ export function applySeatMoves(cities: WCity[], t: TerrainResult, cellOf: (p: Ve
   const res: MoveResult[] = [];
   for (const m of moves) {
     const old = cities.find((c) => c.kind === "capital" && c.pref === m.pref); let k = cellOf(m.pos); if (k < 0 || t.land[k] !== 1) { k = nearestLand(t, cellOf, m.pos); if (k < 0) continue; }
-    const np = nearestPlace(m.pos);
-    if (old && old.cell === k) { res.push({ pref: m.pref, by: m.by, cityId: old.id, name: old.name, former: null, near: np?.place ?? old.name, km: np?.km ?? 0, adopted: true }); continue; }
+    const taken = new Set(cities.map((c) => c.name)), np = nearestPlace(m.pos, taken), np0 = nearestPlace(m.pos);   // (a name is never given to two cities: the nearest place not already a city of the game)
+    if (old && (old.cell === k || (old.island === t.island[k] && Math.hypot(old.pos[0] - m.pos[0], old.pos[1] - m.pos[1]) <= ADOPT_KM))) { res.push({ pref: m.pref, by: m.by, cityId: old.id, name: old.name, former: null, near: np0?.place ?? old.name, km: np0?.km ?? 0, adopted: true }); continue; }
     // a city or town of the data within ADOPT_KM of the point (on the same island) is the 県庁所在地 now: the point is in it
     const adopt = cities.filter((c) => c !== old && c.island === t.island[k] && Math.hypot(c.pos[0] - m.pos[0], c.pos[1] - m.pos[1]) <= ADOPT_KM).sort((a, b) => Math.hypot(a.pos[0] - m.pos[0], a.pos[1] - m.pos[1]) - Math.hypot(b.pos[0] - m.pos[0], b.pos[1] - m.pos[1]))[0];
     if (adopt && adopt.kind !== "capital") {

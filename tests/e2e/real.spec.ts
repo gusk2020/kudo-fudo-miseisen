@@ -741,3 +741,44 @@ test("Stage 12: 地図帳に都市の栄枯盛衰(伸びた・縮んだ都市と
   await page.selectOption("#eco-city", { index: 3 }); expect(await page.locator("#eco-chart polyline").count()).toBe(1);
   expect(errs).toEqual([]);
 });
+
+test("Stage 20: 離島(硫黄島)を地図で首都に選べる。最寄りの地名+市、旧東京は残り、国道1号が島まで届き、保存・再読み込みで残る", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await openTab(page, "capital"); await page.click("#seat-mode-map");
+  const spot = await app(page, "a => a.world.islets.find((s) => s.islet.name === '硫黄島').pos") as [number, number];
+  await page.evaluate((p) => { const a = (window as any).__kfm, H = window.innerHeight; a.r.setView({ cx: p[0], cy: p[1] + (200 - H / 2) / 0.6, zoom: 0.6 }, true); }, spot);
+  const [sx, sy] = await screenOf(page, [spot[0] + 4, spot[1] - 3]);   // a little off the island: the finger-wide hit area still picks it
+  await page.mouse.click(sx, sy); expect(await app(page, "a => a.seatPick && a.seatPick.islet")).toBe("硫黄島"); expect(await app(page, "a => a.seatPick.pref")).toBe("JP-13");
+  expect(await page.textContent("#seat-map-hint")).toContain("硫黄島市"); expect(await app(page, "a => a.s.capital")).toBeUndefined();   // proposed only
+  await page.click("#seat-confirm"); expect(await app(page, "a => a.s.capital")).toBe("JP-13");
+  expect(await app(page, "a => a.world.cities.filter((c) => c.pref === 'JP-13' && c.kind === 'capital').map((c) => c.name)")).toEqual(["硫黄島市"]);   // one 県庁所在地
+  expect(await app(page, "a => { const c = a.world.cityById.get('C-JP-13'); return c.kind + ':' + !!c.former; }")).toBe("city:true");   // the old one stays an ordinary city
+  await closeSetup(page); await editor(page, false);
+  expect(await page.textContent("#tool-cer-kokudo1")).toContain("硫黄島");
+  await page.click("#tool-cer-kokudo1");
+  const pts = await fitPts(page, ["硫黄島市", "東京", "大阪市"]);
+  for (const [x, y] of pts) { const hit = await page.evaluate(([px, py]) => (document.elementFromPoint(px, py) as HTMLElement)?.tagName ?? "", [x, y]); expect(hit, `(${x},${y}) is on the map`).toBe("CANVAS"); }
+  await stroke(page, pts);
+  expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true);
+  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
+  expect(await app(page, "a => a.sim.isl20 === true && a.sim.moves20.length === 1 && a.sim.moves20[0].pref === 'JP-13'")).toBe(true);
+  expect(await app(page, "a => { const c = a.world.cities.find((x) => x.name === '硫黄島市'); return a.sim.cities[c.id].pop <= c.capPop && a.sim.cities['C-JP-13'].pop > 100000; }")).toBe(true);   // the island city holds only what the island can; Tokyo still has its people
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.sim.moves20[0].pref === 'JP-13' && a.world.cities.some((c) => c.name === '硫黄島市' && c.kind === 'capital')")).toBe(true);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 20: 尖閣・竹島・北方四島・硫黄島はどれも地図で選べ、領有の事実が表示され、島は表示される", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await openTab(page, "palace"); await page.click("#seat-mode-map");
+  expect(await app(page, "a => a.r.islets.length")).toBeGreaterThan(80);
+  for (const [name, pref, claim] of [["魚釣島", "JP-47", "中国"], ["竹島", "JP-32", "韓国"], ["択捉島", "HK-NEM", "ロシア"], ["色丹島", "HK-NEM", "ロシア"], ["硫黄島", "JP-13", ""]] as const) {
+    const p = await app(page, `a => a.world.islets.find((s) => s.islet.name === '${name}').pos`) as [number, number];
+    await page.evaluate((q) => { const a = (window as any).__kfm, H = window.innerHeight; a.r.setView({ cx: q[0], cy: q[1] + (200 - H / 2) / 1.5, zoom: 1.5 }, true); }, p);
+    const [x, y] = await screenOf(page, p); await page.mouse.click(x, y);
+    expect(await app(page, "a => a.seatPick && a.seatPick.islet"), name).toBe(name); expect(await app(page, "a => a.seatPick.pref"), name).toBe(pref);
+    if (claim) expect(await page.textContent("#seat-map-hint"), name).toContain(claim);
+    await page.click("#seat-cancel");
+  }
+  expect(errs).toEqual([]);
+});
