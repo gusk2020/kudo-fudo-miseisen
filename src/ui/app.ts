@@ -163,9 +163,10 @@ export class App {
     // Saves only between months. While the clock is busy, wait for a gap (one retry timer at a time, never a growing pile of them);
     // if none comes for 30 s (×20 never goes idle), finish the month in progress and save anyway so progress is never lost.
     if (this.runner && !this.runner.idle) {
-      if (!force && performance.now() - this.lastSaved < 30000) { if (!this.persistRetry) this.persistRetry = window.setTimeout(() => { this.persistRetry = 0; void this.persist(); }, 120); return Promise.resolve(false); }
+      if (!force) { if (performance.now() - this.lastSaved >= 30000) this.runner.hold = true; if (!this.persistRetry) this.persistRetry = window.setTimeout(() => { this.persistRetry = 0; void this.persist(); }, 120); return Promise.resolve(false); }   // Stage 22: past 30 s the clock finishes its month in its own slices and waits (finishing it here in one go held the screen for seconds when that month was a January)
       this.runner.settle();
     }
+    if (this.runner) this.runner.hold = false;
     this.lastSaved = performance.now();
     if (!this.prevCopied) { this.prevCopied = true; void getRaw(this.saveKey).then((raw) => { if (raw) { try { return putRaw(this.saveKey + ":prev", JSON.parse(raw)); } catch { return putRaw(this.saveKey + ":prev", { raw }); } } }).catch(() => { /* ignore */ }); }
     if (this.saveLocked && !this.sim && !this.pendingSim) return Promise.resolve(false);
@@ -462,11 +463,12 @@ export class App {
   tapSeat(w: Vec): boolean {
     const world = this.ensureWorld(), which = this.e22Pick ?? this.setupTab; if (!world || !which || which === "era") return false;
     // Stage 20: the hit area is a finger wide (about 24 px) whatever the zoom; the nearest island within it is the one chosen, so a speck of an island can be hit and two close ones are told apart
-    let k = world.cellOf(w); const zoom = Math.max(0.02, this.r.view.zoom), hitKm = 24 / zoom, onLand = k >= 0 && world.t.land[k] === 1; let pt: Vec = [w[0], w[1]], isl: { name: string; claim?: string } | undefined, bd = Infinity;
+    let k = world.cellOf(w); const zoom = Math.max(0.02, this.r.view.zoom), hitKm = 24 / zoom, onLand = k >= 0 && world.t.land[k] === 1; let pt: Vec = [w[0], w[1]], isl: { name: string; claim?: string } | undefined, bd = Infinity, offIsl = false;
     for (const s of world.islets ?? []) {
       const d = Math.max(0, Math.hypot(s.pos[0] - w[0], s.pos[1] - w[1]) - Math.max(s.islet.len, s.islet.wid) / 2), own = onLand && s.cells.includes(k);
-      if ((own || d <= (onLand ? 8 : 24) / zoom) && (own ? -1 : d) < bd) { bd = own ? -1 : d; isl = { name: s.islet.name, claim: s.islet.claim }; if (!own) { pt = [s.pos[0], s.pos[1]]; k = world.cellOf(pt); } }
+      if ((own || d <= (onLand ? 8 : 24) / zoom) && (own ? -1 : d) < bd) { bd = own ? -1 : d; isl = { name: s.islet.name, claim: s.islet.claim }; offIsl = !!s.offGrid; if (!own) { pt = [s.pos[0], s.pos[1]]; k = world.cellOf(pt); } }
     }
+    if (isl && offIsl) { this.toast(`${isl.name}には定住する人がいないため、県庁所在地には選べません`); return false; }   // Stage 22 (drawn on the map, not part of the simulated land)
     if (!isl && (k < 0 || world.t.land[k] !== 1)) { let best = -1, bk = Infinity; const i0 = k % world.nx, j0 = (k / world.nx) | 0, r = Math.min(6, Math.ceil(hitKm / world.cell)); if (k >= 0) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const a = i0 + di, b = j0 + dj; if (a < 0 || b < 0 || a >= world.nx || b >= world.ny) continue; const q = b * world.nx + a; if (world.t.land[q] !== 1 || !world.prefOf(q)) continue; const c = world.cellPos(q), d = Math.hypot(c[0] - w[0], c[1] - w[1]); if (d <= hitKm && d < bk) { bk = d; best = q; } } if (best >= 0) { k = best; pt = world.cellPos(best); } }
     if (k < 0 || world.t.land[k] !== 1 || !world.prefOf(k)) { this.toast("陸地の点をタップしてください(海や対象外の場所は選べません)"); return false; }
     const pref = world.prefOf(k)!, cur = this.e22Pick && this.e22 ? { capital: this.e22.capital!, sub: this.e22.sub!, palace: this.e22.palace! } : seatsOf(this.s);

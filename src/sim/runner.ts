@@ -9,6 +9,8 @@ import type { World } from "./world";
  */
 export class SimRunner {
   private gen: Generator<void> | null = null; private m0 = 0; pending = 0; dropped = 0;
+  /** Stage 22: finish the month in progress (still in slices) but start no new one: a save is waiting for the gap between months. */
+  hold = false;
   constructor(public sim: SimState, public w: World) {}
   /** Ask for more months. Anything beyond `cap` is dropped (the clock falls behind instead of building a backlog). */
   request(n: number, cap = 24) { const want = this.pending + n; if (want > cap) { this.dropped += want - cap; this.pending = cap; } else this.pending = want; }
@@ -17,7 +19,7 @@ export class SimRunner {
   pump(budgetMs: number): number {
     const t0 = performance.now(); let done = 0;
     while (performance.now() - t0 < budgetMs) {
-      if (!this.gen) { if (this.pending <= 0) break; if (this.sim.policy?.pending || this.sim.kaigen?.pending) { this.pending = 0; break; } this.pending--; this.m0 = this.sim.month; this.gen = stepMonthGen(this.sim, this.w); }
+      if (!this.gen) { if (this.hold || this.pending <= 0) break; if (this.sim.policy?.pending || this.sim.kaigen?.pending) { this.pending = 0; break; } this.pending--; this.m0 = this.sim.month; this.gen = stepMonthGen(this.sim, this.w); }
       if (this.gen.next().done) { this.gen = null; if (this.sim.month !== this.m0) done++; else { this.pending = 0; break; } }   // a month that did not advance was blocked at a policy window
     }
     return done;

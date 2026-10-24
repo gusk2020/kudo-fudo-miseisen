@@ -3,7 +3,7 @@
  * Every change that matters appends an event with its cause and, for roads, an entry in the edge's own history.
  * All demand, population and budget figures are SYNTHETIC (a toy economy), not statistics.
  */
-import { isIslandRoute, isOcean, reviewSea22 } from "./sea22";
+import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
 import { apply2200, due2200, open2200 } from "./event2200";
 import { enforceCaps } from "./cap20";
 import type { SeatMove } from "./seatmove20";
@@ -193,7 +193,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   if (sim.tech?.wk !== undefined && y > sim.startYear && y < sim.startYear + BAY_YEARS) { for (let i = 0; i < BAY_PER_YEAR; i++) { if (!seedBayFerries(sim, w, 1)) break; yield; } }   // (one ferry per slice: each access road is a pass over the whole network)
   const an = yield* analyzeGen(sim, w); yield;
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
-  updatePopulation(sim, w, an, y); if (sim.econ) { sim.metro = computeMetros(sim, w, an, y, sim.metro); yield; } updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); if (sim.sea22) reviewSea22(sim, w); yield;
+  updatePopulation(sim, w, an, y); if (sim.econ) { sim.metro = computeMetros(sim, w, an, y, sim.metro); yield; } updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield; if (sim.sea22) yield* reviewSea22Gen(sim, w); yield;
   yield* evaluateEdgesGen(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);

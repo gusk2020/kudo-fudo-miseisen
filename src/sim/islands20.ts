@@ -7,7 +7,7 @@ import type { TerrainResult } from "../core/terrain";
 import type { Vec } from "../core/types";
 
 /** One island as the world holds it. `cells` are the grid cells it covers (empty = the island was already on the grid as land). */
-export interface IsletCell { islet: Islet; pos: Vec; cells: number[]; cell: number; island: number; existing: boolean; areaKm2: number }
+export interface IsletCell { islet: Islet; pos: Vec; cells: number[]; cell: number; island: number; existing: boolean; areaKm2: number; offGrid?: true }
 export const ISLET_ISLAND_BASE = 16;   // island numbers 1.. are the four big islands (+ spare); islets take BASE + index
 export const ISLET_PAD_CELLS = 3;
 
@@ -16,7 +16,9 @@ export function withIslets(t: TerrainResult, version: 1 | 2 = 1): TerrainResult 
   if (t.islets) return t;
   const LIST = version === 2 ? ISLETS : STAGE20_ISLETS, { x0, y0, cell, nx, ny } = t.grid, pos = LIST.map(version === 2 ? isletPos2 : isletPos);
   let bx0 = x0, by0 = y0, bx1 = x0 + nx * cell, by1 = y0 + ny * cell;
-  for (const p of pos) { bx0 = Math.min(bx0, p[0] - ISLET_PAD_CELLS * cell); by0 = Math.min(by0, p[1] - ISLET_PAD_CELLS * cell); bx1 = Math.max(bx1, p[0] + ISLET_PAD_CELLS * cell); by1 = Math.max(by1, p[1] + ISLET_PAD_CELLS * cell); }
+  // Stage 22: an island nobody lives on, far outside the mainland's grid (南鳥島, 沖ノ鳥島), is drawn and listed but not simulated: widening the grid to reach it made every pass over the cells half as long again, for two specks no route serves
+  const off = LIST.map((s, n) => version === 2 && !(s.pop ?? 0) && (pos[n][0] < bx0 || pos[n][1] < by0 || pos[n][0] > bx1 || pos[n][1] > by1));
+  for (const p of pos.filter((_, n) => !off[n])) { bx0 = Math.min(bx0, p[0] - ISLET_PAD_CELLS * cell); by0 = Math.min(by0, p[1] - ISLET_PAD_CELLS * cell); bx1 = Math.max(bx1, p[0] + ISLET_PAD_CELLS * cell); by1 = Math.max(by1, p[1] + ISLET_PAD_CELLS * cell); }
   const sx = Math.round((x0 - (x0 + Math.floor((bx0 - x0) / cell) * cell)) / cell), sy = Math.round((y0 - (y0 + Math.floor((by0 - y0) / cell) * cell)) / cell);   // columns / rows added left and below
   const nx2 = nx + sx + Math.max(0, Math.ceil((bx1 - (x0 + nx * cell)) / cell)), ny2 = ny + sy + Math.max(0, Math.ceil((by1 - (y0 + ny * cell)) / cell)), X0 = x0 - sx * cell, Y0 = y0 - sy * cell, N2 = nx2 * ny2;
   const land = new Uint8Array(N2), island = new Uint8Array(N2), pref = new Uint8Array(N2), plains = new Uint8Array(N2), elev = new Float32Array(N2).fill(-200), ridge = new Float32Array(N2), barrier = new Float32Array(N2);
@@ -25,6 +27,7 @@ export function withIslets(t: TerrainResult, version: 1 | 2 = 1): TerrainResult 
   const out: IsletCell[] = [];
   LIST.forEach((s, n) => {
     const p = pos[n], c0 = at(p), id = ISLET_ISLAND_BASE + n, pi = Math.max(0, t.prefOrder.indexOf(s.pref) + 1);
+    if (off[n]) { out.push({ islet: s, pos: p, cells: [], cell: -1, island: id, existing: false, areaKm2: s.area, offGrid: true }); return; }
     // already on the grid as land (a big island the grid holds): nothing to add, the island is just named
     if (c0 >= 0 && land[c0] === 1) { out.push({ islet: s, pos: p, cells: [], cell: c0, island: island[c0], existing: true, areaKm2: s.area }); return; }
     const a = Math.max(s.len, 0.5) / 2, b = Math.max(s.wid, 0.5) / 2, th = (s.bear * Math.PI) / 180, ux = Math.sin(th), uy = Math.cos(th), reach = Math.max(a, b) / cell + 1;

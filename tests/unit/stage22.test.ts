@@ -66,7 +66,9 @@ describe("Stage 22: islands drawn and placed by their real outlines", () => {
   const W2 = realWorld(true, true, 2).w, W1 = realWorld(true, true, true).w;
   it("almost every island has an outline from 地球地図日本; 南鳥島 and 沖ノ鳥島 are there; a Stage 20 world is unchanged", () => {
     const shaped = ISLETS.filter((s) => s.shape && s.shape.length >= 3).length; expect(shaped / ISLETS.length).toBeGreaterThan(0.95);
-    for (const n of ["南鳥島", "沖ノ鳥島"]) { const s = W2.islets!.find((x) => x.islet.name === n)!; expect(s, n).toBeTruthy(); expect(W2.t.land[s.cell]).toBe(1); }
+    for (const n of ["南鳥島", "沖ノ鳥島"]) { const s = W2.islets!.find((x) => x.islet.name === n)!; expect(s, n).toBeTruthy(); expect(s.offGrid, n).toBe(true); expect(s.islet.shape!.length, n).toBeGreaterThanOrEqual(3); expect(s.islet.pref).toBe("JP-13"); }   // (drawn and listed; nobody lives there, so not on the grid)
+    expect(W2.N).toBeLessThan(W1.N * 1.05);   // the two far atolls do not widen the grid
+    expect(W2.islets!.filter((x) => !x.offGrid && !x.existing).every((x) => x.cells.length > 0 && W2.t.land[x.cell] === 1)).toBe(true);
     expect(W1.islets!.length).toBe(STAGE20_ISLETS.length); expect(W1.t.isletVersion).toBe(1); expect(W2.t.isletVersion).toBe(2);
   });
   it("the cells of an island lie inside (or at) its outline, and the outline is not a circle", () => {
