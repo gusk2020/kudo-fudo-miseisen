@@ -834,3 +834,30 @@ test("Stage 22: 府県と元号は黒い縦1列の一覧(○/●)。選んでも
   await page.click("#rw-close"); expect(await page.locator("#era-list").count()).toBe(0);
   expect(errs).toEqual([]);
 });
+
+test("Stage 22: 2200年の遷都・改元・復興方針を選び、国道0号を逆向きに描いて開通。保存しても再発火しない", async ({ page }) => {
+  test.setTimeout(240000);
+  const errs = watchErrors(page); await startReal(page);
+  // jump the clock to the eve of 2200 (the event fires at the first year boundary on or after it)
+  await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (2200 - s.startYear) * 12; s.kaigen.next = 2230; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "priority"; s.speed = 20; });
+  await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 });
+  await page.waitForSelector("#e22-box", { timeout: 20000 });
+  expect(await page.locator("[id^=e22-era-]").count()).toBe(5);
+  await page.click("#e22-list-capital"); await page.click("#pref-opt-JP-40"); expect(await page.isVisible("#pref-picker")).toBe(true); await page.click("#rw-close");
+  await page.click("#e22-list-sub"); await page.click("#pref-opt-JP-13"); await page.click("#rw-close");
+  await page.click("#e22-era-1"); await page.click("#e22-stance-kairo"); await page.click("#e22-coast-neutral"); await page.click("#e22-focus-disperse");
+  expect(await page.locator("#e22-stance-kairo .rw-dot").textContent()).toBe("●");
+  await page.click("#e22-decide");
+  expect(await app(page, "a => [a.sim.e2200.state, a.sim.capital, a.sim.subCapital, a.sim.kaigen.eras[a.sim.kaigen.eras.length - 1].name, a.sim.kaigen.recon.coast]")).toEqual(["road0", "JP-40", "JP-13", "興化", "neutral"]);
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; });
+  // 国道0号: drawn from the new sub-capital (Tokyo) to the new capital (Fukuoka) -- the other way round
+  await page.click("#tool-cer-kokudo0");
+  const pts = await fitPts(page, ["東京", "大阪市", "福岡市"]); await stroke(page, pts);
+  expect(await app(page, "a => a.cerDraft.kokudo0.prev.ok")).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo0.prev.reversed === true")).toBe(true);
+  await page.click("#road0-go");
+  expect(await app(page, "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 0); return !!r && a.sim.e2200.state === 'done' && a.sim.e2200.road0.reusedKm > a.sim.e2200.road0.newKm; }")).toBe(true);
+  expect(await app(page, "a => Object.values(a.sim.routes).some((x) => x.grade === 'national' && x.number === 1 && x.active)")).toBe(true);
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => [a.sim.e2200.state, a.sim.kaigen.eras.filter((e) => e.name === '興化').length]")).toEqual(["done", 1]);
+  expect(errs).toEqual([]);
+});
