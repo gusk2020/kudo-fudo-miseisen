@@ -57,3 +57,40 @@ describe("Stage 22: the 2200 event", () => {
     expect(Object.values(sim.routes).find((r) => r.grade === "national" && r.number === 1)?.active).toBe(true);   // 国道1号 is not overwritten
   }, 300000);
 });
+
+import { ISLETS, STAGE20_ISLETS } from "../../src/core/islets";
+import { islandLinks, isIslandRoute, isOcean, oceanCandidates, seaKm, seaPolicy } from "../../src/sim/sea22";
+import { seaPath } from "../../src/render/seaPath";
+import { lonLatToReal } from "../../src/core/data";
+describe("Stage 22: islands drawn and placed by their real outlines", () => {
+  const W2 = realWorld(true, true, 2).w, W1 = realWorld(true, true, true).w;
+  it("almost every island has an outline from 地球地図日本; 南鳥島 and 沖ノ鳥島 are there; a Stage 20 world is unchanged", () => {
+    const shaped = ISLETS.filter((s) => s.shape && s.shape.length >= 3).length; expect(shaped / ISLETS.length).toBeGreaterThan(0.95);
+    for (const n of ["南鳥島", "沖ノ鳥島"]) { const s = W2.islets!.find((x) => x.islet.name === n)!; expect(s, n).toBeTruthy(); expect(W2.t.land[s.cell]).toBe(1); }
+    expect(W1.islets!.length).toBe(STAGE20_ISLETS.length); expect(W1.t.isletVersion).toBe(1); expect(W2.t.isletVersion).toBe(2);
+  });
+  it("the cells of an island lie inside (or at) its outline, and the outline is not a circle", () => {
+    const s = W2.islets!.find((x) => x.islet.name === "奄美大島")!; expect(s.cells.length).toBeGreaterThan(10);
+    const sh = s.islet.shape!.map(([lo, la]) => lonLatToReal(lo, la)); const xs = sh.map((p) => p[0]), ys = sh.map((p) => p[1]);
+    for (const k of s.cells) { const p = W2.cellPos(k); expect(p[0]).toBeGreaterThan(Math.min(...xs) - 5); expect(p[0]).toBeLessThan(Math.max(...xs) + 5); expect(p[1]).toBeGreaterThan(Math.min(...ys) - 5); expect(p[1]).toBeLessThan(Math.max(...ys) + 5); }
+    // an ellipse has all its points at one "radius" in its own frame; a real coast has many more vertices and an irregular radius
+    const c = [xs.reduce((a, b) => a + b) / xs.length, ys.reduce((a, b) => a + b) / ys.length], rs = sh.map((p) => Math.hypot(p[0] - c[0], p[1] - c[1])), m = rs.reduce((a, b) => a + b) / rs.length, sd = Math.sqrt(rs.reduce((a, b) => a + (b - m) ** 2, 0) / rs.length);
+    expect(sh.length).toBeGreaterThan(20); expect(sd / m).toBeGreaterThan(0.15);
+  });
+});
+describe("Stage 22: ocean and island routes", () => {
+  const { w } = realWorld(true, true, 2);
+  it("the distance is over the sea (Tokyo-Niigata goes round, not across Honshu); only domestic ports; routes follow the policy", () => {
+    const c = (n: string) => w.cities.find((x) => x.name === n)!; expect(seaKm(w, c("東京").cell, c("新潟市").cell)).toBeGreaterThan(1000);
+    expect(seaKm(w, c("東京").cell, c("大阪市").cell)).toBeLessThan(800);
+    for (const x of oceanCandidates(w)) { expect(x.a.pref).toBeTruthy(); expect(x.b.pref).toBeTruthy(); }
+    expect(seaPolicy("kairo").cap).toBeGreaterThan(seaPolicy("heisei").cap); expect(seaPolicy("kuuro").longPax).toBeLessThan(1);
+    const l = islandLinks(w); expect(l.length).toBeGreaterThan(60); for (const x of l) expect(x.pop).toBeGreaterThan(0);
+  });
+  it("a sea-minded game opens more ocean routes than a rail-minded one; inhabited islands get their lifelines; no route is drawn across land", () => {
+    const sea = run14({ seed: 5, until: 1975, islets: true, firstEra: 4 }), rail = run14({ seed: 5, until: 1975, islets: true, firstEra: 2 });
+    const n = (r: typeof sea) => Object.values(r.sim.edges).filter(isOcean).length; expect(sea.sim.kaigen!.eras[0].stance).toBe("kairo"); expect(n(sea)).toBeGreaterThan(n(rail));
+    const isl = Object.values(sea.sim.edges).filter(isIslandRoute); expect(isl.length).toBeGreaterThan(50); for (const e of isl) expect(e.state).toBe("open");
+    for (const e of [...Object.values(sea.sim.edges).filter(isOcean), ...isl.slice(0, 20)]) { const pts = seaPath(sea.w, sea.sim.nodes[e.a].cell, sea.sim.nodes[e.b].cell); let onLand = 0; for (const p of pts.slice(2, -2)) { const k = sea.w.cellOf(p); if (k >= 0 && sea.w.t.land[k] === 1) onLand++; } expect(onLand, e.facilityName).toBeLessThanOrEqual(1); }
+  }, 600000);
+});
