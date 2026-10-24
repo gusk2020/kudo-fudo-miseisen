@@ -1,3 +1,6 @@
+import { buildIndex } from "../sim/network";
+import { adoptWorld, apply2200, close2200, type Choice2200 } from "../sim/event2200";
+import { buildE2200, e22Draft } from "./e2200";
 import { nearestPlace } from "../core/gazetteer";
 import { movesOfSettings, type SeatMove } from "../sim/seatmove20";
 import { realToWorld, worldToPostOps, worldParts } from "../core/body";
@@ -17,7 +20,7 @@ import { clampOp } from "../core/warp";
 import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
-import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, snapKmFor, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
+import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, performRoad0, snapKmFor, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
 import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
 import { codesAt } from "../sim/ledger";
@@ -33,7 +36,7 @@ import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraDe
 import { closeRadio, showRadio } from "./radioWin";
 import { CAND_1945 } from "../sim/kaigen";
 
-type Tool = "view" | "seatpick" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "ridge-pick" | "cer-kokudo1" | "cer-fudo1" | "pick" | "why";
+type Tool = "view" | "seatpick" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "ridge-pick" | "cer-kokudo1" | "cer-fudo1" | "cer-kokudo0" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const pathLen = (p: Vec[]) => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; };
 export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -184,7 +187,7 @@ export class App {
   }
   renderRoads() {
     { const co = !this.sim || !!this.sim.pot17; if (this.r.capitalsOnly !== co) { this.r.capitalsOnly = co; this.render(); } }   // Stage 18: the base map names only the capitals in a Stage 17 game
-    const w0 = this.world, cerTool = this.tool === "cer-kokudo1" || this.tool === "cer-fudo1", cer = (["kokudo1", "fudo1"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ strokes: d!.strokes, handles: cerTool && this.cerMode !== "draw", sel: cerTool ? this.cerSel : null, pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok, segs: (d!.prev as NatPreview).segments && w0 ? (d!.prev as NatPreview).segments.map((sg) => ({ pts: sg.cells.map((c) => w0.cellPos(c)), ferry: sg.ferry })) : undefined }));
+    const w0 = this.world, cerTool = this.tool === "cer-kokudo1" || this.tool === "cer-fudo1" || this.tool === "cer-kokudo0", cer = (["kokudo1", "fudo1", "kokudo0"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ strokes: d!.strokes, handles: cerTool && this.cerMode !== "draw", sel: cerTool ? this.cerSel : null, pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok, segs: (d!.prev as NatPreview).segments && w0 ? (d!.prev as NatPreview).segments.map((sg) => ({ pts: sg.cells.map((c) => w0.cellPos(c)), ferry: sg.ferry })) : undefined }));
     if (this.cerLive) cer.push({ strokes: [this.cerLive], handles: false, sel: null, pts: this.cerLive, path: undefined as any, ok: true, segs: undefined });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
     if (onRoads) this.ensureWorld();
@@ -291,8 +294,8 @@ export class App {
   }
   toolBegin(w: Vec, sc: Vec): boolean {
     const t = this.tool, s = this.s;
-    if (t === "cer-kokudo1" || t === "cer-fudo1") {
-      const kind: CerKind = t === "cer-kokudo1" ? "kokudo1" : "fudo1", d = this.cerDraft[kind], tol = 26 / this.r.view.zoom;
+    if (t === "cer-kokudo1" || t === "cer-fudo1" || t === "cer-kokudo0") {
+      const kind = t.slice(4) as CerKind, d = this.cerDraft[kind], tol = 26 / this.r.view.zoom;
       if (this.cerMode === "move" && d) {   // grab the nearest control point of any stroke
         let best: { si: number; i: number } | null = null, bd = tol; d.strokes.forEach((st, si) => st.forEach((q, i) => { const dd = dist(q, w); if (dd < bd) { bd = dd; best = { si, i }; } }));
         if (!best) return false; const b = best as { si: number; i: number };
@@ -343,7 +346,7 @@ export class App {
   private onHonshu(w: Vec) { return pointInPolygon(w, worldParts("honshu", this.s.bodies.honshu)[0]); }
   toolMove(w: Vec, sc: Vec) {
     const g = this.grab; if (!g) return;
-    if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { if (dist(g.pts[g.pts.length - 1], w) >= 8 / this.r.view.zoom) { g.pts.push(w); this.cerLive = g.pts; this.renderRoads(); } return; }
+    if (g.t === "cer-kokudo1" || g.t === "cer-fudo1" || g.t === "cer-kokudo0") { if (dist(g.pts[g.pts.length - 1], w) >= 8 / this.r.view.zoom) { g.pts.push(w); this.cerLive = g.pts; this.renderRoads(); } return; }
     if (g.t === "cer-move") { g.strokes[g.si][g.i] = w; g.moved = true; const d = this.cerDraft[g.kind as CerKind]; if (d) { d.strokes = g.strokes; d.pts = d.strokes.flat(); } this.renderRoads(); return; }
     if (g.t === "pick" || g.t === "why" || g.t === "seatpick") { g.w = w; return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
@@ -366,7 +369,7 @@ export class App {
   toolEnd() {
     const g = this.grab; this.grab = null; if (!g) return;
     this.pending = null; this.cerLive = null;
-    if (g.t === "cer-kokudo1" || g.t === "cer-fudo1") { this.finishDraw(g.kind, g.pts); return; }
+    if (g.t === "cer-kokudo1" || g.t === "cer-fudo1" || g.t === "cer-kokudo0") { this.finishDraw(g.kind, g.pts); return; }
     if (g.t === "cer-move") { if (g.moved) this.cerCommit(g.kind, g.strokes, g.before); else this.renderRoads(); return; }
     if (g.t === "seatpick") { this.tapSeat(g.w); return; }
     if (g.t === "pick") { this.pickScenery(g.w); return; }
@@ -457,7 +460,7 @@ export class App {
   }
   /** A tap in the map-choice mode: only land, only inside a prefecture; the point is shown and waits for 決定 (a stray tap changes nothing). */
   tapSeat(w: Vec): boolean {
-    const world = this.ensureWorld(), which = this.setupTab; if (!world || !which || which === "era") return false;
+    const world = this.ensureWorld(), which = this.e22Pick ?? this.setupTab; if (!world || !which || which === "era") return false;
     // Stage 20: the hit area is a finger wide (about 24 px) whatever the zoom; the nearest island within it is the one chosen, so a speck of an island can be hit and two close ones are told apart
     let k = world.cellOf(w); const zoom = Math.max(0.02, this.r.view.zoom), hitKm = 24 / zoom, onLand = k >= 0 && world.t.land[k] === 1; let pt: Vec = [w[0], w[1]], isl: { name: string; claim?: string } | undefined, bd = Infinity;
     for (const s of world.islets ?? []) {
@@ -466,20 +469,51 @@ export class App {
     }
     if (!isl && (k < 0 || world.t.land[k] !== 1)) { let best = -1, bk = Infinity; const i0 = k % world.nx, j0 = (k / world.nx) | 0, r = Math.min(6, Math.ceil(hitKm / world.cell)); if (k >= 0) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const a = i0 + di, b = j0 + dj; if (a < 0 || b < 0 || a >= world.nx || b >= world.ny) continue; const q = b * world.nx + a; if (world.t.land[q] !== 1 || !world.prefOf(q)) continue; const c = world.cellPos(q), d = Math.hypot(c[0] - w[0], c[1] - w[1]); if (d <= hitKm && d < bk) { bk = d; best = q; } } if (best >= 0) { k = best; pt = world.cellPos(best); } }
     if (k < 0 || world.t.land[k] !== 1 || !world.prefOf(k)) { this.toast("陸地の点をタップしてください(海や対象外の場所は選べません)"); return false; }
-    const pref = world.prefOf(k)!, cur = seatsOf(this.s);
+    const pref = world.prefOf(k)!, cur = this.e22Pick && this.e22 ? { capital: this.e22.capital!, sub: this.e22.sub!, palace: this.e22.palace! } : seatsOf(this.s);
     if ((which === "capital" && pref === cur.sub) || (which === "sub" && pref === cur.capital)) { this.toast("首都と副首都は別の府県にしてください"); return false; }
     const inCity = world.cities.filter((c) => c.island === world.t.island[k] && Math.hypot(c.pos[0] - pt[0], c.pos[1] - pt[1]) <= 25).sort((p, q) => Math.hypot(p.pos[0] - pt[0], p.pos[1] - pt[1]) - Math.hypot(q.pos[0] - pt[0], q.pos[1] - pt[1]))[0];   // (a city of the game within 25 km is the place: the 県庁所在地 becomes that city)
     const np = inCity ? { name: inCity.name, place: inCity.name, km: Math.round(Math.hypot(inCity.pos[0] - pt[0], inCity.pos[1] - pt[1]) * 10) / 10 } : nearestPlace(pt, new Set(world.cities.map((c) => c.name)));
     this.seatPick = { w: [pt[0], pt[1]], pref, ...(np ? { name: np.name, near: np.place, km: np.km } : {}), ...(isl ? { islet: isl.name, ...(isl.claim ? { claim: isl.claim } : {}) } : {}) }; this.r.seatPending = this.seatPick.w; this.buildToolbar(); this.render(); return true;
   }
   confirmSeatPick(): boolean {
+    if (this.e22Pick && this.e22 && this.seatPick) {   // Stage 22: a seat of the 2200 event, kept in the event's draft until 決める
+      const p = this.seatPick, r = this.e22Pick, d = this.e22; if (r === "capital") { d.capital = p.pref; d.capitalPos = p.w; } else if (r === "sub") { d.sub = p.pref; d.subPos = p.w; } else { d.palace = p.pref; d.palacePos = p.w; }
+      this.endE22Map(); return true;
+    }
     const p = this.seatPick, which = this.setupTab; if (!p || !which || which === "era") return false;
     const ok = this.commitEdit((s) => { if (which === "capital") { s.capital = p.pref; s.capitalPos = p.w; } else if (which === "sub") { s.subCapital = p.pref; s.subPos = p.w; } else { s.palace = p.pref; s.palacePos = p.w; } });
     this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.seatMode = null;
     for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
   }
+  // ---- Stage 22: the 2200 event ----
+  e22: Choice2200 | null = null; e22Pick: "capital" | "sub" | "palace" | null = null;
+  openE22List(role: "capital" | "sub" | "palace") {
+    const d = this.e22; if (!d) return; const label = { capital: "首都", sub: "副首都", palace: "皇居" }[role], w = this.world;
+    const draw = () => showRadio({ id: "pref-picker", title: `2200年の${label}にする府県`, close: () => { closeRadio(); this.buildSheet(); },
+      groups: REGION_BLOCKS.map((blk) => ({ head: blk.name, items: blk.prefs.map((pid) => ({ id: "pref-opt-" + pid, label: seatPrefName(pid), sub: w ? seatCity(w, pid)?.name ?? "" : "", on: d[role] === pid && !(role === "capital" ? d.capitalPos : role === "sub" ? d.subPos : d.palacePos), disabled: (role === "capital" && pid === d.sub) || (role === "sub" && pid === d.capital), pick: () => { d[role] = pid; if (role === "capital") delete d.capitalPos; else if (role === "sub") delete d.subPos; else delete d.palacePos; draw(); } })) })),
+      foot: [{ id: "pref-map", label: "地図で選ぶ", act: () => { closeRadio(); this.startE22Map(role); } }] });
+    draw();
+  }
+  startE22Map(role: "capital" | "sub" | "palace") { this.e22Pick = role; this.seatPick = null; this.r.seatPending = null; this.tool = "seatpick"; this.sheet = null; this.buildSheet(); this.buildToolbar(); this.render(); }
+  endE22Map() { this.e22Pick = null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.sheet = "e2200"; this.buildSheet(); this.buildToolbar(); this.render(); }
+  /** 決める / 今のまま: applied to the game; a seat put on the map rebuilds the world with the new 県庁所在地 (people come from the old one, a little) and the runner goes on with it. */
+  decideE2200(keep: boolean) {
+    const sim = this.sim; if (!sim || sim.e2200?.state !== "pending") return; this.runner?.settle();
+    const moved = apply2200(sim, keep ? null : this.e22 ?? null); this.e22 = null; closeRadio();
+    if (moved) { const w = this.ensureWorld(); if (w) { adoptWorld(sim, w); if (this.runner) this.runner.w = w; } }
+    this.sheet = null; this.buildSheet(); if ((sim.e2200?.state as string) === "road0") this.toast("国道0号を描けます(新首都と新副首都を結ぶ。既存の道・旧道・廃道を優先して使います)");
+    this.renderRoads(); this.render(); this.buildUI(); void this.persist(true);
+  }
+  /** Stage 22: 開通の儀 of 国道0号 (or none). */
+  openRoad0(skip = false) {
+    const sim = this.sim, w = this.world; if (!sim || !w || sim.e2200?.state !== "road0") return;
+    if (skip) { close2200(sim); delete this.cerDraft.kokudo0; this.tool = "view"; this.buildUI(); this.renderRoads(); return; }
+    const d = this.cerDraft.kokudo0; if (!d?.prev.ok) return; this.runner?.settle();
+    const info = performRoad0(sim, w, d.prev as NatPreview); if (!info) { this.toast("国道0号を開通できませんでした"); return; }
+    close2200(sim, info); delete this.cerDraft.kokudo0; this.tool = "view"; this.toast(`国道0号が開通(転用${info.reusedKm}km・復旧${info.restoredKm}km・新設${info.newKm}km)`); this.renderRoads(); this.buildUI(); void this.persist(true);
+  }
   /** Stage 21: 戻る in the map choice: back to the prefecture list, nothing changed. */
-  backToSeatList() { this.seatPick = null; this.r.seatPending = null; this.seatMode = "list"; if (this.tool === "seatpick") this.tool = "view"; this.buildToolbar(); this.render(); }
+  backToSeatList() { if (this.e22Pick) { this.endE22Map(); return; } this.seatPick = null; this.r.seatPending = null; this.seatMode = "list"; if (this.tool === "seatpick") this.tool = "view"; this.buildToolbar(); this.render(); }
   cancelSeatPick() { this.seatPick = null; this.r.seatPending = null; this.buildToolbar(); this.render(); }
   /** Back to the prefecture's 県庁所在地 for one seat. */
   resetSeatPos(which: "capital" | "sub" | "palace") { this.commitEdit((s) => { if (which === "capital") delete s.capitalPos; else if (which === "sub") delete s.subPos; else delete s.palacePos; }); this.buildToolbar(); this.render(); }
@@ -520,6 +554,7 @@ export class App {
     if (!d.strokes.length && !d.past.length && !d.redo.length) { delete this.cerDraft[kind]; this.saveCer(); return; }
     if (!d.strokes.length) { d.pts = []; d.prev = { ok: false, reasons: ["線がありません。描いてください"], cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "" }; this.saveCer(); return; }
     d.pts = d.strokes.flat(); const st = seatsOf(this.s);
+    if (kind === "kokudo0" && this.sim) { d.prev = previewNational(w, d.pts, this.sim.capital, this.sim.subCapital, { snapKm: snapKmFor(this.r.view.zoom), roadside: true, roadCells: buildIndex(this.sim, "road").roadCells }); return; }   // Stage 22: along the roads that are there
     d.prev = this.real ? previewNational(w, d.pts, st.capital, st.sub, { snapKm: snapKmFor(this.r.view.zoom), roadside: true }) : previewCeremony(w, kind, d.pts, this.s.capital); this.saveCer();
   }
   cerUndo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.past.length) return; d.redo.push(d.strokes); d.strokes = d.past.pop()!; this.cerSel = null; this.replanCer(kind); this.renderRoads(); this.buildUI(); }
@@ -584,9 +619,10 @@ export class App {
   /** Real-time clock: only while this page is visible. Tab hidden or app closed = no simulation; return = capped catch-up. */
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
-    if (sim?.kaigen?.pending && this.sheet !== "kaigen") { this.sheet = "kaigen"; this.buildSheet(); this.toast("改元の時です。元号を選んでください(時間は止まっています)"); }
+    if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.toast("2200年: 遷都と復興の時です(時間は止まっています)"); }
+    else if (sim?.kaigen?.pending && this.sheet !== "kaigen") { this.sheet = "kaigen"; this.buildSheet(); this.toast("改元の時です。元号を選んでください(時間は止まっています)"); }
     else if (sim?.policy?.pending && this.sheet !== "policy") { this.sheet = "policy"; this.buildSheet(); this.toast("10年ごとの政策介入の機会です(時間は止まっています)"); }
-    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || this.viewYear !== null || sim.policy?.pending || sim.kaigen?.pending) { this.lastTick = now; return; }
+    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || this.viewYear !== null || sim.policy?.pending || sim.kaigen?.pending || sim.e2200?.state === "pending") { this.lastTick = now; return; }
     const dt = Math.min(250, Math.max(0, now - this.lastTick)); this.lastTick = now;
     this.acc += dt * sim.speed; const n = Math.floor(this.acc / MS_PER_MONTH_X1);
     if (n > 0) { this.acc -= n * MS_PER_MONTH_X1; run.request(n); }
@@ -682,8 +718,14 @@ export class App {
   eraOpen = false; private radioShown = false;
   buildToolbar() { this.radioShown = false; this.buildToolbarInner(); if (!this.radioShown) closeRadio(); }
   private buildToolbarInner() {
+    if (this.sim && this.e22Pick) {   // Stage 22: choosing a 2200 seat on the map (the same tap, hint and 決定 / 取り消し / 戻る as at the start)
+      const tb0 = $("toolbar"); tb0.replaceChildren(); const p = this.seatPick, label = { capital: "首都", sub: "副首都", palace: "皇居" }[this.e22Pick];
+      tb0.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」` : ""}${p.claim ? `／${p.claim}` : ""}(まだ決まっていません)` : `2200年の${label}にしたい場所を地図の陸地でタップしてください`),
+        h("div", { class: "grp" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => this.cancelSeatPick() }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.endE22Map() }, "戻る")));
+      return;
+    }
     const tb = $("toolbar"); tb.replaceChildren(); tb.classList.remove("compact"); const st = this.stepId;
-    const TOOL_NAMES: Record<Tool, string> = { seatpick: "首都・副首都・皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす", "ridge-pick": "山脈の区間を選ぶ" };
+    const TOOL_NAMES: Record<Tool, string> = { seatpick: "首都・副首都・皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", "cer-kokudo0": "国道0号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす", "ridge-pick": "山脈の区間を選ぶ" };
     if (this.store.locked && (st === "honshu" || st === "islands" || st === "features")) {
       tb.append(h("div", { id: "lock-banner", role: "status" }, "🔒 地図は最終確定済みのためロック中(閲覧のみ)"), h("button", { id: "unlock-map", type: "button", onclick: () => this.unlockMap() }, "ロックを解除して編集"));
       return;
@@ -813,6 +855,12 @@ export class App {
     const sp = h("div", { class: "grp" });
     for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n, () => this.setSpeed(n), "speed-" + n));
     tb.append(sp);
+    if (this.sim.e2200?.state === "road0") {   // Stage 22: 国道0号 -- drawn like 国道1号, either way round; opened by its own ceremony
+      const d0 = this.cerDraft.kokudo0, nat0 = d0?.prev as NatPreview | undefined, g0 = h("div", { class: "grp", id: "road0-row" });
+      g0.append(this.tbtn("国道0号を描く" + (d0 ? (d0.prev.ok ? " 済" : " 要修正") : ""), this.tool === "cer-kokudo0", () => this.setTool("cer-kokudo0"), "tool-cer-kokudo0"), h("button", { id: "road0-go", type: "button", disabled: d0?.prev.ok ? null : "", onclick: () => this.openRoad0(false) }, "開通の儀(国道0号)"), h("button", { id: "road0-skip", type: "button", onclick: () => this.openRoad0(true) }, "国道0号はつくらない"));
+      if (d0) g0.append(h("button", { id: "road0-undo", type: "button", disabled: !d0.past.length, onclick: () => this.cerUndo("kokudo0") }, "↶"), h("button", { id: "road0-restart", type: "button", onclick: () => this.cerRestart("kokudo0") }, "描き直す"));
+      tb.append(g0); if (d0) tb.append(h("div", { id: "cer-status-kokudo0", class: "note " + (d0.prev.ok ? "okc" : "badc") }, d0.prev.ok ? `✓ 国道0号: 約${d0.prev.lengthKm}km${nat0?.ferries?.length ? `／フェリー${nat0.ferries.length}本` : ""}${nat0?.through?.length ? `／経由: ${nat0.through.map((n) => n.replace(/市$/, "")).join("・")}` : ""}(既存の道・旧道・廃道を優先して転用)` : `✗ ${d0.prev.reasons[0] ?? "経路を作れません"}`));
+    }
     const g = h("div", { class: "grp" });
     if (this.real) {
       g.append(h("button", { id: "btn-legend", type: "button", onclick: () => this.openSheet("legend") }, "凡例"),
@@ -851,6 +899,7 @@ export class App {
     else if (this.sheet === "atlas") buildAtlas(this, body);
     else if (this.sheet === "policy") buildPolicy(this, body);
     else if (this.sheet === "kaigen") buildKaigen(this, body);
+    else if (this.sheet === "e2200") buildE2200(this, body);
   }
   private buildHistory(body: HTMLElement) {
     body.append(h("h3", {}, "年表(新しい順)"));

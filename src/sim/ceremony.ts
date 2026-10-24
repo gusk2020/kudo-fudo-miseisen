@@ -10,8 +10,8 @@ import { ERA, eraLabel, modeOf, type SimState } from "./types";
 import { ERAS, eraKeyOf } from "./eras";
 import { cellDistKm, mountainCost, pathfind, type World } from "./world";
 
-export type CerKind = "kokudo1" | "fudo1";
-export const CER_LABEL: Record<CerKind, string> = { kokudo1: "国道1号(東京府起点)", fudo1: "府道1号(東京府内)" };
+export type CerKind = "kokudo1" | "fudo1" | "kokudo0";
+export const CER_LABEL: Record<CerKind, string> = { kokudo1: "国道1号(東京府起点)", fudo1: "府道1号(東京府内)", kokudo0: "国道0号(2200年)" };
 export const TOKYO = "JP-13";
 export interface CerPreview { ok: boolean; reasons: string[]; cells: number[]; path: Vec[]; lengthKm: number; passes: string[]; maxGradePct: number; endName: string }
 
