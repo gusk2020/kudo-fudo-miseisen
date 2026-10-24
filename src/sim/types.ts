@@ -125,6 +125,7 @@ export interface SimState {
   lastTunnelException18?: number;   // Stage 18: the year the last sea/lake tunnel was allowed under 海路重視 / 空路重視 (policy18.ts)
   moves20?: { pref: string; pos: Vec; by: "capital" | "sub" | "palace"; since?: number }[];
   e2200?: import("./event2200").E2200;   // Stage 22: the 2200 event (遷都・改元・復興方針・国道0号). Absent = not yet (or an older game before 2200)   // Stage 20: the seat points that made a new 県庁所在地 (the world is built with them). Absent = the Stage 19 meaning of a seat point
+  isl22?: true;               // Stage 22: the islands are their real outlines (and 南鳥島・沖ノ鳥島 are on the map); absent with isl20 = the Stage 20 ellipses
   sea22?: true;               // Stage 22: domestic ocean routes and island lifelines (sea22.ts). Absent = the older sea model
   isl20?: true;               // Stage 20: the world carries the small and far islands (src/data/islets.json; the grid is widened). Absent = the older grid
   towns16?: string[];         // Stage 16: the provincial towns the game's world carries (ids; world.townIds): those of the seats' prefectures and the prefectures next to them. Absent = no towns (older games)

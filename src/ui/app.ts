@@ -156,7 +156,7 @@ export class App {
   }
   render() { if (!isRidgeTool(this.tool) && this.bgBeforeRidge) { const b0 = this.bgBeforeRidge; this.bgBeforeRidge = null; this.bg = b0; this.r.setBg(b0); }   // leaving the range tools by any route puts the map back
     if (this.real && this.s.bg && this.s.bg !== this.bg && !this.bgBeforeRidge) { this.bg = this.s.bg; this.r.setBg(this.bg); }   // a loaded game brings its own map choice
-    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = seatsOf(this.s), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = seatsOf(this.s), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim, shaped: !!x.islet.shape, tiny: (x.islet.shapeAreaKm2 ?? x.islet.area) < 1 })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -179,10 +179,10 @@ export class App {
   /** Stage 20: a running or loaded game keeps the grid it was started with (an older game has no islets); a game not yet started takes the islands. */
   /** Stage 20: the seat points that make a new 県庁所在地 (a game under way keeps the ones it started with; an older game has none). */
   private movesWanted(): SeatMove[] { const sim = this.sim ?? this.pendingSim; if (sim) return (sim.isl20 ? sim.moves20 : undefined) ?? []; return this.real ? movesOfSettings(seatsOf(this.s), this.s) : []; }
-  private isletsWanted(): boolean { const sim = this.sim ?? this.pendingSim; return sim ? !!sim.isl20 : !!this.real; }
+  private isletsWanted(): 0 | 1 | 2 { const sim = this.sim ?? this.pendingSim; return sim ? (sim.isl22 ? 2 : sim.isl20 ? 1 : 0) : this.real ? 2 : 0; }   // Stage 22: a new game gets the real outlines; a Stage 20 game keeps its ellipses
   ensureWorld(): World | null {
-    if (!this.terrain) return null; const ids = this.townIdsWanted(), isl = this.isletsWanted(), mv = this.movesWanted(), key = (ids ? ids.join(",") : "") + (isl ? "+isl" : "") + (mv.length ? "+" + JSON.stringify(mv) : "");
-    if (this.worldRef !== this.terrain || this.worldKey !== key) { this.world = buildWorld(this.terrain, this.s.seed, ids, isl, mv); this.world.barrier = !!this.real; this.worldRef = this.terrain; this.worldKey = key; }
+    if (!this.terrain) return null; const ids = this.townIdsWanted(), isl = this.isletsWanted(), mv = this.movesWanted(), key = (ids ? ids.join(",") : "") + (isl ? "+isl" + isl : "") + (mv.length ? "+" + JSON.stringify(mv) : "");
+    if (this.worldRef !== this.terrain || this.worldKey !== key) { this.world = buildWorld(this.terrain, this.s.seed, ids, isl || false, mv); this.world.barrier = !!this.real; this.worldRef = this.terrain; this.worldKey = key; }
     return this.world;
   }
   renderRoads() {

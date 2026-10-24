@@ -34,11 +34,11 @@ export function startedSim(seed = 1, end = "名古屋市") {
 const realCache: Record<string, { w: World; hash: string }> = {};
 const terrainCache: Record<string, ReturnType<typeof generateTerrain>> = {};
 /** `towns`: false = the 55 cities only (every game before Stage 16); true = with the provincial towns of the default seats' prefectures; or the two seat prefectures to take them for. */
-export function realWorld(islands = false, towns: boolean | { capital?: string; sub?: string } = false, islets = false, moves: SeatMove[] = []) {
+export function realWorld(islands = false, towns: boolean | { capital?: string; sub?: string } = false, islets: boolean | 1 | 2 = false, moves: SeatMove[] = []) {
   const tk = islands ? "i" : "p", s = defaultState(); if (islands) s.islands = true;
   const t = terrainCache[tk] ?? (terrainCache[tk] = generateTerrain(s, loadDem()));
   const prefs = towns ? [towns === true ? "JP-13" : towns.capital ?? "JP-13", towns === true ? "JP-27" : towns.sub ?? "JP-27"] : null, ids = prefs ? townsForSeats(t, prefs) : false;
-  const key = tk + (ids ? ids.join(",") : "") + (islets ? "+isl" : "") + (moves.length ? JSON.stringify(moves) : ""); if (realCache[key]) return realCache[key];
+  const key = tk + (ids ? ids.join(",") : "") + (islets ? "+isl" + islets : "") + (moves.length ? JSON.stringify(moves) : ""); if (realCache[key]) return realCache[key];
   return (realCache[key] = { w: buildWorld(t, s.seed, ids, islets, moves), hash: t.hash });
 }
 /** A Stage 3 game with the ceremony performed on top of the 1950 road + rail network. */

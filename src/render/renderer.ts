@@ -1,3 +1,5 @@
+import GMJ from "../data/coast-gmj.json";
+import { lonLatToReal } from "../core/data";
 import { maxCapitalNames, placeNames } from "./cityNames";
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { realToWorld, worldParts } from "../core/body";
@@ -45,7 +47,9 @@ export class Renderer {
   /** Stage 20: the small islands (drawn as ellipses of their real size, at least a few pixels wide so the tiniest can be seen and tapped) */
   /** Stage 22: the 県庁所在地 of the game's world (moved ones included), most important first; the base map names these, without overlaps */
   baseNames: { name: string; p: Vec }[] | null = null;
-  islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean }[] | null = null;
+  islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean; shaped?: boolean; tiny?: boolean }[] | null = null;
+  /** Stage 22: the real-map coastline of 地球地図日本 (drawn once, reused; the 5 km grid underneath keeps the simulation's own land) */
+  private gm: { fill: Graphics; coast: Graphics; bg: string } | null = null;
   private root = new Container(); private base = new Container(); private overlay = new Container(); private labels = new Container();
   /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
   ridgeHandles = false;
@@ -106,6 +110,7 @@ export class Renderer {
     if (!this.lastArgs) return;
     const [s, t, issues, pending] = this.lastArgs, z = this.view.zoom, px = (n: number) => n / z;
     if (this.terrainSprite?.parent) this.terrainSprite.parent.removeChild(this.terrainSprite); // reused across rebuilds, destroyed only with its terrain
+    if (this.gm) { this.gm.fill.parent?.removeChild(this.gm.fill); this.gm.coast.parent?.removeChild(this.gm.coast); }
     this.base.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.overlay.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.labels.removeChildren().forEach((c) => c.destroy());
     const P = (v: Vec): [number, number] => [v[0], -v[1]];
     const flat = (poly: Vec[]) => poly.flatMap((q) => P(q));
@@ -121,21 +126,24 @@ export class Renderer {
     } else { this.terrainSprite?.destroy(true); this.terrainSprite = null; this.terrainRef = null; }
     const landFlat = !(showTerrain && s.layers.elevation && this.bg === "terrain");
     const coast = new Graphics(), fills = new Graphics();
-    for (const id of ISLAND_IDS) {
+    const gmOn = !!s.real;   // Stage 22: on the real map the coastline is 地球地図日本's (the mainland, the added islands and the islets alike)
+    if (gmOn) {
+      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.coast.destroy(); const f = new Graphics(), c = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); c.poly(pts).stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); } this.gm = { fill: f, coast: c, bg: bgKey }; }
+      this.base.addChild(this.gm.fill);
+    }
+    for (const id of gmOn ? [] : ISLAND_IDS) {
       const bp = pending?.body?.id === id ? worldParts(id, { ops: s.bodies[id].ops, place: pending.body.place ?? s.bodies[id].place }, pending.body.op) : worldParts(id, s.bodies[id]);
       for (const poly of bp) {
         if (landFlat) fills.poly(flat(poly)).fill({ color: bad.has(id) ? 0xd89090 : this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
         if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(bad.has(id) ? 3 : 1.4), color: bad.has(id) ? 0xd22 : 0x2c3e1f });
       }
     }
-    if (s.islands) for (const id of EXTRA_IDS) for (const poly of EXTRA.islands[id].parts) {   // the added islands (world = real km; never deformed)
+    if (s.islands && !gmOn) for (const id of EXTRA_IDS) for (const poly of EXTRA.islands[id].parts) {   // the added islands (world = real km; never deformed)
       if (landFlat) fills.poly(flat(poly)).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
       if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(1.4), color: 0x2c3e1f });
     }
-    if (this.islets) for (const o of this.islets) {   // Stage 20
-      const a = Math.max(o.len / 2, px(3)), b = Math.max(o.wid / 2, px(3)), th = (o.bear * Math.PI) / 180, pts: number[] = [];
-      for (let q = 0; q < 20; q++) { const f = (q / 20) * Math.PI * 2, u = Math.cos(f) * a, v = Math.sin(f) * b; pts.push(o.pos[0] + u * Math.sin(th) - v * Math.cos(th), -(o.pos[1] + u * Math.cos(th) + v * Math.sin(th))); }
-      fills.poly(pts).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); coast.poly(pts).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f });
+    if (this.islets) for (const o of this.islets) {   // Stage 20 / 22: the island's own outline is in the coastline above; a speck too small to see gets a small dot (never a made-up shape); one with no outline in the data, a dot too
+      if (!o.shaped || o.tiny || !gmOn) { const r = px(2.6); fills.circle(o.pos[0], -o.pos[1], r).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); coast.circle(o.pos[0], -o.pos[1], r).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f }); }
       if (z > 0.9 || (z > 0.45 && o.len >= 12)) { const tx = new Text({ text: o.name, style: { fontSize: 10, fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(o.pos[0] + px(6), -o.pos[1] - px(5)); this.labels.addChild(tx); }
     }
     this.base.addChild(fills);
@@ -145,6 +153,7 @@ export class Renderer {
     if (showFeat && s.layers.lakes) { const pw = this.withPending(s, pending, "biwa"); lakes.poly(flat(featureWorld(pw, "biwa"))).fill({ color: 0x4682c8 }).stroke({ width: px(1), color: 0x1d4f8a }); }
     this.base.addChild(lakes);
     if (showTerrain && t) this.drawHydro(t, s, px);
+    if (gmOn && this.gm && s.layers.coast) this.base.addChild(this.gm.coast);
     this.base.addChild(coast);
     // fuji marker
     if (s.step >= 3 || s.step === 0) {
