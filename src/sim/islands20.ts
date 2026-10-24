@@ -12,12 +12,13 @@ export const ISLET_ISLAND_BASE = 16;   // island numbers 1.. are the four big is
 export const ISLET_PAD_CELLS = 3;
 
 /** v1: the Stage 20 islands as ellipses (the worlds of Stage 20 games). v2 (Stage 22): every island, each as its real outline (地球地図日本), an ellipse only where no outline matched. */
+const OFF_GRID = new Set(["IS-104", "IS-105"]);   // 南鳥島, 沖ノ鳥島: the only two far from every other land (硫黄島 and the rest stay on the grid, as seats can be put there)
 export function withIslets(t: TerrainResult, version: 1 | 2 = 1): TerrainResult {
   if (t.islets) return t;
   const LIST = version === 2 ? ISLETS : STAGE20_ISLETS, { x0, y0, cell, nx, ny } = t.grid, pos = LIST.map(version === 2 ? isletPos2 : isletPos);
   let bx0 = x0, by0 = y0, bx1 = x0 + nx * cell, by1 = y0 + ny * cell;
   // Stage 22: an island nobody lives on, far outside the mainland's grid (南鳥島, 沖ノ鳥島), is drawn and listed but not simulated: widening the grid to reach it made every pass over the cells half as long again, for two specks no route serves
-  const off = LIST.map((s, n) => version === 2 && !(s.pop ?? 0) && (pos[n][0] < bx0 || pos[n][1] < by0 || pos[n][0] > bx1 || pos[n][1] > by1));
+  const off = LIST.map((s, n) => version === 2 && OFF_GRID.has(s.id ?? "") && !(s.pop ?? 0));
   for (const p of pos.filter((_, n) => !off[n])) { bx0 = Math.min(bx0, p[0] - ISLET_PAD_CELLS * cell); by0 = Math.min(by0, p[1] - ISLET_PAD_CELLS * cell); bx1 = Math.max(bx1, p[0] + ISLET_PAD_CELLS * cell); by1 = Math.max(by1, p[1] + ISLET_PAD_CELLS * cell); }
   const sx = Math.round((x0 - (x0 + Math.floor((bx0 - x0) / cell) * cell)) / cell), sy = Math.round((y0 - (y0 + Math.floor((by0 - y0) / cell) * cell)) / cell);   // columns / rows added left and below
   const nx2 = nx + sx + Math.max(0, Math.ceil((bx1 - (x0 + nx * cell)) / cell)), ny2 = ny + sy + Math.max(0, Math.ceil((by1 - (y0 + ny * cell)) / cell)), X0 = x0 - sx * cell, Y0 = y0 - sy * cell, N2 = nx2 * ny2;
