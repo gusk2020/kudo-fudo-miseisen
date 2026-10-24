@@ -15,7 +15,7 @@ async function bootReal(page: Page) {
 /** Issue #20: the era and the seats live in their own sheet (⚙ 元号・首都), not in the terrain menu. */
 /** Stage 7: the terrain editor takes the whole toolbar while it is open, so it is closed first (the settings button lives outside it). */
 async function editor(page: Page, open: boolean) { const on = (await page.getAttribute("#terrain-edit-toggle", "aria-pressed")) === "true"; if (on !== open) await page.click("#terrain-edit-toggle"); }
-async function openTab(page: Page, tab: string) { if (!(await page.isVisible("#setup-tab-" + tab))) await editor(page, false); if ((await page.getAttribute("#setup-tab-" + tab, "aria-selected")) !== "true") await page.click("#setup-tab-" + tab); }
+async function openTab(page: Page, tab: string) { if (await page.isVisible("#rw-close")) await page.click("#rw-close"); if (!(await page.isVisible("#setup-tab-" + tab))) await editor(page, false); if ((await page.getAttribute("#setup-tab-" + tab, "aria-selected")) !== "true") await page.click("#setup-tab-" + tab); }
 async function openSetup(page: Page) { await openTab(page, "era"); if (!(await page.isVisible("#era-list"))) await page.click("#era-open"); await page.waitForSelector("#era-list"); }
 async function openSeat(page: Page, which: string) { await openTab(page, which); if (!(await page.isVisible("#pref-picker")) && (await page.isVisible("#seat-repick"))) await page.click("#seat-repick"); await page.waitForSelector("#pref-picker"); }
 async function openMapPick(page: Page, which: string) { await openSeat(page, which); await page.click("#pref-map"); }
@@ -672,11 +672,11 @@ test("Stage 11: 道路図/地形図を最初に選べて保存される。道路
   const errs = watchErrors(page); await bootReal(page);
   const drawn = () => app(page, "a => a.r.ridgeStrokesDrawn") as Promise<number>;
   // the settings sheet offers the two maps; the road map is the default, and the choice is kept through a reload
-  await openSetup(page); expect(await page.isVisible("#bg-roadmap")).toBe(true); expect(await page.getAttribute("#bg-roadmap", "aria-pressed")).toBe("true");
+  await openSetup(page); await page.click("#rw-close"); expect(await page.isVisible("#bg-roadmap")).toBe(true); expect(await page.getAttribute("#bg-roadmap", "aria-pressed")).toBe("true");
   await page.click("#bg-terrain"); expect(await app(page, "a => a.bg")).toBe("terrain"); expect(await app(page, "a => a.s.bg")).toBe("terrain"); await closeSheet(page);
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => a.bg")).toBe("terrain");
-  await openSetup(page); await page.click("#bg-roadmap"); await closeSheet(page); expect(await app(page, "a => a.bg")).toBe("roadmap");
+  await openSetup(page); await page.click("#rw-close"); await page.click("#bg-roadmap"); await closeSheet(page); expect(await app(page, "a => a.bg")).toBe("roadmap");
   // draw two ranges: on the road map the lines are not drawn, while the range tools are on the terrain map is shown, and afterwards the road map returns
   await page.click("#terrain-edit-toggle"); await page.click("#edit-more");
   const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市", "岐阜市"]);
