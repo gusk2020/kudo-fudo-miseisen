@@ -8,7 +8,7 @@ import type { Vec } from "../core/types";
 import type { WCity } from "./world";
 
 export type SeatRole = "capital" | "sub" | "palace";
-export interface SeatMove { pref: string; pos: Vec; by: SeatRole }
+export interface SeatMove { pref: string; pos: Vec; by: SeatRole; /** Stage 22: set for a move made by the 2200 event */ since?: number }
 export interface MoveResult { pref: string; by: SeatRole; cityId: string; name: string; former: string | null; near: string; km: number; adopted: boolean }
 export const PEOPLE_PER_KM2 = 2500, MIN_CITY_POP = 2000, ADOPT_KM = 25, NEW_SHARE = 0.01, NEW_POP_MIN = 300, NEW_POP_MAX = 20000;
 
@@ -34,7 +34,7 @@ export function applySeatMoves(cities: WCity[], t: TerrainResult, cellOf: (p: Ve
     }
     const name = np ? np.name : cityNameOf("島"), cp = coastalPlains(k), slice = old ? Math.round(Math.max(NEW_POP_MIN, Math.min(NEW_POP_MAX, old.pop0 * NEW_SHARE))) : NEW_POP_MIN, take = old ? Math.min(slice, Math.max(0, old.pop0 - MIN_CITY_POP)) : slice;
     if (old) { old.pop0 -= take; old.kind = "city"; old.former = true; }
-    const id = `M20-${m.pref}`, nc: WCity = { id, name, cell: k, pos: cellOf(m.pos) === k ? [m.pos[0], m.pos[1]] : cellCentre(t, k), pref: m.pref, island: t.island[k], pop0: take || NEW_POP_MIN, popSource: "synthetic", coastal: cp.coastal, plains: cp.plains, kind: "capital", moved: m.by, capPop: Math.max(MIN_CITY_POP, capFor(k)) };
+    const id = `M${m.since ? "22" : "20"}-${m.pref}`, nc: WCity = { id, name, cell: k, pos: cellOf(m.pos) === k ? [m.pos[0], m.pos[1]] : cellCentre(t, k), pref: m.pref, island: t.island[k], pop0: take || NEW_POP_MIN, popSource: "synthetic", coastal: cp.coastal, plains: cp.plains, kind: "capital", moved: m.by, capPop: Math.max(MIN_CITY_POP, capFor(k)) };
     if (!isFinite(nc.capPop!)) delete nc.capPop;
     cities.push(nc); res.push({ pref: m.pref, by: m.by, cityId: id, name, former: old?.id ?? null, near: np?.place ?? name, km: np?.km ?? 0, adopted: false });
   }

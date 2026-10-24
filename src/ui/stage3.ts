@@ -1,4 +1,5 @@
 /** Stage 3 panels: era choice, timeline, route ledger, transport atlas (year slider), policy window. Plain DOM, built only when opened. */
+import type { RadioGroup } from "./radioWin";
 import type { App } from "./app";
 import { h } from "./app";
 import { DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey } from "../sim/eras";
@@ -32,6 +33,11 @@ export function eraPicker(app: App, tb: HTMLElement, current: number, pick: (i: 
   tb.append(box, h("div", { id: "era-desc", class: "note" }, c.recon ? `復興方針: ${reconText(c.recon)}(1945年の最初の元号だけが持ち、1950年以降の人口・産業・予算・建設の優先度に長く効く。太平洋側・日本海側は実際の海の位置で決まる)` : c.note));
   void app;
 }
+/** Stage 22: the candidates of 1926 as list-window groups (one heading per transport group, said once; each name with only its own condition below it). */
+export function eraRadioGroups(current: number, pick: (i: number) => void): RadioGroup[] {
+  return ERA_GROUPS.map((g) => ({ head: ERA_GROUP_LABEL[g], note: ERA_GROUP_NOTE[g], items: CAND_1945.map((c, i) => ({ c, i })).filter((x) => eraGroup(x.c.stance) === g).map(({ c, i }) => ({ id: "era-opt-" + i, label: c.name, desc: specific(c) || undefined, on: i === current, pick: () => pick(i) })) })).filter((g) => g.items.length);
+}
+export const eraDescText = (current: number) => { const c = CAND_1945[current] ?? CAND_1945[0]; return c.recon ? `復興方針: ${reconText(c.recon)}(1945年の最初の元号だけが持ち、1950年以降の人口・産業・予算・建設の優先度に長く効く)` : c.note; };
 /** The era-change sheet: opens by itself when a kaigen is due; time is stopped until a name is chosen. */
 export function buildKaigen(app: App, body: HTMLElement) {
   const sim = app.sim, k = sim?.kaigen; if (!sim || !k) { body.append(h("small", {}, "このデータには改元の仕組みがありません(旧形式のセーブ)")); return; }

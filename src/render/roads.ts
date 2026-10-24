@@ -1,4 +1,5 @@
 /** Dynamic transport layer (roads and railways): redrawn on its own (time ticks, zoom end) without touching the terrain layers. */
+import { isIslandRoute, isOcean } from "../sim/sea22";
 import { Container, Graphics, Text } from "pixi.js";
 import { edgeShape } from "../sim/network";
 import { GRADE_MODE, GRADE_SHORT, NICK_SHORT, modeOf, type EdgeState, type Grade, type SimEdge, type SimState } from "../sim/types";
@@ -185,6 +186,7 @@ export class RoadLayer {
         if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
         if (isAband && !showAband) continue;
         if (e.facility === "ferry" && (isLakeFerry(e) ? hide.has("fac:lake") : hide.has("fac:ferry"))) continue;
+        if (e.facility === "ferry" && (isOcean(e) || isIslandRoute(e)) && (zoom < (eff.state === "open" ? (isOcean(e) && e.through > 50 ? 0 : 0.3) : 1))) continue;   // Stage 22: the many sea routes thin out far away: a resting one only close in, an island route from a middle zoom, a busy ocean route always
         if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("k:" + kindOf(e)) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (past ? "planned" : planned.get(e.id) ?? "planned")))) continue; }
         const pts = e.facility === "ferry" ? seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)) : edgeShape(w, sim, e); shapes.set(e.id, pts);
         const thin = zoom < 0.35 ? 0.6 : 1, wd = (rail ? RAIL_WIDTH[e.standard] : g ? WIDTH[e.standard] : WIDTH[e.standard] * 0.8) * thin, col = rail ? railColour(eff.q) : condColour(eff.q), isOld = e.bypassedBy.length > 0 && !past;

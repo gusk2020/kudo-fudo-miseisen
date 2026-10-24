@@ -25,7 +25,7 @@ import type { EraKey } from "./eras";
 
 export interface EraCand { name: string; stance: EraKey; real: boolean; note: string; recon?: Recon }
 /** Stage 10: the 1945 reconstruction policy (recon.ts). Only the first era choice carries one. */
-export interface Recon { coast: "pacific" | "japansea"; focus: "concentrate" | "disperse" }
+export interface Recon { coast: "pacific" | "japansea" | "neutral"; focus: "concentrate" | "disperse"; /** Stage 22: the year the policy was set (1945 if absent); its strength fades from there */ since?: number }
 export interface EraEntry { name: string; start: number; stance: EraKey; real: boolean; picked: number; of: number; auto: boolean }
 export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number; recon?: Recon }
 
@@ -55,6 +55,15 @@ export const CAND_1945: EraCand[] = withRecon(cyc(["神化", "元化", "神和",
 /** 1989: 平成 is the real choice and comes first. These three keep the stances the game has always used for them. */
 export const CAND_1989: EraCand[] = [
   { name: "平成", stance: "heisei", real: true, note: "1989年の実際の新元号" }, { name: "修文", stance: "shubun", real: true, note: "1989年の候補(落選)" }, { name: "正化", stance: "shoka", real: true, note: "1989年の候補(落選)" }];
+/** Stage 22: the 2200 event's candidates -- the names put forward in 1912 beside 大正, which was adopted (the six names put to the Privy Council, narrowed to 大正・天興・興化; 大正 itself is an era already used, so it is not offered again).
+ *  The names and readings are the historical candidates; the policy is NOT tied to them in 2200 (the player chooses it freely), so their stance is only a placeholder. */
+export const CAND_2200: (EraCand & { yomi: string })[] = [
+  { name: "天興", yomi: "てんこう", stance: "heisei", real: true, note: "1912年の改元で最後の3案に残った候補(落選)" },
+  { name: "興化", yomi: "こうか", stance: "heisei", real: true, note: "1912年の改元で最後の3案に残った候補(落選)" },
+  { name: "永安", yomi: "えいあん", stance: "heisei", real: true, note: "1912年の改元で示された6案の一つ(落選)" },
+  { name: "乾徳", yomi: "けんとく", stance: "heisei", real: true, note: "1912年の改元で示された6案の一つ(落選)" },
+  { name: "昭徳", yomi: "しょうとく", stance: "heisei", real: true, note: "1912年の改元で示された6案の一つ(落選)" },
+];
 export const CAND_2019: EraCand[] = cyc(["令和", "英弘", "久化", "広至", "万保"], (n) => (n === "令和" ? "2019年の実際の新元号" : "2019年の候補(落選)"));
 export const eraTable = () => [["1945(1926年の落選案)", CAND_1945], ["1989", CAND_1989], ["2019", CAND_2019]].map(([y, l]) => `${y}: ` + (l as EraCand[]).map((c) => `${c.name}=${STANCE_LABEL[c.stance]}`).join(" / ")).join("\n");
 export const FIRST_YEAR = 1945, KAIGEN_YEARS = { second: 1989, third: 2019 } as const;

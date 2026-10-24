@@ -2,7 +2,7 @@
 import { dist, pointSegDist } from "../core/geom";
 import type { Vec } from "../core/types";
 import { designate, ev, routeOfficial } from "./engine";
-import { buildIndex, layPath, nodeSplitAt } from "./network";
+import { buildIndex, layPath, nodeSplitAt, setEdgeState } from "./network";
 import { LAKE_TAG, maxFerryKm, crossingPorts, findFerry, makeFerry, makeFerryAt, makeLakeBridgeAt, massRoute, nearTown, servedMasses } from "./ferry";
 import { techAt } from "./tech";
 import { DEFAULT_SUB, prefOfSeat } from "../core/seat";
@@ -10,8 +10,8 @@ import { ERA, eraLabel, modeOf, type SimState } from "./types";
 import { ERAS, eraKeyOf } from "./eras";
 import { cellDistKm, mountainCost, pathfind, type World } from "./world";
 
-export type CerKind = "kokudo1" | "fudo1";
-export const CER_LABEL: Record<CerKind, string> = { kokudo1: "国道1号(東京府起点)", fudo1: "府道1号(東京府内)" };
+export type CerKind = "kokudo1" | "fudo1" | "kokudo0";
+export const CER_LABEL: Record<CerKind, string> = { kokudo1: "国道1号(東京府起点)", fudo1: "府道1号(東京府内)", kokudo0: "国道0号(2200年)" };
 export const TOKYO = "JP-13";
 export interface CerPreview { ok: boolean; reasons: string[]; cells: number[]; path: Vec[]; lengthKm: number; passes: string[]; maxGradePct: number; endName: string }
 
@@ -150,7 +150,7 @@ function nearestPair(w: World, la: number, lb: number, pa: Vec, pb: Vec): { a: n
 export const snapKmFor = (zoomPxPerKm: number) => Math.max(30, Math.min(90, 24 / Math.max(0.02, zoomPxPerKm)));
 /** A 県庁所在地 within this far of the drawn line is routed THROUGH if the detour it costs is at most VIA_DETOUR_KM, else given an access road if within SPUR_KM. */
 export const VIA_NEAR_KM = 20, VIA_DETOUR_KM = 15, SPUR_KM = 20, SPUR_MAX_KM = 30;
-export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: string, opts: { techK?: number; year?: number; snapKm?: number; /** Stage 21: route through / give access roads to 県庁所在地 near the line (the game turns it on; the older quantitative studies run without it) */ roadside?: boolean } = {}): NatPreview {
+export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: string, opts: { techK?: number; year?: number; snapKm?: number; /** Stage 21: route through / give access roads to 県庁所在地 near the line (the game turns it on; the older quantitative studies run without it) */ roadside?: boolean; /** Stage 22 (国道0号): cells of existing roads (open, old or abandoned): the line runs along them where it can */ roadCells?: { has(k: number): boolean } } = {}): NatPreview {
   const bad = (r: string[]): NatPreview => ({ ok: false, reasons: r, cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "", segments: [], ferries: [], from: "", to: "" });
   const home = homeCity(w, capital), dest = subCity(w, sub) ?? seatCity(w, DEFAULT_SUB); if (!home || !dest) return bad(["首都または副首都の県庁所在地が地図にありません"]);
   if (home.pref === dest.pref) return bad(["首都と副首都は別の府県にしてください"]);
@@ -203,7 +203,7 @@ export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: 
     // the stops on this visit, in the order they were drawn: waypoints, and lake crossings (shore -> far shore)
     const items: ({ t: number; k: number } | { t: number; hop: LakeHop })[] = [...leg.vias.map((v) => ({ t: v.t, k: v.k })), ...hops.filter((hp) => w.lm[hp.a] === lm && hp.tIn >= leg.t0 - w.cell && hp.tIn < leg.t1).map((hp) => ({ t: hp.tIn, hop: hp }))].sort((p, q) => p.t - q.t);
     let cur = entry, cells: number[] = [entry];
-    const go = (to: number): boolean => { if (to === cur) return true; const seg = pathfind(w, cur, to, { bias, margin: 18 }); if (!seg) return false; for (const k of seg) if (cells[cells.length - 1] !== k) cells.push(k); cur = to; return true; };
+    const go = (to: number): boolean => { if (to === cur) return true; const seg = pathfind(w, cur, to, { bias, margin: 18, ...(opts.roadCells ? { roadCells: opts.roadCells } : {}) }); if (!seg) return false; for (const k of seg) if (cells[cells.length - 1] !== k) cells.push(k); cur = to; return true; };
     for (const it of items) {
       if ("hop" in it) {
         if (!go(it.hop.a)) return bad(["経路を作れません。湖岸まで陸路でつながりません"]);
@@ -234,7 +234,8 @@ export function previewNational(w: World, drawn: Vec[], capital?: string, sub?: 
   return { ok: true, reasons: [], cells: all, path: all.map((k) => w.cellPos(k)), lengthKm: Math.round(length), passes, maxGradePct: Math.round(maxG * 10) / 10, endName: dest.name, segments, ferries, ...(lakes.length ? { lakes } : {}), from: home.name, to: dest.name, ...(reversed ? { reversed: true as const } : {}), ...(spurs.length ? { spurs } : {}), ...(throughCities.length ? { through: throughCities } : {}) };
 }
 /** Lay 国道1号 from the previewed segments: ordinary road for each land piece, the ferry edge (existing or new) across each strait, all designated as one route. */
-export function performNational(sim: SimState, w: World, prev: NatPreview): boolean {
+export function performNational(sim: SimState, w: World, prev: NatPreview, o: { road0?: boolean } = {}): boolean {
+  if (o.road0) return performRoad0(sim, w, prev) !== null;
   if (sim.ceremonyDone || !prev.ok) return false;
   ev(sim, "ceremony", sim.stage3 ? `開通の儀。${eraLabel(1950, eraKeyOf(sim.era))}(1950年)。${ERAS[eraKeyOf(sim.era)].summary}` : `開通の儀。${ERA.name}6年(1950)、${ERA.note}`, `プレイヤーが国道1号(${prev.from}→${prev.to})を描いた`, {});
   const chain: { edgeId: string; dir: 1 | -1 }[] = [];
@@ -272,3 +273,39 @@ export function performNational(sim: SimState, w: World, prev: NatPreview): bool
   ev(sim, "ceremony", `${routeOfficial(r)}が象徴の道として開通${prev.ferries.length ? `(海をまたぐ区間はフェリー${prev.ferries.length}本)` : ""}${lk.length ? `(湖は${lk.map((l) => (l.kind === "bridge" ? `${l.from}〜${l.to}の橋` : `${l.from}〜${l.to}の湖上フェリー`)).join("・")}で渡る)` : ""}`, "開通の儀", { route: r.id });
   sim.ceremonyDone = true; return true;
 }
+
+/**
+ * Stage 22: 国道0号 -- the 2200 line between the new capital and sub-capital. Laid like 国道1号, but the line was routed along existing roads (open, old or abandoned) where it could, and those
+ * edges are SHARED, not doubled: they keep their own history and carry both numbers; an abandoned or closed one is first restored. Only the gaps get new road. The ferries the line needs are reused or opened.
+ * Returns what it did (reused / restored / new km, the cost of the works), or null if it could not be laid.
+ */
+export function performRoad0(sim: SimState, w: World, prev: NatPreview): { routeId: string; reusedKm: number; restoredKm: number; newKm: number; costBu: number; spurs: number } | null {
+  if (!prev.ok) return null;
+  const before = new Set(Object.keys(sim.edges)), chain: { edgeId: string; dir: 1 | -1 }[] = [];
+  const TMP = "r.__national0"; sim.routes[TMP] = { id: TMP, edges: chain, active: false, oldEdges: [] } as unknown as SimState["routes"][string];
+  { const idx = buildIndex(sim, "road"); for (const s of prev.segments) if (s.ferry || s.lake) for (const k of s.cells) nodeSplitAt(sim, w, idx, k); }
+  for (const s of prev.segments) {
+    if (s.ferry || s.lake) {
+      const [a, b] = s.cells, ca = w.cityByCell.get(a), cb = w.cityByCell.get(b);
+      const e = ca && cb ? findFerry(sim, w, ca, cb, "road") ?? makeFerry(sim, w, ca, cb, "road", "国道0号を結ぶため航路を設けた") : makeFerryAt(sim, w, { cell: a, pos: w.cellPos(a) }, { cell: b, pos: w.cellPos(b) }, "road", "国道0号を結ぶため航路を設けた", `ferry:${nearTown(w, a)}〜${nearTown(w, b)}フェリー(国道0号)`);
+      const nid = Object.values(sim.nodes).find((n) => n.cell === a)?.id; chain.push({ edgeId: e.id, dir: e.a === nid ? 1 : -1 }); continue;
+    }
+    const l = layPath(sim, w, s.cells, { facilities: w.land12, open: true, surface: "gravel", quality: 50, built: 1, month: sim.month }); chain.push(...l.chain);
+  }
+  delete sim.routes[TMP];
+  let reusedKm = 0, restoredKm = 0, newKm = 0;
+  for (const ref of chain) {
+    const e = sim.edges[ref.edgeId]; if (!e || e.facility === "ferry") continue;
+    if (!before.has(e.id)) { newKm += e.lengthKm; continue; }
+    if (e.state !== "open" || e.built < 1) { e.built = 1; e.open = true; e.quality = Math.max(e.quality, 50); setEdgeState(sim, e, "open", "国道0号に転用するため復旧(廃道・旧道の復活)"); restoredKm += e.lengthKm; }
+    else reusedKm += e.lengthKm;
+  }
+  let spurs = 0;
+  for (const sp of prev.spurs ?? []) { const c = w.cityById.get(sp.city); if (!c || Object.values(sim.edges).some((e) => e.state === "open" && modeOf(e) === "road" && !e.facility && e.cells.includes(c.cell))) continue; layPath(sim, w, sp.cells, { facilities: w.land12, open: true, surface: "gravel", quality: 50, built: 1, month: sim.month }); spurs++; }
+  const costBu = Math.round((newKm * ROAD0_NEW_BU + restoredKm * ROAD0_RESTORE_BU) * 100) / 100;
+  const r = designate(sim, chain, "national", "JP", `${prev.from.replace(/市$/, "")}〜${prev.to.replace(/市$/, "")}`, "遷都後の開通の儀(国道0号)", false, 0); if (!r) return null;
+  ev(sim, "ceremony", `${routeOfficial(r)}が開通(既存道路の転用${Math.round(reusedKm)}km・廃道/旧道の復旧${Math.round(restoredKm)}km・新設${Math.round(newKm)}km)`, `新首都(${prev.from})と新副首都(${prev.to})を結ぶ。工事費相当${costBu}(開通の儀として一括で供用)`, { route: r.id });
+  return { routeId: r.id, reusedKm: Math.round(reusedKm), restoredKm: Math.round(restoredKm), newKm: Math.round(newKm), costBu, spurs };
+}
+/** 国道0号: works cost per km of new road and per km of restored old road (the same scale as the planner's projects: a convert of an old line costs 0.35 per km) */
+export const ROAD0_NEW_BU = 1, ROAD0_RESTORE_BU = 0.35;

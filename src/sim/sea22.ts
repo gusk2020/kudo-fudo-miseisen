@@ -1,0 +1,154 @@
+/**
+ * Stage 22: domestic ocean routes and island routes (no foreign routes). Two kinds of sea service join the coastal ferries and straits of the earlier stages:
+ *   - 外洋航路: long-distance routes between port cities -- Honshu / Hokkaido / Shikoku / Kyushu between themselves, along the Pacific and the Sea of Japan, out to the
+ *     Ryukyu and the Ogasawara islands. Opened year by year where the demand of the two ends (their people, over the distance) and the era's policy make them worth it;
+ *     put to rest (休止) when nobody uses them for years, reopened when the demand or the policy comes back. Never more than the policy allows.
+ *   - 離島航路: the lifeline of an inhabited island (the residents of src/data/islets.json): one route to the nearest port of a bigger land, and one to its nearest inhabited neighbour
+ *     of the same island group. They are kept whatever their earnings (policy, not profit); an island of very few people waits longer for its route, a big one gets it first.
+ * The policy: 海路重視 opens them faster and keeps more; 空路重視 weakens the long passenger routes (the plane competes); 道路・鉄道重視 build slowly but never close a needed route; 均衡 follows demand.
+ * Both are ordinary ferry edges of the network (they carry the trips the demand model routes over them, are drawn over the sea, never over land) and are tagged in their names.
+ */
+import { dist } from "../core/geom";
+import { ISLET_ISLAND_BASE } from "./islands20";
+import { ev, yearOf } from "./engine";
+import { makeFerry, makeFerryAt, maxFerryKm, nearTown } from "./ferry";
+import { stanceAt } from "./kaigen";
+import { setEdgeState } from "./network";
+import { modeOf, type SimEdge, type SimState } from "./types";
+import type { WCity, World } from "./world";
+
+export const OCEAN_TAG = "外洋航路", ISLAND_TAG = "離島航路";
+export const OCEAN_MIN_KM = 250, OCEAN_FROM = 1960, OCEAN_IDLE_YEARS = 6, ISLAND_NEIGHBOUR_KM = 120;
+export const isOcean = (e: SimEdge) => e.facility === "ferry" && (e.facilityName ?? "").endsWith(`(${OCEAN_TAG})`);
+export const isIslandRoute = (e: SimEdge) => e.facility === "ferry" && (e.facilityName ?? "").endsWith(`(${ISLAND_TAG})`);
+/** The policy's pull on sea routes: [new ocean routes a year, ocean routes kept at most, island routes opened a year, long-passenger factor]. */
+export function seaPolicy(stance: string): { perYear: number; cap: number; islands: number; longPax: number; threshold: number } {
+  if (stance === "kairo") return { perYear: 3, cap: 34, islands: 8, longPax: 1.4, threshold: 0.45 };
+  if (stance === "kuuro") return { perYear: 1, cap: 12, islands: 4, longPax: 0.6, threshold: 1.3 };
+  if (stance === "shubun" || stance === "shoka") return { perYear: 1, cap: 16, islands: 4, longPax: 0.9, threshold: 1.0 };
+  return { perYear: 2, cap: 22, islands: 5, longPax: 1, threshold: 0.8 };
+}
+const PORT_POP = 100000;
+// ---- distance over the sea: a 3x3-coarse grid of the world's cells (a coarse cell is water when any of its cells is sea, so narrow straits stay open), Dijkstra from a port ----
+interface SeaGrid { cx: number; cy: number; water: Uint8Array; field: Map<number, Float64Array> }
+const seaMemo = new WeakMap<World, SeaGrid>();
+function seaGrid(w: World): SeaGrid {
+  let g = seaMemo.get(w); if (g) return g; const cx = Math.ceil(w.nx / SEA_F), cy = Math.ceil(w.ny / SEA_F), water = new Uint8Array(cx * cy);
+  for (let k = 0; k < w.N; k++) if (w.t.land[k] === 0) water[(Math.floor(((k / w.nx) | 0) / SEA_F) * cx) + Math.floor((k % w.nx) / SEA_F)] = 1;
+  g = { cx, cy, water, field: new Map() }; seaMemo.set(w, g); return g;
+}
+const SEA_F = 3, coarse = (w: World, g: SeaGrid, k: number) => (Math.floor(((k / w.nx) | 0) / SEA_F) * g.cx) + Math.floor((k % w.nx) / SEA_F);
+/** Km over the sea from the port at `cell` to every coarse cell (Infinity where the sea does not reach). */
+function seaField(w: World, cell: number): Float64Array {
+  const g = seaGrid(w), s0 = coarse(w, g, cell), hit = g.field.get(s0); if (hit) return hit;
+  const d = new Float64Array(g.cx * g.cy).fill(Infinity), step = w.cell * SEA_F, q: number[] = [s0]; d[s0] = 0;
+  // a simple bucketed Dijkstra (8 neighbours, km)
+  const heap: [number, number][] = [[0, s0]]; const push = (x: number, k: number) => { heap.push([x, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop()!; if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  void q;
+  while (heap.length) {
+    const [dk, k] = pop(); if (dk > d[k]) continue; const i = k % g.cx, j = (k / g.cx) | 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= g.cx || b >= g.cy) continue; const n = b * g.cx + a; if (!g.water[n] && n !== s0) continue; const nd = dk + step * (di && dj ? 1.4142 : 1); if (nd < d[n]) { d[n] = nd; push(nd, n); } }
+  }
+  g.field.set(s0, d); return d;
+}
+/** One search from many ports at once: for every coarse sea cell, the nearest port (by sea) and the km to it. */
+const nearMemo = new WeakMap<World, { d: Float64Array; who: Int32Array }>();
+function nearestPortField(w: World, ports: WCity[]): { d: Float64Array; who: Int32Array } {
+  const hit = nearMemo.get(w); if (hit) return hit; const g = seaGrid(w), d = new Float64Array(g.cx * g.cy).fill(Infinity), who = new Int32Array(g.cx * g.cy).fill(-1), step = w.cell * SEA_F;
+  const heap: [number, number][] = []; const push = (x: number, k: number) => { heap.push([x, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop()!; if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  ports.forEach((c, i) => { const k = coarse(w, g, c.cell); if (d[k] > 0) { d[k] = 0; who[k] = i; push(0, k); } });
+  while (heap.length) {
+    const [dk, k] = pop(); if (dk > d[k]) continue; const i = k % g.cx, j = (k / g.cx) | 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= g.cx || b >= g.cy) continue; const n = b * g.cx + a; if (!g.water[n]) continue; const nd = dk + step * (di && dj ? 1.4142 : 1); if (nd < d[n]) { d[n] = nd; who[n] = who[k]; push(nd, n); } }
+  }
+  const r = { d, who }; nearMemo.set(w, r); return r;
+}
+/** Km over the sea from `a` to `b`, the search stopping as soon as it reaches `b` (or passes `maxKm`): for the short island-to-island lifelines, where a whole-sea field would be wasted. */
+function seaKmTo(w: World, a: number, b: number, maxKm: number): number {
+  const g = seaGrid(w), s0 = coarse(w, g, a), t = coarse(w, g, b), step = w.cell * SEA_F, d = new Map<number, number>([[s0, 0]]); if (s0 === t) return 0;
+  const ti = t % g.cx, tj = (t / g.cx) | 0, near = (k: number) => Math.abs((k % g.cx) - ti) <= 1 && Math.abs(((k / g.cx) | 0) - tj) <= 1;
+  const heap: [number, number][] = [[0, s0]]; const push = (x: number, k: number) => { heap.push([x, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop()!; if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  while (heap.length) {
+    const [dk, k] = pop(); if (dk > (d.get(k) ?? Infinity)) continue; if (dk > maxKm) break; if (near(k)) return dk + (k === t ? 0 : step);   // (the same "one coarse cell either side" as seaKm)
+    const i = k % g.cx, j = (k / g.cx) | 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const x = i + di, y = j + dj; if (x < 0 || y < 0 || x >= g.cx || y >= g.cy) continue; const n = y * g.cx + x; if (!g.water[n] && n !== s0) continue; const nd = dk + step * (di && dj ? 1.4142 : 1); if (nd < (d.get(n) ?? Infinity)) { d.set(n, nd); push(nd, n); } }
+  }
+  return Infinity;
+}
+/** Km over the sea between two ports (Infinity: the sea does not join them). */
+export function seaKm(w: World, a: number, b: number): number { const g = seaGrid(w), f = seaField(w, a), cb = coarse(w, g, b); let best = f[cb]; const i = cb % g.cx, j = (cb / g.cx) | 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const n = (j + dj) * g.cx + i + di; if (n >= 0 && n < f.length) best = Math.min(best, f[n] + w.cell * SEA_F); } return best; }
+interface Cand { a: WCity; b: WCity; km: number; base: number }   // km: over the sea
+const candMemo = new WeakMap<World, Cand[]>();
+/** The pairs of port cities an ocean route could join (domestic, OCEAN_MIN_KM .. maxFerryKm, by straight distance; the drawing follows the sea). */
+export function oceanCandidates(w: World): Cand[] { const g = oceanCandidatesGen(w); for (;;) { const r = g.next(); if (r.done) return r.value; } }
+/** The same, a few sea searches at a time (the first year of ocean routes would otherwise be one long task on a phone). */
+export function* oceanCandidatesGen(w: World): Generator<void, Cand[]> {
+  const hit = candMemo.get(w); if (hit) return hit;
+  const ports = w.cities.filter((c) => c.coastal && (c.kind === "capital" || c.pop0 >= PORT_POP || c.island >= ISLET_ISLAND_BASE)), out: Cand[] = [];
+  const pre: { a: WCity; b: WCity; straight: number; s: number }[] = [];
+  for (let i = 0; i < ports.length; i++) for (let j = i + 1; j < ports.length; j++) { const a = ports[i], b = ports[j], straight = dist(a.pos, b.pos); if (straight < OCEAN_MIN_KM * 0.8 || straight > maxFerryKm(w)) continue; pre.push({ a, b, straight, s: Math.sqrt(Math.max(1, a.pop0) * Math.max(1, b.pop0)) / Math.pow(straight, 1.1) * (w.lm[a.cell] === w.lm[b.cell] ? 1 : 2) }); }
+  pre.sort((p, q) => q.s - p.s);   // (the sea distance is asked only of the 160 best pairs by the straight line: the search per port is the costly part)
+  let n = 0;
+  for (const { a, b, straight } of pre.slice(0, 160)) {
+    if (++n % 8 === 0) yield;
+    const km = seaKm(w, a.cell, b.cell); if (!isFinite(km) || km < OCEAN_MIN_KM || km > maxFerryKm(w)) continue;
+    // what the sea saves: the way by land (a fixed link or a ferry is needed between land masses) against the way by sea; a route far longer than the land way is worth nothing
+    const land = w.lm[a.cell] === w.lm[b.cell] ? straight * 1.3 : straight * 1.3 + 250, gain = Math.max(0, Math.min(2.5, land / km)); if (gain < 0.75) continue;
+    out.push({ a, b, km, base: (Math.sqrt(Math.max(1, a.pop0) * Math.max(1, b.pop0)) / Math.pow(km, 1.1) / 120) * gain });
+  }
+  out.sort((p, q) => q.base - p.base || (p.a.id + p.b.id < q.a.id + q.b.id ? -1 : 1)); candMemo.set(w, out); return out;
+}
+/** Each inhabited island's lifeline: to the nearest port city on another land mass (a bigger land), and to its nearest inhabited neighbour of the same group. */
+const linkMemo = new WeakMap<World, ReturnType<typeof islandLinks>>();
+export function islandLinks(w: World): { cell: number; name: string; pop: number; km: number; to: { cell: number; pos: [number, number]; name: string; city?: WCity }; kind: "hub" | "next" }[] {
+  const hit = linkMemo.get(w); if (hit) return hit;
+  const out: ReturnType<typeof islandLinks> = []; const isl = (w.islets ?? []).filter((s) => !s.existing && (s.islet.pop ?? 0) > 0 && s.cells.length), hubs = w.cities.filter((c) => c.coastal && c.island > 0 && c.island < ISLET_ISLAND_BASE);
+  for (const s of isl) {
+    // the nearest port of the big lands (one search from all of them: an island's own little port never counts)
+    const g = seaGrid(w), f = nearestPortField(w, hubs), k0 = coarse(w, g, s.cell); let best: WCity | null = null, bd = Infinity; const i0 = k0 % g.cx, j0 = (k0 / g.cx) | 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const n = (j0 + dj) * g.cx + i0 + di; if (n < 0 || n >= f.d.length || f.who[n] < 0) continue; const dd = f.d[n] + w.cell * SEA_F; if (dd < bd) { bd = dd; best = hubs[f.who[n]]; } }
+    if (best && bd <= maxFerryKm(w)) out.push({ cell: s.cell, name: s.islet.name, pop: s.islet.pop!, km: bd, to: { cell: best.cell, pos: best.pos as [number, number], name: best.name, city: best }, kind: "hub" });
+    let nb: (typeof isl)[number] | null = null, nd = Infinity; for (const t of isl) { if (t === s || t.islet.group !== s.islet.group || w.lm[t.cell] === w.lm[s.cell]) continue; const d = dist(t.pos, s.pos); if (d < nd) { nd = d; nb = t; } }
+    if (nb && nd <= ISLAND_NEIGHBOUR_KM && s.islet.name < nb.islet.name) out.push({ cell: s.cell, name: s.islet.name, pop: Math.min(s.islet.pop!, nb.islet.pop ?? 0), km: seaKmTo(w, s.cell, nb.cell, maxFerryKm(w)), to: { cell: nb.cell, pos: nb.pos as [number, number], name: nb.islet.name }, kind: "next" });
+  }
+  out.sort((p, q) => q.pop - p.pop || (p.name < q.name ? -1 : 1)); linkMemo.set(w, out); return out;
+}
+const pairKey = (a: number, b: number) => (a < b ? a * 1e7 + b : b * 1e7 + a);
+/** The ferries by their two end cells, taken once per review (the yearly review asks for many pairs). */
+const ferryEnds = (sim: SimState) => { const m = new Map<number, SimEdge>(); for (const e of Object.values(sim.edges)) if (e.facility === "ferry" && modeOf(e) === "road") m.set(pairKey(e.cells[0], e.cells[e.cells.length - 1]), e); return m; };
+/** The yearly review: open, rest and reopen. Deterministic (no random numbers). */
+export function reviewSea22(sim: SimState, w: World): void { const g = reviewSea22Gen(sim, w); while (!g.next().done); }
+/** The yearly review of the sea routes, one route (or a few sea searches) per slice. */
+export function* reviewSea22Gen(sim: SimState, w: World): Generator<void> {
+  const y = yearOf(sim), pol = seaPolicy(stanceAt(sim, y)), ends = ferryEnds(sim);
+  // 離島航路: lifelines, biggest islands first; a few a year
+  let opened = 0;
+  for (const l of islandLinks(w)) {
+    if (opened >= pol.islands) break; if (l.pop < 100 && y < 1965) continue;   // (the smallest islands wait for the 1960s' state support for remote islands)
+    const ex = ends.get(pairKey(l.cell, l.to.cell)); if (ex) { if (ex.state !== "open") { setEdgeState(sim, ex, "open", "離島の生活航路として再開"); ev(sim, "ferry", `${l.name}の航路を再開`, "離島の生活航路(政策的に維持)", { edge: ex.id }); } continue; }
+    const e = makeFerryAt(sim, w, { cell: l.cell, pos: w.cellPos(l.cell) }, { cell: l.to.cell, pos: l.to.pos }, "road", `${l.name}(住民約${l.pop}人)の生活航路${l.kind === "next" ? "(島どうし)" : ""}`, `ferry:${l.name}〜${l.to.name.replace(/市$/, "")}(${ISLAND_TAG})`);
+    if (isFinite(l.km)) e.lengthKm = Math.round(l.km * 10) / 10;   // (worked out with the links: the way over the sea)
+    ev(sim, "ferry", `${l.name}〜${l.to.name.replace(/市$/, "")}の離島航路が開設`, `住民約${l.pop}人の生活交通(収支によらず維持)`, { edge: e.id }); opened++; yield;
+  }
+  if (y < OCEAN_FROM) return;
+  // 外洋航路: rest the idle ones (never a lifeline), reopen the ones the policy and the demand call for, then open new ones up to the policy's cap
+  const live = Object.values(sim.edges).filter((e) => isOcean(e));
+  for (const e of live) {
+    if (e.state === "open") { const used = e.through + e.local + e.freight * 0.4; (e as SimEdge & { idle22?: number }).idle22 = used < 20 ? ((e as SimEdge & { idle22?: number }).idle22 ?? 0) + 1 : 0; if (((e as SimEdge & { idle22?: number }).idle22 ?? 0) >= OCEAN_IDLE_YEARS * (stanceAt(sim, y) === "kairo" ? 2 : 1)) { setEdgeState(sim, e, "dormant", "外洋航路の利用が少ない年が続いた"); ev(sim, "ferry", `${(e.facilityName ?? "").replace("ferry:", "")}を休止`, "利用が少ない年が続いた(港と航路は残る)", { edge: e.id }); } }
+  }
+  const openN = live.filter((e) => e.state === "open").length; let room = Math.max(0, Math.min(pol.perYear, pol.cap - openN));
+  if (!room) return;
+  const cands = yield* oceanCandidatesGen(w); yield;
+  for (const c of cands) {
+    if (!room) break; const long = c.km > 600 ? pol.longPax : 1, score = c.base * long * (sim.cities[c.a.id] && sim.cities[c.b.id] ? Math.sqrt((sim.cities[c.a.id].pop / Math.max(1, c.a.pop0)) * (sim.cities[c.b.id].pop / Math.max(1, c.b.pop0))) : 1);
+    if (score < pol.threshold) break;
+    const ex = ends.get(pairKey(c.a.cell, c.b.cell));
+    if (ex) { if (isOcean(ex) && ex.state === "dormant") { setEdgeState(sim, ex, "open", "外洋航路を再開(需要・政策)"); (ex as SimEdge & { idle22?: number }).idle22 = 0; ev(sim, "ferry", `${(ex.facilityName ?? "").replace("ferry:", "")}を再開`, "需要と政策により再開", { edge: ex.id }); room--; } continue; }
+    const e = makeFerry(sim, w, c.a, c.b, "road", `外洋航路(${Math.round(c.km)}km)を開設: 両端の人口と距離、海路の方針から`); e.facilityName = `ferry:${c.a.name.replace(/市$/, "")}〜${c.b.name.replace(/市$/, "")}(${OCEAN_TAG})`; e.lengthKm = Math.round(c.km * 10) / 10;   // (the way over the sea, not the straight line: a route round a peninsula is as long as it is)
+    ev(sim, "ferry", `${c.a.name.replace(/市$/, "")}〜${c.b.name.replace(/市$/, "")}の外洋航路が開設(${Math.round(c.km)}km)`, "長距離の旅客・貨物の海上輸送", { edge: e.id }); room--; yield;
+  }
+  void nearTown;
+}

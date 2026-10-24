@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ISLETS, isDisputed } from "../../src/core/islets";
+import { ISLETS, STAGE20_ISLETS, isDisputed } from "../../src/core/islets";
 import { realWorld } from "./simhelp";
 
 describe("Stage 20 C: islets on the world", () => {
@@ -16,7 +16,7 @@ describe("Stage 20 C: islets on the world", () => {
     const a = base.cellPos(base.t.stats.fujiTopCell), b = W.cellPos(W.t.stats.fujiTopCell); expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeLessThan(0.01);
   });
   it("every islet is on the grid, once, with land under it", () => {
-    expect(W.islets!.length).toBe(ISLETS.length);
+    expect(W.islets!.length).toBe(STAGE20_ISLETS.length);
     const seen = new Set<number>();
     for (const s of W.islets!) { expect(s.cell).toBeGreaterThanOrEqual(0); expect(W.t.land[s.cell]).toBe(1); if (!s.existing) { for (const k of s.cells) { expect(seen.has(k)).toBe(false); seen.add(k); expect(W.t.island[k]).toBe(s.island); } } }
   });
