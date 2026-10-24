@@ -3,6 +3,7 @@
  * Every change that matters appends an event with its cause and, for roads, an entry in the edge's own history.
  * All demand, population and budget figures are SYNTHETIC (a toy economy), not statistics.
  */
+import { isIslandRoute, isOcean, reviewSea22 } from "./sea22";
 import { apply2200, due2200, open2200 } from "./event2200";
 import { enforceCaps } from "./cap20";
 import type { SeatMove } from "./seatmove20";
@@ -121,7 +122,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
   if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false); }
-  if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.islets) sim.isl20 = true; if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
+  if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.islets) { sim.isl20 = true; sim.sea22 = true; } if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
   const tokyoId = sim.roles ? undefined : tokyoCity(w)?.id;
   for (const c of w.cities) sim.cities[c.id] = { pop: basePop(sim, w, c), popSource: c.popSource, lowAccessYears: 0, industry: Math.round(Math.max(0.05, Math.min(1, 0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim) + roleIndustry(sim, w, c))) * 1000) / 1000 };
   // (older games) a moved capital draws people and industry to itself and costs the old one some; a sub-capital gains a little (fictional, modest, provisional)
@@ -192,7 +193,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   if (sim.tech?.wk !== undefined && y > sim.startYear && y < sim.startYear + BAY_YEARS) { for (let i = 0; i < BAY_PER_YEAR; i++) { if (!seedBayFerries(sim, w, 1)) break; yield; } }   // (one ferry per slice: each access road is a pass over the whole network)
   const an = yield* analyzeGen(sim, w); yield;
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
-  updatePopulation(sim, w, an, y); if (sim.econ) { sim.metro = computeMetros(sim, w, an, y, sim.metro); yield; } updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield;
+  updatePopulation(sim, w, an, y); if (sim.econ) { sim.metro = computeMetros(sim, w, an, y, sim.metro); yield; } updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); if (sim.sea22) reviewSea22(sim, w); yield;
   yield* evaluateEdgesGen(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
@@ -334,7 +335,8 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
   let n = 0; const openN = Object.values(sim.edges).reduce((t, e) => t + (e.state === "open" ? 1 : 0), 0);
   for (const e of Object.values(sim.edges)) {
     if (++n % EDGE_SLICE === 0) yield;   // Stage 7: a slice of edges at a time (closure checks search the network and are not cheap)
-    if (e.built < 1) continue; const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
+    if (e.built < 1) continue; if (sim.sea22 && (isIslandRoute(e) || isOcean(e))) continue;   // Stage 22: the island lifelines are kept by policy, the ocean routes are reviewed by sea22.ts
+    const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
     if (e.state === "open" || e.state === "dormant") {
       if (e.through > e.peakThrough) e.peakThrough = e.through;
       e.zeroYears = d < Z ? e.zeroYears + 1 : 0;

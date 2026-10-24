@@ -75,6 +75,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.seats14 !== undefined && raw.seats14 !== true) delete raw.seats14;   // Stage 14
   if (raw.pop15 !== undefined && raw.pop15 !== true) delete raw.pop15;   // Stage 15
   if (raw.isl20 !== undefined && raw.isl20 !== true) delete raw.isl20;   // Stage 20
+  if (raw.sea22 !== undefined && raw.sea22 !== true) delete raw.sea22;   // Stage 22
   if (raw.e2200 !== undefined && !(isRec(raw.e2200) && Number.isInteger(raw.e2200.year) && ["pending", "road0", "done"].includes(raw.e2200.state))) delete raw.e2200;   // Stage 22
   if (raw.moves20 !== undefined && !(Array.isArray(raw.moves20) && raw.moves20.length > 0 && raw.moves20.length <= 3 && raw.moves20.every((m: any) => isRec(m) && typeof m.pref === "string" && m.pref.length < 12 && ["capital", "sub", "palace"].includes(m.by) && (m.since === undefined || Number.isInteger(m.since)) && Array.isArray(m.pos) && m.pos.length === 2 && m.pos.every((x: unknown) => typeof x === "number" && Number.isFinite(x) && Math.abs(x as number) < 5000)))) delete raw.moves20;
   if (raw.towns16 !== undefined && !(Array.isArray(raw.towns16) && raw.towns16.length > 0 && raw.towns16.length < 400 && raw.towns16.every((x: unknown) => typeof x === "string" && x.length < 24))) delete raw.towns16;   // Stage 16
