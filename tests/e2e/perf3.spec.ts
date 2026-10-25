@@ -27,7 +27,7 @@ test("perf3: boot -> era -> ceremony -> x20 -> zoom/pan -> atlas -> save", async
     const wrap = (o: any, k: string, name: string) => { const f = o[k]; o[k] = function (...args: any[]) { const t = performance.now(); const r = f.apply(this, args); P[name].push(performance.now() - t); return r; }; };
     wrap(a, "renderRoads", "render"); wrap(a.runner, "pump", "pump"); wrap(a, "status", "status"); wrap(a, "persist", "persist"); wrap(a.r, "rebuild", "rebuild");
   });
-  await stage("x20-90s"); await page.click("#speed-20"); t = Date.now(); const m0 = await page.evaluate(() => (window as any).__kfm.sim.month);
+  await stage("x20-90s"); await page.click("#speed-" + (process.env.SPEED ?? "20")); t = Date.now(); const m0 = await page.evaluate(() => (window as any).__kfm.sim.month);
   for (let i = 0; i < 9; i++) { await page.waitForTimeout(10000); out.heap.push(await heap(`x20+${(i + 1) * 10}s`)); }
   out.stages.push({ name: "x20 90s", ms: Date.now() - t, monthsAdvanced: (await page.evaluate(() => (window as any).__kfm.sim.month)) - m0 });
   await page.click("#speed-0"); await stage("pan-zoom");

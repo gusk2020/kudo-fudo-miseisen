@@ -4,7 +4,7 @@
  * All demand, population and budget figures are SYNTHETIC (a toy economy), not statistics.
  */
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
-import { due2200, open2200 } from "./event2200";
+import { due2200, open2200, waiting2200 } from "./event2200";
 import { newTier23, reviewTiers } from "./tier23";
 import { newNumReg, syncNumbers } from "./numreg";
 import { enforceCaps } from "./cap20";
@@ -581,7 +581,7 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
 
 /** One simulated month as a series of short atoms (yield between them). */
 export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
-  if (sim.policy?.pending || sim.kaigen?.pending || sim.e2200?.state === "pending") return;   // waiting for the player at a policy window or an era change: time does not move
+  if (sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) return;   // waiting for the player at a policy window or an era change: time does not move
   if (sim.month % 12 === 0) {
     if (due2200(sim)) { open2200(sim); return; }   // Stage 22 / 23: time stops here in every mode (auto and away included) until the player chooses -- 現状維持 too is a choice
     if (kaigenDue(sim.kaigen, yearOf(sim))) { startKaigen(sim, yearOf(sim)); if (sim.kaigen!.pending) return; }
@@ -605,7 +605,7 @@ export function settleKaigen(sim: SimState, idx: number, auto = false) {
 const STANCE_NAME: Record<string, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kobun: "旧版" };
 export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
 /** Fast-forward with no player (tests, tools): a policy window that opens is resolved by the world's own scores. */
-export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (sim.e2200?.state === "pending") break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
+export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (waiting2200(sim)) break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };

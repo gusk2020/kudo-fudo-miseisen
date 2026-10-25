@@ -1,5 +1,5 @@
 import { buildIndex } from "../sim/network";
-import { adoptWorld, apply2200, close2200, type Choice2200 } from "../sim/event2200";
+import { adoptWorld, apply2200, close2200, waiting2200, type Choice2200 } from "../sim/event2200";
 import { buildE2200, e22Draft } from "./e2200";
 import { nearestPlace } from "../core/gazetteer";
 import { movesOfSettings, type SeatMove } from "../sim/seatmove20";
@@ -7,7 +7,7 @@ import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL, JAPAN, lonLatToReal, realToLonLat } from "../core/data";
 import { FEATURE_LIMITS } from "../core/save";
-import { PREF_IDS, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
+import { PREF_IDS, prefOfSeat, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, getRaw, listSlots, slotMeta, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
@@ -34,7 +34,9 @@ import { buildWorld, townsForSeats, type World } from "../sim/world";
 import { eraKeyOf, type EraKey } from "../sim/eras";
 import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraDescText, eraRadioGroups } from "./stage3";
 import { prefSelect } from "./prefSelect";
-import type { HlTarget } from "./lines23";
+import { ui3 } from "./stage3";
+import { buildLegendStrip } from "./legend24";
+import { fitView, hlBounds, type HlTarget } from "./lines23";
 import { closeRadio, showRadio } from "./radioWin";
 import { CAND_1945 } from "../sim/kaigen";
 
@@ -102,7 +104,7 @@ export class App {
   static async start(host: HTMLElement, real = false) {
     const a = new App(); a.real = real; a.r = await Renderer.create(host);
     if (real) { a.store.replace(realState()); document.body.classList.add("real"); try { if (localStorage.getItem("kfm.bg") !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
-      try { const u = JSON.parse(localStorage.getItem("kfm.ui") || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; } catch { /* ignore */ } a.lite = localStorage.getItem("kfm.lite") === "1"; } catch { /* ignore */ } }
+      try { const u = JSON.parse(localStorage.getItem("kfm.ui") || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; a.legendShown = u.legendShown === true; a.legendSide = u.legendSide === "left" ? "left" : "right"; } catch { /* ignore */ } a.lite = localStorage.getItem("kfm.lite") === "1"; } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
     try { a.safeMode = !!localStorage.getItem("kfm.run"); localStorage.setItem("kfm.run", String(Date.now())); } catch { /* storage may be blocked */ }
     a.r.onContextLost = () => a.toast("画面の描画が一時的に失われました。復帰を待っています…"); a.r.onContextRestored = () => { a.render(); a.toast("描画が復帰しました"); };
@@ -158,7 +160,7 @@ export class App {
   }
   render() { if (!isRidgeTool(this.tool) && this.bgBeforeRidge) { const b0 = this.bgBeforeRidge; this.bgBeforeRidge = null; this.bg = b0; this.r.setBg(b0); }   // leaving the range tools by any route puts the map back
     if (this.real && this.s.bg && this.s.bg !== this.bg && !this.bgBeforeRidge) { this.bg = this.s.bg; this.r.setBg(this.bg); }   // a loaded game brings its own map choice
-    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = seatsOf(this.s), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim, shaped: !!x.islet.shape, tiny: (x.islet.shapeAreaKm2 ?? x.islet.area) < 1 })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = this.activeSeats(), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.seatOverride = this.sim?.e2200 && w0 ? this.seatPoints(w0) : null; this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim, shaped: !!x.islet.shape, tiny: (x.islet.shapeAreaKm2 ?? x.islet.area) < 1 })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -490,7 +492,17 @@ export class App {
     for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
   }
   // ---- Stage 22: the 2200 event ----
-  e22: Choice2200 | null = null; e22Pick: "capital" | "sub" | "palace" | null = null;
+  /** Stage 24: the seats of the game being played: after 2200 they are the ones the player chose then (sim), before that those of the map state. */
+  activeSeats(): { capital: string; sub: string; palace: string } {
+    const st = seatsOf(this.s), sim = this.sim; if (!sim?.e2200) return st;
+    return { capital: sim.capital ?? st.capital, sub: sim.subCapital ?? st.sub, palace: prefOfSeat(sim.palace?.pref) ?? st.palace };
+  }
+  /** Where the three seats stand in the world (the 県庁所在地 city of each, or the palace's own point). */
+  seatPoints(w: World): { capital: Vec | null; sub: Vec | null; palace: Vec | null } {
+    const sim = this.sim!, a = this.activeSeats(), pos = (p: string) => w.cities.find((c) => c.pref === p && c.kind === "capital")?.pos ?? null;
+    return { capital: homeCity(w, a.capital)?.pos ?? pos(a.capital), sub: subCity(w, a.sub)?.pos ?? pos(a.sub), palace: sim.palace?.pos ?? pos(a.palace) };
+  }
+  road0Told = false; e22: Choice2200 | null = null; e22Pick: "capital" | "sub" | "palace" | null = null;
   startE22Map(role: "capital" | "sub" | "palace") { this.e22Pick = role; this.seatPick = null; this.r.seatPending = null; this.tool = "seatpick"; this.sheet = null; this.buildSheet(); this.buildToolbar(); this.render(); }
   endE22Map() { this.e22Pick = null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.sheet = "e2200"; this.buildSheet(); this.buildToolbar(); this.render(); }
   /** 決める / 今のまま: applied to the game; a seat put on the map rebuilds the world with the new 県庁所在地 (people come from the old one, a little) and the runner goes on with it. */
@@ -612,14 +624,15 @@ export class App {
   afterPolicy() { this.lastTick = performance.now(); this.acc = 0; this.persist(true); this.renderRoads(); this.status(); this.buildSheet(); }
   /** Test/debug hook: advance synchronously (the normal clock is slower than a test can wait). */
   ffYears(n: number) { if (!this.sim || !this.world) return; this.runner?.settle(); advance(this.sim, this.world, 12 * n); this.renderRoads(); this.status(); this.buildUI(); }
-  setSpeed(n: 0 | 1 | 5 | 20) { if (!this.sim) return; this.sim.speed = n; this.acc = 0; this.lastTick = performance.now(); this.persist(); this.buildUI(); }
+  setSpeed(n: 0 | 1 | 5 | 20 | 50) { if (!this.sim) return; this.sim.speed = n; this.acc = 0; this.lastTick = performance.now(); this.persist(); this.buildUI(); }
   /** Real-time clock: only while this page is visible. Tab hidden or app closed = no simulation; return = capped catch-up. */
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
     if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.toast("2200年: 遷都と復興の時です(時間は止まっています)"); }
+    else if (sim?.e2200?.state === "road0" && !this.road0Told) { this.road0Told = true; this.toast("国道0号を描いて開通させるか、見送るかを選んでください(時間は止まっています)"); }   // Stage 24: choosing the era and seats is not the end of the event
     else if (sim?.kaigen?.pending && this.sheet !== "kaigen") { this.sheet = "kaigen"; this.buildSheet(); this.toast("改元の時です。元号を選んでください(時間は止まっています)"); }
     else if (sim?.policy?.pending && this.sheet !== "policy") { this.sheet = "policy"; this.buildSheet(); this.toast("10年ごとの政策介入の機会です(時間は止まっています)"); }
-    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || this.viewYear !== null || sim.policy?.pending || sim.kaigen?.pending || sim.e2200?.state === "pending") { this.lastTick = now; return; }
+    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || this.viewYear !== null || sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) { this.lastTick = now; return; }
     const dt = Math.min(250, Math.max(0, now - this.lastTick)); this.lastTick = now;
     this.acc += dt * sim.speed; const n = Math.floor(this.acc / MS_PER_MONTH_X1);
     if (n > 0) { this.acc -= n * MS_PER_MONTH_X1; run.request(n); }
@@ -631,8 +644,10 @@ export class App {
     if (done > 0) this.afterTick(now);
   }
   private afterTick(now = performance.now()) {
-    if (now - this.lastRoads > (this.lite ? 1200 : 450)) { this.lastRoads = now; this.renderRoads(); }   // redrawing the road layer is the costly part: ~2 Hz is plenty
-    if (now - this.lastHud > 500) { this.lastHud = now; this.status(); if (this.sheet === "history" || this.sheet === "roads") this.buildSheet(); }
+    // Stage 24: at ×50 the picture is redrawn far less often -- the SIMULATION is the same month by month; only how often the map and the lists are repainted changes (the road layer is the costly part)
+    const fast = (this.sim?.speed ?? 0) >= 50;
+    if (now - this.lastRoads > (this.lite ? 1200 : fast ? 1800 : 450)) { this.lastRoads = now; this.renderRoads(); }   // redrawing the road layer is the costly part: ~2 Hz is plenty
+    if (now - this.lastHud > (fast ? 1500 : 500)) { this.lastHud = now; this.status(); if (this.sheet === "history" || this.sheet === "roads") this.buildSheet(); }
     if (now - this.lastPersist > 10000) this.persist();
   }
   async catchUp(elapsedMs: number) {
@@ -640,7 +655,7 @@ export class App {
     const plan = planCatchUp(elapsedMs, sim.speed); if (plan.months <= 0 && plan.skipped <= 0) return;
     this.catching = true; const target = sim.month + plan.months; if (sim.policy) sim.policy.away = true;
     while (sim.month < target) {
-      if (sim.policy?.pending || sim.kaigen?.pending || sim.e2200?.state === "pending") break;
+      if (sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) break;
       run.request(Math.min(24, target - sim.month - run.pending)); run.pump(12);
       this.catchInfo = `放置分を計算中 ${Math.floor((plan.months - (target - sim.month)) / 12)}/${Math.floor(plan.months / 12)}年`; this.status();
       await new Promise((r) => setTimeout(r, 0));
@@ -679,7 +694,7 @@ export class App {
     $("sheet-close").onclick = () => this.openSheet(null);
   }
   setLite(on: boolean) { this.lite = on; this.slowTicks = 0; try { localStorage.setItem("kfm.lite", on ? "1" : "0"); } catch { /* ignore */ } this.renderRoads(); this.buildSheet(); }
-  saveUi() { try { localStorage.setItem("kfm.ui", JSON.stringify({ hide: [...this.hide], names: this.names, legendOpen: this.legendOpen })); } catch { /* ignore */ } }
+  saveUi() { try { localStorage.setItem("kfm.ui", JSON.stringify({ hide: [...this.hide], names: this.names, legendOpen: this.legendOpen, legendShown: this.legendShown, legendSide: this.legendSide })); } catch { /* ignore */ } }
   /** Legend filters are display-only: they never touch the simulation. */
   toggleHide(key: string) { if (this.hide.has(key)) this.hide.delete(key); else this.hide.add(key); this.saveUi(); this.renderRoads(); this.buildSheet(); }
   /** Stage 11: which map is shown -- the road map or the terrain map -- is chosen in the settings, kept with the game (`bg`), and restored on load. `keep` = false for the temporary switch while a range is edited. */
@@ -691,9 +706,28 @@ export class App {
     for (const [id, label] of [["layers", "レイヤー"], ["timeline", "年表"], ["ledger", "台帳"], ["atlas", "地図帳"], ["policy", "介入"], ["menu", "保存"]] as [string, string][]) dock.insertBefore(h("button", { id: "dock-" + id, onclick: () => this.openSheet(id) }, label), fit);
   }
   // ---- Stage 23: the line chosen in the ledger / number list, drawn in its own colour ----
-  hl: HlTarget | null = null; hlList: HlTarget[] = []; ledgerMini = false;
+  sheetKey = ""; hl: HlTarget | null = null; hlList: HlTarget[] = []; ledgerMini = false;
   /** Choose a line (or let go of it when it is the one already chosen). The ledger shrinks to a bar while one is chosen. Nothing in the game changes. */
-  toggleHl(t: HlTarget, list?: HlTarget[]) { if (list) this.hlList = list; if (this.hl?.id === t.id) { this.clearHl(); return; } this.hl = t; this.ledgerMini = true; this.renderRoads(); this.buildSheet(); }
+  toggleHl(t: HlTarget, list?: HlTarget[]) { if (list) this.hlList = list; if (this.hl?.id === t.id) { this.clearHl(); return; } this.hl = t; this.ledgerMini = true; this.buildSheet(); this.fitHl(); this.renderRoads(); }
+  /** Move and zoom the map to the chosen line: its east-west width about 80% of the free width (all of it if it is taller than that allows), in the part of the screen the small window and the legend leave free. */
+  fitHl() {
+    const sim = this.sim, w = this.world, t = this.hl; if (!sim || !w || !t) return; const b = hlBounds(sim, w, t); if (!b) return;
+    const { w: sw, h: sh } = this.r.size, st = document.getElementById("status")?.getBoundingClientRect(), sheet = document.getElementById("sheet"), sb = sheet && !sheet.hidden ? sheet.getBoundingClientRect() : null, lg = this.legendInset();
+    const top = Math.max(0, Math.min(sh * 0.35, (st?.bottom ?? 0) + 6)), bottom = sb ? Math.max(top + 120, sb.top - 6) : sh - 70, x = lg.left, wd = sw - lg.left - lg.right;
+    this.r.setView(fitView(b, { x, y: top, w: Math.max(80, wd), h: bottom - top }, { w: sw, h: sh }));
+  }
+  /** The width the vertical legend takes from the left / right edge of the map (0 when it is not shown). */
+  legendInset(): { left: number; right: number } { const el = document.getElementById("legend-side"); if (!el || el.hidden) return { left: 0, right: 0 }; const r = el.getBoundingClientRect(), left = this.legendSide === "left"; return { left: left ? r.width : 0, right: left ? 0 : r.width }; }
+  legendSide: "left" | "right" = "right"; legendShown = false; private legendEl: HTMLElement | null = null;
+  /** Stage 24: the vertical legend strip on the map's left or right edge (display only; the choice of side and whether it is shown are kept with the other display settings). */
+  setLegendShown(v: boolean) { this.legendShown = v; this.saveUi(); this.drawLegendStrip(); this.buildToolbar(); }
+  drawLegendStrip() {
+    this.legendEl?.remove(); this.legendEl = null; if (!this.legendShown || !this.real || this.s.step < 5) return;
+    const el = buildLegendStrip({ side: this.legendSide, swap: () => { this.legendSide = this.legendSide === "left" ? "right" : "left"; this.saveUi(); this.drawLegendStrip(); if (this.hl) this.fitHl(); }, close: () => this.setLegendShown(false), filters: () => this.openSheet("legend") });
+    document.body.append(el); this.legendEl = el; this.placeLegend();
+  }
+  /** Between the status pills and the control panel at the bottom (measured: both change height). */
+  placeLegend() { const el = this.legendEl; if (!el) return; const st = document.getElementById("status")?.getBoundingClientRect(), tw = document.getElementById("tools-wrap")?.getBoundingClientRect(); el.style.top = Math.round((st?.bottom ?? 120) + 4) + "px"; el.style.bottom = Math.round(window.innerHeight - (tw?.top ?? window.innerHeight - 200) + 4) + "px"; }
   clearHl(redraw = true) { if (!this.hl && !this.ledgerMini) return; this.hl = null; this.ledgerMini = false; if (redraw) { this.renderRoads(); this.buildSheet(); } }
   stepHl(dir: 1 | -1) { const l = this.hlList; if (!this.hl || !l.length) return; const i = l.findIndex((x) => x.id === this.hl!.id), n = l[i < 0 ? (dir > 0 ? 0 : l.length - 1) : (i + dir + l.length) % l.length]; this.hl = n; this.renderRoads(); this.buildSheet(); }
   openSheet(name: string | null) { if (this.hl && name !== "ledger") this.clearHl(false); this.sheet = this.sheet === name ? null : name; this.buildSheet(); this.renderRoads(); }
@@ -719,7 +753,7 @@ export class App {
   }
   /** Stage 22: the list window lives on <body>; it stays only while the toolbar that owns it asks for it. */
   eraOpen = false; private radioShown = false;
-  buildToolbar() { this.radioShown = false; this.buildToolbarInner(); if (!this.radioShown) closeRadio(); }
+  buildToolbar() { this.radioShown = false; this.buildToolbarInner(); if (!this.radioShown) closeRadio(); requestAnimationFrame(() => (this.legendEl ? this.placeLegend() : this.legendShown ? this.drawLegendStrip() : undefined)); }
   private buildToolbarInner() {
     if (this.sim && this.e22Pick) {   // Stage 22: choosing a 2200 seat on the map (the same tap, hint and 決定 / 取り消し / 戻る as at the start)
       const tb0 = $("toolbar"); tb0.replaceChildren(); const p = this.seatPick, label = { capital: "首都", sub: "副首都", palace: "皇居" }[this.e22Pick];
@@ -852,7 +886,7 @@ export class App {
     label(`選択中: ${names[this.tool]}`);
     if (this.real && this.viewYear !== null) tb.append(h("button", { id: "btn-now", type: "button", class: "mode on", onclick: () => this.setViewYear(null) }, `${this.viewYear}年を閲覧中(読み取り専用) → 現在に戻る`));
     const sp = h("div", { class: "grp" });
-    for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n, () => this.setSpeed(n), "speed-" + n));
+    for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"], [50, "×50"]] as [0 | 1 | 5 | 20 | 50, string][]) sp.append(this.tbtn(l, this.sim.speed === n, () => this.setSpeed(n), "speed-" + n));
     tb.append(sp);
     if (this.sim.e2200?.state === "road0") {   // Stage 22: 国道0号 -- drawn like 国道1号, either way round; opened by its own ceremony
       const d0 = this.cerDraft.kokudo0, nat0 = d0?.prev as NatPreview | undefined, g0 = h("div", { class: "grp", id: "road0-row" });
@@ -862,7 +896,7 @@ export class App {
     }
     const g = h("div", { class: "grp" });
     if (this.real) {
-      g.append(h("button", { id: "btn-legend", type: "button", onclick: () => this.openSheet("legend") }, "凡例"),
+      g.append(h("button", { id: "btn-legend", type: "button", "aria-pressed": this.legendShown ? "true" : "false", class: this.legendShown ? "mode on" : "mode", onclick: () => this.setLegendShown(!this.legendShown) }, "凡例"),
         h("button", { id: "btn-bg", type: "button", "aria-pressed": this.bg === "roadmap" ? "true" : "false", class: this.bg === "roadmap" ? "mode on" : "mode", onclick: () => this.setBg(this.bg === "roadmap" ? "terrain" : "roadmap") }, this.bg === "roadmap" ? "✓ 道路地図" : "背景:地形"));
       tb.append(g); const gw = h("div", { class: "grp" }); gw.append(this.tbtn("なぜ?(線路・道路をタップ)", this.tool === "why", () => this.setTool("why"), "tool-why")); tb.append(gw); return;
     }
@@ -872,7 +906,9 @@ export class App {
   }
   buildSheet() {
     const sh = $("sheet"), body = $("sheet-body");
-    sh.hidden = this.sheet === null; sh.classList.toggle("mini", this.sheet === "ledger" && !!this.hl && this.ledgerMini); body.replaceChildren(); if (!this.sheet) return;
+    const mini = this.sheet === "ledger" && !!this.hl && this.ledgerMini, key = this.sheet + ":" + mini + ":" + ui3.ledgerMode + ":" + ui3.numClass, keep = this.sheetKey === key ? sh.scrollTop : 0; this.sheetKey = key;   // (Stage 24: the same list is rebuilt after a tap: it stays where the finger left it)
+    sh.hidden = this.sheet === null; sh.classList.toggle("mini", mini); sh.classList.toggle("mini-num", mini && ui3.ledgerMode === "numbers"); body.replaceChildren(); if (!this.sheet) return;
+    queueMicrotask(() => { if (keep) sh.scrollTop = keep; });
     if (this.sheet === "layers") {
       body.append(h("h3", {}, "表示レイヤー"));
       const wrap = h("div", { class: "row" });
@@ -983,32 +1019,8 @@ export class App {
     grp("状態", [multi("lg-s-open", "供用中(休止を含む)", ["st:open", "st:dormant"]), multi("lg-s-planned", "計画(構想・計画・工事中・中断)", ["st:concept", "st:planned", "st:building", "st:suspended"]), multi("lg-s-lost", "廃線(閉鎖・廃道・遺構)", ["st:closed", "st:lost"]), multi("lg-s-unbuilt", "未成", ["st:unbuilt"])]);
     grp("そのほか", [chk("lg-econ", "都市の丸(金の輪=首都、紫の輪=政令特区・政令指定都市)と都市圏", this.s.layers.econ ?? true, (v) => this.store.set((s) => { s.layers.econ = v; })), chk("lg-ports", "港湾", this.s.layers.ports, (v) => this.store.set((s) => { s.layers.ports = v; })), chk("lg-airports", "空港", this.s.layers.airports, (v) => this.store.set((s) => { s.layers.airports = v; })), chk("lg-names", "路線名の文字(全路線)", this.names, (v) => { this.names = v; this.saveUi(); this.renderRoads(); })]);
     body.append(det);
-    const row = (svg: string, text: string) => { const d = h("div", { class: "legend-row" }); d.innerHTML = `<svg width="64" height="14" viewBox="0 0 64 14" aria-hidden="true">${svg}</svg><span>${text}</span>`; body.append(d); };
-    const ln = (c: string, w: number, extra = "") => `<line x1="2" y1="7" x2="62" y2="7" stroke="${c}" stroke-width="${w}" ${extra}/>`;
-    body.append(h("h3", {}, "凡例 — 種別 × 階層 × 状態(色だけに頼らず、線の種類と文字で区別します)"));
-    body.append(h("h4", {}, "① 交通種別"));
-    row(ln("#3d3d3d", 6) + ln("#5bd66b", 3.5), "道路(色は傷み具合: 緑=良 / 黄=可 / 橙=悪 / 赤=荒廃)");
-    row(ln("#0b7a3e", 8) + ln("#5bd66b", 4.5) + ln("#fff", 1), "高速道路(緑の縁＋白い中心線)");
-    row(ln("#fff", 6) + ln("#12284d", 3.5) + ln("#fff", 2.5, 'stroke-dasharray="4 5"'), "鉄道(紺＋白い点線。傷むほど灰色)");
-    row(ln("#fff", 7) + ln("#1e6fd9", 5) + ln("#fff", 1.2), "新幹線(青＋白い中心線) ／ リニア: 紫＋白い破線");
-    row(ln("#2f8fd8", 3, 'stroke-dasharray="7 5"'), "海路(国内のみ。青の破線。海の上を通り、陸は横切らない)");
-    row(ln("#9aa4ad", 1.4, 'stroke-dasharray="6 5"'), "空路(国内のみ。細い白の線。主な便だけ)");
-    body.append(h("h4", {}, "② 階層(線の太さ)"));
-    row(ln("#bbb", 7), "メイン(太い): 高規格の幹線"); row(ln("#bbb", 4), "サブ(中): 標準規格"); row(ln("#bbb", 2), "ローカル(細い): 簡易規格");
-    body.append(h("h4", {}, "③ 状態(線の種類)"));
-    row(ln("#ffe14a", 5, 'stroke-linecap="round"'), "供用中: 実線(休止は長い破線、旧道は一点鎖線、白い中心線はバイパス)");
-    row(ln("#3aa0ff", 3, 'stroke-dasharray="7 4"'), "計画: 青系の破線(構想は点、工事中は進んだ分が太い、中断は橙)");
-    row(ln("#2b2b2b", 2, 'stroke-dasharray="2 5"'), "廃線: 灰の破線(閉鎖)・黒の点線(廃道・廃線跡)");
-    row(ln("#b04bff", 3, 'stroke-dasharray="7 4"'), "未成: 紫の破線");
-    body.append(h("h4", {}, "橋・トンネル"));
-    row(ln("#1a1a1a", 10) + ln("#fff", 7.2) + ln("#5bd66b", 3.5), "橋: 白い帯の両側に黒い縁(上の線の色で道路か鉄道か分かる)");
-    row(ln("#2a1f14", 11, 'stroke-dasharray="4 3"') + ln("#fff", 7.5) + ln("#5bd66b", 3.5, 'stroke-opacity=".5"'), "トンネル: 薄い線の両側に黒い破線");
-    row('<line x1="2" y1="4" x2="62" y2="4" stroke="#5bd66b" stroke-width="3"/><line x1="2" y1="10" x2="62" y2="10" stroke="#12284d" stroke-width="3"/>', "道路と鉄道が同じ橋・トンネルを通る所は、2本を並べて描きます(表示だけ)");
-    body.append(h("h4", {}, "強調・そのほか"));
-    row(ln("#111", 10) + ln("#ff00d4", 6), "桃色: 台帳・路線番号一覧で選んだ路線");
-    row('<circle cx="14" cy="7" r="5" fill="none" stroke="#3b1f6e" stroke-width="2.2"/><circle cx="40" cy="7" r="5" fill="none" stroke="#7a4fb5" stroke-width="1.4"/>', "紫の輪: 政令指定都市(濃い) ／ 政令特区(淡い)");
-    row('<rect x="6" y="4" width="6" height="6" fill="#4f95d6" stroke="#fff"/><rect x="26" y="1" width="11" height="11" fill="#0f3f8c" stroke="#fff"/>', "四角: 港(小=地方・重要港湾、大=国際拠点港湾以上) ／ 飛行機の印: 空港");
-    body.append(h("small", {}, "道路の行政指定(国道=赤茶の縁・県道=緑・府道=紫・指定なし=灰)と標識は従来どおり。休止・旧道・工事中・中断・廃道などの細かな状態は、ゲームの内部では区別したまま記録されています(凡例だけが4状態にまとめています)。"));
+    body.append(h("small", { id: "legend-note" }, "凡例(線のサンプル)は、地図の端の縦長の帯に出ます。メニューの「凡例」ボタンで出し入れし、帯の ◀▶ で左右を切り替えます。ここは、地図に出す種類と状態を切り替える画面です。休止・旧道・工事中・中断・廃道などの細かな状態は、ゲームの内部では区別したまま記録され、線の描き方も従来どおりです(凡例が4状態にまとめているだけです)。"));
+    body.append(h("div", { class: "row" }, h("button", { id: "legend-open-strip", type: "button", onclick: () => { this.setLegendShown(true); this.openSheet(null); } }, "縦長の凡例を出す")));
   }
   private buildCompare(body: HTMLElement) {
     body.append(h("h3", {}, "時系列比較(基準年と今の差を縁取り)")); const sim = this.sim; if (!sim) return;

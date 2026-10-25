@@ -1,5 +1,5 @@
 /** Stage 14: one game runner for the policy / seat / satellite studies. */
-import { apply2200, type Choice2200 } from "../../src/sim/event2200";
+import { apply2200, close2200, type Choice2200 } from "../../src/sim/event2200";
 import type { SeatMove } from "../../src/sim/seatmove20";
 import { realToLonLat } from "../../src/core/data";
 import { createSim, settleKaigen, stepMonth, yearOf } from "../../src/sim/engine";
@@ -16,7 +16,7 @@ export function run14(o: Run14) {
   const line = (a: Vec, b: Vec, n = 20): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
   const p = previewNational(w, line(homeCity(w, sim.capital)!.pos, subCity(w, sim.subCapital)!.pos), sim.capital, sim.subCapital); if (!performNational(sim, w, p)) throw new Error("ceremony: " + p.reasons.join("|"));
   sim.policy!.mode = "priority"; const t0 = Date.now();
-  while (yearOf(sim) < o.until) { stepMonth(sim, w); if (sim.kaigen?.pending) { const i = sim.kaigen.pending.cands.findIndex((c) => c.stance === "heisei"); settleKaigen(sim, i >= 0 ? i : 0, true); } if (sim.policy?.pending) autoResolve(sim, w); if (sim.e2200?.state === "pending") apply2200(sim, o.e2200 ?? null, !o.e2200); if (o.hook && sim.month % 12 === 0) o.hook(sim, w, yearOf(sim)); }
+  while (yearOf(sim) < o.until) { stepMonth(sim, w); if (sim.kaigen?.pending) { const i = sim.kaigen.pending.cands.findIndex((c) => c.stance === "heisei"); settleKaigen(sim, i >= 0 ? i : 0, true); } if (sim.policy?.pending) autoResolve(sim, w); if (sim.e2200?.state === "pending") apply2200(sim, o.e2200 ?? null, !o.e2200); if ((sim.e2200?.state as string) === "road0") close2200(sim);   /* (Stage 24: the game waits for 国道0号 too: the harness gives it up) */ if (o.hook && sim.month % 12 === 0) o.hook(sim, w, yearOf(sim)); }
   return { sim, w, wallS: (Date.now() - t0) / 1000 };
 }
 export const ll = (w: ReturnType<typeof realWorld>["w"], k: number) => realToLonLat(w.cellPos(k) as [number, number]).map((x) => +x.toFixed(2));

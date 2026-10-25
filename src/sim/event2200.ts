@@ -16,8 +16,10 @@ import type { World } from "./world";
 export const E2200_YEAR = 2200;
 export interface Choice2200 { era: number; stance: EraKey; coast: Recon["coast"]; focus: Recon["focus"]; capital?: string; sub?: string; palace?: string; capitalPos?: Vec; subPos?: Vec; palacePos?: Vec }
 export interface Road0Info { routeId: string; reusedKm: number; restoredKm: number; newKm: number; costBu: number; spurs: number }
-export interface E2200 { year: number; state: "pending" | "road0" | "done"; era?: string; stance?: EraKey; recon?: Recon; moved?: string[]; kept?: true; auto?: true; road0?: Road0Info }
+export interface E2200 { year: number; state: "pending" | "road0" | "done"; era?: string; stance?: EraKey; recon?: Recon; moved?: string[]; kept?: true; auto?: true; skipped?: true; road0?: Road0Info }
 export const TRANSPORT_LABEL: Record<string, string> = { shubun: "道路重視", shoka: "鉄道重視", kairo: "海路重視", kuuro: "空路重視", heisei: "均衡" };
+/** The game waits for the player while the event is open: choosing the era / seats / policy is not the end of it -- 国道0号 is drawn and opened, or given up (見送る), explicitly. */
+export const waiting2200 = (sim: Pick<SimState, "e2200">) => sim.e2200?.state === "pending" || sim.e2200?.state === "road0";
 /** Due at a year boundary on or after 2200 in a timeline game that has not had it. */
 export const due2200 = (sim: SimState) => !!sim.stage3 && !!sim.kaigen && !sim.e2200 && yearOf(sim) >= E2200_YEAR;
 export function open2200(sim: SimState) { sim.e2200 = { year: yearOf(sim), state: "pending" }; ev(sim, "kaigen", `${yearOf(sim)}年: 遷都と復興の時を迎えた`, "首都・副首都・皇居、元号、復興方針を選び直せます(選ばなければ今のまま)", {}); }
@@ -57,4 +59,5 @@ export function adoptWorld(sim: SimState, w: World): void {
   }
 }
 /** The 国道0号 is done (opened, or the player chose not to draw it): the event is over. */
-export function close2200(sim: SimState, road0?: Road0Info) { if (sim.e2200) { sim.e2200.state = "done"; if (road0) sim.e2200.road0 = road0; } }
+/** The event ends: 国道0号 opened (`road0` given) or given up (none: recorded as `skipped`). */
+export function close2200(sim: SimState, road0?: Road0Info) { if (sim.e2200) { sim.e2200.state = "done"; if (road0) sim.e2200.road0 = road0; else sim.e2200.skipped = true; } }

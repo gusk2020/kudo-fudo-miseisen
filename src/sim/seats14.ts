@@ -22,7 +22,7 @@ import type { World } from "./world";
 export const SEAT_SHARE_MAX = 0.6, SEAT_FLOW = 0.08, SUBURB_H = 1.3, SUBURB_TAU = 0.6, MIN_SUBURB_POP = 20000;
 /** A suburb stops taking people once it is this big against the seat (so one town does not swallow the flow: the people spread over the towns of the plain). */
 export const SUBURB_MAX_RATIO = 0.3, SUBURB_GROWTH = 14, SUBURB_H_FAR = 3.5;
-export const SEAT_MARGIN = 0.98, SHED_MAX = 0.08, SHED_H = 1.6;
+export const SEAT_MARGIN = 0.98, SHED_MAX = 0.08, SHED_H = 1.6, MOVE_SHED_MAX = 0.02, SEAT_CATCHUP = 0.5;
 /** Stage 15 (phone check: the satellites formed but were small and few): in a Stage 15 game the seat holds less of its own commuter belt, sends more of the excess each year, lets a suburb grow bigger against it,
  * and the towns of the prefectures NEXT to the seat's own are reached however far the road is (a prefecture line is a line on the map, not a wall) and take a larger share. */
 export const SEAT_SHARE_MAX_15 = 0.5, SEAT_FLOW_15 = 0.12, SUBURB_MAX_RATIO_15 = 0.42, ADJ_BONUS = 1.8, ADJ_H_CAP = 1.5;   // (a town of the next prefecture counts as at most this far away for how much it takes)
@@ -78,6 +78,10 @@ export function applySeatOrder(sim: SimState, w: World, an: { T: Float64Array; T
     let rec: { j: number; wt: number }[] = [];
     for (let j = 0; j < nc; j++) { if (j === i || isSeat.has(j) || P[j] >= 0.9 * lim || P[j] < MIN_SUBURB_POP) continue; const h = t(i, j); if (isFinite(h) && h <= SHED_H) rec.push({ j, wt: Math.exp(-h / 0.8) * (0.3 + siteCapacity(w, w.cities[j])) * Math.sqrt(P[j] + 5e4) }); }
     if (!rec.length) for (let j = 0; j < nc; j++) if (j !== i && !isSeat.has(j) && P[j] < 0.9 * lim) rec.push({ j, wt: Math.sqrt(P[j] + 5e4) });
+    // Stage 24: after a move in 2200 the seat is far smaller than the old capital's city; the order rule would only scatter the old city's people over the country. Instead part of what it sheds goes to the
+    // seat that is behind (gradually: SEAT_CATCHUP of the shed, the shed itself kept to MOVE_SHED_MAX a year), so the new capital's city and its suburbs grow where the rule says the capital is.
+    let toSeat = 0; const behind = sim.e2200?.moved?.length && !isSeat.has(i) ? seats.filter((s) => P[s] < 0.6 * P[i]) : [];
+    if (behind.length) { toSeat = Math.min(shed, MOVE_SHED_MAX * P[i]) * SEAT_CATCHUP; const sh = Math.min(shed, MOVE_SHED_MAX * P[i]), wsum = behind.reduce((a, s) => a + (P[i] - P[s]), 0); add(i, -toSeat); for (const s of behind) add(s, (toSeat * (P[i] - P[s])) / wsum); if (rec.length) { const rest = sh - toSeat, sw = rec.reduce((a, r) => a + r.wt, 0); add(i, -rest); for (const r of rec) add(r.j, (rest * r.wt) / sw); } continue; }
     if (!rec.length) continue; const sw = rec.reduce((a, r) => a + r.wt, 0); add(i, -shed); for (const r of rec) add(r.j, (shed * r.wt) / sw);
   }
   if (delta.size) apply(sim, w, delta); void y;
