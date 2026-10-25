@@ -899,3 +899,47 @@ test("Stage 23: 台帳から路線を選ぶと地図で強調され台帳が小�
   expect(await app(page, "a => JSON.stringify([a.sim.month, Object.keys(a.sim.edges).length, a.sim.rngState, Object.values(a.sim.routes).filter((r) => r.active).length])")).toBe(before);   // choosing changed nothing in the game
   expect(errs).toEqual([]);
 });
+
+test("Stage 24: 2200年は改元・遷都を決めても国道0号を描くか見送るまで止まったまま。移転先が地図の印・保存表示に出る", async ({ page }) => {
+  test.setTimeout(240000); await page.setViewportSize({ width: 360, height: 740 });
+  const errs = watchErrors(page); await startReal(page);
+  await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (2200 - s.startYear) * 12; s.kaigen.next = 2230; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; });
+  await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box", { timeout: 20000 });
+  await page.selectOption("#e22-sel-capital", "JP-40"); await page.selectOption("#e22-sel-sub", "JP-13"); await page.click("#e22-era-1"); await page.click("#e22-decide");
+  expect(await app(page, "a => a.sim.e2200.state")).toBe("road0");
+  const m = (await app(page, "a => a.sim.month")) as number; await page.evaluate(() => { (window as any).__kfm.sheet = null; (window as any).__kfm.buildSheet(); }); await page.waitForTimeout(2500);
+  expect(await app(page, "a => a.sim.month")).toBe(m); expect(await app(page, "a => a.sim.e2200.state")).toBe("road0");   // the sheet is closed, time is ×20 and 完全自動: still stopped
+  expect(await app(page, "a => { const p = a.seatPoints(a.world), c = a.world.cities.find((x) => x.pref === 'JP-40' && x.kind === 'capital' && !x.former); return !!a.r.seatOverride && !!c && Math.hypot(a.r.seatOverride.capital[0] - c.pos[0], a.r.seatOverride.capital[1] - c.pos[1]) < 1e-6 && Math.hypot(p.sub[0] - a.r.seatOverride.sub[0], p.sub[1] - a.r.seatOverride.sub[1]) < 1e-6; }")).toBe(true);
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => a.sim.e2200.state")).toBe("road0");   // a save keeps it waiting
+  await page.click("#road0-skip"); expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.skipped === true]")).toEqual(["done", true]);
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m, { timeout: 60000 });
+  expect(errs).toEqual([]);
+});
+
+test("Stage 24: 路線を選ぶと自動で拡大され台帳は小さくなる。番号一覧は番号一覧のまま・スクロール位置を保つ。凡例は縦長の帯で左右に切り替わる", async ({ page }) => {
+  test.setTimeout(240000); await page.setViewportSize({ width: 360, height: 740 });
+  const errs = watchErrors(page); await startReal(page);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.runner.settle(); a.sim.speed = 0; a.ffYears(12); a.openSheet("ledger"); });
+  await page.click("#led-mode-numbers"); const z0 = await app(page, "a => a.r.view.zoom");
+  await page.click("#num-road-2"); const z1 = await app(page, "a => a.r.view.zoom"); expect(z1 as number).toBeGreaterThan(z0 as number);   // zoomed to the line
+  expect(await page.locator("#num-grid").count()).toBe(1); expect(await page.locator("#led-mode-normal").count()).toBe(0);   // still the number list, in its small window
+  { const h = await page.evaluate(() => document.getElementById("sheet")!.getBoundingClientRect().height / innerHeight); expect(h).toBeLessThan(0.32); }
+  { const f = await app(page, "a => { const b = a.hl.edges.map((id) => a.sim.edges[id]).filter(Boolean); let x0 = 1e9, x1 = -1e9; for (const e of b) for (const c of e.cells) { const p = a.world.cellPos(c); x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); } return (x1 - x0) * a.r.view.zoom / a.r.size.w; }"); expect(f).toBeGreaterThan(0.3); expect(f).toBeLessThan(1.0); }
+  await page.evaluate(() => { document.getElementById("sheet")!.scrollTop = 90; }); const st0 = await page.evaluate(() => document.getElementById("sheet")!.scrollTop);
+  await page.locator("#num-road-6").scrollIntoViewIfNeeded(); const st1 = await page.evaluate(() => document.getElementById("sheet")!.scrollTop); await page.click("#num-road-6");
+  await page.waitForTimeout(200); const st2 = await page.evaluate(() => document.getElementById("sheet")!.scrollTop); expect(Math.abs(st2 - st1)).toBeLessThan(40); expect(st0).toBeGreaterThanOrEqual(0);
+  expect(await app(page, "a => a.hl.id")).not.toBeNull(); await page.click("#num-road-6"); expect(await app(page, "a => a.hl")).toBeNull();
+  // the vertical legend
+  await page.evaluate(() => (window as any).__kfm.openSheet(null)); await page.click("#btn-legend"); await page.waitForSelector("#legend-side");
+  const side0 = await app(page, "a => a.legendSide"); const box = async () => page.evaluate(() => { const r = document.getElementById("legend-side")!.getBoundingClientRect(); return [r.left, r.right, r.width, innerWidth]; });
+  { const [l, r, w, iw] = await box(); expect(w).toBeLessThan(110); expect(side0 === "right" ? r > iw - 12 : l < 12).toBe(true); }
+  await page.click("#lg-swap"); expect(await app(page, "a => a.legendSide")).not.toBe(side0); { const [l, r, , iw] = await box(); expect((await app(page, "a => a.legendSide")) === "left" ? l < 12 : r > iw - 12).toBe(true); }
+  expect(await page.evaluate(() => { const b = document.getElementById("legend-side-body")!; return b.scrollHeight > b.clientHeight; })).toBe(true);
+  await page.evaluate(() => { const b = document.getElementById("legend-side-body")!; b.scrollTop = b.scrollHeight; }); expect(await page.evaluate(() => { const b = document.getElementById("legend-side-body")!, last = b.lastElementChild!.getBoundingClientRect(), br = b.getBoundingClientRect(); return last.bottom <= br.bottom + 1; })).toBe(true);   // the last entry can be reached
+  expect(await page.evaluate(() => [...document.querySelectorAll("#legend-side .lg-item")].every((it) => { const s = it.querySelector("svg")!.getBoundingClientRect(), c = it.querySelector(".lg-cap")!.getBoundingClientRect(); return c.top >= s.bottom - 0.5; }))).toBe(true);   // the words are under the line sample
+  const sideNow = await app(page, "a => a.legendSide"); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await page.waitForSelector("#legend-side"); expect(await app(page, "a => a.legendSide")).toBe(sideNow);   // kept with the display settings
+  // ×50
+  await page.click("#speed-50"); expect(await app(page, "a => a.sim.speed")).toBe(50); const m = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number) + 3, m, { timeout: 60000 });
+  expect(errs).toEqual([]);
+});
