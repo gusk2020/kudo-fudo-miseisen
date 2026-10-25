@@ -8,6 +8,7 @@ import { routeAtYear, type RouteView } from "../sim/ledger";
 import type { World } from "../sim/world";
 import { hubsAt } from "../sim/hubs";
 import { pickCityCircles } from "./cityCircles";
+import { tierOf } from "../sim/tier23";
 import { LINE, nameWidth, placeNames, type Box, type NameCircle } from "./cityNames";
 import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
@@ -132,17 +133,22 @@ export class RoadLayer {
    */
   private drawCityCircles(sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
     const g = this.g.cityTop, circles = pickCityCircles(sim, w, zoom, year, lite);
-    const drawn: NameCircle[] = [];
+    const drawn: NameCircle[] = [], tiers: number[] = [];
     for (const r of circles) {
       const col = r.rel > 1.08 ? 0x2fbf5f : r.rel < 0.93 ? 0xe0463c : 0x9aa4ad, rad = Math.min(px(3 + 4 * Math.sqrt(r.p / 1e5)), px(r.seat ? 34 : 28));
       g.circle(r.x, -r.y, rad).fill({ color: col, alpha: 0.3 }).stroke({ width: px(1.6), color: col, alpha: 1 });
       if (r.seat) g.circle(r.x, -r.y, rad + px(2.5)).stroke({ width: px(1.8), color: 0xffc83a, alpha: 0.95 });
-      const wc = w.cityById.get(r.id); drawn.push({ x: r.x * zoom, y: -r.y * zoom, rad: rad * zoom, name: wc && wc.kind !== "capital" && sim.pot17 ? wc.name : null, seat: r.seat });
+      const tier = year === null ? tierOf(sim, r.id) : 0;
+      if (tier) { g.circle(r.x, -r.y, rad + px(tier === 2 ? 4.6 : 3.4)).stroke({ width: px(tier === 2 ? 2.2 : 1.4), color: tier === 2 ? 0x3b1f6e : 0x7a4fb5, alpha: 0.95 }); }   // Stage 23: 政令指定都市 a heavy violet ring, 政令特区 a light one
+      const wc = w.cityById.get(r.id); tiers.push(tier);
+      drawn.push({ x: r.x * zoom, y: -r.y * zoom, rad: rad * zoom, name: wc && wc.kind !== "capital" && sim.pot17 && (!sim.tier23 || year !== null || tier > 0 || r.seat) ? wc.name : null, seat: r.seat });   // (Stage 23: with the tiers only the 特区・政令指定都市 and the seats are named; the others keep their circle)
     }
     // Stage 18/19: names of the places that grew into cities (cityNames.ts): no overlaps, biggest first, fewer when zoomed out; the base map's names of the capitals (drawn from zoom 0.55) are in the way too
     if (zoom >= 0.55 && sim.pot17) {
       const fixed: Box[] = []; for (const c of w.cities) if (c.kind === "capital") { const x = c.pos[0] * zoom + 5, y = -c.pos[1] * zoom - 6; fixed.push([x, y, x + nameWidth(c.name), y + LINE]); }
-      let nn = 0; for (const p of placeNames(drawn, fixed, zoom)) { const t = this.nameText(nn++); t.text = drawn[p.i].name!; t.visible = true; t.scale.set(1 / zoom); t.position.set(p.x / zoom, p.y / zoom); }
+      // Stage 23: the order names are laid in is the order of importance: the seats, then 政令指定都市, then 政令特区, then the rest by size (the circles are in size order already)
+      const ord = drawn.map((_, i) => i).sort((a, b) => (drawn[b].seat ? 3 : tiers[b]) - (drawn[a].seat ? 3 : tiers[a]) || a - b), sorted = ord.map((i) => drawn[i]);
+      let nn = 0; for (const p of placeNames(sorted, fixed, zoom)) { const t = this.nameText(nn++); t.text = sorted[p.i].name!; t.visible = true; t.scale.set(1 / zoom); t.position.set(p.x / zoom, p.y / zoom); }
     }
   }
   /** Stage 8/9: ports and airports, each in two sizes only (large: 国際拠点港湾以上 / 国際ハブ空港; small: the rest), and the busiest domestic flights.

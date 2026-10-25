@@ -12,6 +12,8 @@ import { reconText } from "../sim/recon";
 import { homeCity, subCity } from "../sim/ceremony";
 import { ECO_LABEL, ECO_PARTS, mainCause } from "../sim/econ";
 import { displayName } from "../sim/straits";
+import { FACILITY_LABEL, ZONE_LABEL, facLevel, tierHistory, wardPops } from "../sim/tier23";
+import { yearOf } from "../sim/engine";
 import { AIR_KIND_LABEL, PORT_CAP, PORT_TIER_LABEL, airName, foreignName, hubsAt, portName } from "../sim/hubs";
 import { DOMAIN_LABEL, POLICIES, skipWindow, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
@@ -136,7 +138,7 @@ export function buildAtlas(app: App, body: HTMLElement) {
     for (const e of Object.values(sim.edges)) { const c = codes[e.id]; if (c === undefined) continue; const st = c >> 4, rail = modeOf(e) === "rail"; if (st === 0) rail ? (rl += e.lengthKm) : (rk += e.lengthKm); else if (st === 4) plan++; else if (st === 3) lost++; else sk += rail ? 0 : 0; void sl; }
     body.append(h("div", { class: "issue", id: "atlas-summary" }, `${cur ?? "現在"}年: 道路${Math.round(rk).toLocaleString()}km・鉄道${Math.round(rl).toLocaleString()}km(供用中) ／ 計画・工事中${plan}区間 ／ 廃道・廃線跡${lost}区間`));
   }
-  buildTrends(sim, body); buildHubAtlas(app, sim, body, cur); buildCityEconomy(app, sim, body, cur);
+  buildTrends(sim, body); buildHubAtlas(app, sim, body, cur); buildCityEconomy(app, sim, body, cur); if (cur === null) buildCityTiers(app, sim, body);
   if (cur !== null) body.append(h("div", { class: "issue warn", id: "atlas-readonly" }, `${cur}年を閲覧中(読み取り専用・時間は停止)。操作したい場合は「現在に戻る」を押してください。`));
 }
 
@@ -205,6 +207,23 @@ export function buildPolicy(app: App, body: HTMLElement) {
  * Stage 12: 都市の栄枯盛衰 -- who gained and who lost on the nation over the last twenty years, and why. One compact block: two short lists (the five that gained most
  * and the five that lost most, with the cause that moved them most), and a city picker that opens that city's size over time and the parts of its yearly advantage.
  */
+/** Stage 23: the 政令指定都市 (with their wards) and 政令特区 of the game, and the ones that were given up. Tap a city to open its wards. */
+const ROLE_LABEL: Record<string, string> = { center: "都心", industry: "工業", port: "港湾・物流", academic: "学術", residential: "住宅" };
+export function buildCityTiers(app: App, sim: SimState, body: HTMLElement) {
+  const t = sim.tier23, w = app.ensureWorld(); if (!t || !w) return;
+  body.append(h("h3", { id: "city-tiers" }, "政令指定都市と政令特区(ゲーム独自の制度)")); const y = yearOf(sim);
+  const rows = Object.entries(t.zones).map(([id, z]) => ({ id, z, c: w.cityById.get(id)!, pop: sim.cities[id]?.pop ?? 0 })).filter((r) => r.c).sort((a, b) => b.z.tier - a.z.tier || b.pop - a.pop);
+  if (!rows.length) { body.append(h("small", {}, "まだありません。人口が全国の0.7%を保ち続けた都市が政令特区になります。")); }
+  for (const r of rows) {
+    const open = ui3.open.has("tier-" + r.id), facs = r.z.facs.map((f) => `${FACILITY_LABEL[f.k]}${facLevel(f, y) < 1 ? `(整備中${Math.round(facLevel(f, y) * 100)}%)` : ""}`).join("・");
+    const d = h("div", { class: "issue", id: "tier-" + r.id, onclick: () => { open ? ui3.open.delete("tier-" + r.id) : ui3.open.add("tier-" + r.id); app.buildSheet(); } },
+      `${r.c.name} ${r.z.tier === 2 ? "政令指定都市" : ZONE_LABEL[r.z.kind]} ${Math.round(r.pop / 1000).toLocaleString()}千人 ／ ${facs}`);
+    if (open) { for (const x of wardPops(r.z, r.pop)) d.append(h("div", { class: "hist" }, `${x.ward.name}(${ROLE_LABEL[x.ward.role]}) ${Math.round(x.pop / 1000).toLocaleString()}千人`)); for (const hh of tierHistory(sim, r.id)) d.append(h("div", { class: "hist" }, `${hh.y}年 ${hh.tier === 2 ? "政令指定都市に昇格" : hh.tier === 1 ? "政令特区(" + ZONE_LABEL[hh.kind ?? r.z.kind] + ")" : "指定解除"}`)); }
+    body.append(d);
+  }
+  const gone = Object.entries(t.hist).filter(([id]) => !t.zones[id]).map(([id, hh]) => ({ c: w.cityById.get(id), hh })).filter((r) => r.c);
+  if (gone.length) body.append(h("small", { id: "tier-gone" }, "指定が解かれた都市: " + gone.map((g) => `${g.c!.name}(${g.hh[g.hh.length - 1].y}年)`).join("、")));
+}
 export function buildCityEconomy(app: App, sim: SimState, body: HTMLElement, year: number | null) {
   body.append(h("h3", { id: "city-eco" }, "都市の栄枯盛衰"));
   const w = app.ensureWorld(), c12 = sim.city12; if (!w || !c12) { body.append(h("small", {}, "このデータには都市経済のしくみがありません(旧形式のセーブ)")); return; }
