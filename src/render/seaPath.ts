@@ -33,14 +33,14 @@ function search(w: World, a: number, b: number, lake: boolean): Vec[] | null {
   const ca = coastNear(w, a, water), cb = coastNear(w, b, water); if (ca < 0 || cb < 0) return null;
   const starts = near(ca), goals = new Set(near(cb)); if (!starts.length || !goals.size) return null;
   const h = new MinHeap(1024); for (const s of starts) { dist[loc(s)] = 0; h.push(0, s); }
+  const coastCost = [0, 1, 2, 3, 4].map((v) => 1 + 2.2 / Math.max(1, v));   // (the cost of a step by how close the water is to land: water hugging the coast costs more, the route stands off the shore)
   let end = -1;
   while (h.size) {
-    const { key, val: c } = h.pop(); if (key > dist[loc(c)] + 1e-9) continue; if (goals.has(c)) { end = c; break; }
-    const ci = c % nx, cj = (c / nx) | 0;
-    for (const [di, dj, sdd] of D8) {
-      const x = ci + di, y = cj + dj; if (x < i0 || x > i1 || y < j0 || y > j1) continue; const n = y * nx + x; if (!isW(n)) continue;
-      const off = lake ? 1 : 1 + 2.2 / Math.max(1, Math.min(sd[n], 4));   // water hugging the coast costs more: the route stands off the shore
-      const nd = dist[loc(c)] + sdd * off; if (nd < dist[loc(n)]) { dist[loc(n)] = nd; prev[loc(n)] = c; h.push(nd, n); }
+    const { key, val: c } = h.pop(), lc = loc(c); if (key > dist[lc] + 1e-9) continue; if (goals.has(c)) { end = c; break; }
+    const ci = c % nx, cj = (c / nx) | 0, dc = dist[lc];
+    for (let m = 0; m < 8; m++) {
+      const x = ci + D8[m][0], y = cj + D8[m][1]; if (x < i0 || x > i1 || y < j0 || y > j1) continue; const n = y * nx + x; if (!isW(n)) continue;
+      const nd = dc + D8[m][2] * (lake ? 1 : coastCost[Math.min(sd[n], 4)]), ln = (y - j0) * bw + (x - i0); if (nd < dist[ln]) { dist[ln] = nd; prev[ln] = c; h.push(nd, n); }
     }
   }
   if (end < 0) return null;
