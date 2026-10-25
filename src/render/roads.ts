@@ -25,6 +25,7 @@ export interface RoadArgs {
   lite?: boolean;                                                        // light drawing for a slow device: solid lines instead of dashes, fewer labels, no ports
   sel?: string | null;
   hide?: string[];                                                       // legend filters (display only): grade ids, 'road'/'rail' state keys
+  hl?: { edges: string[]; air?: [Vec, Vec] } | null;                    // Stage 23: the route chosen in the ledger / number list, drawn over everything in its own colour
   names?: boolean;                                                       // route-name text beside the number signs
 }
 const GRADE_RANK: Record<Grade, number> = { jnr: 4, national: 3, fu: 2, ken: 1, priv: 3 };
@@ -53,7 +54,12 @@ function pattern(g: Graphics, pts: Vec[], dash: number[]) {
     while (seg > 1e-6) { const step = Math.min(left, seg); if (draw) { g.moveTo(x, -y); g.lineTo(x + ux * step, -(y + uy * step)); } x += ux * step; y += uy * step; seg -= step; left -= step; if (left <= 1e-9) { i = (i + 1) % dash.length; draw = i % 2 === 0; left = dash[i]; } }
   }
 }
-const KEYS = ["city12", "halo", "facb", "ghost", "lanes", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "cityTop", "sel", "ov"];
+const KEYS = ["city12", "halo", "facb", "ghost", "lanes", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "cityTop", "sel", "hl", "ov"];
+/** Stage 23: a copy of a line moved sideways by d (world units) -- two lines that share a bridge or a tunnel are drawn side by side instead of one over the other. Display only. */
+function offsetLine(pts: Vec[], d: number): Vec[] {
+  return pts.map((p, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], n = Math.hypot(dx, dy) || 1; return [p[0] - (dy / n) * d, p[1] + (dx / n) * d] as Vec; });
+}
+const HL_COL = 0xff00d4;   // the highlight: a magenta used nowhere else on the map
 const line = (g: Graphics, pts: Vec[]) => { g.moveTo(pts[0][0], -pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], -pts[i][1]); };
 const opColour = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return [0x7a1f3d, 0x1f5f7a, 0x6b4a14, 0x3b6b1f, 0x5a2a8a, 0x8a3a1a, 0x1f3f8a][h % 7]; };
 
@@ -81,12 +87,13 @@ export class RoadLayer {
       for (const r of Object.values(s.routes)) h = (h * 31 + r.number + (r.active ? 1 : 0) + r.edges.length * 7 + r.oldEdges.length * 3 + (r.grade === "national" ? 3 : r.grade === "fu" ? 5 : r.grade === "jnr" ? 13 : r.grade === "priv" ? 17 : 11) + (r.nick ? 19 : 0)) >>> 0;
       for (const p of Object.values(s.projects)) h = (h * 31 + p.status.length + p.edgeIds.length) >>> 0;
       for (const c of Object.values(s.cities)) if (c.airport !== undefined) h = (h * 31 + 7) >>> 0;
+      if (s.tier23) for (const [id, z] of Object.entries(s.tier23.zones)) h = (h * 31 + z.tier * 7 + z.facs.length + id.length) >>> 0;   // Stage 23
       if (s.city12) { for (const c of Object.values(s.city12)) h = (h * 31 + c.h.length * 7 + (c.h[c.h.length - 1] ?? 0) % 997) >>> 0; }
       if (s.metro) { for (const m of s.metro.list) h = (h * 31 + Math.round(m.pop / 1000) + m.cells.length * 3) >>> 0; }
       if (s.hubs) { for (const p of Object.values(s.hubs.ports)) h = (h * 31 + p.tier + (p.until ? 5 : 0)) >>> 0; for (const x of Object.values(s.hubs.airports)) h = (h * 31 + x.runwayM + (x.kind === "hub" ? 3 : 0) + (x.until ? 5 : 0)) >>> 0; for (const r of s.hubs.routes) h = (h * 31 + r.state.length + r.since) >>> 0; }
     }
     const L = a.layers;
-    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${L.econ ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => (c.strokes ? c.strokes.map((st) => st.map((q) => q[0].toFixed(1) + q[1].toFixed(1)).join()).join("/") + (c.sel ?? "") + (c.handles ? "h" : "") : "") + c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}`;
+    return `${h}|${Object.keys(s?.edges ?? {}).length}|${L.roads}${L.rail ?? 1}${L.plans}${L.signs}${L.abandoned ?? 1}${L.ports ?? 1}${L.airports ?? 1}${L.lanes ?? 1}${L.econ ?? 1}${a.lite ? "L" : ""}${a.names ? "N" : ""}${(a.hide ?? []).join(",")}|${Math.round(zoom * 20)}|${a.cer.map((c) => (c.strokes ? c.strokes.map((st) => st.map((q) => q[0].toFixed(1) + q[1].toFixed(1)).join()).join("/") + (c.sel ?? "") + (c.handles ? "h" : "") : "") + c.pts.length + (c.path?.length ?? 0) + (c.ok ? "y" : "n")).join(",")}|${a.pin ? a.pin.join(",") : ""}|${a.compareYear ?? ""}|${a.past?.year ?? ""}|${a.sel ?? ""}|${a.hl ? a.hl.edges.length + a.hl.edges.join("").length + (a.hl.air ? "a" : "") : ""}`;
   }
   /**
    * Stage 12/13: how big each metropolis is, and whether it is rising or falling -- green when it has gained on the nation over the last twenty years, red when it
@@ -181,6 +188,13 @@ export class RoadLayer {
       }
       const planned = new Map<string, string>(); for (const p of Object.values(sim.projects)) if (p.status !== "open" && p.status !== "abolished") for (const id of p.edgeIds) planned.set(id, p.status);
       const { ferry: fer, ghost, plan, halo, cas, fill, mid, fillDash, old, rcas, rfill, rtie, rdash, fac, facb } = this.g, shapes = new Map<string, Vec[]>(), nickGrade = new Map<string, Grade>();
+      // Stage 23: a road and a railway that cross the same water or hill by the same bridge / tunnel are drawn side by side (display only; the network keeps its two edges). Found by a shared cell.
+      const sharedSide = new Map<string, number>();
+      if (zoom >= 0.35) {
+        const byCell = new Map<number, SimEdge[]>();
+        for (const e of Object.values(sim.edges)) if ((e.facility === "bridge" || e.facility === "tunnel") && e.built >= 1 && e.state === "open") for (const c of e.cells) { const l = byCell.get(c); if (l) l.push(e); else byCell.set(c, [e]); }
+        for (const l of byCell.values()) if (l.length > 1) { const rd = l.find((x) => modeOf(x) !== "rail"), rl = l.find((x) => modeOf(x) === "rail"); if (rd && rl && rd.facility === rl.facility) { sharedSide.set(rd.id, 1); sharedSide.set(rl.id, -1); } }
+      }
       // level of detail: the whole country shows only the trunk network; regional and local lines appear as you zoom in
       const minRank = zoom < 0.35 ? 3 : zoom < 0.8 ? 2 : 0;
       for (const e of Object.values(sim.edges)) {
@@ -208,22 +222,25 @@ export class RoadLayer {
           continue;
         }
         if (eff.built >= 1 && eff.state === "open") {
-          if (e.facility === "bridge") { line(facb, pts); facb.stroke({ width: px(wd + 4), color: 0xffffff, alpha: 0.85, cap: "butt" }); }
-          else if (e.facility === "tunnel" && zoom >= 0.5) { pat(fac, pts, [px(3), px(3)]); fac.stroke({ width: px(wd * 1.3), color: 0x2a1f14, alpha: 0.9 }); }
+          // Stage 23: a bridge is a white deck with a black edge on both sides; a tunnel is a faded line between two black dashed edges. The road or railway itself keeps its own colour on top,
+          // so the kind of traffic can be read on the bridge and inside the tunnel; where both share the structure they run side by side (sharedSide).
+          const side = sharedSide.get(e.id) ?? 0, dp = side ? offsetLine(pts, px(side * (wd + 3.2) * 0.5)) : pts, tun = e.facility === "tunnel" && zoom >= 0.35;
+          if (e.facility === "bridge" && zoom >= 0.35) { line(facb, dp); facb.stroke({ width: px(wd + 6.4), color: 0x1a1a1a, cap: "butt" }); line(facb, dp); facb.stroke({ width: px(wd + 3.6), color: 0xffffff, alpha: 0.96, cap: "butt" }); }
+          else if (tun) { const d = px(wd * 0.5 + 2.6); for (const sg of [1, -1]) { pat(fac, offsetLine(dp, sg * d), [px(4), px(3)]); fac.stroke({ width: px(1.7), color: 0x2a1f14, alpha: 0.95 }); } }
           if (rail) {
             // Stage 9: one style for every ordinary railway (national or private alike); 新幹線 blue with a white centre line, リニア purple with a dashed one
             const k = kindOf(e), fc = k === "maglev" ? MAGLEV_COL : k === "hsr" ? HSR_COL : col;
-            line(rcas, pts); rcas.stroke({ width: px(wd + (thin < 1 ? 1.2 : 2.2)), color: 0xffffff, alpha: thin < 1 ? 0.7 : 0.92, cap: "round", join: "round" });
-            line(rfill, pts); rfill.stroke({ width: px(k === "rail" ? wd : wd * 1.15), color: fc, cap: "round", join: "round" });
-            if (k === "rail") { if (zoom >= 0.8) { pat(rtie, pts, [px(4), px(5)]); rtie.stroke({ width: px(wd * 0.7), color: 0xffffff, alpha: 0.95 }); } }
-            else if (k === "hsr") { line(mid, pts); mid.stroke({ width: px(1.2), color: 0xffffff, alpha: 0.95 }); }
-            else { pat(mid, pts, [px(6), px(4)]); mid.stroke({ width: px(1.6), color: 0xffffff, alpha: 0.95 }); }
+            line(rcas, dp); rcas.stroke({ width: px(wd + (thin < 1 ? 1.2 : 2.2)), color: 0xffffff, alpha: (thin < 1 ? 0.7 : 0.92) * (tun ? 0.45 : 1), cap: "round", join: "round" });
+            line(rfill, dp); rfill.stroke({ width: px(k === "rail" ? wd : wd * 1.15), color: fc, alpha: tun ? 0.5 : 1, cap: "round", join: "round" });
+            if (k === "rail") { if (zoom >= 0.8) { pat(rtie, dp, [px(4), px(5)]); rtie.stroke({ width: px(wd * 0.7), color: 0xffffff, alpha: 0.95 }); } }
+            else if (k === "hsr") { line(mid, dp); mid.stroke({ width: px(1.2), color: 0xffffff, alpha: 0.95 }); }
+            else { pat(mid, dp, [px(6), px(4)]); mid.stroke({ width: px(1.6), color: 0xffffff, alpha: 0.95 }); }
           } else {
             const hwy = e.standard === "highgrade";   // Stage 9: one style for every road whatever its administrative grade; a 高速道路 has a green casing and a white centre line
-            line(cas, pts); cas.stroke({ width: px(wd + (hwy ? 3.4 : 2.4)), color: hwy ? HWY_CASING : ROAD_CASING, alpha: 0.95, cap: "round", join: "round" });
-            if (isOld) { pat(old, pts, [px(9), px(3), px(2), px(3)]); old.stroke({ width: px(wd), color: col, cap: "butt" }); }
-            else { line(fill, pts); fill.stroke({ width: px(wd), color: col, cap: "round", join: "round" }); }
-            if (hwy || (e.bypassOf.length && !past)) { line(mid, pts); mid.stroke({ width: px(1), color: 0xffffff, alpha: 0.9 }); }
+            line(cas, dp); cas.stroke({ width: px(wd + (hwy ? 3.4 : 2.4)), color: hwy ? HWY_CASING : ROAD_CASING, alpha: tun ? 0.4 : 0.95, cap: "round", join: "round" });
+            if (isOld) { pat(old, dp, [px(9), px(3), px(2), px(3)]); old.stroke({ width: px(wd), color: col, cap: "butt" }); }
+            else { line(fill, dp); fill.stroke({ width: px(wd), color: col, alpha: tun ? 0.5 : 1, cap: "round", join: "round" }); }
+            if (hwy || (e.bypassOf.length && !past)) { line(mid, dp); mid.stroke({ width: px(1), color: 0xffffff, alpha: 0.9 }); }
           }
         } else if (eff.built >= 1 && eff.state === "dormant") {
           if (rail) { pat(rdash, pts, [px(10), px(6)]); rdash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.9 }); } else { pat(fillDash, pts, [px(10), px(6)]); fillDash.stroke({ width: px(wd * 0.9), color: col, alpha: 0.85 }); }
@@ -236,6 +253,15 @@ export class RoadLayer {
         }
       }
       if (a.sel && shapes.has(a.sel)) { const pts = shapes.get(a.sel)!; line(this.g.sel, pts); this.g.sel.stroke({ width: px(9), color: 0xffffff, alpha: 0.55, cap: "round", join: "round" }); }
+      if (a.hl) {   // Stage 23: the chosen route over everything: a black edge, then magenta; only the edges whose position the game still has (nothing is invented for the rest)
+        const hl = this.g.hl, hw = (e: SimEdge) => (modeOf(e) === "rail" ? RAIL_WIDTH[e.standard] : WIDTH[e.standard]);
+        for (const id of a.hl.edges) {
+          const e = sim.edges[id]; if (!e) continue; const pts = e.facility === "ferry" ? seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)) : edgeShape(w, sim, e), wdt = Math.max(3, hw(e)) * (zoom < 0.35 ? 0.7 : 1);
+          if (e.facility === "ferry") { pat(hl, pts, [px(9), px(5)]); hl.stroke({ width: px(wdt + 8), color: 0x111111, cap: "butt" }); pat(hl, pts, [px(9), px(5)]); hl.stroke({ width: px(wdt + 4), color: HL_COL, cap: "butt" }); }
+          else { line(hl, pts); hl.stroke({ width: px(wdt + 8), color: 0x111111, cap: "round", join: "round" }); line(hl, pts); hl.stroke({ width: px(wdt + 4), color: HL_COL, cap: "round", join: "round" }); }
+        }
+        if (a.hl.air) { pat(hl, a.hl.air, [px(10), px(6)]); hl.stroke({ width: px(8), color: 0x111111 }); pat(hl, a.hl.air, [px(10), px(6)]); hl.stroke({ width: px(4), color: HL_COL }); }
+      }
       const nodes = this.g.nodes;
       for (const n of Object.values(sim.nodes)) {
         if (n.kind === "pass" && showRoads && zoom >= 0.35) nodes.poly([n.pos[0], -n.pos[1] - px(6), n.pos[0] - px(5), -n.pos[1] + px(3), n.pos[0] + px(5), -n.pos[1] + px(3)]).fill({ color: 0xffffff }).stroke({ width: px(1), color: 0x222222 });

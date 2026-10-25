@@ -77,6 +77,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.pop15 !== undefined && raw.pop15 !== true) delete raw.pop15;   // Stage 15
   if (raw.isl20 !== undefined && raw.isl20 !== true) delete raw.isl20;   // Stage 20
   if (raw.sea22 !== undefined && raw.sea22 !== true) delete raw.sea22;   // Stage 22
+  if (raw.numreg !== undefined && !(isRec(raw.numreg) && isRec(raw.numreg.next) && isRec(raw.numreg.list) && ["road", "hwy", "rail", "hsr", "sea", "air"].every((k) => Array.isArray(raw.numreg.list[k]) && Number.isInteger(raw.numreg.next[k])))) delete raw.numreg;   // Stage 23: a register that is not whole is started again (estimated)
   if (raw.tier23 !== undefined && !(isRec(raw.tier23) && isRec(raw.tier23.zones) && isRec(raw.tier23.hist) && isRec(raw.tier23.cnt))) delete raw.tier23;   // Stage 23
   if (raw.isl22 !== undefined && raw.isl22 !== true) delete raw.isl22;
   if (raw.e2200 !== undefined && !(isRec(raw.e2200) && Number.isInteger(raw.e2200.year) && ["pending", "road0", "done"].includes(raw.e2200.state))) delete raw.e2200;   // Stage 22

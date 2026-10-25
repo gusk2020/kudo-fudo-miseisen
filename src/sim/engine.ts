@@ -6,6 +6,7 @@
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
 import { due2200, open2200 } from "./event2200";
 import { newTier23, reviewTiers } from "./tier23";
+import { newNumReg, syncNumbers } from "./numreg";
 import { enforceCaps } from "./cap20";
 import type { SeatMove } from "./seatmove20";
 import { cityBoost, settlementBoost } from "./sites";
@@ -133,7 +134,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   if (firstCand && w.townIds && opts.pot17 !== false) { const seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; sim.pot17 = initPotential(w.t, seats, sim.kaigen?.recon?.focus ?? "concentrate", seed, sim.startYear, opts.coast18 === false || sim.kaigen?.recon?.coast === "neutral" ? undefined : sim.kaigen?.recon?.coast, seatLL(sim, w)); startCandidates(sim, w); }   // Stage 17   // Stage 12: a city whose land is far worse than any real city's starts smaller; the rest settle on the better land near it
   enforceCaps(sim, w);   // Stage 20
   if (sim.stage3) ensureHubs(sim, w, sim.startYear);   // Stage 8: the ports of 1950 (airports open from the late 1950s)
-  yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); yield 1;
+  yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); if (sim.stage3) { sim.numreg = newNumReg(); syncNumbers(sim, sim.startYear); } yield 1;
   return sim;
 }
 export function createSim(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): SimState {
@@ -199,6 +200,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
   if (sim.crossings) { yield; planCrossings(sim, w, y); yield; reviewLakeFerries(sim, w, y); }
+  if (sim.stage3) { yield; syncNumbers(sim, y); }   // Stage 23
   reviewWorks(sim);
   refreshNick(sim);
   if (sim.stage3) compactSim(sim, y);
