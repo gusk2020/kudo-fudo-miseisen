@@ -133,8 +133,8 @@ test("ledger rows open the number history and focus the map; the timeline filter
   await page.click("#dock-timeline"); expect(await page.isVisible("#tl-world")).toBe(true); await page.click("#tl-world");
   expect(await page.locator("#sheet-body .issue").count()).toBeGreaterThan(5); expect(await page.textContent("#sheet-body")).toContain("【史実】");
   await page.click("#tl-policy"); await page.click("#dock-ledger"); await page.click("#led-rail");
-  const first = page.locator("#sheet-body .issue").first(); await first.click(); expect(await page.locator("#sheet-body .hist").count()).toBeGreaterThan(0);
-  await page.locator("#sheet-body button.mini").first().click(); expect(await app(page, "a => a.selEdge")).not.toBeNull();
+  await page.locator("#sheet-body button[id^=hist-]").first().click(); expect(await page.locator("#sheet-body .hist").count()).toBeGreaterThan(0);   // Stage 23: a tap on the row highlights the line; 履歴 opens its history
+  await page.locator("#sheet-body button[id^=focus-]").first().click(); expect(await app(page, "a => a.selEdge")).not.toBeNull();
   await page.click("#led-fac"); expect(await page.textContent("#sheet-body")).toContain("トンネル・橋");
   expect(errs).toEqual([]);
 });
