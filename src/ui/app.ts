@@ -34,6 +34,7 @@ import { buildWorld, townsForSeats, type World } from "../sim/world";
 import { eraKeyOf, type EraKey } from "../sim/eras";
 import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraDescText, eraRadioGroups } from "./stage3";
 import { prefSelect } from "./prefSelect";
+import type { HlTarget } from "./lines23";
 import { closeRadio, showRadio } from "./radioWin";
 import { CAND_1945 } from "../sim/kaigen";
 
@@ -193,7 +194,7 @@ export class App {
     if (this.cerLive) cer.push({ strokes: [this.cerLive], handles: false, sel: null, pts: this.cerLive, path: undefined as any, ok: true, segs: undefined });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
     if (onRoads) this.ensureWorld();
-    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports, airports: L.airports, lanes: L.lanes, econ: L.econ }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, lite: this.lite, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge, hide: [...this.hide], names: this.names });
+    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports, airports: L.airports, lanes: L.lanes, econ: L.econ }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, lite: this.lite, hl: this.hl ? { edges: this.hl.edges, ...(this.hl.air ? { air: this.hl.air } : {}) } : null, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge, hide: [...this.hide], names: this.names });
   }
   /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
   private attachPendingSim() {
@@ -689,7 +690,13 @@ export class App {
     for (const b of Array.from(dock.children)) if (b !== fit) (b as HTMLElement).hidden = true;
     for (const [id, label] of [["layers", "レイヤー"], ["timeline", "年表"], ["ledger", "台帳"], ["atlas", "地図帳"], ["policy", "介入"], ["menu", "保存"]] as [string, string][]) dock.insertBefore(h("button", { id: "dock-" + id, onclick: () => this.openSheet(id) }, label), fit);
   }
-  openSheet(name: string | null) { this.sheet = this.sheet === name ? null : name; this.buildSheet(); }
+  // ---- Stage 23: the line chosen in the ledger / number list, drawn in its own colour ----
+  hl: HlTarget | null = null; hlList: HlTarget[] = []; ledgerMini = false;
+  /** Choose a line (or let go of it when it is the one already chosen). The ledger shrinks to a bar while one is chosen. Nothing in the game changes. */
+  toggleHl(t: HlTarget, list?: HlTarget[]) { if (list) this.hlList = list; if (this.hl?.id === t.id) { this.clearHl(); return; } this.hl = t; this.ledgerMini = true; this.renderRoads(); this.buildSheet(); }
+  clearHl(redraw = true) { if (!this.hl && !this.ledgerMini) return; this.hl = null; this.ledgerMini = false; if (redraw) { this.renderRoads(); this.buildSheet(); } }
+  stepHl(dir: 1 | -1) { const l = this.hlList; if (!this.hl || !l.length) return; const i = l.findIndex((x) => x.id === this.hl!.id), n = l[i < 0 ? (dir > 0 ? 0 : l.length - 1) : (i + dir + l.length) % l.length]; this.hl = n; this.renderRoads(); this.buildSheet(); }
+  openSheet(name: string | null) { if (this.hl && name !== "ledger") this.clearHl(false); this.sheet = this.sheet === name ? null : name; this.buildSheet(); this.renderRoads(); }
   buildUI() {
     const i = this.s.step;
     $("step-title").textContent = this.real ? (this.sim ? "酷道・腐道・未成線" : "酷道・腐道・未成線 — 開通の儀") : `${STEP_LABELS[this.stepId]}  (${i + 1}/${STEPS.length})`;
@@ -865,7 +872,7 @@ export class App {
   }
   buildSheet() {
     const sh = $("sheet"), body = $("sheet-body");
-    sh.hidden = this.sheet === null; body.replaceChildren(); if (!this.sheet) return;
+    sh.hidden = this.sheet === null; sh.classList.toggle("mini", this.sheet === "ledger" && !!this.hl && this.ledgerMini); body.replaceChildren(); if (!this.sheet) return;
     if (this.sheet === "layers") {
       body.append(h("h3", {}, "表示レイヤー"));
       const wrap = h("div", { class: "row" });
