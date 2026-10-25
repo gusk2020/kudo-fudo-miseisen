@@ -95,7 +95,7 @@ export interface HubsState { ports: Record<string, PortState>; airports: Record<
 
 export interface SimState {
   schemaVersion: 1 | 2 | 3; mapHash: string; terrainHash: string; seed: number; era: string; startYear: number;
-  month: number; rngState: number; speed: 0 | 1 | 5 | 20;
+  month: number; rngState: number; speed: 0 | 1 | 5 | 20 | 50;
   next: { node: number; edge: number; route: number; project: number; event: number };
   nodes: Record<string, SimNode>; edges: Record<string, SimEdge>; routes: Record<string, SimRoute>; projects: Record<string, SimProject>;
   cities: Record<string, CityState>;
