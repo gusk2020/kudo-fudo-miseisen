@@ -83,7 +83,9 @@ export function buildTimeline(app: App, body: HTMLElement) {
 function routeKm(sim: SimState, r: SimRoute) { return Math.round(r.edges.reduce((a, x) => a + (sim.edges[x.edgeId]?.lengthKm ?? 0), 0)); }
 export function buildLedger(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "路線台帳")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
-  if (app.hl && app.ledgerMini) { buildMini(app, body); return; }   // Stage 23: a line is chosen -- the ledger is a small bar until 通常サイズ
+  if (app.hl && app.ledgerMini) {   // Stage 23/24: a line is chosen -- the ledger is a small window until 通常サイズ; the number list stays a number list (with its own scroll)
+    buildMini(app, body); if (ui3.ledgerMode === "numbers") buildNumberList(app, body, ui3, true); return;
+  }
   body.append(modeBar(app, ui3.ledgerMode, (m) => { ui3.ledgerMode = m; }));
   if (ui3.ledgerMode === "numbers") { buildNumberList(app, body, ui3); return; }
   const tabs = h("div", { class: "row" }), list: HlTarget[] = [];

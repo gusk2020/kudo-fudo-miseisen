@@ -118,8 +118,10 @@ body.real #sheet { max-height: 62dvh; }
 .e22-seat select { max-width: 48%; font-size: 13px; }
 
 /* Stage 23: a chosen line (ledger / number list): the ledger becomes a small bar; rows and chips show which is chosen */
-#sheet.mini { max-height: 26dvh; padding-top: 8px; }
-.led-mini { display: flex; flex-direction: column; gap: 4px; } .led-mini b { font-size: 14px; color: #ff6fe6; }
+#sheet.mini { max-height: 19dvh; padding-top: 6px; padding-bottom: calc(60px + env(safe-area-inset-bottom)); } #sheet.mini #sheet-close { top: 2px; }
+#sheet.mini-num { max-height: 30dvh; }
+#sheet.mini h3 { display: none; }
+.led-mini { display: flex; flex-direction: column; gap: 2px; margin-right: 44px; } .led-mini b { font-size: 14px; color: #ff6fe6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .led-mini .row { margin: 2px 0; } .led-mini .row button { padding: 4px 10px; font-size: 13px; }
 #sheet .issue.hl { outline: 2px solid #ff00d4; }
 #sheet .issue .mini { margin-left: 8px; font-size: 12px; padding: 2px 8px; }
 .num-grid { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }

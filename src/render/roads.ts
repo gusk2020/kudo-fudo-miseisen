@@ -59,6 +59,15 @@ const KEYS = ["city12", "halo", "facb", "ghost", "lanes", "ferry", "plan", "cas"
 function offsetLine(pts: Vec[], d: number): Vec[] {
   return pts.map((p, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], n = Math.hypot(dx, dy) || 1; return [p[0] - (dy / n) * d, p[1] + (dx / n) * d] as Vec; });
 }
+/** Short cross-lines along a line (girders): where a bridge is, they make it read as a bridge at a glance and at any zoom where the line itself is wide enough to see. */
+function girders(g: Graphics, pts: Vec[], step: number, half: number) {
+  let carry = 0;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const [ax, ay] = pts[i], [bx, by] = pts[i + 1], len = Math.hypot(bx - ax, by - ay); if (len < 1e-9) continue; const ux = (bx - ax) / len, uy = (by - ay) / len;
+    for (let d = step - carry; d <= len; d += step) { const x = ax + ux * d, y = ay + uy * d; g.moveTo(x - uy * half, -(y + ux * half)); g.lineTo(x + uy * half, -(y - ux * half)); carry = len - d; }
+    if (len < step - carry) carry += len;
+  }
+}
 const HL_COL = 0xff00d4;   // the highlight: a magenta used nowhere else on the map
 const line = (g: Graphics, pts: Vec[]) => { g.moveTo(pts[0][0], -pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], -pts[i][1]); };
 const opColour = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return [0x7a1f3d, 0x1f5f7a, 0x6b4a14, 0x3b6b1f, 0x5a2a8a, 0x8a3a1a, 0x1f3f8a][h % 7]; };
@@ -225,7 +234,7 @@ export class RoadLayer {
           // Stage 23: a bridge is a white deck with a black edge on both sides; a tunnel is a faded line between two black dashed edges. The road or railway itself keeps its own colour on top,
           // so the kind of traffic can be read on the bridge and inside the tunnel; where both share the structure they run side by side (sharedSide).
           const side = sharedSide.get(e.id) ?? 0, dp = side ? offsetLine(pts, px(side * (wd + 3.2) * 0.5)) : pts, tun = e.facility === "tunnel" && zoom >= 0.35;
-          if (e.facility === "bridge" && zoom >= 0.35) { line(facb, dp); facb.stroke({ width: px(wd + 6.4), color: 0x1a1a1a, cap: "butt" }); line(facb, dp); facb.stroke({ width: px(wd + 3.6), color: 0xffffff, alpha: 0.96, cap: "butt" }); }
+          if (e.facility === "bridge" && zoom >= 0.35) { line(facb, dp); facb.stroke({ width: px(wd + 8), color: 0x1a1a1a, cap: "butt" }); line(facb, dp); facb.stroke({ width: px(wd + 4.6), color: 0xffffff, alpha: 0.97, cap: "butt" }); if (zoom >= 0.6) { girders(facb, dp, px(6), px(wd * 0.5 + 6)); facb.stroke({ width: px(1.5), color: 0x1a1a1a }); } }
           else if (tun) { const d = px(wd * 0.5 + 2.6); for (const sg of [1, -1]) { pat(fac, offsetLine(dp, sg * d), [px(4), px(3)]); fac.stroke({ width: px(1.7), color: 0x2a1f14, alpha: 0.95 }); } }
           if (rail) {
             // Stage 9: one style for every ordinary railway (national or private alike); 新幹線 blue with a white centre line, リニア purple with a dashed one
@@ -256,11 +265,12 @@ export class RoadLayer {
       if (a.hl) {   // Stage 23: the chosen route over everything: a black edge, then magenta; only the edges whose position the game still has (nothing is invented for the rest)
         const hl = this.g.hl, hw = (e: SimEdge) => (modeOf(e) === "rail" ? RAIL_WIDTH[e.standard] : WIDTH[e.standard]);
         for (const id of a.hl.edges) {
-          const e = sim.edges[id]; if (!e) continue; const pts = e.facility === "ferry" ? seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)) : edgeShape(w, sim, e), wdt = Math.max(3, hw(e)) * (zoom < 0.35 ? 0.7 : 1);
-          if (e.facility === "ferry") { pat(hl, pts, [px(9), px(5)]); hl.stroke({ width: px(wdt + 8), color: 0x111111, cap: "butt" }); pat(hl, pts, [px(9), px(5)]); hl.stroke({ width: px(wdt + 4), color: HL_COL, cap: "butt" }); }
-          else { line(hl, pts); hl.stroke({ width: px(wdt + 8), color: 0x111111, cap: "round", join: "round" }); line(hl, pts); hl.stroke({ width: px(wdt + 4), color: HL_COL, cap: "round", join: "round" }); }
+          const e = sim.edges[id]; if (!e) continue; const pts = e.facility === "ferry" ? seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)) : edgeShape(w, sim, e), wdt = Math.max(4, hw(e)) * (zoom < 0.35 ? 0.8 : 1);
+          // white halo, black edge, magenta body, white core: readable over roads of any colour, rail, sea and ground alike
+          if (e.facility === "ferry") { for (const [k, c, ex] of [[0, 0xffffff, 16], [1, 0x111111, 11], [2, HL_COL, 7], [3, 0xffffff, 2]] as const) { void k; pat(hl, pts, [px(9), px(5)]); hl.stroke({ width: px(wdt + ex), color: c, cap: "butt" }); } }
+          else for (const [c, ex] of [[0xffffff, 16], [0x111111, 11], [HL_COL, 7], [0xffffff, 2]] as const) { line(hl, pts); hl.stroke({ width: px(wdt + ex), color: c, alpha: ex === 16 ? 0.85 : 1, cap: "round", join: "round" }); }
         }
-        if (a.hl.air) { pat(hl, a.hl.air, [px(10), px(6)]); hl.stroke({ width: px(8), color: 0x111111 }); pat(hl, a.hl.air, [px(10), px(6)]); hl.stroke({ width: px(4), color: HL_COL }); }
+        if (a.hl.air) { for (const [c, wd2] of [[0xffffff, 14], [0x111111, 10], [HL_COL, 6]] as const) { pat(hl, a.hl.air, [px(10), px(6)]); hl.stroke({ width: px(wd2), color: c }); } }
       }
       const nodes = this.g.nodes;
       for (const n of Object.values(sim.nodes)) {

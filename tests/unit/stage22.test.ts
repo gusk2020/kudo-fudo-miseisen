@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { run14 } from "../study/lib14";
 import { advance, stepMonth, yearOf } from "../../src/sim/engine";
 import { autoResolve } from "../../src/sim/policy";
-import { apply2200, adoptWorld, due2200 } from "../../src/sim/event2200";
+import { apply2200, adoptWorld, close2200, due2200, waiting2200 } from "../../src/sim/event2200";
 import { CAND_2200 } from "../../src/sim/kaigen";
 import { homeCity, performNational, previewNational, subCity } from "../../src/sim/ceremony";
 import { buildIndex } from "../../src/sim/network";
@@ -23,7 +23,8 @@ describe("Stage 22: the 2200 event", () => {
     expect(apply2200(sim, { era: 1, stance: "kairo", coast: "neutral", focus: "disperse", capital: "JP-04", sub: "JP-40", palace: "JP-26" })).toBe(true);
     const k = sim.kaigen!; expect(k.eras.length).toBe(before + 1); expect(k.eras[k.eras.length - 1]).toMatchObject({ name: CAND_2200[1].name, start: 2200, stance: "kairo" });
     expect(k.recon).toEqual({ coast: "neutral", focus: "disperse", since: 2200 }); expect(sim.capital).toBe("JP-04"); expect(sim.subCapital).toBe("JP-40"); expect(sim.e2200?.state).toBe("road0");
-    for (let i = 0; i < 14; i++) { stepMonth(sim, w); if (sim.policy?.pending) autoResolve(sim, w); } expect(yearOf(sim)).toBe(2201); expect(due2200(sim)).toBe(false);
+    const mm = sim.month; for (let i = 0; i < 5; i++) stepMonth(sim, w); expect(sim.month).toBe(mm); expect(waiting2200(sim)).toBe(true);   // Stage 24: choosing is not the end -- 国道0号 is drawn or given up first
+    close2200(sim); for (let i = 0; i < 14; i++) { stepMonth(sim, w); if (sim.policy?.pending) autoResolve(sim, w); } expect(yearOf(sim)).toBe(2201); expect(due2200(sim)).toBe(false);
     expect(sim.kaigen!.eras.filter((e) => e.name === CAND_2200[1].name)).toHaveLength(1);
     expect(sim.pot17!.hist.some((x) => x.y === 2201 || x.y === 2200)).toBe(true);   // the development order is redrawn from the new seats
   }, 300000);

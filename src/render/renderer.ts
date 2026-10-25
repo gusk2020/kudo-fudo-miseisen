@@ -44,6 +44,8 @@ export class Renderer {
   capitalsOnly = true;
   /** Stage 19: a seat point chosen on the map and not yet confirmed (a crosshair) */
   seatPending: Vec | null = null;
+  /** Stage 24: after 2200 the seats are the game's (sim.capital ...), not the map state's: where the three markers stand (null = as the map state says). */
+  seatOverride: { capital: Vec | null; sub: Vec | null; palace: Vec | null } | null = null;
   /** Stage 20: the small islands (drawn as ellipses of their real size, at least a few pixels wide so the tiniest can be seen and tapped) */
   /** Stage 22: the 県庁所在地 of the game's world (moved ones included), most important first; the base map names these, without overlaps */
   baseNames: { name: string; p: Vec }[] | null = null;
@@ -209,7 +211,7 @@ export class Renderer {
     const at = (pref: string): Vec | null => { const c = t?.cities.find((x) => x.pref === pref && x.kind === "capital"); return c ? c.pos : prefPoint(s, pref); };
     const star = (p: Vec, col: number, r: number) => { const pts: number[] = []; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r; pts.push(p[0] + Math.cos(a) * rr, -p[1] + Math.sin(a) * rr); } g.poly(pts).fill({ color: col }).stroke({ width: px(1.2), color: 0xffffff }); };
     const label = (p: Vec, text: string, dy: number) => { const tx = new Text({ text, style: { fontSize: 11, fontWeight: "700", fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(p[0] + px(10), -p[1] + px(dy)); this.labels.addChild(tx); };
-    const cp = s.capitalPos ?? at(seats.capital), sp = s.subPos ?? at(seats.sub), pp = s.palacePos ?? at(seats.palace);
+    const ov = this.seatOverride, cp = ov ? ov.capital : s.capitalPos ?? at(seats.capital), sp = ov ? ov.sub : s.subPos ?? at(seats.sub), pp = ov ? ov.palace : s.palacePos ?? at(seats.palace);
     if (this.seatPending) { const q = this.seatPending, r = px(11); g.circle(q[0], -q[1], r).stroke({ width: px(2), color: 0xff7a00 }); g.moveTo(q[0] - r * 1.6, -q[1]).lineTo(q[0] + r * 1.6, -q[1]).moveTo(q[0], -q[1] - r * 1.6).lineTo(q[0], -q[1] + r * 1.6).stroke({ width: px(2), color: 0xff7a00 }); label(q, "候補", 6); }
     if (cp) { star(cp, 0xd62828, px(10)); label(cp, "首都", -14); }
     if (sp) { star(sp, 0x1f6fd0, px(9)); label(sp, "副首都", -14); }

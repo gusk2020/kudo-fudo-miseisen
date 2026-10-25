@@ -1,5 +1,5 @@
 import { buildIndex } from "../sim/network";
-import { adoptWorld, apply2200, close2200, type Choice2200 } from "../sim/event2200";
+import { adoptWorld, apply2200, close2200, waiting2200, type Choice2200 } from "../sim/event2200";
 import { buildE2200, e22Draft } from "./e2200";
 import { nearestPlace } from "../core/gazetteer";
 import { movesOfSettings, type SeatMove } from "../sim/seatmove20";
@@ -7,7 +7,7 @@ import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL, JAPAN, lonLatToReal, realToLonLat } from "../core/data";
 import { FEATURE_LIMITS } from "../core/save";
-import { PREF_IDS, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
+import { PREF_IDS, prefOfSeat, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, getRaw, listSlots, slotMeta, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
@@ -34,7 +34,8 @@ import { buildWorld, townsForSeats, type World } from "../sim/world";
 import { eraKeyOf, type EraKey } from "../sim/eras";
 import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraDescText, eraRadioGroups } from "./stage3";
 import { prefSelect } from "./prefSelect";
-import type { HlTarget } from "./lines23";
+import { ui3 } from "./stage3";
+import { fitView, hlBounds, type HlTarget } from "./lines23";
 import { closeRadio, showRadio } from "./radioWin";
 import { CAND_1945 } from "../sim/kaigen";
 
@@ -158,7 +159,7 @@ export class App {
   }
   render() { if (!isRidgeTool(this.tool) && this.bgBeforeRidge) { const b0 = this.bgBeforeRidge; this.bgBeforeRidge = null; this.bg = b0; this.r.setBg(b0); }   // leaving the range tools by any route puts the map back
     if (this.real && this.s.bg && this.s.bg !== this.bg && !this.bgBeforeRidge) { this.bg = this.s.bg; this.r.setBg(this.bg); }   // a loaded game brings its own map choice
-    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = seatsOf(this.s), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim, shaped: !!x.islet.shape, tiny: (x.islet.shapeAreaKm2 ?? x.islet.area) < 1 })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = this.activeSeats(), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.seatOverride = this.sim?.e2200 && w0 ? this.seatPoints(w0) : null; this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim, shaped: !!x.islet.shape, tiny: (x.islet.shapeAreaKm2 ?? x.islet.area) < 1 })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -490,7 +491,17 @@ export class App {
     for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
   }
   // ---- Stage 22: the 2200 event ----
-  e22: Choice2200 | null = null; e22Pick: "capital" | "sub" | "palace" | null = null;
+  /** Stage 24: the seats of the game being played: after 2200 they are the ones the player chose then (sim), before that those of the map state. */
+  activeSeats(): { capital: string; sub: string; palace: string } {
+    const st = seatsOf(this.s), sim = this.sim; if (!sim?.e2200) return st;
+    return { capital: sim.capital ?? st.capital, sub: sim.subCapital ?? st.sub, palace: prefOfSeat(sim.palace?.pref) ?? st.palace };
+  }
+  /** Where the three seats stand in the world (the 県庁所在地 city of each, or the palace's own point). */
+  seatPoints(w: World): { capital: Vec | null; sub: Vec | null; palace: Vec | null } {
+    const sim = this.sim!, a = this.activeSeats(), pos = (p: string) => w.cities.find((c) => c.pref === p && c.kind === "capital")?.pos ?? null;
+    return { capital: homeCity(w, a.capital)?.pos ?? pos(a.capital), sub: subCity(w, a.sub)?.pos ?? pos(a.sub), palace: sim.palace?.pos ?? pos(a.palace) };
+  }
+  road0Told = false; e22: Choice2200 | null = null; e22Pick: "capital" | "sub" | "palace" | null = null;
   startE22Map(role: "capital" | "sub" | "palace") { this.e22Pick = role; this.seatPick = null; this.r.seatPending = null; this.tool = "seatpick"; this.sheet = null; this.buildSheet(); this.buildToolbar(); this.render(); }
   endE22Map() { this.e22Pick = null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.sheet = "e2200"; this.buildSheet(); this.buildToolbar(); this.render(); }
   /** 決める / 今のまま: applied to the game; a seat put on the map rebuilds the world with the new 県庁所在地 (people come from the old one, a little) and the runner goes on with it. */
@@ -617,9 +628,10 @@ export class App {
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
     if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.toast("2200年: 遷都と復興の時です(時間は止まっています)"); }
+    else if (sim?.e2200?.state === "road0" && !this.road0Told) { this.road0Told = true; this.toast("国道0号を描いて開通させるか、見送るかを選んでください(時間は止まっています)"); }   // Stage 24: choosing the era and seats is not the end of the event
     else if (sim?.kaigen?.pending && this.sheet !== "kaigen") { this.sheet = "kaigen"; this.buildSheet(); this.toast("改元の時です。元号を選んでください(時間は止まっています)"); }
     else if (sim?.policy?.pending && this.sheet !== "policy") { this.sheet = "policy"; this.buildSheet(); this.toast("10年ごとの政策介入の機会です(時間は止まっています)"); }
-    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || this.viewYear !== null || sim.policy?.pending || sim.kaigen?.pending || sim.e2200?.state === "pending") { this.lastTick = now; return; }
+    if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || this.viewYear !== null || sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) { this.lastTick = now; return; }
     const dt = Math.min(250, Math.max(0, now - this.lastTick)); this.lastTick = now;
     this.acc += dt * sim.speed; const n = Math.floor(this.acc / MS_PER_MONTH_X1);
     if (n > 0) { this.acc -= n * MS_PER_MONTH_X1; run.request(n); }
@@ -640,7 +652,7 @@ export class App {
     const plan = planCatchUp(elapsedMs, sim.speed); if (plan.months <= 0 && plan.skipped <= 0) return;
     this.catching = true; const target = sim.month + plan.months; if (sim.policy) sim.policy.away = true;
     while (sim.month < target) {
-      if (sim.policy?.pending || sim.kaigen?.pending || sim.e2200?.state === "pending") break;
+      if (sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) break;
       run.request(Math.min(24, target - sim.month - run.pending)); run.pump(12);
       this.catchInfo = `放置分を計算中 ${Math.floor((plan.months - (target - sim.month)) / 12)}/${Math.floor(plan.months / 12)}年`; this.status();
       await new Promise((r) => setTimeout(r, 0));
@@ -691,9 +703,19 @@ export class App {
     for (const [id, label] of [["layers", "レイヤー"], ["timeline", "年表"], ["ledger", "台帳"], ["atlas", "地図帳"], ["policy", "介入"], ["menu", "保存"]] as [string, string][]) dock.insertBefore(h("button", { id: "dock-" + id, onclick: () => this.openSheet(id) }, label), fit);
   }
   // ---- Stage 23: the line chosen in the ledger / number list, drawn in its own colour ----
-  hl: HlTarget | null = null; hlList: HlTarget[] = []; ledgerMini = false;
+  sheetKey = ""; hl: HlTarget | null = null; hlList: HlTarget[] = []; ledgerMini = false;
   /** Choose a line (or let go of it when it is the one already chosen). The ledger shrinks to a bar while one is chosen. Nothing in the game changes. */
-  toggleHl(t: HlTarget, list?: HlTarget[]) { if (list) this.hlList = list; if (this.hl?.id === t.id) { this.clearHl(); return; } this.hl = t; this.ledgerMini = true; this.renderRoads(); this.buildSheet(); }
+  toggleHl(t: HlTarget, list?: HlTarget[]) { if (list) this.hlList = list; if (this.hl?.id === t.id) { this.clearHl(); return; } this.hl = t; this.ledgerMini = true; this.buildSheet(); this.fitHl(); this.renderRoads(); }
+  /** Move and zoom the map to the chosen line: its east-west width about 80% of the free width (all of it if it is taller than that allows), in the part of the screen the small window and the legend leave free. */
+  fitHl() {
+    const sim = this.sim, w = this.world, t = this.hl; if (!sim || !w || !t) return; const b = hlBounds(sim, w, t); if (!b) return;
+    const { w: sw, h: sh } = this.r.size, st = document.getElementById("status")?.getBoundingClientRect(), sheet = document.getElementById("sheet"), sb = sheet && !sheet.hidden ? sheet.getBoundingClientRect() : null, lg = this.legendInset();
+    const top = Math.max(0, Math.min(sh * 0.35, (st?.bottom ?? 0) + 6)), bottom = sb ? Math.max(top + 120, sb.top - 6) : sh - 70, x = lg.left, wd = sw - lg.left - lg.right;
+    this.r.setView(fitView(b, { x, y: top, w: Math.max(80, wd), h: bottom - top }, { w: sw, h: sh }));
+  }
+  /** The width the vertical legend takes from the left / right edge of the map (0 when it is not shown). */
+  legendInset(): { left: number; right: number } { const el = document.getElementById("legend-side"); if (!el || el.hidden) return { left: 0, right: 0 }; const r = el.getBoundingClientRect(), left = this.legendSide === "left"; return { left: left ? r.width : 0, right: left ? 0 : r.width }; }
+  legendSide: "left" | "right" = "right";
   clearHl(redraw = true) { if (!this.hl && !this.ledgerMini) return; this.hl = null; this.ledgerMini = false; if (redraw) { this.renderRoads(); this.buildSheet(); } }
   stepHl(dir: 1 | -1) { const l = this.hlList; if (!this.hl || !l.length) return; const i = l.findIndex((x) => x.id === this.hl!.id), n = l[i < 0 ? (dir > 0 ? 0 : l.length - 1) : (i + dir + l.length) % l.length]; this.hl = n; this.renderRoads(); this.buildSheet(); }
   openSheet(name: string | null) { if (this.hl && name !== "ledger") this.clearHl(false); this.sheet = this.sheet === name ? null : name; this.buildSheet(); this.renderRoads(); }
@@ -872,7 +894,9 @@ export class App {
   }
   buildSheet() {
     const sh = $("sheet"), body = $("sheet-body");
-    sh.hidden = this.sheet === null; sh.classList.toggle("mini", this.sheet === "ledger" && !!this.hl && this.ledgerMini); body.replaceChildren(); if (!this.sheet) return;
+    const mini = this.sheet === "ledger" && !!this.hl && this.ledgerMini, key = this.sheet + ":" + mini + ":" + ui3.ledgerMode + ":" + ui3.numClass, keep = this.sheetKey === key ? sh.scrollTop : 0; this.sheetKey = key;   // (Stage 24: the same list is rebuilt after a tap: it stays where the finger left it)
+    sh.hidden = this.sheet === null; sh.classList.toggle("mini", mini); sh.classList.toggle("mini-num", mini && ui3.ledgerMode === "numbers"); body.replaceChildren(); if (!this.sheet) return;
+    queueMicrotask(() => { if (keep) sh.scrollTop = keep; });
     if (this.sheet === "layers") {
       body.append(h("h3", {}, "表示レイヤー"));
       const wrap = h("div", { class: "row" });
