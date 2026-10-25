@@ -96,3 +96,13 @@ describe("Stage 22: ocean and island routes", () => {
     for (const e of [...Object.values(sea.sim.edges).filter(isOcean), ...isl.slice(0, 20)]) { const pts = seaPath(sea.w, sea.sim.nodes[e.a].cell, sea.sim.nodes[e.b].cell); let onLand = 0; for (const p of pts.slice(2, -2)) { const k = sea.w.cellOf(p); if (k >= 0 && sea.w.t.land[k] === 1) onLand++; } expect(onLand, e.facilityName).toBeLessThanOrEqual(1); }
   }, 600000);
 });
+
+describe("Stage 22 audit: sea routes", () => {
+  it("one search from a port gives the same km as asking for the pair, and a rested ocean route does not flip for ever", async () => {
+    const w = realWorld(true, true, 2).w, cs = oceanCandidates(w), c = cs[0];
+    expect(seaKm(w, c.a.cell, c.b.cell)).toBeCloseTo(c.km, 6);
+    for (const l of islandLinks(w).slice(0, 30)) { expect(l.km).toBeGreaterThanOrEqual(0); expect(isFinite(l.km) || l.kind === "next").toBe(true); }   // (a lifeline's length is the way over the sea, never 0 for two cells apart)
+    const { OCEAN_MAX_RESTS } = await import("../../src/sim/sea22"); const r = run14({ seed: 5, until: 2100, islets: true }), oc = Object.values(r.sim.edges).filter(isOcean);
+    expect(oc.length).toBeGreaterThan(0); for (const e of oc) expect((e as unknown as { rests22?: number }).rests22 ?? 0).toBeLessThanOrEqual(OCEAN_MAX_RESTS);
+  }, 300000);
+});
