@@ -866,7 +866,7 @@ test("Stage 23: 完全自動でも2200年で必ず止まり、選ぶまで進ま
   await page.click("#e22-keep"); expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.kept === true, a.sim.e2200.auto === undefined]")).toEqual(["done", true, true]);
   // save slots: one line each
   await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = null; a.openSheet("menu"); }); await page.waitForSelector("#slot-1");
-  await page.locator("#slot-2 .slot-save").click(); await page.waitForFunction(() => /\d{4}年/.test(document.getElementById("slot-2")!.textContent ?? ""), null, { timeout: 15000 });
+  await page.locator("#slot-2 .slot-save").click(); await page.waitForFunction(() => /\d{4}年/.test(document.getElementById("slot-2")?.textContent ?? ""), null, { timeout: 15000 });
   const row = await page.evaluate(() => { const r = document.getElementById("slot-2")!, b = r.getBoundingClientRect(), t = r.querySelector(".slot-text") as HTMLElement; return { h: b.height, w: b.width, text: r.textContent, load: !!r.querySelector(".slot-load"), save: !!r.querySelector(".slot-save"), right: b.right }; });
   expect(row.h).toBeLessThan(48); expect(row.right).toBeLessThanOrEqual(360); expect(row.load && row.save).toBe(true); expect(row.text).toMatch(/②.*東京府.*大阪府.*2200年/);
   expect(await page.locator("#slot-5").textContent()).toContain("(空)");
