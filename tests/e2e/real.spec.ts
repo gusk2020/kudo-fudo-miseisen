@@ -17,9 +17,9 @@ async function bootReal(page: Page) {
 async function editor(page: Page, open: boolean) { const on = (await page.getAttribute("#terrain-edit-toggle", "aria-pressed")) === "true"; if (on !== open) await page.click("#terrain-edit-toggle"); }
 async function openTab(page: Page, tab: string) { if (await page.isVisible("#rw-close")) await page.click("#rw-close"); if (!(await page.isVisible("#setup-tab-" + tab))) await editor(page, false); if ((await page.getAttribute("#setup-tab-" + tab, "aria-selected")) !== "true") await page.click("#setup-tab-" + tab); }
 async function openSetup(page: Page) { await openTab(page, "era"); if (!(await page.isVisible("#era-list"))) await page.click("#era-open"); await page.waitForSelector("#era-list"); }
-async function openSeat(page: Page, which: string) { await openTab(page, which); if (!(await page.isVisible("#pref-picker")) && (await page.isVisible("#seat-repick"))) await page.click("#seat-repick"); await page.waitForSelector("#pref-picker"); }
+async function openSeat(page: Page, which: string) { await openTab(page, which); await page.waitForSelector("#seat-sel-" + which); }
 async function openMapPick(page: Page, which: string) { await openSeat(page, which); await page.click("#pref-map"); }
-async function seatSelect(page: Page, which: string, val: string) { await openSeat(page, which); await page.click("#pref-opt-" + val); await page.click("#rw-close"); }
+async function seatSelect(page: Page, which: string, val: string) { await openSeat(page, which); await page.selectOption("#seat-sel-" + which, val); }
 async function closeSheet(page: Page) { if (await page.isVisible("#sheet-close")) await page.click("#sheet-close"); }
 async function closeSetup(page: Page) { if (await page.isVisible("#rw-close")) await page.click("#rw-close"); if (await page.isVisible("#setup-close")) await page.click("#setup-close"); }
 async function clickEra(page: Page, i: number) { await page.click("#era-opt-" + i); }
@@ -41,9 +41,8 @@ test("real Japan opens by default: finalised, step 6, no map-editing controls, e
   // Stage 19: four small tabs that fit the phone width; every panel is closed until a tab is pressed, and pressing another tab closes the first
   { const vw = page.viewportSize()!.width, boxes = await page.evaluate(() => ["era", "capital", "sub", "palace"].map((k) => { const r = document.getElementById("setup-tab-" + k)!.getBoundingClientRect(); return [r.left, r.right, r.height]; }));
     for (const [l, r, h] of boxes) { expect(l).toBeGreaterThanOrEqual(0); expect(r).toBeLessThanOrEqual(vw); expect(h).toBeGreaterThanOrEqual(30); } expect(await page.locator("#setup-panel").count()).toBe(0);
-    await page.click("#setup-tab-capital"); expect(await page.isVisible("#pref-picker")).toBe(true); expect(await page.isVisible("#pref-map") && await page.isVisible("#rw-close")).toBe(true); expect(await page.locator("#seat-mode-list").count()).toBe(0);   // Stage 21: the tab opens the prefecture list at once
-    await page.click("#rw-close"); expect(await page.locator("#pref-picker").count()).toBe(0); expect(await page.isVisible("#seat-repick")).toBe(true);
-    await page.click("#setup-tab-sub"); await page.click("#pref-opt-JP-27"); await page.click("#rw-close"); expect(await page.locator("#setup-panel").count()).toBe(1); expect(await page.getAttribute("#setup-tab-capital", "aria-selected")).toBe("false"); await page.click("#setup-close"); expect(await page.locator("#setup-panel").count()).toBe(0); }
+    await page.click("#setup-tab-capital"); expect(await page.isVisible("#seat-sel-capital")).toBe(true); expect(await page.isVisible("#pref-map")).toBe(true);   // Stage 23: the tab shows the early picker (a select grouped by block) at once
+    await page.click("#setup-tab-sub"); await page.selectOption("#seat-sel-sub", "JP-27"); expect(await page.locator("#setup-panel").count()).toBe(1); expect(await page.getAttribute("#setup-tab-capital", "aria-selected")).toBe("false"); await page.click("#setup-close"); expect(await page.locator("#setup-panel").count()).toBe(0); }
   await openSetup(page); expect(await page.locator("#era-current").count()).toBe(0);
   { const heads = await page.locator("#era-list .rw-head").evaluateAll((es) => es.map((e) => e.firstChild!.textContent)); expect(heads).toEqual(["道路重視", "鉄道・公共交通重視", "海路重視", "空路重視", "均衡"]); expect(await page.locator("#era-list .rw-item").count()).toBe(14); expect(await page.locator("#era-list .rw-item.on").count()).toBe(1);
     const rows = await page.locator("#era-list .rw-item").allTextContents(); for (const r of rows) { expect(r).not.toMatch(/道路重視|鉄道|海路重視|空路重視|均衡/); }   // the group says the policy once; a row carries only its own conditions
@@ -134,8 +133,8 @@ test("ledger rows open the number history and focus the map; the timeline filter
   await page.click("#dock-timeline"); expect(await page.isVisible("#tl-world")).toBe(true); await page.click("#tl-world");
   expect(await page.locator("#sheet-body .issue").count()).toBeGreaterThan(5); expect(await page.textContent("#sheet-body")).toContain("【史実】");
   await page.click("#tl-policy"); await page.click("#dock-ledger"); await page.click("#led-rail");
-  const first = page.locator("#sheet-body .issue").first(); await first.click(); expect(await page.locator("#sheet-body .hist").count()).toBeGreaterThan(0);
-  await page.locator("#sheet-body button.mini").first().click(); expect(await app(page, "a => a.selEdge")).not.toBeNull();
+  await page.locator("#sheet-body button[id^=hist-]").first().click(); expect(await page.locator("#sheet-body .hist").count()).toBeGreaterThan(0);   // Stage 23: a tap on the row highlights the line; 履歴 opens its history
+  await page.locator("#sheet-body button[id^=focus-]").first().click(); expect(await app(page, "a => a.selEdge")).not.toBeNull();
   await page.click("#led-fac"); expect(await page.textContent("#sheet-body")).toContain("トンネル・橋");
   expect(errs).toEqual([]);
 });
@@ -181,11 +180,11 @@ test("defaults to the road map with route-name text hidden; legend toggles filte
   await expect(page.locator("#legend-ops")).toBeVisible();
   await page.locator("#lg-s-lost").uncheck(); await page.locator("#lg-k-hwy").uncheck(); await page.locator("#lg-names").check();
   expect(await app(page, "a => [...a.hide].sort().join()")).toContain("k:hwy"); expect(await app(page, "a => a.names")).toBe(true);
-  await page.locator("#lg-rail").uncheck(); expect(await app(page, "a => a.s.layers.rail")).toBe(false);
+  await page.locator("#lg-k-rail").uncheck(); expect(await app(page, "a => a.hide.has('k:rail')")).toBe(true);
   expect(await hashOf()).toBe(before);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); });
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
-  expect(await app(page, "a => a.hide.has('st:lost') && a.hide.has('k:hwy') && a.names && !a.s.layers.rail")).toBe(true);
+  expect(await app(page, "a => a.hide.has('st:lost') && a.hide.has('st:closed') && a.hide.has('k:hwy') && a.names && a.hide.has('k:rail')")).toBe(true);
   expect(errs).toEqual([]);
 });
 
@@ -246,7 +245,7 @@ test("限定の地形編集: capital, Alps and Fuji can be set before the first 
   await seatSelect(page, "capital", "JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47");   // Okinawa
   await seatSelect(page, "sub", "HK-SAP"); expect(await app(page, "a => a.s.subCapital")).toBe("HK-SAP");   // Sapporo
   await seatSelect(page, "palace", "JP-26"); expect(await app(page, "a => a.s.palace")).toBe("JP-26");
-  await openSeat(page, "capital"); expect(await page.locator("#pref-picker .rw-item").count()).toBe(49); await page.click("#rw-close"); await openSeat(page, "sub"); expect(await page.locator("#pref-opt-JP-47").evaluate((o: HTMLButtonElement) => o.disabled)).toBe(true);   // the capital cannot be chosen again as the sub-capital
+  await openSeat(page, "capital"); expect(await page.locator("#seat-sel-capital option").count()).toBe(49); await openSeat(page, "sub"); expect(await page.locator("#seat-sel-sub option[value=JP-47]").evaluate((o: HTMLOptionElement) => o.disabled)).toBe(true);   // the capital cannot be chosen again as the sub-capital
   await closeSheet(page); expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇");
   expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(0);   // the outline is never touched
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
@@ -431,7 +430,7 @@ test("Issue #20: 置けない所で指を離しても止まらない(直前の�
   // 7) the compact terrain menu holds no era / seat controls; the seats are listed north to south (Hokkaido's three first, Okinawa last)
   expect(await page.locator("#toolbar #setup-tabs").count()).toBe(0);
   const tbH = await page.evaluate(() => document.getElementById("toolbar")!.getBoundingClientRect().height), vh = await page.evaluate(() => innerHeight); expect(tbH).toBeLessThan(vh * 0.45);
-  await openSeat(page, "capital"); const ids = await page.locator("#pref-picker .rw-item").evaluateAll((os) => os.map((o) => (o as HTMLElement).id.replace("pref-opt-", "")));
+  await openSeat(page, "capital"); const ids = await page.locator("#seat-sel-capital option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
   expect(ids).toHaveLength(49); expect(ids.slice(0, 3).every((x) => x.startsWith("HK-"))).toBe(true); expect(ids[ids.length - 1]).toBe("JP-47");
   expect(errs).toEqual([]);
 });
@@ -597,7 +596,7 @@ test("Stage 19: 首都を地図の任意の陸地でタップして選べる。�
   expect(await app(page, "a => a.s.capital")).toBe("JP-23"); const cp = await app(page, "a => a.s.capitalPos") as [number, number]; expect(Math.abs(cp[0] - spot[0])).toBeLessThan(2); expect(await app(page, "a => a.s.subCapital")).toBeUndefined();
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.waitForTimeout(300); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(500);
   expect(await app(page, "a => a.s.capital")).toBe("JP-23"); expect(await app(page, "a => a.s.capitalPos")).toEqual(cp);   // the exact point came back
-  await openTab(page, "capital"); await page.click("#rw-close"); expect(await page.textContent("#seat-current")).toContain("地図で指定");
+  await openTab(page, "capital"); expect(await page.textContent("#seat-current")).toContain("地図で指定");
   await page.click("#seat-reset"); expect(await app(page, "a => a.s.capitalPos")).toBeUndefined(); expect(await app(page, "a => a.s.capital")).toBe("JP-23");   // back to the 県庁所在地 of the same prefecture
   expect(errs).toEqual([]);
 });
@@ -636,10 +635,10 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   const errs = watchErrors(page); await bootReal(page);
   // the seat pickers: nine blocks north to south, all 49, Niigata in 中部 (not mixed by latitude), Hokkaido's three
   await openSeat(page, "capital");
-  const groups = await page.evaluate(() => { const out: { l: string; ids: string[] }[] = []; for (const e of [...document.querySelectorAll("#pref-picker .rw-body > *")]) { if (e.classList.contains("rw-head")) out.push({ l: e.textContent!, ids: [] }); else out[out.length - 1].ids.push(e.id.replace("pref-opt-", "")); } return out; });
+  const groups = await page.evaluate(() => [...document.querySelectorAll("#seat-sel-capital optgroup")].map((g) => ({ l: g.getAttribute("label")!, ids: [...g.querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value) })));
   expect(groups.map((g) => g.l)).toEqual(["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州", "沖縄"]);
-  expect(groups.flatMap((g) => g.ids)).toHaveLength(49); expect(groups[0].ids.sort()).toEqual(["HK-HAK", "HK-NEM", "HK-SAP"]); expect(groups[3].ids).toContain("JP-15"); expect(groups[5].ids).toContain("JP-31");
-  await page.click("#rw-close"); await openSetup(page); expect(await page.locator("#era-list .rw-item").first().textContent()).toMatch(/神化|元化|神和|同和|継明|順明|明保|寛安|元安|立成|定業|光文|章明|協中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
+  expect(groups.flatMap((g) => g.ids)).toHaveLength(49); expect([...groups[0].ids].sort()).toEqual(["HK-HAK", "HK-NEM", "HK-SAP"]); expect(groups[3].ids).toContain("JP-15"); expect(groups[5].ids).toContain("JP-31");
+  await openSetup(page); expect(await page.locator("#era-list .rw-item").first().textContent()).toMatch(/神化|元化|神和|同和|継明|順明|明保|寛安|元安|立成|定業|光文|章明|協中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
   await seatSelect(page, "capital", "HK-NEM"); expect(await app(page, "a => a.s.capital")).toBe("HK-NEM"); await seatSelect(page, "capital", "JP-13");
   await closeSheet(page);
   // 北 removes the real Hida range, and only that; one Undo brings it back
@@ -799,31 +798,24 @@ test("Stage 21: 国道1号は副首都側から描いても開通し、近くの
   expect(errs).toEqual([]);
 });
 
-test("Stage 22: 府県と元号は黒い縦1列の一覧(○/●)。選んでも閉じず、閉じる・外側タップで閉じ、360px幅で最下部まで押せ、地図選択と往復できる", async ({ page }) => {
+test("Stage 23: 府県は初期の選択式(地方ブロック別・北から南)。360px幅で押せ、選んでも設定欄が残り、地図選択と往復できる。元号は○/●の一覧", async ({ page }) => {
   const errs = watchErrors(page); await page.setViewportSize({ width: 360, height: 740 }); await bootReal(page);
-  await page.click("#setup-tab-capital"); const win = page.locator("#pref-picker");
-  expect(await win.isVisible()).toBe(true);
-  const css = await page.evaluate(() => { const e = document.getElementById("pref-picker")!, c = getComputedStyle(e), r = e.getBoundingClientRect(); return [c.backgroundColor, c.color, r.left, r.right, innerWidth]; });
-  expect(css[0]).toBe("rgb(0, 0, 0)"); expect(css[1]).toBe("rgb(255, 255, 255)"); expect(css[2] as number).toBeGreaterThanOrEqual(0); expect(css[3] as number).toBeLessThanOrEqual(css[4] as number);
-  // one column, north to south, block by block, the game's own 49
-  const order = await page.evaluate(() => { const out: string[] = []; let x0 = -1, same = true; for (const e of [...document.querySelectorAll("#pref-picker .rw-body > *")]) { if (e.classList.contains("rw-head")) out.push("#" + e.textContent!.trim()); else { out.push(e.id.replace("pref-opt-", "")); const l = (e as HTMLElement).getBoundingClientRect().left; if (x0 < 0) x0 = l; else if (Math.abs(l - x0) > 1) same = false; } } return { out, same }; });
-  expect(order.same).toBe(true);   // a single column
-  expect(order.out.filter((x) => x.startsWith("#"))).toEqual(["#北海道", "#東北", "#関東", "#中部", "#近畿", "#中国", "#四国", "#九州", "#沖縄"]);
-  expect(order.out.filter((x) => !x.startsWith("#"))).toHaveLength(49); expect(order.out[1].startsWith("HK-")).toBe(true); expect(order.out[order.out.length - 1]).toBe("JP-47");
-  expect(await page.locator("#pref-opt-JP-13 .rw-dot").textContent()).toBe("●"); expect(await page.locator("#pref-opt-JP-47 .rw-dot").textContent()).toBe("○");
-  // the last item at the bottom can be tapped (the dock never covers it); the window stays open and the mark moves
-  await page.locator("#pref-opt-JP-47").scrollIntoViewIfNeeded(); { const b = await page.locator("#pref-opt-JP-47").boundingBox(); const hit = await page.evaluate(([x, y]) => (document.elementFromPoint(x, y) as HTMLElement)?.closest("button")?.id, [b!.x + 30, b!.y + b!.height / 2]); expect(hit).toBe("pref-opt-JP-47"); }
-  await page.click("#pref-opt-JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47"); expect(await win.isVisible()).toBe(true);
-  expect(await page.locator("#pref-opt-JP-47 .rw-dot").textContent()).toBe("●"); expect(await page.locator("#pref-opt-JP-13 .rw-dot").textContent()).toBe("○");
-  { const b = await page.locator("#rw-close").boundingBox(); expect(b!.y + b!.height).toBeLessThanOrEqual(740); const hit = await page.evaluate(([x, y]) => (document.elementFromPoint(x, y) as HTMLElement)?.id, [b!.x + b!.width / 2, b!.y + b!.height / 2]); expect(hit).toBe("rw-close"); }
-  // a tap outside closes it
-  await page.mouse.click(4, 4); expect(await page.locator("#pref-picker").count()).toBe(0);
-  // 地図で選ぶ -> 戻る comes back to the list; 取り消し changes nothing; 決定 moves the 県庁所在地
-  await page.click("#seat-repick"); await page.click("#pref-map"); expect(await app(page, "a => a.tool")).toBe("seatpick"); expect(await page.locator("#pref-picker").count()).toBe(0);
+  await page.click("#setup-tab-capital"); const sel = page.locator("#seat-sel-capital"); expect(await sel.isVisible()).toBe(true);
+  { const b = await sel.boundingBox(); expect(b!.x).toBeGreaterThanOrEqual(0); expect(b!.x + b!.width).toBeLessThanOrEqual(360); expect(b!.y + b!.height).toBeLessThanOrEqual(740 - 40); }
+  const groups = await sel.evaluate((e) => [...e.querySelectorAll("optgroup")].map((g) => [g.getAttribute("label"), g.querySelectorAll("option").length] as [string, number]));
+  expect(groups.map((g) => g[0])).toEqual(["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州", "沖縄"]); expect(groups.reduce((n, g) => n + g[1], 0)).toBe(49);
+  const vals = await sel.evaluate((e) => [...e.querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value)); expect(vals[0].startsWith("HK-")).toBe(true); expect(vals[vals.length - 1]).toBe("JP-47"); expect(await sel.inputValue()).toBe("JP-13");
+  await sel.selectOption("JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47"); expect(await page.locator("#setup-panel").count()).toBe(1); expect(await sel.inputValue()).toBe("JP-47");   // the panel stays after choosing
+  expect(await page.locator("#seat-sel-capital option[value=JP-27]").count()).toBe(1);
+  await page.click("#setup-tab-sub"); expect(await page.locator("#seat-sel-sub option[value=JP-47]").evaluate((o: HTMLOptionElement) => o.disabled)).toBe(true);   // the capital's prefecture cannot be the sub-capital
+  await page.click("#setup-tab-capital"); await sel.selectOption("JP-13");
+  // 地図で選ぶ -> 戻る comes back to the select; 取り消し changes nothing; 決定 moves the 県庁所在地
+  await page.click("#pref-map"); expect(await app(page, "a => a.tool")).toBe("seatpick");
   const nagoya = await cityPos(page, "名古屋市"), spot: [number, number] = [nagoya[0] + 12, nagoya[1] + 9];
   await page.evaluate((p) => { const a = (window as any).__kfm, H = window.innerHeight; a.r.setView({ cx: p[0], cy: p[1] + (200 - H / 2) / 3, zoom: 3 }, true); }, spot);
-  { const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-cancel"); expect(await app(page, "a => a.s.capital")).toBe("JP-47");
-  { const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-back"); expect(await page.isVisible("#pref-picker")).toBe(true); expect(await app(page, "a => a.s.capitalPos")).toBeUndefined();
+  { const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-cancel"); expect(await app(page, "a => a.s.capital")).toBe("JP-13");
+  await page.click("#setup-tab-capital").catch(() => {}); if (!(await page.isVisible("#pref-map"))) await page.click("#setup-tab-capital");
+  await page.click("#pref-map"); { const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-back"); expect(await page.isVisible("#seat-sel-capital")).toBe(true); expect(await app(page, "a => a.s.capitalPos")).toBeUndefined();
   await page.click("#pref-map"); { const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-confirm");
   expect(await app(page, "a => a.s.capital")).toBe("JP-23"); expect(await app(page, "a => a.world.cities.filter((c) => c.pref === 'JP-23' && c.kind === 'capital').length")).toBe(1);
   // the era list: the same window; each name with its own policy under it; choosing keeps it open
@@ -843,8 +835,7 @@ test("Stage 22: 2200年の遷都・改元・復興方針を選び、国道0号�
   await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 });
   await page.waitForSelector("#e22-box", { timeout: 20000 });
   expect(await page.locator("[id^=e22-era-]").count()).toBe(5);
-  await page.click("#e22-list-capital"); await page.click("#pref-opt-JP-40"); expect(await page.isVisible("#pref-picker")).toBe(true); await page.click("#rw-close");
-  await page.click("#e22-list-sub"); await page.click("#pref-opt-JP-13"); await page.click("#rw-close");
+  await page.selectOption("#e22-sel-capital", "JP-40"); await page.selectOption("#e22-sel-sub", "JP-13");
   await page.click("#e22-era-1"); await page.click("#e22-stance-kairo"); await page.click("#e22-coast-neutral"); await page.click("#e22-focus-disperse");
   expect(await page.locator("#e22-stance-kairo .rw-dot").textContent()).toBe("●");
   await page.click("#e22-decide");
@@ -859,5 +850,52 @@ test("Stage 22: 2200年の遷都・改元・復興方針を選び、国道0号�
   expect(await app(page, "a => Object.values(a.sim.routes).some((x) => x.grade === 'national' && x.number === 1 && x.active)")).toBe(true);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.kaigen.eras.filter((e) => e.name === '興化').length]")).toEqual(["done", 1]);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 23: 完全自動でも2200年で必ず止まり、選ぶまで進まない。現状維持は明示のボタン。保存スロットは1行で、保存した首都・副首都・西暦が出る", async ({ page }) => {
+  test.setTimeout(240000);
+  await page.setViewportSize({ width: 360, height: 740 });
+  const errs = watchErrors(page); await startReal(page);
+  await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (2200 - s.startYear) * 12; s.kaigen.next = 2230; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; });
+  await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 });
+  await page.waitForSelector("#e22-box", { timeout: 20000 });
+  const m = await app(page, "a => a.sim.month"); await page.waitForTimeout(2500); expect(await app(page, "a => a.sim.month")).toBe(m); expect(await app(page, "a => a.sim.e2200.state")).toBe("pending");   // ×20 and 完全自動: still waiting
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  await page.waitForSelector("#e22-box", { timeout: 20000 }); expect(await app(page, "a => a.sim.e2200.state")).toBe("pending");   // a save keeps the event open
+  await page.click("#e22-keep"); expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.kept === true, a.sim.e2200.auto === undefined]")).toEqual(["done", true, true]);
+  // save slots: one line each
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = null; a.openSheet("menu"); }); await page.waitForSelector("#slot-1");
+  await page.locator("#slot-2 .slot-save").click(); await page.waitForFunction(() => /\d{4}年/.test(document.getElementById("slot-2")?.textContent ?? ""), null, { timeout: 15000 });
+  const row = await page.evaluate(() => { const r = document.getElementById("slot-2")!, b = r.getBoundingClientRect(), t = r.querySelector(".slot-text") as HTMLElement; return { h: b.height, w: b.width, text: r.textContent, load: !!r.querySelector(".slot-load"), save: !!r.querySelector(".slot-save"), right: b.right }; });
+  expect(row.h).toBeLessThan(48); expect(row.right).toBeLessThanOrEqual(360); expect(row.load && row.save).toBe(true); expect(row.text).toMatch(/②.*東京府.*大阪府.*2200年/);
+  expect(await page.locator("#slot-5").textContent()).toContain("(空)");
+  expect(errs).toEqual([]);
+});
+
+test("Stage 23: 台帳から路線を選ぶと地図で強調され台帳が小さくなる。再タップ・別路線・別タブで解除。路線番号一覧から選んでも同じ強調", async ({ page }) => {
+  test.setTimeout(240000);
+  const errs = watchErrors(page); await startReal(page);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.runner.settle(); a.sim.speed = 0; a.ffYears(8); a.openSheet("ledger"); });
+  await page.waitForSelector("#led-modes");
+  const first = await page.locator("#sheet .issue[id^=led-]").first(); const rid = (await first.getAttribute("id"))!.slice(4);
+  await first.click(); expect(await app(page, "a => a.hl && a.hl.id")).toBe("r:" + rid); expect(await app(page, "a => a.ledgerMini")).toBe(true);
+  expect(await page.isVisible("#led-mini")).toBe(true); { const h = await page.evaluate(() => document.getElementById("sheet")!.getBoundingClientRect().height / innerHeight); expect(h).toBeLessThan(0.34); }
+  expect(await app(page, "a => a.hl.edges.length")).toBeGreaterThan(0);
+  const before = await app(page, "a => JSON.stringify([a.sim.month, Object.keys(a.sim.edges).length, a.sim.rngState, Object.values(a.sim.routes).filter((r) => r.active).length])");
+  await page.click("#hl-next"); expect(await app(page, "a => a.hl.id")).not.toBe("r:" + rid); await page.click("#hl-prev"); expect(await app(page, "a => a.hl.id")).toBe("r:" + rid);
+  await page.click("#hl-full"); expect(await app(page, "a => a.ledgerMini")).toBe(false); await page.locator("#led-r\\." + rid.slice(2)).click().catch(async () => { await page.locator("#sheet .issue.hl").click(); });
+  expect(await app(page, "a => a.hl")).toBeNull();   // the same line again: released
+  await page.locator("#sheet .issue[id^=led-]").nth(1).click(); expect(await app(page, "a => !!a.hl")).toBe(true);
+  await page.click("#hl-clear"); expect(await app(page, "a => a.hl")).toBeNull();
+  // numbers: the same highlight from the number list
+  await page.click("#led-mode-numbers"); await page.click("#num-road-1"); expect(await app(page, "a => !!a.hl && a.hl.edges.length > 0")).toBe(true); const idA = await app(page, "a => a.hl.id");
+  await page.click("#hl-full"); await page.click("#num-road-1"); expect(await app(page, "a => a.hl")).toBeNull();
+  await page.click("#num-road-2"); expect(await app(page, "a => a.hl.id")).not.toBe(idA); await page.click("#hl-full");
+  await page.click("#num-cls-rail"); expect(await app(page, "a => a.hl")).toBeNull();   // another tab lets go
+  await page.click("#num-rail-1"); expect(await app(page, "a => !!a.hl")).toBe(true); await page.click("#hl-full"); await page.click("#led-mode-normal"); expect(await app(page, "a => a.hl")).toBeNull();
+  await page.click("#led-mode-numbers"); await page.click("#num-cls-sea"); await page.click("#num-sea-1"); expect(await app(page, "a => !!a.hl")).toBe(true);   // (a sea lane)
+  await page.evaluate(() => (window as any).__kfm.openSheet("history")); expect(await app(page, "a => a.hl")).toBeNull();
+  expect(await app(page, "a => JSON.stringify([a.sim.month, Object.keys(a.sim.edges).length, a.sim.rngState, Object.values(a.sim.routes).filter((r) => r.active).length])")).toBe(before);   // choosing changed nothing in the game
   expect(errs).toEqual([]);
 });

@@ -4,6 +4,8 @@ import { h } from "./app";
 import { CAND_2200 } from "../sim/kaigen";
 import type { Choice2200 } from "../sim/event2200";
 import type { SimState } from "../sim/types";
+import { prefSelect } from "./prefSelect";
+import { seatCity } from "../sim/ceremony";
 import { DEFAULT_CAPITAL, DEFAULT_PALACE, DEFAULT_SUB, prefName } from "../core/seat";
 
 export const e22Draft = (sim: SimState): Choice2200 => ({ era: 0, stance: "heisei", coast: sim.kaigen?.recon?.coast ?? "neutral", focus: sim.kaigen?.recon?.focus ?? "concentrate", capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: sim.palace?.pref ?? DEFAULT_PALACE });
@@ -18,7 +20,7 @@ export function buildE2200(app: App, body: HTMLElement) {
   list.append(h("div", { class: "rw-head" }, "首都・副首都・皇居"));
   for (const [role, label] of [["capital", "首都"], ["sub", "副首都"], ["palace", "皇居"]] as const) {
     const pref = d[role], pos = role === "capital" ? d.capitalPos : role === "sub" ? d.subPos : d.palacePos;
-    list.append(h("div", { class: "e22-seat", id: "e22-seat-" + role }, h("span", {}, `${label}: ${pref ? prefName(pref) : "-"}${pos ? "(地図で指定)" : ""}`), h("button", { id: "e22-list-" + role, type: "button", onclick: () => app.openE22List(role) }, "府県から"), h("button", { id: "e22-map-" + role, type: "button", onclick: () => app.startE22Map(role) }, "地図で")));
+    list.append(h("div", { class: "e22-seat", id: "e22-seat-" + role }, h("span", {}, `${label}: ${pref ? prefName(pref) : "-"}${pos ? "(地図で指定)" : ""}`), prefSelect("e22-sel-" + role, label, pref ?? "", role === "capital" ? d.sub ?? null : role === "sub" ? d.capital ?? null : null, (pid) => (app.world ? seatCity(app.world, pid)?.name ?? "" : ""), (pid) => { d[role] = pid; if (role === "capital") delete d.capitalPos; else if (role === "sub") delete d.subPos; else delete d.palacePos; re(); }), h("button", { id: "e22-map-" + role, type: "button", onclick: () => app.startE22Map(role) }, "地図で")));
   }
   // era
   list.append(h("div", { class: "rw-head" }, "元号", h("small", {}, " 1912年(大正改元)に大正と並んで示された候補")));

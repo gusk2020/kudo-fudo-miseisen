@@ -16,12 +16,15 @@ import { dist } from "../core/geom";
 import type { Vec } from "../core/types";
 import { homeCity, subCity } from "./ceremony";
 import { basePop } from "./roles";
+import { yearOf } from "./engine";
+import { facLevel } from "./tier23";
 import type { SimState } from "./types";
 import type { World } from "./world";
 
 export type Dim = "commerce" | "industry" | "manufacturing" | "tourism";
-export type SiteKind = "capital" | "sub" | "palace" | "culture" | "fuji" | "biwa";
-export interface Site { kind: SiteKind; pos: Vec; pref: string | null }
+export type SiteKind = "capital" | "sub" | "palace" | "culture" | "fuji" | "biwa" | "zone-industry" | "zone-energy" | "zone-academic" | "zone-logistics";
+/** `scale`: a facility of a 特区 (tier23.ts) counts by its level; `local`: it reaches its own city and the near towns, not the prefecture. */
+export interface Site { kind: SiteKind; pos: Vec; pref: string | null; scale?: number; local?: true }
 export type Boost = Record<Dim, number>;
 export const SITE_WEIGHTS: Record<SiteKind, Partial<Boost>> = {
   capital: { commerce: 0.15, industry: 0.10, manufacturing: 0.10, tourism: 0.08 },
@@ -30,7 +33,12 @@ export const SITE_WEIGHTS: Record<SiteKind, Partial<Boost>> = {
   culture: { tourism: 0.12, commerce: 0.02 },   // Stage 10: the historic-cultural role real Kyoto has; moves with the palace (roles.ts)
   fuji: { tourism: 0.12 },
   biwa: { tourism: 0.10 },
+  "zone-industry": { industry: 0.12, manufacturing: 0.14 },   // Stage 23: the facilities of the 政令特区 (tier23.ts) -- jobs and goods, through the same boosts the seats use
+  "zone-energy": { industry: 0.08, manufacturing: 0.10 },
+  "zone-academic": { commerce: 0.07, industry: 0.05, tourism: 0.02 },
+  "zone-logistics": { commerce: 0.06, industry: 0.04, manufacturing: 0.10 },
 };
+export const ZONE_REACH_KM = 35;
 export const SITE_REACH_KM = 90, SITE_SAME_PREF = 0.7, BOOST_CAP = 0.8;
 const ZERO = (): Boost => ({ commerce: 0, industry: 0, manufacturing: 0, tourism: 0 });
 
@@ -45,14 +53,15 @@ export function sitesOf(sim: SimState, w: World): Site[] {
   const top = w.t.stats.fujiTopCell; if (top >= 0) out.push({ kind: "fuji", pos: w.cellPos(top), pref: w.prefOf(top) });
   let sx = 0, sy = 0, n = 0; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 2) { const p = w.cellPos(k); sx += p[0]; sy += p[1]; n++; }
   if (n) { const p: Vec = [sx / n, sy / n], k = w.cellOf(p); out.push({ kind: "biwa", pos: p, pref: k >= 0 ? w.prefOf(k) : null }); }
+  if (sim.tier23) { const y = yearOf(sim); for (const [id, z] of Object.entries(sim.tier23.zones)) { const c = w.cityById.get(id); if (!c) continue; for (const f of z.facs) { const lv = facLevel(f, y); if (lv > 0) out.push({ kind: ("zone-" + f.k) as SiteKind, pos: c.pos, pref: c.pref, scale: lv * (z.tier === 2 ? 1.25 : 1), local: true }); } } }   // Stage 23
   return out;
 }
 /** The boost at a point (and the prefecture it lies in). */
 export function boostAt(sites: Site[], pos: Vec, pref: string | null): Boost {
   const b = ZERO();
   for (const s of sites) {
-    const reach = Math.max(pref && s.pref === pref ? SITE_SAME_PREF : 0, Math.exp(-dist(s.pos, pos) / SITE_REACH_KM));
-    for (const [d, v] of Object.entries(SITE_WEIGHTS[s.kind])) b[d as Dim] += v! * reach;
+    const reach = s.local ? Math.exp(-dist(s.pos, pos) / ZONE_REACH_KM) : Math.max(pref && s.pref === pref ? SITE_SAME_PREF : 0, Math.exp(-dist(s.pos, pos) / SITE_REACH_KM)), k = (s.scale ?? 1) * reach;
+    for (const [d, v] of Object.entries(SITE_WEIGHTS[s.kind])) b[d as Dim] += v! * k;
   }
   for (const d of Object.keys(b) as Dim[]) b[d] = Math.min(BOOST_CAP, b[d]);
   return b;
@@ -73,6 +82,8 @@ function entry(sim: SimState, w: World) {
   norm((b) => 1 + b.commerce + b.tourism, pax); norm((b) => 1 + b.manufacturing, goods);
   e = { w, sites, city, pax, goods }; cache.set(sim, e); return e;
 }
+/** Stage 23: the facilities changed -- the next ask rebuilds the sites. */
+export const invalidateSites = (sim: SimState) => { cache.delete(sim); };
 const NONE = ZERO();
 /** Per-city boost; all zero for a game that does not use the new economy. */
 export const cityBoost = (sim: SimState, w: World, cityId: string): Boost => (sim.stage3 ? entry(sim, w).city.get(cityId) ?? NONE : NONE);

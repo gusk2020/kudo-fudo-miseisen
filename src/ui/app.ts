@@ -7,9 +7,9 @@ import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
 import { ISLAND_LABEL, JAPAN, lonLatToReal, realToLonLat } from "../core/data";
 import { FEATURE_LIMITS } from "../core/save";
-import { PREF_IDS, REGION_BLOCKS, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
+import { PREF_IDS, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
-import { exportGame, getRaw, listSlots, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
+import { exportGame, getRaw, listSlots, slotMeta, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
 import { suggestRidge } from "../core/suggest";
 import type { TerrainResult } from "../core/terrain";
@@ -33,6 +33,8 @@ import { edgePoints } from "../sim/network";
 import { buildWorld, townsForSeats, type World } from "../sim/world";
 import { eraKeyOf, type EraKey } from "../sim/eras";
 import { buildAtlas, buildKaigen, buildLedger, buildPolicy, buildTimeline, eraDescText, eraRadioGroups } from "./stage3";
+import { prefSelect } from "./prefSelect";
+import type { HlTarget } from "./lines23";
 import { closeRadio, showRadio } from "./radioWin";
 import { CAND_1945 } from "../sim/kaigen";
 
@@ -192,7 +194,7 @@ export class App {
     if (this.cerLive) cer.push({ strokes: [this.cerLive], handles: false, sel: null, pts: this.cerLive, path: undefined as any, ok: true, segs: undefined });
     const L = this.s.layers, onRoads = (this.s.step >= 5 && !!this.sim) || this.s.step === 6;
     if (onRoads) this.ensureWorld();
-    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports, airports: L.airports, lanes: L.lanes, econ: L.econ }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, lite: this.lite, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge, hide: [...this.hide], names: this.names });
+    this.r.setRoads({ sim: this.sim, w: onRoads ? this.world : null, layers: { roads: L.roads, rail: L.rail, plans: L.plans, signs: L.signs, abandoned: L.abandoned, ports: L.ports, airports: L.airports, lanes: L.lanes, econ: L.econ }, cer: this.s.step === 6 ? cer : [], pin: this.s.step === 6 ? this.pin : null, compare: this.compareYear && this.sim ? (this.sim.stage3 ? codesAt(this.sim.snaps, this.compareYear) : this.sim.snaps.find((x) => x.year === this.compareYear)?.edges ?? null) : null, compareYear: this.compareYear, lite: this.lite, hl: this.hl ? { edges: this.hl.edges, ...(this.hl.air ? { air: this.hl.air } : {}) } : null, past: this.viewYear !== null && this.sim ? { year: this.viewYear, codes: codesAt(this.sim.snaps, this.viewYear) ?? {} } : null, sel: this.selEdge, hide: [...this.hide], names: this.names });
   }
   /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
   private attachPendingSim() {
@@ -489,13 +491,6 @@ export class App {
   }
   // ---- Stage 22: the 2200 event ----
   e22: Choice2200 | null = null; e22Pick: "capital" | "sub" | "palace" | null = null;
-  openE22List(role: "capital" | "sub" | "palace") {
-    const d = this.e22; if (!d) return; const label = { capital: "首都", sub: "副首都", palace: "皇居" }[role], w = this.world;
-    const draw = () => showRadio({ id: "pref-picker", title: `2200年の${label}にする府県`, close: () => { closeRadio(); this.buildSheet(); },
-      groups: REGION_BLOCKS.map((blk) => ({ head: blk.name, items: blk.prefs.map((pid) => ({ id: "pref-opt-" + pid, label: seatPrefName(pid), sub: w ? seatCity(w, pid)?.name ?? "" : "", on: d[role] === pid && !(role === "capital" ? d.capitalPos : role === "sub" ? d.subPos : d.palacePos), disabled: (role === "capital" && pid === d.sub) || (role === "sub" && pid === d.capital), pick: () => { d[role] = pid; if (role === "capital") delete d.capitalPos; else if (role === "sub") delete d.subPos; else delete d.palacePos; draw(); } })) })),
-      foot: [{ id: "pref-map", label: "地図で選ぶ", act: () => { closeRadio(); this.startE22Map(role); } }] });
-    draw();
-  }
   startE22Map(role: "capital" | "sub" | "palace") { this.e22Pick = role; this.seatPick = null; this.r.seatPending = null; this.tool = "seatpick"; this.sheet = null; this.buildSheet(); this.buildToolbar(); this.render(); }
   endE22Map() { this.e22Pick = null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.sheet = "e2200"; this.buildSheet(); this.buildToolbar(); this.render(); }
   /** 決める / 今のまま: applied to the game; a seat put on the map rebuilds the world with the new 県庁所在地 (people come from the old one, a little) and the runner goes on with it. */
@@ -645,7 +640,7 @@ export class App {
     const plan = planCatchUp(elapsedMs, sim.speed); if (plan.months <= 0 && plan.skipped <= 0) return;
     this.catching = true; const target = sim.month + plan.months; if (sim.policy) sim.policy.away = true;
     while (sim.month < target) {
-      if (sim.policy?.pending || sim.kaigen?.pending) break;
+      if (sim.policy?.pending || sim.kaigen?.pending || sim.e2200?.state === "pending") break;
       run.request(Math.min(24, target - sim.month - run.pending)); run.pump(12);
       this.catchInfo = `放置分を計算中 ${Math.floor((plan.months - (target - sim.month)) / 12)}/${Math.floor(plan.months / 12)}年`; this.status();
       await new Promise((r) => setTimeout(r, 0));
@@ -695,7 +690,13 @@ export class App {
     for (const b of Array.from(dock.children)) if (b !== fit) (b as HTMLElement).hidden = true;
     for (const [id, label] of [["layers", "レイヤー"], ["timeline", "年表"], ["ledger", "台帳"], ["atlas", "地図帳"], ["policy", "介入"], ["menu", "保存"]] as [string, string][]) dock.insertBefore(h("button", { id: "dock-" + id, onclick: () => this.openSheet(id) }, label), fit);
   }
-  openSheet(name: string | null) { this.sheet = this.sheet === name ? null : name; this.buildSheet(); }
+  // ---- Stage 23: the line chosen in the ledger / number list, drawn in its own colour ----
+  hl: HlTarget | null = null; hlList: HlTarget[] = []; ledgerMini = false;
+  /** Choose a line (or let go of it when it is the one already chosen). The ledger shrinks to a bar while one is chosen. Nothing in the game changes. */
+  toggleHl(t: HlTarget, list?: HlTarget[]) { if (list) this.hlList = list; if (this.hl?.id === t.id) { this.clearHl(); return; } this.hl = t; this.ledgerMini = true; this.renderRoads(); this.buildSheet(); }
+  clearHl(redraw = true) { if (!this.hl && !this.ledgerMini) return; this.hl = null; this.ledgerMini = false; if (redraw) { this.renderRoads(); this.buildSheet(); } }
+  stepHl(dir: 1 | -1) { const l = this.hlList; if (!this.hl || !l.length) return; const i = l.findIndex((x) => x.id === this.hl!.id), n = l[i < 0 ? (dir > 0 ? 0 : l.length - 1) : (i + dir + l.length) % l.length]; this.hl = n; this.renderRoads(); this.buildSheet(); }
+  openSheet(name: string | null) { if (this.hl && name !== "ledger") this.clearHl(false); this.sheet = this.sheet === name ? null : name; this.buildSheet(); this.renderRoads(); }
   buildUI() {
     const i = this.s.step;
     $("step-title").textContent = this.real ? (this.sim ? "酷道・腐道・未成線" : "酷道・腐道・未成線 — 開通の儀") : `${STEP_LABELS[this.stepId]}  (${i + 1}/${STEPS.length})`;
@@ -802,8 +803,10 @@ export class App {
       panel.append(h("div", { class: "grp", id: "bg-choice" }, h("span", {}, "地図の表示"), ...(["roadmap", "terrain"] as const).map((m) => h("button", { id: "bg-" + m, type: "button", class: this.bg === m ? "mode on" : "mode", "aria-pressed": this.bg === m ? "true" : "false", onclick: () => { this.setBg(m); this.buildToolbar(); } }, m === "roadmap" ? "道路図" : "地形図"))));
     } else {
       const which = tab, label = { capital: "首都", sub: "副首都", palace: "皇居" }[which];
-      if (this.seatMode === "list") { this.radioShown = true; this.showPrefRadio(which, label, st, w); }
-      else if (this.seatMode !== "map") panel.append(h("div", { class: "note", id: "seat-now" }, `${label}: ${where(which)}`), h("button", { id: "seat-repick", type: "button", onclick: () => this.chooseSeatMode("list") }, "選び直す"));
+      if (this.seatMode !== "map") {   // Stage 23: the early picker -- one <select> grouped by regional block -- and the way onto the map
+        const other = which === "capital" ? st.sub : which === "sub" ? st.capital : null;
+        panel.append(h("div", { class: "note", id: "seat-now" }, `${label}: ${where(which)}`), h("div", { class: "grp seat-pick" }, prefSelect("seat-sel-" + which, label, st[which], other, (pid) => (w ? seatCity(w, pid)?.name ?? "" : ""), (pid) => { this.setSeat(which, pid, true); }), h("button", { id: "pref-map", type: "button", onclick: () => this.chooseSeatMode("map") }, "地図で選ぶ")));
+      }
       if (this.seatMode === "map") {
         const p = this.seatPick;
         panel.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」(最寄りの地名: ${p.near}${p.km ? ` ${p.km}km` : ""})` : ""} ${ll(p.w)}${p.claim ? `／${p.claim}(ゲーム内の府県は仮の設定)` : ""}(まだ決まっていません。地図をタップし直すと動かせます)` : `${label}にしたい場所を、地図の陸地でタップしてください(府県内ならどこでも。海は選べません)`));
@@ -813,12 +816,6 @@ export class App {
     }
     panel.append(h("button", { id: "setup-close", type: "button", onclick: () => this.openSetupTab(null) }, "✕ 設定欄を閉じる"));
     tb.append(panel);
-  }
-  /** Stage 22: the prefecture list -- one column, north to south block by block, ○/● to the left; choosing keeps it open; 地図で選ぶ / 閉じる at the foot. */
-  private showPrefRadio(which: "capital" | "sub" | "palace", label: string, st: { capital: string; sub: string; palace: string }, w: World | null) {
-    showRadio({ id: "pref-picker", title: `${label}にする府県`, close: () => { this.seatMode = null; this.buildToolbar(); this.render(); },
-      groups: REGION_BLOCKS.map((blk) => ({ head: blk.name, items: blk.prefs.map((pid) => ({ id: "pref-opt-" + pid, label: seatPrefName(pid), sub: w ? seatCity(w, pid)?.name ?? "" : "", on: pid === st[which] && !this.posOf(which), disabled: (which === "capital" && pid === st.sub) || (which === "sub" && pid === st.capital), pick: () => { this.setSeat(which, pid, true); } })) })),
-      foot: [{ id: "pref-map", label: "地図で選ぶ", act: () => this.chooseSeatMode("map") }] });
   }
   private posOf(which: "capital" | "sub" | "palace") { return which === "capital" ? this.s.capitalPos : which === "sub" ? this.s.subPos : this.s.palacePos; }
   unlockMap() {
@@ -875,7 +872,7 @@ export class App {
   }
   buildSheet() {
     const sh = $("sheet"), body = $("sheet-body");
-    sh.hidden = this.sheet === null; body.replaceChildren(); if (!this.sheet) return;
+    sh.hidden = this.sheet === null; sh.classList.toggle("mini", this.sheet === "ledger" && !!this.hl && this.ledgerMini); body.replaceChildren(); if (!this.sheet) return;
     if (this.sheet === "layers") {
       body.append(h("h3", {}, "表示レイヤー"));
       const wrap = h("div", { class: "row" });
@@ -920,6 +917,7 @@ export class App {
     for (const p of Object.values(sim.projects).filter((x) => x.status !== "open").slice(-30)) body.append(h("div", { class: "issue warn" }, `[${PROJECT_LABEL[p.status]}/${KIND_LABEL[p.kind]}/${prefName(p.region)}] ${sim.nodes[p.from]?.name ?? "地点"}〜${sim.nodes[p.to]?.name ?? "地点"} (${Math.round((p.spentBu / (p.costBu || 1)) * 100)}%)`, h("br"), h("small", {}, p.reason)));
   }
   private buildLegend(body: HTMLElement) {
+    if (this.real) { this.buildLegend23(body); return; }   // Stage 23: three axes (kind, tier, state); the classic legend below stays for the map-making game
     if (this.real) {
       const det = h("details", { id: "legend-ops", ...(this.legendOpen ? { open: "" } : {}) }, h("summary", {}, "表示の切替(地図に即反映・保存されます)")) as HTMLDetailsElement;
       det.addEventListener("toggle", () => { this.legendOpen = det.open; this.saveUi(); });
@@ -973,6 +971,45 @@ export class App {
     }
     body.append(h("small", {}, "標識: 国=丸(赤)・県=角丸(緑)・府=五角形(紫)。通称(酷・険・腐)は荒れた細い道に後から付く呼び名で、行政指定ではありません。"));
   }
+  /** Stage 23: the legend of the real game on three axes -- kind (6) × tier (メイン/サブ/ローカル = thick/medium/thin) × state (供用中/計画/廃線/未成 = the line style) -- with one sample per value, not one per combination.
+   *  What the game keeps inside (休止, 旧道, 工事中, 中断, 廃道 ...) is drawn as before and named under the four states; the switches act on exactly those keys. */
+  private buildLegend23(body: HTMLElement) {
+    const det = h("details", { id: "legend-ops", ...(this.legendOpen ? { open: "" } : {}) }, h("summary", {}, "表示の切替(地図に即反映・保存されます)")) as HTMLDetailsElement;
+    det.addEventListener("toggle", () => { this.legendOpen = det.open; this.saveUi(); });
+    const chk = (id: string, label: string, on: boolean, fn: (v: boolean) => void) => h("label", { class: "layer" }, h("input", { type: "checkbox", id, checked: on, onchange: (e: Event) => fn((e.target as HTMLInputElement).checked) }), label);
+    const multi = (id: string, label: string, keys: string[]) => chk(id, label, !keys.every((k) => this.hide.has(k)), () => { const allHidden = keys.every((k) => this.hide.has(k)); for (const k of keys) { if (allHidden) this.hide.delete(k); else this.hide.add(k); } this.saveUi(); this.renderRoads(); this.buildSheet(); });
+    const grp = (title: string, items: HTMLElement[]) => det.append(h("div", { class: "legend-group" }, h("b", {}, title), ...items));
+    grp("交通種別", [multi("lg-k-road", "道路", ["k:road"]), multi("lg-k-hwy", "高速道路", ["k:hwy"]), multi("lg-k-rail", "鉄道", ["k:rail"]), multi("lg-k-hsr", "新幹線(リニア含む)", ["k:hsr", "k:maglev"]), multi("lg-ferry", "海路(国内)", ["fac:ferry", "fac:lake"]), chk("lg-lanes", "空路(国内)", this.s.layers.lanes, (v) => this.store.set((s) => { s.layers.lanes = v; }))]);
+    grp("状態", [multi("lg-s-open", "供用中(休止を含む)", ["st:open", "st:dormant"]), multi("lg-s-planned", "計画(構想・計画・工事中・中断)", ["st:concept", "st:planned", "st:building", "st:suspended"]), multi("lg-s-lost", "廃線(閉鎖・廃道・遺構)", ["st:closed", "st:lost"]), multi("lg-s-unbuilt", "未成", ["st:unbuilt"])]);
+    grp("そのほか", [chk("lg-econ", "都市の丸(金の輪=首都、紫の輪=政令特区・政令指定都市)と都市圏", this.s.layers.econ ?? true, (v) => this.store.set((s) => { s.layers.econ = v; })), chk("lg-ports", "港湾", this.s.layers.ports, (v) => this.store.set((s) => { s.layers.ports = v; })), chk("lg-airports", "空港", this.s.layers.airports, (v) => this.store.set((s) => { s.layers.airports = v; })), chk("lg-names", "路線名の文字(全路線)", this.names, (v) => { this.names = v; this.saveUi(); this.renderRoads(); })]);
+    body.append(det);
+    const row = (svg: string, text: string) => { const d = h("div", { class: "legend-row" }); d.innerHTML = `<svg width="64" height="14" viewBox="0 0 64 14" aria-hidden="true">${svg}</svg><span>${text}</span>`; body.append(d); };
+    const ln = (c: string, w: number, extra = "") => `<line x1="2" y1="7" x2="62" y2="7" stroke="${c}" stroke-width="${w}" ${extra}/>`;
+    body.append(h("h3", {}, "凡例 — 種別 × 階層 × 状態(色だけに頼らず、線の種類と文字で区別します)"));
+    body.append(h("h4", {}, "① 交通種別"));
+    row(ln("#3d3d3d", 6) + ln("#5bd66b", 3.5), "道路(色は傷み具合: 緑=良 / 黄=可 / 橙=悪 / 赤=荒廃)");
+    row(ln("#0b7a3e", 8) + ln("#5bd66b", 4.5) + ln("#fff", 1), "高速道路(緑の縁＋白い中心線)");
+    row(ln("#fff", 6) + ln("#12284d", 3.5) + ln("#fff", 2.5, 'stroke-dasharray="4 5"'), "鉄道(紺＋白い点線。傷むほど灰色)");
+    row(ln("#fff", 7) + ln("#1e6fd9", 5) + ln("#fff", 1.2), "新幹線(青＋白い中心線) ／ リニア: 紫＋白い破線");
+    row(ln("#2f8fd8", 3, 'stroke-dasharray="7 5"'), "海路(国内のみ。青の破線。海の上を通り、陸は横切らない)");
+    row(ln("#9aa4ad", 1.4, 'stroke-dasharray="6 5"'), "空路(国内のみ。細い白の線。主な便だけ)");
+    body.append(h("h4", {}, "② 階層(線の太さ)"));
+    row(ln("#bbb", 7), "メイン(太い): 高規格の幹線"); row(ln("#bbb", 4), "サブ(中): 標準規格"); row(ln("#bbb", 2), "ローカル(細い): 簡易規格");
+    body.append(h("h4", {}, "③ 状態(線の種類)"));
+    row(ln("#ffe14a", 5, 'stroke-linecap="round"'), "供用中: 実線(休止は長い破線、旧道は一点鎖線、白い中心線はバイパス)");
+    row(ln("#3aa0ff", 3, 'stroke-dasharray="7 4"'), "計画: 青系の破線(構想は点、工事中は進んだ分が太い、中断は橙)");
+    row(ln("#2b2b2b", 2, 'stroke-dasharray="2 5"'), "廃線: 灰の破線(閉鎖)・黒の点線(廃道・廃線跡)");
+    row(ln("#b04bff", 3, 'stroke-dasharray="7 4"'), "未成: 紫の破線");
+    body.append(h("h4", {}, "橋・トンネル"));
+    row(ln("#1a1a1a", 10) + ln("#fff", 7.2) + ln("#5bd66b", 3.5), "橋: 白い帯の両側に黒い縁(上の線の色で道路か鉄道か分かる)");
+    row(ln("#2a1f14", 11, 'stroke-dasharray="4 3"') + ln("#fff", 7.5) + ln("#5bd66b", 3.5, 'stroke-opacity=".5"'), "トンネル: 薄い線の両側に黒い破線");
+    row('<line x1="2" y1="4" x2="62" y2="4" stroke="#5bd66b" stroke-width="3"/><line x1="2" y1="10" x2="62" y2="10" stroke="#12284d" stroke-width="3"/>', "道路と鉄道が同じ橋・トンネルを通る所は、2本を並べて描きます(表示だけ)");
+    body.append(h("h4", {}, "強調・そのほか"));
+    row(ln("#111", 10) + ln("#ff00d4", 6), "桃色: 台帳・路線番号一覧で選んだ路線");
+    row('<circle cx="14" cy="7" r="5" fill="none" stroke="#3b1f6e" stroke-width="2.2"/><circle cx="40" cy="7" r="5" fill="none" stroke="#7a4fb5" stroke-width="1.4"/>', "紫の輪: 政令指定都市(濃い) ／ 政令特区(淡い)");
+    row('<rect x="6" y="4" width="6" height="6" fill="#4f95d6" stroke="#fff"/><rect x="26" y="1" width="11" height="11" fill="#0f3f8c" stroke="#fff"/>', "四角: 港(小=地方・重要港湾、大=国際拠点港湾以上) ／ 飛行機の印: 空港");
+    body.append(h("small", {}, "道路の行政指定(国道=赤茶の縁・県道=緑・府道=紫・指定なし=灰)と標識は従来どおり。休止・旧道・工事中・中断・廃道などの細かな状態は、ゲームの内部では区別したまま記録されています(凡例だけが4状態にまとめています)。"));
+  }
   private buildCompare(body: HTMLElement) {
     body.append(h("h3", {}, "時系列比較(基準年と今の差を縁取り)")); const sim = this.sim; if (!sim) return;
     const row = h("div", { class: "row" }); row.append(h("button", { id: "cmp-none", "aria-pressed": this.compareYear ? "false" : "true", class: this.compareYear ? "mode" : "mode on", onclick: () => { this.compareYear = null; this.renderRoads(); this.buildUI(); } }, this.compareYear ? "比較しない" : "✓ 比較しない"));
@@ -1013,10 +1050,14 @@ export class App {
         h("b", {}, "架空: "), "修文・正化の国内の出来事、人口・需要・予算・事業者名・路線番号。【架空】と付きます。2027年以降は【予測モデル】です。"));
     }
     body.append(h("h3", {}, "セーブ / ロード / 出力"));
-    const pfx = this.real ? "s3:" : "", slots = [1, 2, 3, 4, 5].map((i) => `${pfx}slot${i}`), have = new Set(await listSlots());
-    for (const n of slots) body.append(h("div", { class: "row" }, `${n.replace(/^s3:/, "").replace("slot", "スロット")}${have.has(n) ? " (使用中)" : ""}`,
-      h("button", { onclick: async () => this.toast((await saveGame(n, makeSave(this.s, this.sim ?? this.pendingSim))) ? "セーブしました" : "セーブできません(ブラウザの保存が無効)") }, "セーブ"),
-      h("button", { disabled: !have.has(n), onclick: async () => { const l = await loadGame(n); if (l) this.adopt(l); else this.toast("ロードできません"); } }, "ロード")));
+    const pfx = this.real ? "s3:" : "", slots = [1, 2, 3, 4, 5].map((i) => `${pfx}slot${i}`), have = new Set(await listSlots()), metas = await Promise.all(slots.map((n) => (have.has(n) ? slotMeta(n) : Promise.resolve(null))));
+    const NUM = ["①", "②", "③", "④", "⑤"];   // Stage 23: one line a slot -- number, the capital and sub-capital OF THAT SAVE, the year it was saved, 保存 / 読込
+    slots.forEach((n, i) => {
+      const m = metas[i], used = have.has(n), text = m ? `${m.capital} / ${m.sub} / ${m.year === null ? "開始前" : m.year + "年"}` : used ? "(読めないデータ)" : "(空)";
+      body.append(h("div", { class: "slot-row", id: "slot-" + (i + 1) }, h("span", { class: "slot-no" }, NUM[i]), h("span", { class: "slot-text" + (used ? "" : " empty"), title: text }, text),
+        h("button", { class: "slot-save", onclick: async () => { if (used && !confirm(`${NUM[i]}は使用中です(${text})。上書きしますか?`)) return; this.toast((await saveGame(n, makeSave(this.s, this.sim ?? this.pendingSim))) ? "セーブしました" : "セーブできません(ブラウザの保存が無効)"); this.buildSheet(); } }, "保存"),
+        h("button", { class: "slot-load", disabled: !used, onclick: async () => { const l = await loadGame(n); if (l) this.adopt(l); else this.toast("ロードできません"); } }, "読込")));
+    });
     body.append(h("div", { class: "row" },
       h("button", { id: "export", onclick: () => this.exportFile() }, "JSONエクスポート"),
       h("label", {}, "JSON読込 ", h("input", { type: "file", accept: ".json,application/json", id: "import", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; const p = parseSave(await f.text()); if (!p.ok) { this.toast("読み込めません: " + p.problems[0]); return; } this.adopt(p); } }))));

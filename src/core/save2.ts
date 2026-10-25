@@ -8,6 +8,7 @@ import { hashString } from "../sim/engine";
 import type { SimState } from "../sim/types";
 import type { World } from "../sim/world";
 import { parseState } from "./save";
+import { prefName, seatsOf } from "./seat";
 import type { ProjectState } from "./types";
 import { ISLAND_IDS } from "./types";
 
@@ -76,6 +77,8 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.pop15 !== undefined && raw.pop15 !== true) delete raw.pop15;   // Stage 15
   if (raw.isl20 !== undefined && raw.isl20 !== true) delete raw.isl20;   // Stage 20
   if (raw.sea22 !== undefined && raw.sea22 !== true) delete raw.sea22;   // Stage 22
+  if (raw.numreg !== undefined && !(isRec(raw.numreg) && isRec(raw.numreg.next) && isRec(raw.numreg.list) && ["road", "hwy", "rail", "hsr", "sea", "air"].every((k) => Array.isArray(raw.numreg.list[k]) && Number.isInteger(raw.numreg.next[k])))) delete raw.numreg;   // Stage 23: a register that is not whole is started again (estimated)
+  if (raw.tier23 !== undefined && !(isRec(raw.tier23) && isRec(raw.tier23.zones) && isRec(raw.tier23.hist) && isRec(raw.tier23.cnt))) delete raw.tier23;   // Stage 23
   if (raw.isl22 !== undefined && raw.isl22 !== true) delete raw.isl22;
   if (raw.e2200 !== undefined && !(isRec(raw.e2200) && Number.isInteger(raw.e2200.year) && ["pending", "road0", "done"].includes(raw.e2200.state))) delete raw.e2200;   // Stage 22
   if (raw.moves20 !== undefined && !(Array.isArray(raw.moves20) && raw.moves20.length > 0 && raw.moves20.length <= 3 && raw.moves20.every((m: any) => isRec(m) && typeof m.pref === "string" && m.pref.length < 12 && ["capital", "sub", "palace"].includes(m.by) && (m.since === undefined || Number.isInteger(m.since)) && Array.isArray(m.pos) && m.pos.length === 2 && m.pos.every((x: unknown) => typeof x === "number" && Number.isFinite(x) && Math.abs(x as number) < 5000)))) delete raw.moves20;
@@ -140,7 +143,16 @@ async function tx<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequ
 }
 export async function putRaw(key: string, value: unknown): Promise<boolean> { try { await tx("readwrite", (s) => s.put(JSON.stringify(value), key)); return true; } catch { return false; } }
 export async function getRaw(key: string): Promise<string | undefined> { try { return await tx<string | undefined>("readonly", (s) => s.get(key) as IDBRequest<string | undefined>); } catch { return undefined; } }
-export async function saveGame(name: string, save: GameSave): Promise<boolean> { return putRaw(name, { savedAt: save.savedAt, save }); }
+/** Stage 23: what a slot shows -- the capital and sub-capital IN THAT SAVE and the year it was saved in (never the game now being played). */
+export interface SlotMeta { capital: string; sub: string; year: number | null; savedAt: number }
+export function slotMetaOf(save: GameSave): SlotMeta { const st = seatsOf(save.map); return { capital: prefName(st.capital), sub: prefName(st.sub), year: save.sim ? monthYear(save.sim) : null, savedAt: save.savedAt }; }
+export async function saveGame(name: string, save: GameSave): Promise<boolean> { const ok = await putRaw(name, { savedAt: save.savedAt, save }); if (ok) await putRaw(name + ":meta", slotMetaOf(save)); return ok; }
+/** A slot's label: its own small record, or (a slot saved before this existed) read once from the save and written for next time. null = empty. */
+export async function slotMeta(name: string): Promise<SlotMeta | null> {
+  const m = await getRaw(name + ":meta"); if (m) { try { const j = JSON.parse(m); if (j && typeof j.capital === "string") return j as SlotMeta; } catch { /* fall through and read the save */ } }
+  const l = await loadGame(name); if (!l) return null;
+  const meta: SlotMeta = { ...(() => { const st = seatsOf(l.map); return { capital: prefName(st.capital), sub: prefName(st.sub), year: l.sim ? monthYear(l.sim) : null }; })(), savedAt: l.savedAt }; await putRaw(name + ":meta", meta); return meta;
+}
 export interface LoadedGame extends ParsedSave { savedAt: number }
 /** Reads v2 slots and legacy v1 slots ({savedAt,state}); a v1 slot is migrated in memory and rewritten as v2 on the next save. */
 export async function loadGame(name: string): Promise<LoadedGame | null> {

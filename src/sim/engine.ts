@@ -4,7 +4,9 @@
  * All demand, population and budget figures are SYNTHETIC (a toy economy), not statistics.
  */
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
-import { apply2200, due2200, open2200 } from "./event2200";
+import { due2200, open2200 } from "./event2200";
+import { newTier23, reviewTiers } from "./tier23";
+import { newNumReg, syncNumbers } from "./numreg";
 import { enforceCaps } from "./cap20";
 import type { SeatMove } from "./seatmove20";
 import { cityBoost, settlementBoost } from "./sites";
@@ -122,7 +124,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
   if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false); }
-  if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.islets) { sim.isl20 = true; if (w.t.isletVersion === 2) { sim.isl22 = true; sim.sea22 = true; } } if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
+  if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.islets) { sim.isl20 = true; if (w.t.isletVersion === 2) { sim.isl22 = true; sim.sea22 = true; sim.tier23 = newTier23(); } } if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
   const tokyoId = sim.roles ? undefined : tokyoCity(w)?.id;
   for (const c of w.cities) sim.cities[c.id] = { pop: basePop(sim, w, c), popSource: c.popSource, lowAccessYears: 0, industry: Math.round(Math.max(0.05, Math.min(1, 0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim) + roleIndustry(sim, w, c))) * 1000) / 1000 };
   // (older games) a moved capital draws people and industry to itself and costs the old one some; a sub-capital gains a little (fictional, modest, provisional)
@@ -132,7 +134,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   if (firstCand && w.townIds && opts.pot17 !== false) { const seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; sim.pot17 = initPotential(w.t, seats, sim.kaigen?.recon?.focus ?? "concentrate", seed, sim.startYear, opts.coast18 === false || sim.kaigen?.recon?.coast === "neutral" ? undefined : sim.kaigen?.recon?.coast, seatLL(sim, w)); startCandidates(sim, w); }   // Stage 17   // Stage 12: a city whose land is far worse than any real city's starts smaller; the rest settle on the better land near it
   enforceCaps(sim, w);   // Stage 20
   if (sim.stage3) ensureHubs(sim, w, sim.startYear);   // Stage 8: the ports of 1950 (airports open from the late 1950s)
-  yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); yield 1;
+  yield* seedInitialNetworkGen(sim, w); refreshNick(sim); takeSnapshot(sim); if (sim.stage3) { sim.numreg = newNumReg(); syncNumbers(sim, sim.startYear); } yield 1;
   return sim;
 }
 export function createSim(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): SimState {
@@ -193,11 +195,12 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   if (sim.tech?.wk !== undefined && y > sim.startYear && y < sim.startYear + BAY_YEARS) { for (let i = 0; i < BAY_PER_YEAR; i++) { if (!seedBayFerries(sim, w, 1)) break; yield; } }   // (one ferry per slice: each access road is a pass over the whole network)
   const an = yield* analyzeGen(sim, w); yield;
   if (sim.stage3 && (sim.kaigen ? (sim.dials.privatize >= 0.5 && !!sim.operators.jnr && sim.operators.jnr.until === undefined && y > 1950) : PRIVATIZE_YEAR[eraKeyOf(sim.era)] === y)) { reformJnr(sim, w, y); yield; }
-  updatePopulation(sim, w, an, y); if (sim.econ) { sim.metro = computeMetros(sim, w, an, y, sim.metro); yield; } updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield; if (sim.sea22) yield* reviewSea22Gen(sim, w); yield;
+  updatePopulation(sim, w, an, y); if (sim.econ) { sim.metro = computeMetros(sim, w, an, y, sim.metro); yield; } updateRegionShares(sim, w, sim.stage3 ? an : undefined); if (sim.hubs) reviewHubs(sim, w, an.hub, y); yield; if (sim.tier23) reviewTiers(sim, w, an, y); if (sim.sea22) yield* reviewSea22Gen(sim, w); yield;
   yield* evaluateEdgesGen(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
   if (sim.crossings) { yield; planCrossings(sim, w, y); yield; reviewLakeFerries(sim, w, y); }
+  if (sim.stage3) { yield; syncNumbers(sim, y); }   // Stage 23
   reviewWorks(sim);
   refreshNick(sim);
   if (sim.stage3) compactSim(sim, y);
@@ -580,7 +583,7 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
 export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
   if (sim.policy?.pending || sim.kaigen?.pending || sim.e2200?.state === "pending") return;   // waiting for the player at a policy window or an era change: time does not move
   if (sim.month % 12 === 0) {
-    if (due2200(sim)) { open2200(sim); const pol = sim.policy; if (pol && (pol.mode === "auto" || (pol.mode === "idleAuto" && pol.away))) apply2200(sim, null, true); else return; }   // Stage 22
+    if (due2200(sim)) { open2200(sim); return; }   // Stage 22 / 23: time stops here in every mode (auto and away included) until the player chooses -- 現状維持 too is a choice
     if (kaigenDue(sim.kaigen, yearOf(sim))) { startKaigen(sim, yearOf(sim)); if (sim.kaigen!.pending) return; }
     if (windowDue(sim, yearOf(sim))) { openWindow(sim, w, yearOf(sim)); if (sim.policy!.pending) return; }
     yield* yearlyGen(sim, w);
@@ -602,7 +605,7 @@ export function settleKaigen(sim: SimState, idx: number, auto = false) {
 const STANCE_NAME: Record<string, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kobun: "旧版" };
 export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
 /** Fast-forward with no player (tests, tools): a policy window that opens is resolved by the world's own scores. */
-export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (sim.e2200?.state === "pending") { apply2200(sim, null, true); stepMonth(sim, w); } if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
+export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (sim.e2200?.state === "pending") break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };

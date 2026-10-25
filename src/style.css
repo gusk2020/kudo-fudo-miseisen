@@ -106,3 +106,26 @@ body.real #sheet { max-height: 62dvh; }
 #rw-root .rw-foot button { flex:1; min-height:44px; color:#fff; background:#222; border:1px solid #aaa; box-shadow:none; }
 .radio-list { background:#000; color:#fff; border:1px solid #888; border-radius:8px; padding:2px 6px 6px; }
 .e22-seat { display:flex; gap:6px; align-items:center; padding:4px; } .e22-seat span { flex:1; font-size:14px; } .e22-seat button { min-height:40px; }
+
+/* Stage 23: a save slot is one line (number, capital / sub-capital / year, 保存, 読込) at 360-412px */
+.slot-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; margin: 3px 0; }
+.slot-row .slot-no { flex: none; font-size: 15px; }
+.slot-row .slot-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.slot-row .slot-text.empty { opacity: 0.55; }
+.slot-row button { flex: none; padding: 6px 8px; font-size: 13px; }
+.seat-pick { display: flex; gap: 6px; align-items: center; }
+.seat-pick select { flex: 1 1 auto; min-width: 0; font-size: 14px; padding: 6px 4px; }
+.e22-seat select { max-width: 48%; font-size: 13px; }
+
+/* Stage 23: a chosen line (ledger / number list): the ledger becomes a small bar; rows and chips show which is chosen */
+#sheet.mini { max-height: 26dvh; padding-top: 8px; }
+.led-mini { display: flex; flex-direction: column; gap: 4px; } .led-mini b { font-size: 14px; color: #ff6fe6; }
+#sheet .issue.hl { outline: 2px solid #ff00d4; }
+#sheet .issue .mini { margin-left: 8px; font-size: 12px; padding: 2px 8px; }
+.num-grid { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.num-grid .chip { min-width: 46px; padding: 6px 4px; font-size: 13px; border-radius: 6px; border: 1px solid #5d7a92; background: #1d3a55; color: #e8f1f8; }
+.num-grid .chip .g { margin-right: 3px; font-size: 11px; }
+.num-grid .chip.active { border-color: #5bd66b; } .num-grid .chip.planned { border-color: #4aa3ff; } .num-grid .chip.unbuilt { border-color: #b04bff; }
+.num-grid .chip.abolished { border-color: #8a96a3; color: #9aa4ad; text-decoration: line-through; } .num-grid .chip.revived { border-color: #ffc83a; background: #4a3d12; }
+.num-grid .chip.gap, .num-grid .chip.void { border-style: dashed; color: #7d93a6; background: transparent; }
+.num-grid .chip.sel { outline: 2px solid #ff00d4; }
