@@ -4,8 +4,7 @@
  *   - choose a new era name among the names put forward beside 大正 in 1912 (CAND_2200), and
  *   - choose the reconstruction policy freely: transport (road / rail / sea / air / balanced), coast (日本海側 / 太平洋側 / 中立) and focus (一極集中 / 地方分散) -- in 2200 the policy is NOT tied to the name.
  * Then a new 国道0号 may be drawn between the new capital and sub-capital, laid along existing, old and abandoned roads where it can (ceremony.ts).
- * Nothing is removed: the old seats stay as cities with their people, and people move only through the yearly settling (no one is moved in a day). Left unchosen (an idle player), the
- * current settings are kept and the game goes on. The event is recorded in `sim.e2200` and never fires twice; a game that jumps past 2200 still gets it at the first year boundary after.
+ * Nothing is removed: the old seats stay as cities with their people, and people move only through the yearly settling (no one is moved in a day). The game waits for the player in EVERY mode (Stage 23: 完全自動 and an absent player included); keeping everything as it is (現状維持) is a choice the player makes with its own button, never a default. The event is recorded in `sim.e2200` and never fires twice; a game that jumps past 2200 still gets it at the first year boundary after.
  */
 import { CAND_2200, futureInterval, type Recon } from "./kaigen";
 import { composeDials, type EraKey } from "./eras";
@@ -22,7 +21,7 @@ export const TRANSPORT_LABEL: Record<string, string> = { shubun: "道路重視",
 /** Due at a year boundary on or after 2200 in a timeline game that has not had it. */
 export const due2200 = (sim: SimState) => !!sim.stage3 && !!sim.kaigen && !sim.e2200 && yearOf(sim) >= E2200_YEAR;
 export function open2200(sim: SimState) { sim.e2200 = { year: yearOf(sim), state: "pending" }; ev(sim, "kaigen", `${yearOf(sim)}年: 遷都と復興の時を迎えた`, "首都・副首都・皇居、元号、復興方針を選び直せます(選ばなければ今のまま)", {}); }
-/** The choice is applied. `null` = keep everything as it is (the idle player, or 現状のまま). Returns the seat moves that change the world (the app rebuilds it with them). */
+/** The choice is applied. `null` = keep everything as it is (the player pressed 今のまま続ける). Returns the seat moves that change the world (the app rebuilds it with them). */
 export function apply2200(sim: SimState, ch: Choice2200 | null, auto = false): boolean {
   const e = sim.e2200, k = sim.kaigen; if (!e || e.state !== "pending" || !k) return false; const y = e.year;
   if (!ch) { e.state = "done"; e.kept = true; if (auto) e.auto = true; ev(sim, "kaigen", `${y}年: 遷都・改元は行わず、今の首都・元号・方針を続ける${auto ? "【自動】" : ""}`, "選択されなかったため現状を維持", {}); return false; }

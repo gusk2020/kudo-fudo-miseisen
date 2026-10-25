@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { run14 } from "../study/lib14";
-import { stepMonth, yearOf } from "../../src/sim/engine";
+import { advance, stepMonth, yearOf } from "../../src/sim/engine";
 import { autoResolve } from "../../src/sim/policy";
 import { apply2200, adoptWorld, due2200 } from "../../src/sim/event2200";
 import { CAND_2200 } from "../../src/sim/kaigen";
@@ -27,10 +27,15 @@ describe("Stage 22: the 2200 event", () => {
     expect(sim.kaigen!.eras.filter((e) => e.name === CAND_2200[1].name)).toHaveLength(1);
     expect(sim.pot17!.hist.some((x) => x.y === 2201 || x.y === 2200)).toBe(true);   // the development order is redrawn from the new seats
   }, 300000);
-  it("left alone (auto) it keeps everything as it was and goes on", () => {
-    const { sim, w } = toEve(); sim.policy!.mode = "auto"; const cap = sim.capital, era = sim.kaigen!.eras.length;
-    stepMonth(sim, w); expect(sim.e2200?.state).toBe("done"); expect(sim.e2200?.kept).toBe(true); expect(sim.capital).toBe(cap); expect(sim.kaigen!.eras.length).toBe(era);
-    const m = sim.month; stepMonth(sim, w); expect(sim.month).toBe(m + 1);
+  it("Stage 23: in every mode (手動・半自動・完全自動, away too) time stops at 2200 until the player chooses; 現状維持 is its own choice", () => {
+    for (const mode of ["auto", "idleAuto", "priority"] as const) {
+      const { sim, w } = toEve(); sim.policy!.mode = mode; if (sim.policy) sim.policy.away = true; const cap = sim.capital, era = sim.kaigen!.eras.length;
+      stepMonth(sim, w); expect(sim.e2200?.state, mode).toBe("pending"); const m = sim.month;
+      for (let i = 0; i < 30; i++) stepMonth(sim, w); expect(sim.month, mode).toBe(m); expect(sim.e2200?.state, mode).toBe("pending");   // nothing resolves it by itself
+      advance(sim, w, 24); expect(sim.month, mode).toBe(m); expect(sim.e2200?.state, mode).toBe("pending");   // nor a fast-forward
+      expect(apply2200(sim, null)).toBe(false); expect(sim.e2200?.state).toBe("done"); expect(sim.e2200?.kept).toBe(true); expect(sim.e2200?.auto).toBeUndefined(); expect(sim.capital).toBe(cap); expect(sim.kaigen!.eras.length).toBe(era);
+      stepMonth(sim, w); if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } expect(sim.month, mode).toBe(m + 1);   // (a policy window of that year may come first)
+    }
   }, 300000);
   it("a point on the map becomes the new 県庁所在地, gets its people from the old one, and the save keeps it all", () => {
     const { sim, w } = toEve(); stepMonth(sim, w); const tot = (ww: typeof w) => ww.cities.reduce((a, c) => a + (sim.cities[c.id]?.pop ?? 0), 0), t0 = tot(w);

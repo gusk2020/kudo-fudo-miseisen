@@ -8,6 +8,7 @@ import { hashString } from "../sim/engine";
 import type { SimState } from "../sim/types";
 import type { World } from "../sim/world";
 import { parseState } from "./save";
+import { prefName, seatsOf } from "./seat";
 import type { ProjectState } from "./types";
 import { ISLAND_IDS } from "./types";
 
@@ -140,7 +141,16 @@ async function tx<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequ
 }
 export async function putRaw(key: string, value: unknown): Promise<boolean> { try { await tx("readwrite", (s) => s.put(JSON.stringify(value), key)); return true; } catch { return false; } }
 export async function getRaw(key: string): Promise<string | undefined> { try { return await tx<string | undefined>("readonly", (s) => s.get(key) as IDBRequest<string | undefined>); } catch { return undefined; } }
-export async function saveGame(name: string, save: GameSave): Promise<boolean> { return putRaw(name, { savedAt: save.savedAt, save }); }
+/** Stage 23: what a slot shows -- the capital and sub-capital IN THAT SAVE and the year it was saved in (never the game now being played). */
+export interface SlotMeta { capital: string; sub: string; year: number | null; savedAt: number }
+export function slotMetaOf(save: GameSave): SlotMeta { const st = seatsOf(save.map); return { capital: prefName(st.capital), sub: prefName(st.sub), year: save.sim ? monthYear(save.sim) : null, savedAt: save.savedAt }; }
+export async function saveGame(name: string, save: GameSave): Promise<boolean> { const ok = await putRaw(name, { savedAt: save.savedAt, save }); if (ok) await putRaw(name + ":meta", slotMetaOf(save)); return ok; }
+/** A slot's label: its own small record, or (a slot saved before this existed) read once from the save and written for next time. null = empty. */
+export async function slotMeta(name: string): Promise<SlotMeta | null> {
+  const m = await getRaw(name + ":meta"); if (m) { try { const j = JSON.parse(m); if (j && typeof j.capital === "string") return j as SlotMeta; } catch { /* fall through and read the save */ } }
+  const l = await loadGame(name); if (!l) return null;
+  const meta: SlotMeta = { ...(() => { const st = seatsOf(l.map); return { capital: prefName(st.capital), sub: prefName(st.sub), year: l.sim ? monthYear(l.sim) : null }; })(), savedAt: l.savedAt }; await putRaw(name + ":meta", meta); return meta;
+}
 export interface LoadedGame extends ParsedSave { savedAt: number }
 /** Reads v2 slots and legacy v1 slots ({savedAt,state}); a v1 slot is migrated in memory and rewritten as v2 on the next save. */
 export async function loadGame(name: string): Promise<LoadedGame | null> {
