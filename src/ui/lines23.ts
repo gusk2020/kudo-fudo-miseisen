@@ -5,7 +5,7 @@
  */
 import type { App } from "./app";
 import { h } from "./app";
-import { NUM_CLASSES, NUM_STATE_LABEL, chipOf, entryOf, maxNumber, type ChipKind, type NumClass, type NumEntry } from "../sim/numreg";
+import { NUM_CLASSES, NUM_STATE_LABEL, chipOf, histOf, labelOf, maxNumber, routeEdges, type ChipKind, type NumClass, type NumEntry } from "../sim/numreg";
 import { routeLabel } from "../sim/engine";
 import type { SimProject, SimRoute, SimState } from "../sim/types";
 import type { Vec } from "../core/types";
@@ -18,8 +18,8 @@ export function targetOfEdges(id: string, label: string, edges: string[]): HlTar
 const className = (c: NumClass) => NUM_CLASSES.find((x) => x[0] === c)![1];
 /** The same target for a numbered line, from the register: the route's current edges when it is one, else the edges last known; a flight or sea lane between two cities gets its two ends only if both are known. */
 export function targetOfEntry(sim: SimState, w: World | null, cls: NumClass, en: NumEntry): HlTarget {
-  let edges = en.edges.slice(); if (en.key.startsWith("r:")) { const r = sim.routes[en.key.slice(2)]; if (r) edges = [...r.edges.map((x) => x.edgeId), ...r.oldEdges]; }
-  const t: HlTarget = { id: en.key, label: `${className(cls)}${en.n}号 ${en.label}`, edges };
+  const edges = en.key.startsWith("r:") ? routeEdges(sim, en.key.slice(2)) : en.edges.slice();
+  const t: HlTarget = { id: en.key, label: `${className(cls)}${en.n}号 ${labelOf(sim, en)}`, edges };
   if (en.ends && w) { const a = w.cityById.get(en.ends[0])?.pos, b = w.cityById.get(en.ends[1])?.pos; if (a && b) { t.air = [a, b]; t.label = `${className(cls)}${en.n}号 ${w.cityById.get(en.ends[0])!.name}〜${w.cityById.get(en.ends[1])!.name}`; } }
   return t;
 }
@@ -67,5 +67,5 @@ export function buildNumberList(app: App, body: HTMLElement, st: { numClass: Num
   }
   body.append(grid, h("small", { id: "num-key" }, "● 供用中　◐ 計画中　▲ 未成　× 廃線　★ 復活　欠 欠番"));
   const sel = list.find((e) => app.hl?.id === e.key);
-  if (sel) body.append(h("div", { class: "issue", id: "num-detail" }, `${className(cls)}${sel.n}号 ${sel.label}`, h("br"), h("small", {}, `${NUM_STATE_LABEL[sel.state]}${sel.revived ? `(${sel.revived}年に復活)` : ""} ／ ${sel.est ? "推定" : ""}${sel.since}年〜 ／ 履歴: ${sel.hist.map((x) => `${x.y}年${NUM_STATE_LABEL[x.s]}`).join(" → ")}`)));
+  if (sel) body.append(h("div", { class: "issue", id: "num-detail" }, `${className(cls)}${sel.n}号 ${labelOf(sim, sel)}`, h("br"), h("small", {}, `${NUM_STATE_LABEL[sel.state]}${sel.revived ? `(${sel.revived}年に復活)` : ""} ／ ${sel.est ? "推定" : ""}${sel.since}年〜 ／ 履歴: ${histOf(sel).map((x) => `${x.y}年${NUM_STATE_LABEL[x.s]}`).join(" → ")}`)));
 }

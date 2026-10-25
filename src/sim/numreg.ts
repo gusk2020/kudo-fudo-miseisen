@@ -18,7 +18,11 @@ export type NumClass = "road" | "hwy" | "rail" | "hsr" | "sea" | "air";
 export const NUM_CLASSES: [NumClass, string][] = [["road", "道路"], ["hwy", "高速道路"], ["rail", "鉄道"], ["hsr", "新幹線"], ["sea", "海路"], ["air", "空路"]];
 export type NumState = "active" | "planned" | "unbuilt" | "abolished" | "void";
 export const NUM_STATE_LABEL: Record<NumState, string> = { active: "供用中", planned: "計画中", unbuilt: "未成", abolished: "廃線", void: "欠番(統合)" };
-export interface NumEntry { n: number; key: string; since: number; edges: string[]; ends?: [string, string]; state: NumState; revived?: number; est?: true; hist: { y: number; s: NumState }[]; label: string }
+/** `edges` and `label` are kept only for a line that is not a route (a route's are read from the route itself: the save stays small). `hist`: year * 8 + state index, oldest first. */
+export interface NumEntry { n: number; key: string; since: number; edges: string[]; ends?: [string, string]; state: NumState; revived?: number; est?: true; hist: number[]; label: string }
+const STATES: NumState[] = ["active", "planned", "unbuilt", "abolished", "void"];
+export const histOf = (en: NumEntry): { y: number; s: NumState }[] => en.hist.map((v) => ({ y: Math.floor(v / 8), s: STATES[v % 8] }));
+const enc = (y: number, s: NumState) => y * 8 + STATES.indexOf(s);
 export interface NumReg { next: Record<NumClass, number>; list: Record<NumClass, NumEntry[]>; migrated?: number }
 
 export const HWY_MIN_KM = 30;
@@ -61,42 +65,45 @@ const overlap = (a: string[], b: Set<string>) => { if (!a.length || !b.size) ret
 /** Yearly: give new lines their numbers, follow the state of every numbered line. */
 export function syncNumbers(sim: SimState, y: number): void {
   const fresh = !sim.numreg, reg = (sim.numreg ??= newNumReg()); if (fresh) reg.migrated = y;
-  const its = items(sim, y), byKey = new Map<string, NumEntry>(), claimed = new Set<NumEntry>();
+  const eg = (en: NumEntry) => (en.key.startsWith("r:") ? routeEdges(sim, en.key.slice(2)) : en.edges), its = items(sim, y), byKey = new Map<string, NumEntry>(), claimed = new Set<NumEntry>();
   for (const cl of NUM_CLASSES) for (const en of reg.list[cl[0]]) byKey.set(en.key, en);
   const unmatched: Item[] = [];
   for (const it of its) { const en = byKey.get(it.key); if (en && en.state !== "void" && !claimed.has(en)) claimed.add(en), update(en, it, y); else unmatched.push(it); }
   // a line whose key changed (a project that became a route, a line that came back) is the same line if it covers the same ground
   if (unmatched.length) {
-    const stale = (cl: NumClass) => reg.list[cl].filter((en) => !claimed.has(en) && en.state !== "void" && en.edges.length);
+    const stale = (cl: NumClass) => reg.list[cl].filter((en) => !claimed.has(en) && en.state !== "void" && eg(en).length);
     for (const it of [...unmatched]) {
       if (!it.edges.length) continue; let best: NumEntry | null = null, bv = 0;
-      for (const en of stale(it.cls)) { const v = overlap(it.edges, new Set(en.edges)); if (v > bv + 1e-9) { bv = v; best = en; } }
+      for (const en of stale(it.cls)) { const v = overlap(it.edges, new Set(eg(en))); if (v > bv + 1e-9) { bv = v; best = en; } }
       if (best && bv >= 0.5) { byKey.delete(best.key); best.key = it.key; claimed.add(best); update(best, it, y); unmatched.splice(unmatched.indexOf(it), 1); }
     }
   }
   // a plan that lies on ground an existing line already covers is part of that line: it takes no number of its own
-  const covered = (it: Item) => it.key.startsWith("p:") && reg.list[it.cls].some((en) => claimed.has(en) && overlap(it.edges, new Set(en.edges)) >= 0.5);
+  const covered = (it: Item) => it.key.startsWith("p:") && reg.list[it.cls].some((en) => claimed.has(en) && overlap(it.edges, new Set(eg(en))) >= 0.5);
   unmatched.sort((a, b) => a.since - b.since || (a.key < b.key ? -1 : 1));
   for (const it of unmatched) {
     if (covered(it)) continue;
     let n: number;
     if (it.zero && it.cls === "road" && !reg.list.road.some((e) => e.n === 0)) n = 0; else n = reg.next[it.cls]++;
-    const en: NumEntry = { n, key: it.key, since: it.since, edges: it.edges, ...(it.ends ? { ends: it.ends } : {}), state: it.state, hist: [{ y: Math.max(it.since, sim.startYear), s: it.state }], label: it.label, ...(fresh ? { est: true as const } : {}) };
+    const en: NumEntry = { n, key: it.key, since: it.since, edges: it.key.startsWith("r:") ? [] : it.edges, ...(it.ends ? { ends: it.ends } : {}), state: it.state, hist: [enc(Math.max(it.since, sim.startYear), it.state)], label: it.key.startsWith("r:") ? "" : it.label, ...(fresh ? { est: true as const } : {}) };
     reg.list[it.cls].push(en); claimed.add(en); byKey.set(it.key, en);
   }
   // a numbered line that no longer exists as anything (and was not matched): folded into a line that covers its ground (欠番) or given up (廃線)
   for (const cl of NUM_CLASSES) for (const en of reg.list[cl[0]]) {
     if (claimed.has(en) || en.state === "void" || en.state === "abolished") continue;
-    const into = en.key.startsWith("p:") && reg.list[cl[0]].some((o) => o !== en && claimed.has(o) && o.state !== "void" && overlap(en.edges, new Set(o.edges)) >= 0.5);   // (a plan that became part of a line)
-    en.state = into ? "void" : "abolished"; if (into) en.key = "void:" + cl[0] + en.n; en.hist.push({ y, s: en.state });
+    const into = en.key.startsWith("p:") && reg.list[cl[0]].some((o) => o !== en && claimed.has(o) && o.state !== "void" && overlap(eg(en), new Set(eg(o))) >= 0.5);   // (a plan that became part of a line)
+    en.state = into ? "void" : "abolished"; if (into) en.key = "void:" + cl[0] + en.n; en.hist.push(enc(y, en.state));
   }
 }
 function update(en: NumEntry, it: Item, y: number) {
-  if (it.edges.length) en.edges = it.edges; if (it.ends) en.ends = it.ends; en.label = it.label;
-  if (en.state !== it.state) { if (it.state === "active" && (en.state === "abolished" || en.state === "unbuilt") && en.hist.some((h) => h.s === "active")) en.revived = y; en.state = it.state; en.hist.push({ y, s: it.state }); }
+  if (!it.key.startsWith("r:")) { if (it.edges.length) en.edges = it.edges; en.label = it.label; } else { en.edges = []; en.label = ""; } if (it.ends) en.ends = it.ends;
+  if (en.state !== it.state) { if (it.state === "active" && (en.state === "abolished" || en.state === "unbuilt") && en.hist.some((v) => v % 8 === 0)) en.revived = y; en.state = it.state; en.hist.push(enc(y, it.state)); }
 }
 /** What a chip of the number list shows. */
 export type ChipKind = NumState | "revived" | "gap";
 export const chipOf = (en: NumEntry | undefined): ChipKind => (!en ? "gap" : en.state === "active" && en.revived !== undefined ? "revived" : en.state);
+/** A route's edges (its own and its old-road stretches). */
+export const routeEdges = (sim: SimState, id: string): string[] => { const r = sim.routes[id]; return r ? [...r.edges.map((x) => x.edgeId), ...r.oldEdges] : []; };
+export const labelOf = (sim: SimState, en: NumEntry) => (en.key.startsWith("r:") ? sim.routes[en.key.slice(2)]?.name ?? "" : en.label);
 export const entryOf = (sim: SimState, cls: NumClass, n: number): NumEntry | undefined => sim.numreg?.list[cls].find((e) => e.n === n);
 export const maxNumber = (sim: SimState, cls: NumClass) => Math.max(0, (sim.numreg?.next[cls] ?? 1) - 1);
