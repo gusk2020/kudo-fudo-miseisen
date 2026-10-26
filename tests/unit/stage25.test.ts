@@ -58,8 +58,9 @@ const pick = (n: number, c: Partial<Choice2200> = {}): Choice2200 => ({ era: 0, 
 describe("Stage 25: the 150-year relocation event", () => {
   it("fires at 2200, 2350, 2500, 2650, 2800; every one stops the game; each is recorded in order; ranks stay 1-49 with no duplicate; the nation keeps its people", () => {
     const prefs = ["JP-40", "HK-SAP", "JP-27", "JP-47", "JP-13"], subs = ["JP-04", "JP-15", "JP-23", "JP-20", "JP-14"], opened: number[] = [], taken: string[] = [];
-    let total0 = 0;
-    const r = run14({ seed: 5, until: 2801, islets: true, choose: (n) => { opened.push(n); return pick(n, { era: n % 3, stance: (["shubun", "shoka", "kairo", "kuuro", "heisei"] as const)[n], capital: prefs[n], sub: subs[n], palace: prefs[n] }); },
+    let total0 = 0; const before: number[] = [], after: number[] = [];
+    const r = run14({ seed: 5, until: 2801, islets: true, choose: (n, sm) => { opened.push(n); before[n] = Object.values(sm.cities).reduce((a, c) => a + c.pop, 0); return pick(n, { era: n % 3, stance: (["shubun", "shoka", "kairo", "kuuro", "heisei"] as const)[n], capital: prefs[n], sub: subs[n], palace: prefs[n] }); },
+      applied: (n, sm) => { after[n] = Object.values(sm.cities).reduce((a, c) => a + c.pop, 0); },
       hook: (sim, w, y) => { if (y === 2150) total0 = Object.values(sim.cities).reduce((a, c) => a + c.pop, 0); if (sim.e2200) { const nm = sim.kaigen!.eras.map((e) => e.name); if (new Set(nm).size !== nm.length) taken.push(`dup@${y}`); } } });
     const { sim } = r; expect(opened).toEqual([0, 1, 2, 3, 4]); const all = [...(sim.e2200hist ?? []), sim.e2200!]; expect(all.map((e) => e.n)).toEqual([0, 1, 2, 3, 4]); expect(all.map((e) => e.sched)).toEqual([2200, 2350, 2500, 2650, 2800]);
     expect(all.every((e) => e.state === "done" && e.year >= e.sched! && e.year < e.sched! + 2)).toBe(true); expect(taken).toEqual([]);
@@ -67,7 +68,7 @@ describe("Stage 25: the 150-year relocation event", () => {
     for (let i = 0; i < 5; i++) expect(sim.kaigen!.reloc![i]!.chosen).toBe(all[i].era);
     const o = sim.pot17!.order; expect(o.length).toBe(49); expect([...o].sort()).toEqual([...PREF_IDS].sort()); expect(o[0]).toBe("JP-13");
     expect(sim.pot17!.hist.filter((h) => [2200, 2350, 2500, 2650, 2800].some((y) => h.y >= y && h.y < y + 2)).length).toBeGreaterThanOrEqual(5);
-    const total = Object.values(sim.cities).reduce((a, c) => a + c.pop, 0); expect(Math.abs(total - total0) / total0).toBeLessThan(0.6); expect(total0).toBeGreaterThan(0);
+    expect(before.length).toBe(5); for (let i = 0; i < 5; i++) expect(after[i]).toBe(before[i]); expect(total0).toBeGreaterThan(0);   // choosing moves the seats, never makes or removes people
     for (const c of r.w.cities) expect(sim.cities[c.id].pop).toBeGreaterThanOrEqual(2000 - 1);
   }, 3600000);
   it("it does not fire twice after a save and load, a fast-forward cannot skip it, a jump past the date still gets it once", () => {
