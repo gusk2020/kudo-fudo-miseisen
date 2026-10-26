@@ -969,7 +969,7 @@ test("Stage 25: 150年後の2350年にも遷都と改元。元号は使った名
   const labels = (await page.evaluate(() => [...document.querySelectorAll("[id^=e22-era-]")].map((b) => b.querySelector(".rw-label")!.textContent!))) as string[]; expect(labels.length).toBeGreaterThanOrEqual(10);
   const used = (await app(page, "a => a.sim.kaigen.eras.map((e) => e.name)")) as string[]; expect(used).toContain(first); for (const l of labels) expect(used.some((u) => l.startsWith(u + "(") || l === u), l).toBe(false);
   expect(await app(page, "a => a.sim.kaigen.reloc[1].cands.length")).toBe(labels.length);
-  await page.selectOption("#e22-sel-capital", "JP-13"); await page.selectOption("#e22-sel-sub", "JP-40"); await page.click("#e22-era-0"); await page.click("#e22-decide");
+  await page.selectOption("#e22-sel-sub", "JP-27"); await page.selectOption("#e22-sel-capital", "JP-13"); await page.click("#e22-era-0"); await page.click("#e22-decide");
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200hist.length, a.sim.capital, a.sim.pot17.order[0]]")).toEqual(["road0", 1, "JP-13", "JP-13"]);
   const names = (await app(page, "a => a.sim.kaigen.eras.map((e) => e.name)")) as string[]; expect(new Set(names).size).toBe(names.length);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
