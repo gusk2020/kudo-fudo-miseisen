@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { AIR_LINE, allStyleColours, hex } from "../../src/render/style24";
 
 const app = (page: Page, f: string) => page.evaluate(`(() => { const a = window.__kfm; return (${f})(a); })()`);
 const screenOf = (page: Page, p: [number, number]) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p) as Promise<[number, number]>;
@@ -939,7 +940,41 @@ test("Stage 24: 路線を選ぶと自動で拡大され台帳は小さくなる�
   await page.evaluate(() => { const b = document.getElementById("legend-side-body")!; b.scrollTop = b.scrollHeight; }); expect(await page.evaluate(() => { const b = document.getElementById("legend-side-body")!, last = b.lastElementChild!.getBoundingClientRect(), br = b.getBoundingClientRect(); return last.bottom <= br.bottom + 1; })).toBe(true);   // the last entry can be reached
   expect(await page.evaluate(() => [...document.querySelectorAll("#legend-side .lg-item")].every((it) => { const s = it.querySelector("svg")!.getBoundingClientRect(), c = it.querySelector(".lg-cap")!.getBoundingClientRect(); return c.top >= s.bottom - 0.5; }))).toBe(true);   // the words are under the line sample
   const sideNow = await app(page, "a => a.legendSide"); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await page.waitForSelector("#legend-side"); expect(await app(page, "a => a.legendSide")).toBe(sideNow);   // kept with the display settings
-  // ×50
-  await page.click("#speed-50"); expect(await app(page, "a => a.sim.speed")).toBe(50); const m = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number) + 3, m, { timeout: 60000 });
+  // Stage 25: ×50 is gone
+  expect(await page.locator("#speed-50").count()).toBe(0); expect(await page.locator("#speed-20").count()).toBe(1);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 25: 凡例の線の色は地図と同じ表の色だけ。×50はない", async ({ page }) => {
+  test.setTimeout(240000); await page.setViewportSize({ width: 360, height: 740 });
+  const errs = watchErrors(page); await startReal(page);
+  await page.evaluate(() => (window as any).__kfm.openSheet(null)); await page.click("#btn-legend"); await page.waitForSelector("#legend-side");
+  const cols = (await page.evaluate(() => [...document.querySelectorAll("#legend-side svg")].flatMap((s) => [...s.querySelectorAll("[stroke]")].map((l) => l.getAttribute("stroke")!)))) as string[];
+  const allowed = new Set([...allStyleColours()].map(hex).concat(["#3b1f6e", "#7a4fb5", hex(AIR_LINE.colour)])); expect(cols.length).toBeGreaterThan(30); for (const c of cols) expect(allowed.has(c), c).toBe(true);
+  expect(new Set(cols).size).toBeLessThanOrEqual(allowed.size);
+  expect(await page.locator("#speed-50").count()).toBe(0); expect(await page.locator("#speed-20").count()).toBe(1);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 25: 150年後の2350年にも遷都と改元。元号は使った名が出ず、2回目の国道0号は別の路線。保存しても再発火しない", async ({ page }) => {
+  test.setTimeout(300000); await page.setViewportSize({ width: 360, height: 740 });
+  const errs = watchErrors(page); await startReal(page);
+  const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; }, y);
+  await jump(2200); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box");
+  await page.selectOption("#e22-sel-capital", "JP-40"); await page.selectOption("#e22-sel-sub", "JP-13"); await page.click("#e22-era-1"); await page.click("#e22-decide");
+  const first = (await app(page, "a => a.sim.kaigen.eras[a.sim.kaigen.eras.length - 1].name")) as string; await page.click("#road0-skip");
+  expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n]")).toEqual(["done", 0]);
+  await jump(2350); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.n === 1 && (window as any).__kfm.sim.e2200.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box");
+  const m = (await app(page, "a => a.sim.month")) as number; await page.waitForTimeout(2000); expect(await app(page, "a => a.sim.month")).toBe(m);   // ×20 and 完全自動: stopped
+  const labels = (await page.evaluate(() => [...document.querySelectorAll("[id^=e22-era-]")].map((b) => b.querySelector(".rw-label")!.textContent!))) as string[]; expect(labels.length).toBeGreaterThanOrEqual(10);
+  const used = (await app(page, "a => a.sim.kaigen.eras.map((e) => e.name)")) as string[]; expect(used).toContain(first); for (const l of labels) expect(used.some((u) => l.startsWith(u + "(") || l === u), l).toBe(false);
+  expect(await app(page, "a => a.sim.kaigen.reloc[1].cands.length")).toBe(labels.length);
+  await page.selectOption("#e22-sel-sub", "JP-27"); await page.selectOption("#e22-sel-capital", "JP-13"); await page.click("#e22-era-0"); await page.click("#e22-decide");
+  expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200hist.length, a.sim.capital, a.sim.pot17.order[0]]")).toEqual(["road0", 1, "JP-13", "JP-13"]);
+  const names = (await app(page, "a => a.sim.kaigen.eras.map((e) => e.name)")) as string[]; expect(new Set(names).size).toBe(names.length);
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n, a.sim.e2200hist.length]")).toEqual(["road0", 1, 1]);
+  await page.click("#road0-skip"); await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForTimeout(2500);
+  expect(await app(page, "a => [a.sim.e2200.n, a.sim.e2200hist.length, a.sim.e2200.state]")).toEqual([1, 1, "done"]);   // no second firing
   expect(errs).toEqual([]);
 });

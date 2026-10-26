@@ -36,7 +36,7 @@ describe("Stage 24: the 2200 event", () => {
   }, 900000);
 });
 
-describe("Stage 24: ×50 runs the same simulation", () => {
+describe("Stage 24/25: the pacing never changes the simulation", () => {
   it("the same months, in any pacing, give the same game (the speed only changes how often it is drawn)", () => {
     const a = run14({ seed: 9, until: 1955, islets: true }), b = run14({ seed: 9, until: 1955, islets: true });
     const ra = new SimRunner(a.sim, a.w), rb = new SimRunner(b.sim, b.w); ra.request(24); rb.request(24);
@@ -48,8 +48,9 @@ describe("Stage 24: ×50 runs the same simulation", () => {
     const target = Math.max(a.sim.month, b.sim.month); while (a.sim.month < target) { stepMonth(a.sim, a.w); if (a.sim.policy?.pending) break; } while (b.sim.month < target) { stepMonth(b.sim, b.w); if (b.sim.policy?.pending) break; }
     expect(a.sim.month).toBe(b.sim.month); expect(hash(a.sim)).toBe(hash(b.sim));
   }, 600000);
-  it("a save may carry speed 50", () => {
-    const r = run14({ seed: 5, until: 1952, islets: true }); r.sim.speed = 50; const re = sanitizeSim(JSON.parse(JSON.stringify(r.sim))); expect(re.sim!.speed).toBe(50);
+  it("Stage 25: an old save with speed 50 comes back as ×20; the others are kept", () => {
+    const r = run14({ seed: 5, until: 1952, islets: true }); const back = (v: unknown) => { (r.sim as any).speed = v; return sanitizeSim(JSON.parse(JSON.stringify(r.sim))).sim!.speed; };
+    expect(back(50)).toBe(20); expect(back(20)).toBe(20); expect(back(5)).toBe(5); expect(back(1)).toBe(1); expect(back(0)).toBe(0); expect(back(7)).toBe(0);
   }, 300000);
 });
 

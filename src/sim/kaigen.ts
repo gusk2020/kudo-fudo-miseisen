@@ -23,11 +23,11 @@
  */
 import type { EraKey } from "./eras";
 
-export interface EraCand { name: string; stance: EraKey; real: boolean; note: string; recon?: Recon }
+export interface EraCand { name: string; stance: EraKey; real: boolean; note: string; recon?: Recon; yomi?: string }
 /** Stage 10: the 1945 reconstruction policy (recon.ts). Only the first era choice carries one. */
 export interface Recon { coast: "pacific" | "japansea" | "neutral"; focus: "concentrate" | "disperse"; /** Stage 22: the year the policy was set (1945 if absent); its strength fades from there */ since?: number }
 export interface EraEntry { name: string; start: number; stance: EraKey; real: boolean; picked: number; of: number; auto: boolean }
-export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number; recon?: Recon }
+export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number; recon?: Recon; /** Stage 25: the groups put to the player at each relocation event (index = the event's number), with the one chosen */ reloc?: (RelocGroup | null)[] }
 
 /** The policy stances a candidate can carry, in the order they are handed out. Issue #15 added 空路重視 and 海路重視 to the original three. */
 export const STANCES: EraKey[] = ["heisei", "shubun", "shoka", "kuuro", "kairo"];
@@ -95,8 +95,11 @@ export function eto(year: number): { stem: [string, number]; branch: [string, nu
 export const FORBIDDEN_CHARS = new Set(["奴", "死", "亡", "凶", "乱", "戦", "病", "災", "滅", "悪", "害"]);
 export const FORBIDDEN_WORDS = new Set(["丑己", "己丑", "乙己"]);   // reserved for words found awkward on review; extend freely
 /** Names already used or considered (real eras of the last two centuries, and every candidate the game offers). A future name may not repeat any of them. */
+/** The eras that really existed in the last two centuries: used for good, whatever the game does. */
+export const REAL_ERAS_USED: string[] = [
+  "明治", "大正", "昭和", "平成", "令和", "慶応", "元治", "文久", "万延", "安政", "嘉永", "弘化", "天保", "文政", "文化", "享和", "寛政", "天明", "安永", "明和", "宝暦", "寛延", "延享", "寛保", "元文", "享保", "正徳", "宝永", "元禄", "貞享"];
 export const USED_NAMES = new Set([
-  "明治", "大正", "昭和", "平成", "令和", "慶応", "元治", "文久", "万延", "安政", "嘉永", "弘化", "天保", "文政", "文化", "享和", "寛政", "天明", "安永", "明和", "宝暦", "寛延", "延享", "寛保", "元文", "享保", "正徳", "宝永", "元禄", "貞享",
+  ...REAL_ERAS_USED,
   ...CAND_1945.map((c) => c.name), ...CAND_1989.map((c) => c.name), ...CAND_2019.map((c) => c.name),
 ]);
 export const FUTURE_CANDIDATES = 5, FUTURE_INTERVAL = { base: 30, spread: 3 } as const;
@@ -124,7 +127,7 @@ export function futureCandidates(year: number, taken: Set<string> = new Set()): 
   IROHA.forEach((ir, i) => { for (const [c, st, kind] of parts) for (const order of [0, 1]) rows.push({ name: order === 0 ? ir.kanji + c : c + ir.kanji, strokes: ir.strokes + st, key: i * 8 + kind * 2 + order }); });
   const seen = new Set<string>(), out: EraCand[] = [];
   for (const r of rows.sort((a, b) => a.strokes - b.strokes || a.key - b.key)) {
-    if (seen.has(r.name) || USED_NAMES.has(r.name) || taken.has(r.name) || FORBIDDEN_WORDS.has(r.name) || [...r.name].some((ch) => FORBIDDEN_CHARS.has(ch))) continue;
+    if (seen.has(r.name) || USED_NAMES.has(r.name) || taken.has(r.name) || [...taken].some((t) => eraKey(t) === eraKey(r.name)) || FORBIDDEN_WORDS.has(r.name) || [...r.name].some((ch) => FORBIDDEN_CHARS.has(ch))) continue;
     seen.add(r.name); out.push({ name: r.name, stance: CYCLE[out.length % CYCLE.length], real: false, note: `暫定規則で生成(${r.strokes}画・${e.label}年)` });
     if (out.length >= FUTURE_CANDIDATES) break;
   }
@@ -174,4 +177,44 @@ export function eraWeights(eras: EraEntry[], year: number): number[] {
 export function stanceAt(sim: { era: string; kaigen?: KaigenState }, year: number): EraKey {
   if (sim.kaigen) { let cur: EraEntry | null = null; for (const e of sim.kaigen.eras) if (e.start <= year) cur = e; if (cur) return cur.stance; }
   return (["heisei", "shubun", "shoka", "kobun"].includes(sim.era) ? sim.era : "kobun") as EraKey;
+}
+
+// ---------------------------------------------------------------- Stage 25: the era names of the relocation events ----------
+/**
+ * Every 150 years from 2200 the capital may move and a new era is named. The rule that matters: a name that was ever ADOPTED in this game (a regular 改元 or a relocation 改元) is never offered again.
+ * The candidate groups alternate: event 0 (2200) puts the 1912 group (CAND_2200), event 1 (2350) the game-start group (CAND_1945), and from then on event n inherits what is left of the group put at event n-2,
+ * always minus every name used since. A group that has run low is topped up -- first from real past Japanese eras that this game never used, then (only when those are gone) from names made up by the game
+ * and labelled as such, never passed off as history.
+ */
+export const RELOC_FIRST = 2200, RELOC_STEP = 150, RELOC_MIN = 3, RELOC_TARGET = 5;
+export const relocYear = (n: number) => RELOC_FIRST + RELOC_STEP * n;
+export interface RelocCand { name: string; yomi?: string; real: boolean; note: string; origin: "inherit" | "history" | "fiction" }
+export interface RelocGroup { n: number; year: number; base: string; cands: RelocCand[]; chosen?: string }
+/** Old and new forms, and width variants, of the same name are one name. */
+const VARIANTS: Record<string, string> = { "國": "国", "與": "与", "德": "徳", "榮": "栄", "寶": "宝", "應": "応", "龍": "竜", "禮": "礼", "廣": "広", "壽": "寿", "萬": "万", "齋": "斎", "眞": "真", "惠": "恵", "將": "将", "曆": "暦", "祿": "禄", "觀": "観", "實": "実", "靈": "霊", "龜": "亀", "歷": "歴", "戰": "戦", "圓": "円" };
+export const eraKey = (s: string): string => [...s.normalize("NFKC").replace(/\s/g, "")].map((ch) => VARIANTS[ch] ?? ch).join("");
+/** Every name used in the whole history of this game: the real eras, and every era the game has adopted (regular and relocation alike). */
+export function usedKeys(k: KaigenState): Set<string> { return new Set([...REAL_ERAS_USED, ...k.eras.map((e) => e.name)].map(eraKey)); }
+/** Real Japanese era names of the ancient and medieval periods (大化 to 建武): historically verifiable, none used by this game. Kept in chronological order. */
+export const REAL_POOL: string[] = ("大化 白雉 朱鳥 大宝 慶雲 和銅 霊亀 養老 神亀 天平 天平感宝 天平勝宝 天平宝字 天平神護 神護景雲 宝亀 天応 延暦 大同 弘仁 天長 承和 嘉祥 仁寿 斉衡 天安 貞観 元慶 仁和 寛平 昌泰 延喜 延長 承平 天慶 天暦 天徳 応和 康保 安和 天禄 天延 貞元 天元 永観 寛和 永延 永祚 正暦 長徳 長保 寛弘 長和 寛仁 治安 万寿 長元 長暦 長久 寛徳 永承 天喜 康平 治暦 延久 承保 承暦 永保 応徳 寛治 嘉保 永長 承徳 康和 長治 嘉承 天仁 天永 永久 元永 保安 天治 大治 天承 長承 保延 永治 康治 天養 久安 仁平 久寿 保元 平治 永暦 応保 長寛 永万 仁安 嘉応 承安 安元 治承 養和 寿永 元暦 文治 建久 正治 建仁 元久 建永 承元 建暦 建保 承久 貞応 元仁 嘉禄 安貞 寛喜 貞永 天福 文暦 嘉禎 暦仁 延応 仁治 寛元 宝治 建長 康元 正嘉 正元 文応 弘長 文永 建治 弘安 正応 永仁 正安 乾元 嘉元 徳治 延慶 応長 正和 文保 元応 元亨 正中 嘉暦 元徳 元弘 建武").split(" ");
+const toRelocCand = (c: EraCand, origin: RelocCand["origin"] = "inherit"): RelocCand => ({ name: c.name, ...(c.yomi ? { yomi: c.yomi } : {}), real: c.real, note: c.note, origin });
+/** The group event `n` starts from, before anything used is taken out. */
+function relocBase(k: KaigenState, n: number): { cands: RelocCand[]; text: string } {
+  if (n <= 0) return { cands: CAND_2200.map((c) => toRelocCand(c)), text: "1912年(大正改元)に示された候補群" };
+  if (n === 1) return { cands: CAND_1945.map((c) => toRelocCand(c)), text: "ゲーム開始時(1945年)の候補群" };
+  const prev = k.reloc?.[n - 2];
+  return { cands: prev ? prev.cands : relocBase(k, n - 2).cands, text: `${relocYear(n - 2)}年に示した候補群の残り` };
+}
+/** The group put to the player at relocation event `n` (the `year` is the one it opens in). `pool` is the real-era supply (a parameter so a test can run it dry). */
+export function relocGroup(k: KaigenState, n: number, year: number, pool: string[] = REAL_POOL): RelocGroup {
+  const used = usedKeys(k), base = relocBase(k, n), seen = new Set<string>(), cands: RelocCand[] = [];
+  for (const c of base.cands) { const key = eraKey(c.name); if (used.has(key) || seen.has(key)) continue; seen.add(key); cands.push(c); }
+  let text = base.text;
+  if (cands.length < RELOC_MIN) {
+    let h = 0, f = 0;
+    for (const nm of pool) { if (cands.length >= RELOC_TARGET) break; const key = eraKey(nm); if (used.has(key) || seen.has(key)) continue; seen.add(key); cands.push({ name: nm, real: true, note: "日本の実在の過去の元号(この世界では未使用)", origin: "history" }); h++; }
+    if (cands.length < RELOC_TARGET) for (const c of futureCandidates(year, new Set([...used, ...seen]))) { if (cands.length >= RELOC_TARGET) break; const key = eraKey(c.name); if (used.has(key) || seen.has(key)) continue; seen.add(key); cands.push({ name: c.name, real: false, note: "【架空】この世界独自の仮称(史実の元号・候補ではありません)", origin: "fiction" }); f++; }
+    text += `(残りが少ないため補充: 史実の元号${h}・架空${f})`;
+  }
+  return { n, year, base: text, cands };
 }

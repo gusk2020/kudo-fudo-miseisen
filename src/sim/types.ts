@@ -53,7 +53,7 @@ export const modeOf = (x: { mode?: Mode }): Mode => x.mode ?? "road";
 export interface RouteEdgeRef { edgeId: string; dir: 1 | -1 }
 /** A numbered route: designation over edges. The stable `id` never changes; grade/number may (promotion/demotion). */
 export interface SimRoute {
-  id: string; scope: string; grade: Grade; number: number; name: string; edges: RouteEdgeRef[];
+  id: string; scope: string; grade: Grade; number: number; name: string; edges: RouteEdgeRef[]; /** Stage 25: the year of a later 国道0号 (the one of a relocation after 2200) */ gen?: number;
   since: number; active: boolean; lowYears: number; highYears: number;
   history: { month: number; grade: Grade; number: number; text: string; scope?: string; opName?: string }[];
   endMonth?: number;        // month the designation ended (abolished); the line stays in the ledger
@@ -95,7 +95,7 @@ export interface HubsState { ports: Record<string, PortState>; airports: Record<
 
 export interface SimState {
   schemaVersion: 1 | 2 | 3; mapHash: string; terrainHash: string; seed: number; era: string; startYear: number;
-  month: number; rngState: number; speed: 0 | 1 | 5 | 20 | 50;
+  month: number; rngState: number; speed: 0 | 1 | 5 | 20;
   next: { node: number; edge: number; route: number; project: number; event: number };
   nodes: Record<string, SimNode>; edges: Record<string, SimEdge>; routes: Record<string, SimRoute>; projects: Record<string, SimProject>;
   cities: Record<string, CityState>;
@@ -124,6 +124,7 @@ export interface SimState {
   pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
   lastTunnelException18?: number;   // Stage 18: the year the last sea/lake tunnel was allowed under 海路重視 / 空路重視 (policy18.ts)
   moves20?: { pref: string; pos: Vec; by: "capital" | "sub" | "palace"; since?: number }[];
+  e2200hist?: import("./event2200").E2200[];   // Stage 25: the relocation events before the latest one (every 150 years from 2200)
   e2200?: import("./event2200").E2200;   // Stage 22: the 2200 event (遷都・改元・復興方針・国道0号). Absent = not yet (or an older game before 2200)   // Stage 20: the seat points that made a new 県庁所在地 (the world is built with them). Absent = the Stage 19 meaning of a seat point
   numreg?: import("./numreg").NumReg;   // Stage 23: the route NUMBER register (numreg.ts): six classes, numbers never reused. Absent = an older save: started (marked estimated) at its next yearly step
   tier23?: import("./tier23").Tier23;   // Stage 23: 政令特区 / 政令指定都市 and their wards (tier23.ts). Absent = an older game (no tiers)
