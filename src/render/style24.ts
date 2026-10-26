@@ -46,7 +46,13 @@ export interface StyleOpts { thin?: boolean; tunnel?: boolean; old?: boolean; by
 
 const stroke = (colour: number, width: number, alpha = 1, dash?: number[], cap: "round" | "butt" = "round"): Stroke => ({ colour, width, alpha, ...(dash ? { dash } : {}), cap });
 /** The style of an edge of this kind, tier, state and quality. The ONE place that decides it. */
+const MEMO = new Map<string, EdgeStyle>();
+/** (memoised: the same few hundred styles are asked for tens of thousands of times a redraw; callers must not modify what they get) */
 export function edgeStyle(kind: Kind, tier: Tier, state: LineState, quality: number, o: StyleOpts = {}): EdgeStyle {
+  const key = `${kind}${tier}${state}${qualityStep(quality)}${o.thin ? 1 : 0}${o.tunnel ? 1 : 0}${o.old ? 1 : 0}${o.bypass ? 1 : 0}${o.undesignated ? 1 : 0}`;
+  let r = MEMO.get(key); if (!r) { r = build(kind, tier, state, quality, o); MEMO.set(key, r); } return r;
+}
+function build(kind: Kind, tier: Tier, state: LineState, quality: number, o: StyleOpts): EdgeStyle {
   const thin = o.thin ? 0.6 : 1, wd = widthOf(kind, tier) * (kind === "road" || kind === "hwy" ? (o.undesignated ? 0.8 : 1) : 1) * thin, base = KIND_COLOUR[kind];
   if (kind === "sea") {   // a sea route is always dashed (it is not a road): state changes only how strong it is
     const alpha = state === "open" ? 0.95 : state === "dormant" ? 0.6 : 0.35;
