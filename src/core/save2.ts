@@ -98,7 +98,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
     if (!ok) delete raw.hubs;
   }
   raw.schemaVersion = 3;
-  const sim = { ...raw, events: Array.isArray(raw.events) ? raw.events : [], stats: Array.isArray(raw.stats) ? raw.stats : [], skippedMonths: fin(raw.skippedMonths) ? raw.skippedMonths : 0, lastWallMs: fin(raw.lastWallMs) ? raw.lastWallMs : 0, speed: [0, 1, 5, 20, 50].includes(raw.speed) ? raw.speed : 0, ceremonyDone: raw.ceremonyDone === true } as unknown as SimState;
+  const sim = { ...raw, events: Array.isArray(raw.events) ? raw.events : [], stats: Array.isArray(raw.stats) ? raw.stats : [], skippedMonths: fin(raw.skippedMonths) ? raw.skippedMonths : 0, lastWallMs: fin(raw.lastWallMs) ? raw.lastWallMs : 0, speed: raw.speed === 50 ? 20 : [0, 1, 5, 20].includes(raw.speed) ? raw.speed : 0,   /* Stage 25: ×50 was withdrawn; an old save that had it runs at ×20 */ ceremonyDone: raw.ceremonyDone === true } as unknown as SimState;
   const bad = checkIntegrity(sim); if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
   return { sim, problems: [] };
 }

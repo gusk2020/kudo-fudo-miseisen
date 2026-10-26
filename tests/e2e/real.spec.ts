@@ -939,7 +939,7 @@ test("Stage 24: 路線を選ぶと自動で拡大され台帳は小さくなる�
   await page.evaluate(() => { const b = document.getElementById("legend-side-body")!; b.scrollTop = b.scrollHeight; }); expect(await page.evaluate(() => { const b = document.getElementById("legend-side-body")!, last = b.lastElementChild!.getBoundingClientRect(), br = b.getBoundingClientRect(); return last.bottom <= br.bottom + 1; })).toBe(true);   // the last entry can be reached
   expect(await page.evaluate(() => [...document.querySelectorAll("#legend-side .lg-item")].every((it) => { const s = it.querySelector("svg")!.getBoundingClientRect(), c = it.querySelector(".lg-cap")!.getBoundingClientRect(); return c.top >= s.bottom - 0.5; }))).toBe(true);   // the words are under the line sample
   const sideNow = await app(page, "a => a.legendSide"); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await page.waitForSelector("#legend-side"); expect(await app(page, "a => a.legendSide")).toBe(sideNow);   // kept with the display settings
-  // ×50
-  await page.click("#speed-50"); expect(await app(page, "a => a.sim.speed")).toBe(50); const m = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number) + 3, m, { timeout: 60000 });
+  // Stage 25: ×50 is gone
+  expect(await page.locator("#speed-50").count()).toBe(0); expect(await page.locator("#speed-20").count()).toBe(1);
   expect(errs).toEqual([]);
 });
