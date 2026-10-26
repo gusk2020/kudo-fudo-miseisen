@@ -35,6 +35,7 @@ const live = (e: SimEdge) => e.built >= 1 && (e.state === "open" || e.state === 
 function items(sim: SimState, y: number): Item[] {
   const out: Item[] = [], inRoute = new Set<string>(), yr = (m: number | null | undefined) => sim.startYear + Math.floor((m ?? 0) / 12);
   for (const r of Object.values(sim.routes)) {
+    if (r.gen) continue;   // Stage 25: a later 国道0号 is told by its year, not by a number of the register (it would take one a real route may need)
     const es = [...r.edges.map((x) => sim.edges[x.edgeId]), ...r.oldEdges.map((id) => sim.edges[id])].filter(Boolean); for (const x of r.edges) inRoute.add(x.edgeId);
     if (!es.length) continue; const main = r.edges.map((x) => sim.edges[x.edgeId]).filter(Boolean), rail = main.length ? modeOf(main[0]) === "rail" : r.mode === "rail";
     const state: NumState = !r.active ? "abolished" : main.some(live) ? "active" : main.some((e) => e.built < 1) ? "planned" : "abolished";

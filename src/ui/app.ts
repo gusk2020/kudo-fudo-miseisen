@@ -628,7 +628,7 @@ export class App {
   /** Real-time clock: only while this page is visible. Tab hidden or app closed = no simulation; return = capped catch-up. */
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
-    if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.toast("2200年: 遷都と復興の時です(時間は止まっています)"); }
+    if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.toast(`${sim.e2200.year}年: 遷都と復興の時です(時間は止まっています)`); this.road0Told = false; }
     else if (sim?.e2200?.state === "road0" && !this.road0Told) { this.road0Told = true; this.toast("国道0号を描いて開通させるか、見送るかを選んでください(時間は止まっています)"); }   // Stage 24: choosing the era and seats is not the end of the event
     else if (sim?.kaigen?.pending && this.sheet !== "kaigen") { this.sheet = "kaigen"; this.buildSheet(); this.toast("改元の時です。元号を選んでください(時間は止まっています)"); }
     else if (sim?.policy?.pending && this.sheet !== "policy") { this.sheet = "policy"; this.buildSheet(); this.toast("10年ごとの政策介入の機会です(時間は止まっています)"); }

@@ -34,7 +34,7 @@ export function applySeatMoves(cities: WCity[], t: TerrainResult, cellOf: (p: Ve
     }
     const name = np ? np.name : cityNameOf("島"), cp = coastalPlains(k), slice = old ? Math.round(Math.max(NEW_POP_MIN, Math.min(NEW_POP_MAX, old.pop0 * NEW_SHARE))) : NEW_POP_MIN, take = old ? Math.min(slice, Math.max(0, old.pop0 - MIN_CITY_POP)) : slice;
     if (old) { old.pop0 -= take; old.kind = "city"; old.former = true; }
-    const id = `M${m.since ? "22" : "20"}-${m.pref}`, nc: WCity = { id, name, cell: k, pos: cellOf(m.pos) === k ? [m.pos[0], m.pos[1]] : cellCentre(t, k), pref: m.pref, island: t.island[k], pop0: take || NEW_POP_MIN, popSource: "synthetic", coastal: cp.coastal, plains: cp.plains, kind: "capital", moved: m.by, capPop: Math.max(MIN_CITY_POP, capFor(k)) };
+    const id = `M${m.since === 2200 ? "22" : m.since ? String(m.since) : "20"}-${m.pref}`, nc: WCity = { id, name, cell: k, pos: cellOf(m.pos) === k ? [m.pos[0], m.pos[1]] : cellCentre(t, k), pref: m.pref, island: t.island[k], pop0: take || NEW_POP_MIN, popSource: "synthetic", coastal: cp.coastal, plains: cp.plains, kind: "capital", moved: m.by, capPop: Math.max(MIN_CITY_POP, capFor(k)) };
     if (!isFinite(nc.capPop!)) delete nc.capPop;
     cities.push(nc); res.push({ pref: m.pref, by: m.by, cityId: id, name, former: old?.id ?? null, near: np?.place ?? name, km: np?.km ?? 0, adopted: false });
   }
