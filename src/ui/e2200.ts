@@ -14,6 +14,7 @@ export function buildE2200(app: App, body: HTMLElement) {
   body.append(h("h3", {}, `${e.year}年 遷都と復興(第${(e.n ?? 0) + 1}回)`));
   if (e.state !== "pending") { body.append(h("div", { class: "issue", id: "e22-done" }, e.kept ? "現状を維持しました" : `元号: ${e.era}／方針は自由選択${e.state === "road0" ? "／国道0号を描けます(下の道具)" : ""}`)); return; }
   const d = (app.e22 ??= e22Draft(sim)), re = () => app.buildSheet(), list = h("div", { class: "radio-list", id: "e22-box" });
+  body.append(h("div", { class: "row", id: "e22-bgrow" }, h("small", {}, "地図の表示"), app.bgSwitch("e22-bg")));   // Stage 27: the map can be switched (道路図 / 地形図) while the seats are chosen; nothing chosen is touched
   body.append(h("div", { class: "issue warn", id: "e22-window" }, "首都・副首都・皇居、元号、復興方針を選び直せます。時間は止まっています。決めなければ「今のまま続ける」で現状維持。旧所在地の都市・道路・住民はそのまま残り、人はゆっくり移ります。"));
   // seats
   list.append(h("div", { class: "rw-head" }, "首都・副首都・皇居"));
