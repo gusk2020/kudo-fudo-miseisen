@@ -64,6 +64,7 @@ describe("Stage 23: the route number register", () => {
     const { sim } = game(), reg = sim.numreg!; expect(reg).toBeTruthy();
     for (const [c] of NUM_CLASSES) { const L = reg.list[c]; expect(new Set(L.map((e) => e.n)).size).toBe(L.length); expect(Math.max(0, ...L.map((e) => e.n))).toBe(maxNumber(sim, c)); expect(new Set(L.map((e) => e.key)).size).toBe(L.length); }
     expect(reg.list.road.length).toBeGreaterThan(50); expect(reg.list.rail.length).toBeGreaterThan(20); expect(reg.list.sea.length).toBeGreaterThan(10); expect(reg.list.air.length).toBeGreaterThan(5);
+    syncNumbers(sim, yearOf(sim));   // settle once: items that began after the last yearly sync get their numbers here, and only then is "syncing again changes nothing" the question
     const before = JSON.stringify(Object.values(reg.list).flat().map((e) => [e.n, e.since])); syncNumbers(sim, yearOf(sim)); expect(JSON.stringify(Object.values(sim.numreg!.list).flat().map((e) => [e.n, e.since])).startsWith(before.slice(0, before.length - 1))).toBe(true);
     const nums = reg.list.road.map((e) => e.n).sort((a, b) => a - b); expect(nums[0]).toBeGreaterThanOrEqual(0); for (let i = 1; i < nums.length; i++) expect(nums[i]).toBe(nums[i - 1] + 1);   // no skipped number: 欠番 appear only as 'void'
   });
