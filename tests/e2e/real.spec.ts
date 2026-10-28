@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { AIR_LINE, allStyleColours, hex } from "../../src/render/style24";
+import { allStyleColours, hex } from "../../src/render/style24";
 
 const app = (page: Page, f: string) => page.evaluate(`(() => { const a = window.__kfm; return (${f})(a); })()`);
 const screenOf = (page: Page, p: [number, number]) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p) as Promise<[number, number]>;
@@ -950,7 +950,7 @@ test("Stage 25: 凡例の線の色は地図と同じ表の色だけ。×50はな
   const errs = watchErrors(page); await startReal(page);
   await page.evaluate(() => (window as any).__kfm.openSheet(null)); await page.click("#btn-legend"); await page.waitForSelector("#legend-side");
   const cols = (await page.evaluate(() => [...document.querySelectorAll("#legend-side svg")].flatMap((s) => [...s.querySelectorAll("[stroke]")].map((l) => l.getAttribute("stroke")!)))) as string[];
-  const allowed = new Set([...allStyleColours()].map(hex).concat(["#3b1f6e", "#7a4fb5", hex(AIR_LINE.colour)])); expect(cols.length).toBeGreaterThan(30); for (const c of cols) expect(allowed.has(c), c).toBe(true);
+  const allowed = new Set([...allStyleColours()].map(hex).concat(["#3b1f6e", "#7a4fb5"])); expect(cols.length).toBeGreaterThan(30); for (const c of cols) expect(allowed.has(c), c).toBe(true);
   expect(new Set(cols).size).toBeLessThanOrEqual(allowed.size);
   expect(await page.locator("#speed-50").count()).toBe(0); expect(await page.locator("#speed-20").count()).toBe(1);
   expect(errs).toEqual([]);

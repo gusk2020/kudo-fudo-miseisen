@@ -13,7 +13,7 @@ import { LINE, nameWidth, placeNames, type Box, type NameCircle } from "./cityNa
 import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
-import { AIR_LINE, BRIDGE, COMPARE, GONE_GREY, HIGHLIGHT_LAYERS, QUALITY_STEPS, RAIL_WIDTH_T, ROAD_WIDTH, TIER_OF, TUNNEL, buildProgressStroke, edgeStyle, shade, type Kind, type LineState, type Stroke } from "./style24";
+import { AIR_STYLE, BRIDGE, COMPARE, GONE_GREY, HIGHLIGHT_LAYERS, QUALITY_STEPS, RAIL_WIDTH_T, ROAD_WIDTH, TIER_OF, TUNNEL, buildProgressStroke, edgeStyle, shade, type Kind, type LineState, type Stroke } from "./style24";
 
 export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[]; strokes?: Vec[][]; handles?: boolean; sel?: number | null }   // Stage 9: strokes with their control points (handles) and the selected stroke   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
 export interface PastView { year: number; codes: Record<string, number> }
@@ -48,7 +48,7 @@ function pattern(g: Graphics, pts: Vec[], dash: number[]) {
     while (seg > 1e-6) { const step = Math.min(left, seg); if (draw) { g.moveTo(x, -y); g.lineTo(x + ux * step, -(y + uy * step)); } x += ux * step; y += uy * step; seg -= step; left -= step; if (left <= 1e-9) { i = (i + 1) % dash.length; draw = i % 2 === 0; left = dash[i]; } }
   }
 }
-const KEYS = ["city12", "halo", "facb", "ghost", "lanes", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "fac", "nodes", "cityTop", "sel", "hl", "ov"];
+const KEYS = ["city12", "halo", "facb", "ghost", "ferry", "plan", "cas", "old", "fillDash", "fill", "mid", "rcas", "rfill", "rtie", "rdash", "lanes", "fac", "nodes", "cityTop", "sel", "hl", "ov"];
 /** Stage 23: a copy of a line moved sideways by d (world units) -- two lines that share a bridge or a tunnel are drawn side by side instead of one over the other. Display only. */
 function offsetLine(pts: Vec[], d: number): Vec[] {
   return pts.map((p, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], n = Math.hypot(dx, dy) || 1; return [p[0] - (dy / n) * d, p[1] + (dx / n) * d] as Vec; });
@@ -164,10 +164,10 @@ export class RoadLayer {
    *  International routes are kept in the simulation but not drawn. In the past view, those of that year. */
   private drawHubs(a: RoadArgs, sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
     const at = hubsAt(sim, year ?? Number.POSITIVE_INFINITY), nodes = this.g.nodes, lanes = this.g.lanes, pos = (id: string) => w.cityById.get(id)?.pos;
-    const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && !lite && zoom >= 0.3, far = zoom < 0.5;
+    const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && zoom >= 0.12, far = zoom < 0.5;
     if (showL && showA) {
-      const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol).slice(0, far ? 10 : 25);
-      for (const r of dom) { const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; line(lanes, [p, q]); lanes.stroke({ width: px(AIR_LINE.width), color: AIR_LINE.colour, alpha: AIR_LINE.alpha }); }
+      const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol).slice(0, lite ? 8 : far ? 14 : 30);
+      for (const r of dom) { const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; for (const sp of [AIR_STYLE.casing!, AIR_STYLE.body]) { pattern(lanes, [p, q], (sp.dash ?? [1e9]).map(px)); lanes.stroke({ width: px(sp.width), color: sp.colour, alpha: sp.alpha, cap: sp.cap }); } }
     }
     if (zoom < (lite ? 0.5 : 0.22)) return;
     if (showP) for (const p of at.ports) { const big = p.tier >= 3; if (far && !big) continue; const c = pos(p.city); if (!c) continue; const s = px(big ? PORT_SIZE[1] : PORT_SIZE[0]); nodes.rect(c[0] + px(5), -c[1] + px(2), s, s).fill({ color: big ? PORT_COL2[1] : PORT_COL2[0] }).stroke({ width: px(1.2), color: 0xffffff }); }

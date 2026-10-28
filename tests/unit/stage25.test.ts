@@ -90,7 +90,7 @@ describe("Stage 25: the 150-year relocation event", () => {
 });
 
 import { readFileSync } from "node:fs";
-import { AIR_LINE, COMPARE, HIGHLIGHT_COLOUR, KIND_COLOUR, QUALITY_STEPS, STATE_DASH, TIER_OF, allStyleColours, edgeStyle, hex, shade, type Kind, type LineState, type Tier } from "../../src/render/style24";
+import { AIR_STYLE, COMPARE, HIGHLIGHT_COLOUR, KIND_COLOUR, STATE_DASH, TIER_OF, allStyleColours, edgeStyle, hex, type Kind, type LineState, type Tier } from "../../src/render/style24";
 import { legendItems, svgOfStyle } from "../../src/render/legendSamples";
 
 describe("Stage 25: the colours of the lines, and the legend that must show them", () => {
@@ -98,11 +98,12 @@ describe("Stage 25: the colours of the lines, and the legend that must show them
   it("there are six hues, the greys and the black and white that edge them, and one highlight colour that nothing else uses", () => {
     const all = allStyleColours(); const hues = new Set(Object.values(KIND_COLOUR)); expect(hues.size).toBe(6); expect(all.has(HIGHLIGHT_COLOUR)).toBe(true);
     for (const k of kinds) for (const t of tiers) for (const s of states) for (const q of [90, 50, 20, 5]) { const st = edgeStyle(k, t, s, q, { old: true, bypass: true }); for (const x of [st.casing, st.body, st.centre, st.ties]) if (x) expect(x.colour, `${k}${t}${s}${q}`).not.toBe(HIGHLIGHT_COLOUR); }
-    expect(COMPARE.good).not.toBe(HIGHLIGHT_COLOUR); expect(COMPARE.bad).not.toBe(HIGHLIGHT_COLOUR); expect(AIR_LINE.colour).not.toBe(HIGHLIGHT_COLOUR);
+    expect(COMPARE.good).not.toBe(HIGHLIGHT_COLOUR); expect(COMPARE.bad).not.toBe(HIGHLIGHT_COLOUR); expect(AIR_STYLE.body.colour).not.toBe(HIGHLIGHT_COLOUR);
     const nonHue = [...all].filter((c) => !hues.has(c)); expect(nonHue.length).toBeLessThanOrEqual(12 + 24);   // (the shades of a hue, its dark edge, white, black, greys)
   });
-  it("condition is told by shade alone (same hue, paler as it worsens), tier by thickness, state by the kind of line", () => {
-    for (const k of ["road", "hwy", "rail", "hsr", "maglev"] as Kind[]) { const lum = (c: number) => (c >> 16) * 0.3 + ((c >> 8) & 255) * 0.59 + (c & 255) * 0.11; const cols = [90, 50, 20, 5].map((q) => shade(k, q)); for (let i = 1; i < 4; i++) expect(lum(cols[i])).toBeGreaterThanOrEqual(lum(cols[i - 1])); expect(cols[0]).toBe(KIND_COLOUR[k]); expect(new Set(cols).size).toBe(4); }
+  it("Stage 26: condition (良/可/悪/荒廃) does NOT change a line's colour or shape; tier is told by thickness, state by the kind of line", () => {
+    for (const k of kinds) for (const t of tiers) for (const st of states) for (const o of [{}, { old: true, bypass: true, tunnel: true, thin: true }]) { const base = JSON.stringify(edgeStyle(k, t, st, 95, o)); for (const q of [80, 55, 30, 10, 0]) expect(JSON.stringify(edgeStyle(k, t, st, q, o)), `${k}${t}${st}${q}`).toBe(base); }
+    for (const k of ["road", "hwy", "rail", "hsr", "maglev"] as Kind[]) expect(edgeStyle(k, "sub", "open", 3).body.colour).toBe(KIND_COLOUR[k]);
     for (const k of ["road", "rail"] as Kind[]) { const w = tiers.map((t) => edgeStyle(k, t, "open", 90).body.width); expect(w[0]).toBeGreaterThan(w[1]); expect(w[1]).toBeGreaterThan(w[2]); }
     expect(edgeStyle("road", "sub", "open", 90).body.dash).toBeUndefined(); for (const s of ["dormant", "planned", "unbuilt", "closed", "lost"] as LineState[]) expect(edgeStyle("road", "sub", s, 90).body.dash).toEqual(STATE_DASH[s]);
     const dashes = new Set(["dormant", "planned", "unbuilt", "closed", "lost"].map((s) => JSON.stringify(STATE_DASH[s as LineState]))); expect(dashes.size).toBe(5);   // every state has its own pattern
@@ -111,15 +112,16 @@ describe("Stage 25: the colours of the lines, and the legend that must show them
   it("the legend's samples ARE the map's styles: every entry carries the style it was made from and its svg holds that style's colour, width and dash", () => {
     const items = legendItems(); expect(items.length).toBeGreaterThanOrEqual(20);
     for (const it of items) {
-      const r = it.ref; if (!r.kind) continue; const st = edgeStyle(r.kind, r.tier!, r.state!, r.quality!); expect(it.svg, it.caption).toContain(svgOfStyle(st));
+      const r = it.ref; if (!r.kind) continue; const st = edgeStyle(r.kind, r.tier!, r.state!, r.quality!); if (r.also) { expect(it.svg).toContain(svgOfStyle(st, 5)); expect(it.svg).toContain(svgOfStyle(edgeStyle(r.also, r.tier!, r.state!, r.quality!), 11)); continue; } expect(it.svg, it.caption).toContain(svgOfStyle(st));
       expect(it.svg).toContain(`stroke="${hex(st.body.colour)}"`); expect(it.svg).toContain(`stroke-width="${st.body.width}"`); if (st.body.dash) expect(it.svg).toContain(`stroke-dasharray="${st.body.dash.join(" ")}"`); else if (r.state === "open") expect(it.svg).not.toContain("stroke-dasharray=\"" + STATE_DASH.dormant!.join(" "));
     }
-    for (const k of kinds) expect(items.some((i) => i.ref.kind === k && i.group === "交通種別"), k).toBe(true);
+    for (const k of kinds) expect(items.some((i) => (i.ref.kind === k || i.ref.also === k) && i.group === "交通種別"), k).toBe(true);
+    expect(items.filter((i) => i.caption.includes("新幹線") || i.caption.includes("リニア")).length).toBe(1);   // Stage 26: one entry for 新幹線・リニア (they stay two kinds everywhere else)
+    expect(items.some((i) => i.ref.what === "air" && i.svg.includes(`stroke-dasharray="${AIR_STYLE.body.dash!.join(" ")}"`))).toBe(true); expect(items.some((i) => i.group.includes("傷み"))).toBe(false);
     for (const t of tiers) expect(items.some((i) => i.ref.tier === t && i.group === "階層(太さ)")).toBe(true);
     for (const s of states) expect(items.some((i) => i.ref.state === s && i.group === "状態(線種)")).toBe(true);
-    for (let i = 0; i < 4; i++) expect(items.some((x) => x.group === "傷み具合(色の濃さ)" && x.svg.includes(hex(shade("road", QUALITY_STEPS[i].min + (i === 3 ? 0 : 1)))))).toBe(true);
     const hl = items.find((i) => i.ref.what === "highlight")!; expect(hl.svg).toContain(hex(HIGHLIGHT_COLOUR));
-    const used = [...items.map((i) => i.svg).join("").matchAll(/stroke="(#[0-9a-f]{6})"/g)].map((m) => m[1]); const allowed = new Set([...allStyleColours()].map(hex).concat(["#3b1f6e", "#7a4fb5", hex(AIR_LINE.colour)])); for (const c of used) expect(allowed.has(c), c).toBe(true);
+    const used = [...items.map((i) => i.svg).join("").matchAll(/stroke="(#[0-9a-f]{6})"/g)].map((m) => m[1]); const allowed = new Set([...allStyleColours()].map(hex).concat(["#3b1f6e", "#7a4fb5"])); for (const c of used) expect(allowed.has(c), c).toBe(true);
   });
   it("the map draws only through the table: no colour literal is left in the edge-drawing code of roads.ts", () => {
     const src = readFileSync("src/render/roads.ts", "utf8"), a = src.indexOf("for (const e of Object.values(sim.edges)) {\n        const eff"), b = src.indexOf("const nodes = this.g.nodes");
