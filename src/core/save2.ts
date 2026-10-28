@@ -80,6 +80,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.numreg !== undefined && !(isRec(raw.numreg) && isRec(raw.numreg.next) && isRec(raw.numreg.list) && ["road", "hwy", "rail", "hsr", "sea", "air"].every((k) => Array.isArray(raw.numreg.list[k]) && Number.isInteger(raw.numreg.next[k])))) delete raw.numreg;   // Stage 23: a register that is not whole is started again (estimated)
   if (raw.tier23 !== undefined && !(isRec(raw.tier23) && isRec(raw.tier23.zones) && isRec(raw.tier23.hist) && isRec(raw.tier23.cnt))) delete raw.tier23;   // Stage 23
   if (raw.isl22 !== undefined && raw.isl22 !== true) delete raw.isl22;
+  if (raw.cp !== undefined && !(isRec(raw.cp) && Number.isInteger(raw.cp.y50) && Number.isInteger(raw.cp.reloc))) delete raw.cp;   // Stage 26
   { const okEv = (e: any) => isRec(e) && Number.isInteger(e.year) && ["pending", "road0", "done"].includes(e.state);   // Stage 25: the earlier relocation events must be whole, each one done
     if (raw.e2200hist !== undefined && !(Array.isArray(raw.e2200hist) && raw.e2200hist.length < 60 && raw.e2200hist.every((e: any) => okEv(e) && e.state === "done"))) delete raw.e2200hist;
     if (isRec(raw.kaigen) && raw.kaigen.reloc !== undefined) { const g = raw.kaigen.reloc, okC = (c: any) => isRec(c) && typeof c.name === "string" && c.name.length > 0 && c.name.length < 12 && typeof c.real === "boolean" && ["inherit", "history", "fiction"].includes(c.origin);
@@ -150,6 +151,13 @@ export async function getRaw(key: string): Promise<string | undefined> { try { r
 /** Stage 23: what a slot shows -- the capital and sub-capital IN THAT SAVE and the year it was saved in (never the game now being played). */
 export interface SlotMeta { capital: string; sub: string; year: number | null; savedAt: number }
 export function slotMetaOf(save: GameSave): SlotMeta { const st = seatsOf(save.map); return { capital: prefName(save.sim?.e2200 && save.sim.capital ? save.sim.capital : st.capital), sub: prefName(save.sim?.e2200 && save.sim.subCapital ? save.sim.subCapital : st.sub), year: save.sim ? monthYear(save.sim) : null, savedAt: save.savedAt }; }
+/** Stage 26: the checkpoint store on IndexedDB (same database as the slots; its keys are all under s3:cp:). */
+export const idbCpStore = {
+  async put(key: string, data: Uint8Array | string): Promise<void> { await tx("readwrite", (s) => s.put(data as never, key)); },
+  async get(key: string): Promise<Uint8Array | string | undefined> { return (await tx<unknown>("readonly", (s) => s.get(key) as IDBRequest<unknown>)) as Uint8Array | string | undefined; },
+  async del(key: string): Promise<void> { await tx("readwrite", (s) => s.delete(key)); },
+  async keys(): Promise<string[]> { return (await tx<IDBValidKey[]>("readonly", (s) => s.getAllKeys())).map(String); },
+};
 export async function saveGame(name: string, save: GameSave): Promise<boolean> { const ok = await putRaw(name, { savedAt: save.savedAt, save }); if (ok) await putRaw(name + ":meta", slotMetaOf(save)); return ok; }
 /** A slot's label: its own small record, or (a slot saved before this existed) read once from the save and written for next time. null = empty. */
 export async function slotMeta(name: string): Promise<SlotMeta | null> {
