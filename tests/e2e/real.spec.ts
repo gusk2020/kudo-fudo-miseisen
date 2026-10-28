@@ -1006,12 +1006,23 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   await jump(2000); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.y50 === 2000, null, { timeout: 90000 });
   await menu(); await page.waitForSelector("#cp-2000-50y", { timeout: 20000 });
   const m = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m, { timeout: 60000 });   // the clock went on after the checkpoint
-  await jump(2200); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.reloc === 1 && (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 });
-  expect(await app(page, "a => a.sim.e2200.n")).toBe(0); await menu(); await page.waitForSelector("#cp-2200-reloc"); expect(await page.textContent("#cp-2200-reloc")).toContain("遷都の直前");
-  expect(await page.locator("#cp-2200-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, not two
+  await jump(2200); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
+  expect(await app(page, "a => a.sim.e2200.n")).toBe(0); expect(await app(page, "a => a.sim.cp?.reloc ?? 0")).toBe(0);   // Stage 27: nothing is saved before or in the middle of the event
+  await page.waitForTimeout(1500); expect(await page.evaluate(() => (window as any).__kfm.sim.cp?.reloc ?? 0)).toBe(0);
+  const bg0 = await app(page, "a => a.bg"); await page.click("#e22-bg"); expect(await app(page, "a => a.bg")).not.toBe(bg0); await page.waitForSelector("#e22-box");   // the map can be switched during the event; the sheet stays
+  await page.selectOption("#e22-sel-palace", "JP-04"); await page.click("#e22-era-1"); await page.click("#e22-decide");
+  expect(await app(page, "a => a.sim.e2200.state")).toBe("road0"); expect(await app(page, "a => a.sim.cp?.reloc ?? 0")).toBe(0);   // 国道0号 is still to be built or given up
+  const palace = (await app(page, "a => { const w = a.world, p = a.sim.palace, c = w.cities.find((x) => x.pref === p.pref && x.kind === 'capital'); return { pref: p.pref, dx: Math.hypot(p.pos[0] - c.pos[0], p.pos[1] - c.pos[1]), marker: a.r.seatOverride ? Math.hypot(a.r.seatOverride.palace[0] - c.pos[0], a.r.seatOverride.palace[1] - c.pos[1]) : -1 }; }")) as { pref: string; dx: number; marker: number };
+  expect(palace.pref).toBe("JP-04"); expect(palace.dx).toBeLessThan(1e-6); expect(palace.marker).toBeLessThan(1e-6);   // the palace really stands in the new prefecture (sim and map marker)
+  await page.click("#road0-skip"); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.reloc === 1, null, { timeout: 90000 });
+  await menu(); await page.waitForSelector("#cp-2200-reloc"); expect(await page.textContent("#cp-2200-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2200-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
   expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2200-reloc"); await page.waitForSelector("#cp-2000-50y");
   await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12) <= 2001 && !a.sim.e2200")).toBe(true);   // (a game from the 2000 checkpoint, before the relocation event)
   expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menu(); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
+  // the checkpoint taken after the 2200 event: loading it gives the world with the choices made, and nothing is asked again
+  await menu(); await page.waitForSelector("#cp-2200-reloc"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2200-reloc .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
+  expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n, a.sim.palace.pref, a.sim.cp.reloc]")).toEqual(["done", 0, "JP-04", 1]);
+  const m2 = (await app(page, "a => a.sim.month")) as number; await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m2, { timeout: 60000 }); expect(await app(page, "a => a.sim.e2200.state")).toBe("done");   // it plays on; no event opens again
   expect(errs).toEqual([]);
 });

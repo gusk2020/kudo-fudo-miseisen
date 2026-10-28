@@ -1,7 +1,7 @@
 /**
  * Stage 26: 自動セーブポイント. In place of the year-by-year snapshots and the look-at-a-past-year view (gone), the game writes a COMPLETE save at a few fixed moments:
  *   - every 50 years (2000, 2050, ...), at the first year boundary on or after the multiple;
- *   - just before each 150-year relocation event (2200, 2350, ...), at the year boundary where the event is about to open -- when that is also a 50-year mark it is one save, not two.
+ *   - just AFTER each 150-year relocation event (2200, 2350, ...) -- seats, era name and policy decided, 国道0号 built or given up -- when that is also a 50-year mark it is one save, not two.
  * A checkpoint is an ordinary save (map, whole simulation: random state, event state, era history, seats, network, people), so loading one continues the game exactly as it would have gone on from there.
  * They live under their own keys, apart from the numbered slots and the running autosave, and are pruned by a fixed rule (below): this file touches nothing else.
  * Pure logic plus a small storage interface (the app plugs in IndexedDB, a test plugs in a Map).
@@ -13,16 +13,22 @@ import type { SimState } from "./types";
 export const CP_EVERY_YEARS = 50, CP_MAX_COUNT = 8, CP_MAX_BYTES = 48 * 1024 * 1024;
 export const CP_PREFIX = "s3:cp:", CP_INDEX = "s3:cp:index";
 export type CpKind = "50y" | "reloc";
-export interface CpDue { kind: CpKind; year: number; /** for "reloc": the number of the event about to open (1-based) */ n?: number }
-export interface CpEntry { key: string; year: number; kind: CpKind; n?: number; bytes: number; gz: boolean; savedAt: number; capital: string; sub: string }
+export interface CpDue { kind: CpKind; year: number; /** for "reloc": the number of the event just finished (1-based) */ n?: number }
+export interface CpEntry { /** 2 = taken after the relocation event (Stage 27); absent = taken just before it (Stage 26) */ v?: number; key: string; year: number; kind: CpKind; n?: number; bytes: number; gz: boolean; savedAt: number; capital: string; sub: string }
 export interface CpStore { put(key: string, data: Uint8Array | string): Promise<void>; get(key: string): Promise<Uint8Array | string | undefined>; del(key: string): Promise<void>; keys(): Promise<string[]> }
 
-/** Is a checkpoint due at this month boundary? (Only the app's clock asks; the plain stepping used by tests and tools never writes one.) */
+/**
+ * Is a checkpoint due at this month boundary? (Only the app's clock asks; the plain stepping used by tests and tools never writes one.)
+ * Stage 27: the checkpoint of a relocation is taken just AFTER the event -- when the capital, sub-capital, palace, era name and policy are decided and 国道0号 is built or explicitly given up (state "done") --
+ * so loading it does not ask for the choices again. A 50-year mark that falls on a relocation (2200, 2350, ...) is that one save, taken after the event; while an event is due or open no 50-year save is taken.
+ */
 export function checkpointDue(sim: SimState): CpDue | null {
   if (!sim.ceremonyDone || sim.month % 12 !== 0) return null;
-  const y = yearOf(sim), n = eventsOpened(sim);
-  if (due2200(sim) && (sim.cp?.reloc ?? 0) <= n) return { kind: "reloc", year: y, n: n + 1 };
-  const mark = Math.floor(y / CP_EVERY_YEARS) * CP_EVERY_YEARS;
+  const n = eventsOpened(sim), e = sim.e2200;
+  if (e && e.state === "done" && (sim.cp?.reloc ?? 0) < n) return { kind: "reloc", year: e.year, n };
+  if (e && e.state !== "done") return null;     // an event is open: nothing is saved in the middle of it
+  if (due2200(sim)) return null;                // an event is about to open (the 50-year save waits for it)
+  const y = yearOf(sim), mark = Math.floor(y / CP_EVERY_YEARS) * CP_EVERY_YEARS;
   if (mark > (sim.cp?.y50 ?? Math.floor(sim.startYear / CP_EVERY_YEARS) * CP_EVERY_YEARS)) return { kind: "50y", year: y };
   return null;
 }
@@ -67,7 +73,7 @@ export async function readIndex(store: CpStore): Promise<CpEntry[]> {
 export async function writeCheckpoint(store: CpStore, json: string, due: CpDue, meta: { capital: string; sub: string }, now = Date.now()): Promise<{ ok: true; entry: CpEntry; pruned: string[] } | { ok: false; error: string }> {
   try {
     const index = await readIndex(store);   // (a failed read aborts here: an index must never be rewritten from a guess)
-    const enc = await encodeSave(json), key = cpKey(due), entry: CpEntry = { key, year: due.year, kind: due.kind, ...(due.n ? { n: due.n } : {}), bytes: bytesOf(enc.data), gz: enc.gz, savedAt: now, capital: meta.capital, sub: meta.sub };
+    const enc = await encodeSave(json), key = cpKey(due), entry: CpEntry = { v: 2, key, year: due.year, kind: due.kind, ...(due.n ? { n: due.n } : {}), bytes: bytesOf(enc.data), gz: enc.gz, savedAt: now, capital: meta.capital, sub: meta.sub };
     await store.put(key, enc.data);
     const next = [...index.filter((e) => e.key !== key), entry], pruned = planPrune(next);
     const kept = next.filter((e) => !pruned.includes(e.key));

@@ -649,7 +649,7 @@ export class App {
     try {
       markCheckpoint(sim, due); sim.lastWallMs = Date.now(); const json = JSON.stringify(makeSave(this.s, sim)), st = seatsOf(this.s);   // (serialised in the same breath as the marking)
       const r = await writeCheckpoint(idbCpStore, json, due, { capital: seatPrefName(sim.capital ?? st.capital), sub: seatPrefName(sim.subCapital ?? st.sub) });
-      this.toast(r.ok ? `${due.year}年の自動セーブポイントを作りました${due.kind === "reloc" ? "(遷都の直前)" : ""}` : `自動セーブポイントを作れませんでした(${r.error})。ゲームはこのまま続けられます`);
+      this.toast(r.ok ? `${due.year}年の自動セーブポイントを作りました${due.kind === "reloc" ? "(遷都の直後)" : ""}` : `自動セーブポイントを作れませんでした(${r.error})。ゲームはこのまま続けられます`);
       if (this.sheet === "menu") this.buildSheet();
     } catch (e) { this.toast(`自動セーブポイントを作れませんでした(${e instanceof Error ? e.message : "不明"})。ゲームはこのまま続けられます`); }
     finally { this.cpBusy = false; run.waiting = false; this.lastTick = performance.now(); this.acc = 0; }
@@ -1096,11 +1096,11 @@ export class App {
   /** Stage 26: the 自動セーブポイント list -- year, 50-year or just-before-relocation, the seats it was saved with; 読込 continues the game from there. Kept apart from the numbered slots. */
   private async buildCheckpoints(body: HTMLElement) {
     const list = await listCheckpoints(idbCpStore); body.append(h("h3", { id: "cp-title" }, "自動セーブポイント"));
-    body.append(h("small", { id: "cp-note" }, "50年ごと(2000年〜)と、150年ごとの遷都イベントの直前に自動で作られます。①〜⑤とは別です。最大8件で、古いものから自動で消えます。"));
+    body.append(h("small", { id: "cp-note" }, "50年ごと(2000年〜)と、150年ごとの遷都イベントの直後(選択と国道0号まで済んだ時点)に自動で作られます。①〜⑤とは別です。最大8件で、古いものから自動で消えます。"));
     if (!list.length) { body.append(h("div", { class: "slot-row", id: "cp-empty" }, h("span", { class: "slot-text empty" }, "(まだありません)"))); return; }
     const mb = (e: CpEntry) => `${(e.bytes / 1048576).toFixed(1)}MB`;
     for (const e of list) {
-      const label = e.kind === "reloc" ? `${e.year}年 遷都の直前(第${e.n ?? "?"}回)` : `${e.year}年 50年ごと`, text = `${label} / ${e.capital} / ${e.sub} / ${mb(e)}`;
+      const label = e.kind === "reloc" ? `${e.year}年 遷都の${e.v ? "直後" : "直前(旧)"}(第${e.n ?? "?"}回)` : `${e.year}年 50年ごと`, text = `${label} / ${e.capital} / ${e.sub} / ${mb(e)}`;
       body.append(h("div", { class: "slot-row cp-row", id: `cp-${e.year}-${e.kind}` }, h("span", { class: "slot-text", title: text }, text),
         h("button", { class: "slot-load cp-load", onclick: async () => { if (!confirm(`${label}から再開します。今のゲームは、保存していなければ失われます。よろしいですか?`)) return; const j = await readCheckpoint(idbCpStore, e); if (!j) { this.toast("読み込めません(データが見つかりません)"); return; } const p = parseSave(j); if (p.ok && p.sim) this.adopt(p); else this.toast("読み込めません: " + (p.problems[0] ?? "壊れたデータ")); } }, "読込")));
     }
