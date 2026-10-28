@@ -81,3 +81,44 @@ describe("Stage 26: the map's lines", () => {
     for (const t of ["main", "sub", "local"] as Tier[]) for (const k of ["road", "rail"] as Kind[]) for (const q of [0, 30, 60, 99]) expect(edgeStyle(k, t, "open", q).body.colour).toBe(KIND_COLOUR[k]);
   });
 });
+
+import { gridBordersWithin } from "../../src/render/gmBorders";
+import { run14 } from "../study/lib14";
+import { advance, stepMonth, yearOf } from "../../src/sim/engine";
+import { finishMigration } from "../../src/sim/migrate";
+import { makeSave, parseSave, sanitizeSim } from "../../src/core/save2";
+import { realState } from "../../src/core/state";
+import { E2200_YEAR, open2200 } from "../../src/sim/event2200";
+
+describe("Stage 26: borders inside Hokkaido's three regions only", () => {
+  it("gridBordersWithin keeps only segments between two cells of the chosen group", () => {
+    const grid = { x0: 0, y0: 0, cell: 5, nx: 4, ny: 1 }, land = [1, 1, 1, 1], pref = [1, 2, 3, 3];   // 1,2 = group, 3 = another prefecture
+    expect(gridBordersWithin(grid, land, pref, (n) => n <= 2)).toEqual([5, 0, 5, 5]);   // only the 1|2 border, not 2|3
+    expect(gridBordersWithin(grid, land, pref, () => true).length / 4).toBe(2); expect(gridBordersWithin(grid, land, pref, () => false)).toEqual([]);
+  });
+});
+
+describe("Stage 26: a checkpoint is a complete save; the game goes on from it exactly as it would have", () => {
+  it("round trip through the checkpoint encoding and parseSave: the restored game and the original, stepped the same months, are identical; the 3 slots' format is untouched", async () => {
+    const r = run14({ seed: 5, until: 1999, islets: true }), { sim, w } = r; advance(sim, w, 11 - (sim.month % 12) + 12 * 0);   // (to a year boundary)
+    while (sim.month % 12 !== 0) stepMonth(sim, w);
+    const save = makeSave(realState(1), sim), json = JSON.stringify(save), enc = await encodeSave(json), back = await decodeSave(enc.data, enc.gz); expect(back).toBe(json);
+    const parsed = parseSave(back); expect(parsed.sim).not.toBeNull(); const rest = parsed.sim!; finishMigration(rest, w);
+    expect(JSON.stringify(rest)).toBe(JSON.stringify(sim));   // nothing is lost or added by saving and loading
+    advance(sim, w, 30); advance(rest, w, 30); expect(rest.month).toBe(sim.month); expect(rest.rngState).toBe(sim.rngState); expect(JSON.stringify(rest)).toBe(JSON.stringify(sim));
+    expect((sim as unknown as { snaps?: unknown }).snaps).toBeUndefined();
+  }, 600000);
+  it("a checkpoint taken just before 2200 restores into the same event, once: no double firing, era history intact", async () => {
+    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.month = (E2200_YEAR - sim.startYear) * 12; sim.policy!.mode = "auto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
+    const d = checkpointDue(sim)!; expect(d).toEqual({ kind: "reloc", year: 2200, n: 1 }); markCheckpoint(sim, d); const json = JSON.stringify(makeSave(realState(1), sim)), eras0 = JSON.stringify(sim.kaigen!.eras);
+    const rest = parseSave(json).sim!; finishMigration(rest, w); expect(checkpointDue(rest)).toBeNull();
+    for (const g of [sim, rest]) { stepMonth(g, w); expect(g.e2200?.state).toBe("pending"); expect(g.e2200?.n).toBe(0); stepMonth(g, w); expect(g.e2200hist ?? []).toEqual([]); }
+    expect(JSON.stringify(rest.e2200)).toBe(JSON.stringify(sim.e2200)); expect(JSON.stringify(rest.kaigen!.eras)).toBe(eras0); expect(JSON.stringify(rest.kaigen!.reloc)).toBe(JSON.stringify(sim.kaigen!.reloc));
+    void open2200; void yearOf;
+  }, 600000);
+  it("an older save (with year-by-year snapshots, no checkpoint record) loads: the snapshots are dropped, the era and relocation history stay", () => {
+    const r = run14({ seed: 5, until: 1952, islets: true }), s = JSON.parse(JSON.stringify(r.sim)); s.snaps = [{ year: 1950, edges: { a: 1 } }]; s.e2200hist = []; delete s.cp;
+    const back = sanitizeSim(s).sim!; expect(back).not.toBeNull(); expect((back as unknown as { snaps?: unknown }).snaps).toBeUndefined(); expect(back.kaigen!.eras.length).toBe(r.sim.kaigen!.eras.length); expect(back.cp).toBeUndefined();
+    s.cp = { y50: "x", reloc: 1 }; expect(sanitizeSim(s).sim!.cp).toBeUndefined();   // a damaged record is dropped, not trusted
+  }, 300000);
+});
