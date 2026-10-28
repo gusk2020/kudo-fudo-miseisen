@@ -1057,7 +1057,13 @@ export class App {
         h("button", { onclick: () => this.download(txt, "kfm-scenery.json") }, "保存")));
   }
   private download(text: string, name: string) { const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "application/json" })), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+  private menuTok = 0;
+  /** Stage 26: the menu is built from several awaits; two builds in flight (the clock finishing a checkpoint while the sheet is being opened) used to append their rows twice -- only the latest one is put on the sheet. */
   async buildMenu(body: HTMLElement) {
+    const tok = ++this.menuTok, tmp = document.createElement("div"); await this.buildMenuInner(tmp);
+    if (tok === this.menuTok && this.sheet === "menu") body.append(...Array.from(tmp.childNodes));
+  }
+  private async buildMenuInner(body: HTMLElement) {
     if (this.real) {
       body.append(h("h3", {}, "このゲームについて(史実と架空の区別)"));
       body.append(h("div", { class: "issue", id: "about-data" }, h("b", {}, "実在: "), "海岸線・標高・河川・府県・都市の位置(東京府、北海道は3県の設定)。鉄道・道路の通り道(Natural Earth)は初期網の参考。", h("br"),
@@ -1106,6 +1112,7 @@ export class App {
     this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.r.fit(l.map);
     if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
     this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
+    if (this.terrain && this.pendingSim) this.attachPendingSim();   // Stage 26: the same map (a checkpoint, or a slot of this very map) needs no new terrain, so nothing else would ever attach the loaded game
   }
   finalize() {
     if (!this.terrain || this.issues.some((i) => i.severity === "error")) return;

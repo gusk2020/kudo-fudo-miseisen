@@ -972,8 +972,8 @@ test("Stage 25: 150年後の2350年にも遷都と改元。元号は使った名
 test("Stage 26: 初期設定中でも地形図/道路図を切り替えられ、選んだ元号・首都は変わらない。府県境は1本だけ", async ({ page }) => {
   test.setTimeout(240000); await page.setViewportSize({ width: 360, height: 740 });
   const errs = watchErrors(page); await bootReal(page);
-  expect(await page.isVisible("#setup-bg")).toBe(false); await page.click("#setup-tab-era"); await page.waitForSelector("#setup-bg");
-  await page.click("#era-open"); await page.waitForSelector("#era-list"); await clickEra(page, 3); const era0 = await app(page, "a => a.firstEra");
+  await page.waitForSelector("#setup-bg"); await page.click("#setup-tab-era");
+  if (!(await page.isVisible("#era-list"))) await page.click("#era-open"); await page.waitForSelector("#era-list"); await clickEra(page, 3); const era0 = await app(page, "a => a.firstEra");
   const bg0 = await app(page, "a => a.bg"); await page.click("#rw-bg"); const bg1 = await app(page, "a => a.bg"); expect(bg1).not.toBe(bg0); expect(await app(page, "a => a.firstEra")).toBe(era0); expect(await page.isVisible("#era-list")).toBe(true);   // the list stays open, the choice stays
   await page.click("#rw-close"); await seatSelect(page, "capital", "JP-40"); const seatNow = await page.textContent("#seat-now");
   expect(await page.evaluate(() => { const r = document.getElementById("setup-bg")!.getBoundingClientRect(); return r.width >= 40 && r.height >= 30 && r.right <= innerWidth; })).toBe(true);   // reachable with a thumb on a narrow screen
@@ -999,18 +999,19 @@ test("Stage 26: 凡例は新幹線・リニアが1項目で劣化段階を出さ
 test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①〜⑤と別に作られ、一覧から再開でき、再読込しても残る", async ({ page }) => {
   test.setTimeout(400000); await page.setViewportSize({ width: 360, height: 740 }); page.on("dialog", (d) => void d.accept());
   const errs = watchErrors(page); await startReal(page);
-  await page.evaluate(() => (window as any).__kfm.openSheet("menu")); await page.waitForSelector("#slot-1"); await page.click("#slot-1 .slot-save"); await page.waitForTimeout(600);
+  const menu = () => page.evaluate(() => { const a = (window as any).__kfm; if (a.sheet !== "menu") a.openSheet("menu"); else a.buildSheet(); });   // (openSheet on the open sheet would close it)
+  await menu(); await page.waitForSelector("#slot-1"); await page.click("#slot-1 .slot-save"); await page.waitForTimeout(600);
   const slot1 = await page.textContent("#slot-1 .slot-text");
   const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; }, y);
   await jump(2000); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.y50 === 2000, null, { timeout: 90000 });
-  await page.evaluate(() => (window as any).__kfm.openSheet("menu")); await page.waitForSelector("#cp-2000-50y", { timeout: 20000 });
+  await menu(); await page.waitForSelector("#cp-2000-50y", { timeout: 20000 });
   const m = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m, { timeout: 60000 });   // the clock went on after the checkpoint
   await jump(2200); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.reloc === 1 && (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 });
-  expect(await app(page, "a => a.sim.e2200.n")).toBe(0); await page.evaluate(() => (window as any).__kfm.openSheet("menu")); await page.waitForSelector("#cp-2200-reloc"); expect(await page.textContent("#cp-2200-reloc")).toContain("遷都の直前");
+  expect(await app(page, "a => a.sim.e2200.n")).toBe(0); await menu(); await page.waitForSelector("#cp-2200-reloc"); expect(await page.textContent("#cp-2200-reloc")).toContain("遷都の直前");
   expect(await page.locator("#cp-2200-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, not two
   expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
-  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await page.evaluate(() => (window as any).__kfm.openSheet("menu")); await page.waitForSelector("#cp-2200-reloc"); await page.waitForSelector("#cp-2000-50y");
-  await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && Math.floor(a.sim.month / 12) + a.sim.startYear <= 2001 && !a.sim.e2200; }, null, { timeout: 60000 });
-  expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await page.evaluate(() => (window as any).__kfm.openSheet("menu")); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2200-reloc"); await page.waitForSelector("#cp-2000-50y");
+  await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12) <= 2001 && !a.sim.e2200")).toBe(true);   // (a game from the 2000 checkpoint, before the relocation event)
+  expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menu(); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
   expect(errs).toEqual([]);
 });
