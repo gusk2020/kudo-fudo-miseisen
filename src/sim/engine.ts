@@ -5,6 +5,7 @@
  */
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
 import { due2200, open2200, waiting2200 } from "./event2200";
+import { cycleOf } from "./cycle27";
 import { newTier23, reviewTiers } from "./tier23";
 import { newNumReg, syncNumbers } from "./numreg";
 import { enforceCaps } from "./cap20";
@@ -162,6 +163,9 @@ export function refreshNick(sim: SimState) {
   }
   for (const r of Object.values(sim.routes)) { if (!r.active) { r.nick = false; continue; } const es = r.edges.map((x) => sim.edges[x.edgeId]).filter(Boolean), km = es.reduce((s, e) => s + e.lengthKm, 0) || 1; r.nick = es.filter((e) => e.nick).reduce((s, e) => s + e.lengthKm, 0) / km >= 0.5; }
 }
+/** Stage 27: after the first relocation the purse follows the 150-year cycle (cycle27.ts); before it, the curve the game always had. */
+const PEAK_BUDGET = (() => { const y = 1990; return Math.pow(1.06, Math.min(y, 1973) - 1950) * Math.pow(1.02, Math.max(0, Math.min(y, 1990) - 1973)); })();
+const cycleBudget = (sim: SimState, y: number): number => { const c = cycleOf(sim); return c ? PEAK_BUDGET * c.budget : macroBudget(y); };
 const macroBudget = (y: number) => Math.pow(1.06, Math.min(y, 1973) - 1950) * Math.pow(1.02, Math.max(0, Math.min(y, 1990) - 1973)) * Math.pow(0.985, Math.max(0, y - 2000));
 /**
  * Stage 3 worlds follow the real course of the population up to 2026 (demography is a fact of the world, the same on every line): fast growth to the mid-70s, slow growth to about 2008 (Japan's real peak),
@@ -237,6 +241,9 @@ export const TOPUP_MIN_PRIORITY = 3, TOPUP_SHARE = 0.5;
 export const CROWD_ROOM = 3, CROWD_PLAINS = 5, CROWD_K = 0.02;
 export const crowding = (pop: number, pop0: number, plains: number) => CROWD_K * Math.max(0, pop / (Math.max(1, pop0) * (CROWD_ROOM + CROWD_PLAINS * plains)) - 1);
 export const LOCAL_RAIL_KEEP = 0.007, LOCAL_ROAD_KEEP = 0.005;   // yearly growth a village gains from a railway / a proper road beside it
+/** Stage 27: the map draws only the arterial roads, but a world with no road beside a town does not exist: the lanes, local roads and streets that are not on the map give every town a small baseline of access. It only lifts the bottom (a town the arterials miss is not treated as cut off from everything), and it enters where the arterials' access already does -- growth, which is zero-sum with the mean taken out of the same quantity, and the industry target -- so nothing is counted twice and nobody is created. */
+export const LOCAL_ROAD_ACCESS = 0.05;
+const accOf = (acc: number) => Math.max(acc, LOCAL_ROAD_ACCESS);
 function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   // Stage 8: a port or hub draws people from the rest of the country rather than adding to it (the national course stays the demographic one)
   let hbP = 0, hbG = 0; if (sim.hubs) for (const c of w.cities) { const p = sim.cities[c.id].pop; hbP += p; hbG += p * hubBoost(sim, c.id).growth; } const hbMean = hbP ? hbG / hbP : 0;
@@ -251,11 +258,11 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   // Stage 14: in a game where the seats head the city order, what access and the regional boosts add to a city's growth only moves people between cities (the population-weighted mean is taken out, as the
   // migration and the policy already do); the nation then follows its demographic course, and the redistribution of the seats' people (seats14.ts) cannot make the total drift.
   const totalBefore = sim.seats14 ? w.cities.reduce((t, c) => t + sim.cities[c.id].pop, 0) : 0;
-  let accMean = 0.4, boostMean = 0; if (sim.seats14) { let pw = 0, a = 0, b = 0; w.cities.forEach((c, i) => { const p = sim.cities[c.id].pop, bo = cityBoost(sim, w, c.id); pw += p; a += p * an.acc[i]; b += p * (bo.commerce + bo.industry + bo.manufacturing) / 3; }); accMean = pw ? a / pw : 0.4; boostMean = pw ? b / pw : 0; }
+  let accMean = 0.4, boostMean = 0; if (sim.seats14) { let pw = 0, a = 0, b = 0; w.cities.forEach((c, i) => { const p = sim.cities[c.id].pop, bo = cityBoost(sim, w, c.id); pw += p; a += p * accOf(an.acc[i]); b += p * (bo.commerce + bo.industry + bo.manufacturing) / 3; }); accMean = pw ? a / pw : 0.4; boostMean = pw ? b / pw : 0; }
   w.cities.forEach((c, i) => {
-    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), hb = hubBoost(sim, c.id), before = st.pop, g = (sim.econ ? natRate + popRate(y, st.pop, realRate) - curRate : popRate(y, st.pop, sim.stage3 === true && y <= 2026)) + hb.growth - hbMean + (sim.seats14 ? 0.012 * (an.acc[i] - accMean) + 0.004 * ((bo.commerce + bo.industry + bo.manufacturing) / 3 - boostMean) : 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3) - (sim.stage3 ? crowding(st.pop, sim.econ ? basePop(sim, w, c) * siteCapacity(w, c) : basePop(sim, w, c), c.plains) : 0) + (rg.get(c.id) ?? 0) + (pg.get(c.id) ?? 0) + (eco?.get(c.id) ?? 0) + (rand(sim) - 0.5) * 0.008;
+    const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), hb = hubBoost(sim, c.id), before = st.pop, g = (sim.econ ? natRate + popRate(y, st.pop, realRate) - curRate : popRate(y, st.pop, sim.stage3 === true && y <= 2026)) + hb.growth - hbMean + (sim.seats14 ? 0.012 * (accOf(an.acc[i]) - accMean) + 0.004 * ((bo.commerce + bo.industry + bo.manufacturing) / 3 - boostMean) : 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3) - (sim.stage3 ? crowding(st.pop, sim.econ ? basePop(sim, w, c) * siteCapacity(w, c) : basePop(sim, w, c), c.plains) : 0) + (rg.get(c.id) ?? 0) + (pg.get(c.id) ?? 0) + (eco?.get(c.id) ?? 0) + (rand(sim) - 0.5) * 0.008;
     st.pop = Math.max(2000, Math.round(st.pop * (1 + g)));
-    const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + roleIndustry(sim, w, c) + 0.9 * an.acc[i] + 0.5 * bo.industry + hb.industry + (rg.size ? reconIndustry(sim, w, c.id, y, rmc) : 0) + (sim.econ ? ecoIndustry(w, c) : 0)); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
+    const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + roleIndustry(sim, w, c) + 0.9 * accOf(an.acc[i]) + 0.5 * bo.industry + hb.industry + (rg.size ? reconIndustry(sim, w, c.id, y, rmc) : 0) + (sim.econ ? ecoIndustry(w, c) : 0)); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
     st.lowAccessYears = an.acc[i] < 0.02 ? st.lowAccessYears + 1 : 0; const base = basePop(sim, w, c);
     if (sim.stage3 && !sim.hubs && st.airport === undefined && ((st.pop > 400000 * (1 - 0.25 * sim.dials.airBias) && y >= 1958 - Math.round(8 * sim.dials.airBias)) || (st.pop > 200000 * (1 - 0.25 * sim.dials.airBias) && y >= 1972 - Math.round(8 * sim.dials.airBias)) || (st.pop > 100000 * (1 - 0.25 * sim.dials.airBias) && y >= 1988 - Math.round(8 * sim.dials.airBias)))) { st.airport = y; ev(sim, "air", `${c.name}に空港が開港`, `人口${Math.round(st.pop / 1000)}千人に達し、航空需要が見込まれた`, { city: c.id }); }
     if (before < 2 * base && st.pop >= 2 * base) ev(sim, "city", `${c.name}の人口が1950年の2倍に`, an.acc[i] > 0.1 ? "道路網で結ばれ産業が集積" : "全国的な人口増", { city: c.id });
@@ -397,7 +404,7 @@ function* monthlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
   if (sim.month % 12 === 0) sim.macro.mood = Math.max(-1, Math.min(1, sim.macro.mood * 0.6 + (rand(sim) - 0.5) * 0.8));
   let econ = 0; for (const c of Object.values(sim.cities)) econ += c.pop * c.industry; for (const v of Object.values(sim.settlements)) econ += v.pop * 0.15;
-  const Bfull = BUDGET_K * econ * macroBudget(y) * (1 + 0.15 * sim.macro.mood + 0.02);
+  const Bfull = BUDGET_K * econ * cycleBudget(sim, y) * (1 + 0.15 * sim.macro.mood + 0.02);
   // Stage 3: one transport budget, split between roads and railways by the era's dials; roads keep the Stage 2 amount at roadShare = 1 / 1+RAIL_BUDGET_SCALE
   const total = sim.stage3 ? Bfull * (1 + RAIL_BUDGET_SCALE) * sim.dials.growth : Bfull, B = sim.stage3 ? total * sim.dials.roadShare * sim.dials.austerity : Bfull;
   sim.macro.budgetBu = Math.round(total * 1e4) / 1e4;

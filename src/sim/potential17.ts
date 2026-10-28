@@ -133,16 +133,18 @@ export function reassignPotential(st: PotState, t: TerrainResult, seats: { capit
 }
 export function glidePotential(st: PotState): void { const target = potentialWeights(st.order); for (const p of Object.keys(target)) st.cur[p] = (st.cur[p] ?? 1) + POT_GLIDE * (target[p] - (st.cur[p] ?? 1)); }
 import type { SimState } from "./types";
+import { cycleOf } from "./cycle27";
 import type { World } from "./world";
 const seatCap = (order: string[]) => rawWeight(4) / (order.map((_, i) => rawWeight(i + 1)).reduce((a, b) => a + b, 0) / order.length);
 /** The yearly growth a prefecture's weight adds to its cities (population-weighted mean taken out: zero-sum). Empty for a game without potentials. */
 export function potGrowthOf(sim: SimState, w: World): Map<string, number> {
   const out = new Map<string, number>(), st = sim.pot17; if (!st) return out; let s = 0, p = 0;
   // the seats' own prefectures (ranks 1-3) already have the capital / sub-capital / palace functions of roles.ts, seats14.ts and the economy: here they count only as the 4th rank does
+  const cg = cycleOf(sim)?.growth ?? 1;   // Stage 27: the redistribution is stronger in the rebuilding, weaker in the decline (still zero-sum: the mean is taken out below)
   const cap = seatCap(st.order), seat = new Set(st.order.slice(0, 3));
   // Stage 24: a seat that was MOVED in 2200 has none of the capital functions yet (the roles of the old seat stay where they grew): for sixty years its own weight counts in full, fading into the cap -- so the rank the player gave it works on growth, not only on paper
   const e22 = sim.e2200, lift = e22?.moved?.length ? Math.max(0, 1 - (sim.startYear + Math.floor(sim.month / 12) - e22.year) / MOVE_LIFT_YEARS) : 0, movedPrefs = new Set<string>(); if (lift > 0) for (const r of e22!.moved!) { const pf = r === "capital" ? sim.capital : r === "sub" ? sim.subCapital : sim.palace?.pref; if (pf) movedPrefs.add(pf); }
-  for (const c of w.cities) { const free = c.pref && movedPrefs.has(c.pref), top = !c.pref ? 1 : seat.has(c.pref) ? (free ? cap + (1e9 - cap) * lift : cap) : 1e9, g = c.pref ? POT_GROWTH * (Math.min(st.cur[c.pref] ?? 1, top) - 1) : 0, n = sim.cities[c.id]?.pop ?? 0; out.set(c.id, g); s += g * n; p += n; }
+  for (const c of w.cities) { const free = c.pref && movedPrefs.has(c.pref), top = !c.pref ? 1 : seat.has(c.pref) ? (free ? cap + (1e9 - cap) * lift : cap) : 1e9, g = c.pref ? cg * POT_GROWTH * (Math.min(st.cur[c.pref] ?? 1, top) - 1) : 0, n = sim.cities[c.id]?.pop ?? 0; out.set(c.id, g); s += g * n; p += n; }
   const mean = p ? s / p : 0; for (const [k, v] of out) out.set(k, v - mean); return out;
 }
 /** Multiplies a prefecture's weight in the regional budget split. */

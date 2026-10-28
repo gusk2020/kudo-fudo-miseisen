@@ -198,7 +198,7 @@ export class RoadLayer {
         const rail = modeOf(e) === "rail", g = best.get(e.id);
         const rank = (g ? GRADE_RANK[g] : 0) + (e.standard === "highgrade" ? 2 : 0) + (rail ? 1 : 0);
         const isPlan = eff.built < 1, isAband = eff.built >= 1 && (eff.state === "closed" || eff.state === "lost");
-        if (rank < minRank) { if (!(isPlan && zoom >= 0.35 && a.layers.plans)) continue; }
+        if (rank < minRank && !rail) { if (!(isPlan && zoom >= 0.35 && a.layers.plans)) continue; }   // (Stage 27: every railway the game keeps is drawn at every zoom; only the many local roads thin out as you zoom out)
         if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
         if (isAband && !showAband) continue;
         if (e.facility === "ferry" && (isLakeFerry(e) ? hide.has("fac:lake") : hide.has("fac:ferry"))) continue;
