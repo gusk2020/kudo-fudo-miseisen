@@ -2,13 +2,15 @@
  * Stage 25: the legend's line samples, made from the SAME style table the map draws with (style24.ts). Each entry carries the style it was made from (`ref`) so a test can check, entry by entry, that the sample is
  * the line the map draws; nothing here has a colour or a width of its own. Pure data and strings: no DOM, no three.js.
  */
-import { AIR_STYLE, BRIDGE, HIGHLIGHT_LAYERS, KIND_LABEL, TIER_LABEL, TUNNEL, VIEW_STATE_LABEL, edgeStyle, hex, type EdgeStyle, type Kind, type LineState, type Stroke, type Tier } from "./style24";
+import { AIR_STYLE, airArc, BRIDGE, HIGHLIGHT_LAYERS, KIND_LABEL, TIER_LABEL, TUNNEL, VIEW_STATE_LABEL, edgeStyle, hex, type EdgeStyle, type Kind, type LineState, type Stroke, type Tier } from "./style24";
 
 export interface LegendRef { kind?: Kind; tier?: Tier; state?: LineState; quality?: number; also?: Kind; what?: "bridge" | "tunnel" | "shared" | "highlight" | "air" | "rings" }
 export interface LegendItem { group: string; caption: string; svg: string; ref: LegendRef }
 const Y = 8, X0 = 3, X1 = 61;
 /** One style stroke as an SVG line (width and dash exactly as the map draws them; the sample is 64 units wide). */
 export const svgStroke = (s: Stroke, y = Y, extra = ""): string => `<line x1="${X0}" y1="${y}" x2="${X1}" y2="${y}" stroke="${hex(s.colour)}" stroke-width="${s.width}"${s.alpha < 1 ? ` stroke-opacity="${s.alpha}"` : ""}${s.dash ? ` stroke-dasharray="${s.dash.join(" ")}"` : ""} stroke-linecap="${s.cap}" ${extra}/>`;
+/** A stroke as the map's flight arc (airArc) laid into the 64×16 sample. */
+export const svgArc = (s: Stroke): string => { const pts = airArc([X0, 0], [X1, 0]).map(([x, y]) => `${x.toFixed(1)},${(13 - y * 0.55).toFixed(1)}`); return `<polyline points="${pts.join(" ")}" fill="none" stroke="${hex(s.colour)}" stroke-width="${s.width}"${s.alpha < 1 ? ` stroke-opacity="${s.alpha}"` : ""} stroke-linecap="${s.cap}" stroke-linejoin="round"/>`; };
 export const svgOfStyle = (st: EdgeStyle, y = Y): string => [st.casing, st.body, st.centre, st.ties].filter(Boolean).map((s) => svgStroke(s!, y)).join("");
 const KINDS: Kind[] = ["road", "hwy", "rail", "sea"];
 const KIND_CAPTION: Partial<Record<Kind, string>> = { sea: "海路" };
@@ -18,7 +20,7 @@ export function legendItems(): LegendItem[] {
   const out: LegendItem[] = [], add = (group: string, caption: string, svg: string, ref: LegendRef) => out.push({ group, caption, svg, ref });
   for (const k of KINDS) add("交通種別", KIND_CAPTION[k] ?? KIND_LABEL[k], svgOfStyle(edgeStyle(k, "sub", "open", 90)), { kind: k, tier: "sub", state: "open", quality: 90 });
   add("交通種別", "新幹線・リニア", svgOfStyle(edgeStyle("hsr", "sub", "open", 90), 5) + svgOfStyle(edgeStyle("maglev", "sub", "open", 90), 11), { kind: "hsr", tier: "sub", state: "open", quality: 90, also: "maglev" });
-  add("交通種別", "空路", svgOfStyle(AIR_STYLE), { what: "air" });
+  add("交通種別", "空路", [AIR_STYLE.casing!, AIR_STYLE.body].map((st) => svgArc(st)).join(""), { what: "air" });   // (the same arc the map draws, scaled to the sample)
   for (const t of ["main", "sub", "local"] as Tier[]) add("太さ", TIER_LABEL[t], svgOfStyle(edgeStyle("road", t, "open", 90)), { kind: "road", tier: t, state: "open", quality: 90 });
   for (const [st, v] of [["open", "open"], ["planned", "planned"], ["closed", "abolished"]] as const) add("状態", VIEW_STATE_LABEL[v], svgOfStyle(edgeStyle("road", "sub", st, 90), 5) + svgOfStyle(edgeStyle("rail", "sub", st, 90), 11), { kind: "road", also: "rail", tier: "sub", state: st, quality: 90 });   // (a road above, a railway below: each state shows both)
   const wd = BRIDGE_W, girders = [10, 22, 34, 46, 58].map((x) => `<line x1="${x}" y1="1" x2="${x}" y2="15" stroke="${hex(BRIDGE.girder.colour)}" stroke-width="${BRIDGE.girder.width}"/>`).join("");

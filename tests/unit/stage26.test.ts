@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CP_MAX_COUNT, CP_PREFIX, checkpointDue, cpKey, decodeSave, encodeSave, listCheckpoints, markCheckpoint, planPrune, readCheckpoint, writeCheckpoint, type CpDue, type CpEntry, type CpStore } from "../../src/sim/checkpoint";
 import { splitGmj } from "../../src/render/gmBorders";
 import { streamKeep } from "../../src/render/streams";
-import { AIR_STYLE, KIND_COLOUR, STATE_DASH, edgeStyle, type Kind, type LineState, type Tier } from "../../src/render/style24";
+import { AIR_BULGE_MAX_KM, AIR_SEGMENTS, AIR_STYLE, airArc, KIND_COLOUR, STATE_DASH, edgeStyle, type Kind, type LineState, type Tier } from "../../src/render/style24";
 import { legendItems } from "../../src/render/legendSamples";
 import { readFileSync } from "node:fs";
 
@@ -131,5 +131,19 @@ describe("Stage 27: Nara, Wakayama and Mie borders are one line", () => {
     let coastOnBorder = 0; for (const m of c) if (b.some((q) => Math.hypot(q[0] - m[0], q[1] - m[1]) < 4)) coastOnBorder++;
     let twice = 0; for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++) if (Math.hypot(b[i][0] - b[j][0], b[i][1] - b[j][1]) < 1.5) twice++;
     expect(coastOnBorder).toBeLessThanOrEqual(Math.ceil(c.length * 0.02)); expect(twice).toBe(0);
+  });
+});
+
+describe("Stage 27: domestic flights are gentle arcs", () => {
+  it("the arc joins the two airports exactly, bulges a modest amount toward the north (east for a north-south flight), never loops, and is light", () => {
+    for (const [a, b] of [[[0, 0], [300, 0]], [[300, 0], [0, 0]], [[0, 0], [0, 400]], [[0, 400], [0, 0]], [[0, 0], [250, 250]], [[100, 100], [100.4, 100]], [[0, 0], [1500, 40]]] as [number, number][][]) {
+      const arc = airArc(a, b); expect(arc.length).toBe(AIR_SEGMENTS + 1); expect(arc[0]).toEqual(a); expect(arc[arc.length - 1]).toEqual(b);
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]), dist = (p: [number, number]) => Math.abs((b[0] - a[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (b[1] - a[1])) / (len || 1), mid = arc[AIR_SEGMENTS / 2];
+      expect(Math.max(...arc.map(dist))).toBeLessThanOrEqual(AIR_BULGE_MAX_KM + 1e-6); expect(Math.max(...arc.map(dist))).toBeLessThanOrEqual(0.19 * len + 1e-6);   // a small bulge, never a loop
+      if (len > 50 && Math.abs(b[1] - a[1]) / len > 0.2) expect(mid[1]).toBeGreaterThanOrEqual((a[1] + b[1]) / 2 - 1e-6);   // toward the north
+      for (const p of arc) expect(Number.isFinite(p[0] + p[1])).toBe(true);
+    }
+    const ab = airArc([0, 0], [300, 0]), ba = airArc([300, 0], [0, 0]); expect(ab[6][1]).toBeCloseTo(ba[6][1], 6);   // the same bulge whichever way the pair is listed
+    expect(AIR_STYLE.body.width).toBeLessThanOrEqual(2); expect(AIR_STYLE.body.alpha).toBeLessThan(1); const lum = AIR_STYLE.body.colour >> 16; expect(lum).toBeGreaterThan(0x80);   // pale
   });
 });

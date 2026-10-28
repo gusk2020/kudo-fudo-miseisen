@@ -118,7 +118,7 @@ describe("Stage 25: the colours of the lines, and the legend that must show them
     }
     for (const k of kinds) expect(items.some((i) => (i.ref.kind === k || i.ref.also === k) && i.group === "交通種別"), k).toBe(true);
     expect(items.filter((i) => i.caption.includes("新幹線") || i.caption.includes("リニア")).length).toBe(1);   // Stage 26: one entry for 新幹線・リニア (they stay two kinds everywhere else)
-    expect(items.some((i) => i.ref.what === "air" && i.svg.includes(`stroke-dasharray="${AIR_STYLE.body.dash!.join(" ")}"`))).toBe(true); expect(items.some((i) => i.group.includes("傷み"))).toBe(false);
+    expect(items.some((i) => i.ref.what === "air" && i.svg.includes("<polyline") && i.svg.includes(hex(AIR_STYLE.body.colour)) && i.svg.includes(`stroke-width="${AIR_STYLE.body.width}"`))).toBe(true);   // the legend shows the arc the map draws expect(items.some((i) => i.group.includes("傷み"))).toBe(false);
     for (const t of tiers) expect(items.some((i) => i.ref.tier === t && i.group === "太さ")).toBe(true);
     for (const s of ["open", "planned", "closed"] as LineState[]) expect(items.some((i) => i.ref.state === s && i.group === "状態" && i.ref.also === "rail")).toBe(true);
     expect(items.map((i) => i.caption).some((c) => /破線|点線|鎖線|実線/.test(c))).toBe(false);   // Stage 27: the legend names things, it does not describe the stroke

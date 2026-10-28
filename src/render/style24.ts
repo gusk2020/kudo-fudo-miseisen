@@ -90,5 +90,14 @@ export function allStyleColours(): Set<number> {
   return out;
 }
 
-/** A domestic flight (Stage 26): a black long-short dashed line on a white under-stroke, so it reads over land, sea and roads alike and is told from a road (solid), a sea route (teal dashes) and a closed line (grey dashes). */
-export const AIR_STYLE: EdgeStyle = { casing: stroke(PAPER, 3.6, 0.75, undefined, "butt"), body: stroke(INK, 1.7, 0.9, [10, 4, 2, 4], "butt") };
+/** A domestic flight (Stage 27): a pale blue-grey line drawn as a gentle arc between its two airports, on a faint white under-stroke -- light enough not to hide roads and names, and told from a road (solid, kind hue), a sea route (teal dashes) and a gone line (pale dashes) by being a thin curve. */
+export const AIR_STYLE: EdgeStyle = { casing: stroke(PAPER, 3.4, 0.5, undefined, "round"), body: stroke(0x9fb0c8, 1.5, 0.85, undefined, "round") };
+/** The arc of a flight: a quadratic curve from `a` to `b` (both end points exactly), bulging by 18% of the distance (at most 70 km, so a long flight is not a huge loop), always toward the north (toward the east for a flight that runs north-south), so two flights never bulge into each other. Display only. */
+export const AIR_BULGE = 0.18, AIR_BULGE_MAX_KM = 70, AIR_SEGMENTS = 12;
+export function airArc(a: readonly [number, number], b: readonly [number, number], segments = AIR_SEGMENTS): [number, number][] {
+  const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy); if (len < 1e-6) return [[a[0], a[1]], [b[0], b[1]]];
+  let nx = -dy / len, ny = dx / len; if (Math.abs(ny) < 0.2 ? nx < 0 : ny < 0) { nx = -nx; ny = -ny; }
+  const h = Math.min(AIR_BULGE * len, AIR_BULGE_MAX_KM), cx = (a[0] + b[0]) / 2 + nx * h * 2, cy = (a[1] + b[1]) / 2 + ny * h * 2, out: [number, number][] = [];   // (a control point at 2h puts the curve's own middle h off the chord)
+  for (let i = 0; i <= segments; i++) { const t = i / segments, u = 1 - t; out.push([u * u * a[0] + 2 * u * t * cx + t * t * b[0], u * u * a[1] + 2 * u * t * cy + t * t * b[1]]); }
+  out[0] = [a[0], a[1]]; out[segments] = [b[0], b[1]]; return out;
+}

@@ -12,7 +12,7 @@ import { LINE, nameWidth, placeNames, type Box, type NameCircle } from "./cityNa
 import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
-import { AIR_STYLE, BRIDGE, GONE_GREY, HIGHLIGHT_LAYERS, QUALITY_STEPS, RAIL_WIDTH_T, ROAD_WIDTH, TIER_OF, TUNNEL, buildProgressStroke, edgeStyle, shade, type Kind, type LineState, type Stroke } from "./style24";
+import { AIR_STYLE, airArc, BRIDGE, GONE_GREY, HIGHLIGHT_LAYERS, QUALITY_STEPS, RAIL_WIDTH_T, ROAD_WIDTH, TIER_OF, TUNNEL, buildProgressStroke, edgeStyle, shade, type Kind, type LineState, type Stroke } from "./style24";
 
 export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[]; strokes?: Vec[][]; handles?: boolean; sel?: number | null }   // Stage 9: strokes with their control points (handles) and the selected stroke   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
 export interface RoadArgs {
@@ -160,7 +160,7 @@ export class RoadLayer {
     const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && zoom >= 0.12, far = zoom < 0.5;
     if (showL && showA) {
       const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol).slice(0, lite ? 8 : far ? 14 : 30);
-      for (const r of dom) { const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; for (const sp of [AIR_STYLE.casing!, AIR_STYLE.body]) { pattern(lanes, [p, q], (sp.dash ?? [1e9]).map(px)); lanes.stroke({ width: px(sp.width), color: sp.colour, alpha: sp.alpha, cap: sp.cap }); } }
+      for (const r of dom) { const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; const arc = airArc(p, q); for (const sp of [AIR_STYLE.casing!, AIR_STYLE.body]) { line(lanes, arc); lanes.stroke({ width: px(sp.width), color: sp.colour, alpha: sp.alpha, cap: sp.cap, join: "round" }); } }
     }
     if (zoom < (lite ? 0.5 : 0.22)) return;
     if (showP) for (const p of at.ports) { const big = p.tier >= 3; if (far && !big) continue; const c = pos(p.city); if (!c) continue; const s = px(big ? PORT_SIZE[1] : PORT_SIZE[0]); nodes.rect(c[0] + px(5), -c[1] + px(2), s, s).fill({ color: big ? PORT_COL2[1] : PORT_COL2[0] }).stroke({ width: px(1.2), color: 0xffffff }); }
