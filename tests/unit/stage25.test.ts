@@ -90,7 +90,7 @@ describe("Stage 25: the 150-year relocation event", () => {
 });
 
 import { readFileSync } from "node:fs";
-import { AIR_STYLE, COMPARE, HIGHLIGHT_COLOUR, KIND_COLOUR, STATE_DASH, TIER_OF, allStyleColours, edgeStyle, hex, type Kind, type LineState, type Tier } from "../../src/render/style24";
+import { AIR_STYLE, HIGHLIGHT_COLOUR, KIND_COLOUR, STATE_DASH, TIER_OF, allStyleColours, edgeStyle, hex, type Kind, type LineState, type Tier } from "../../src/render/style24";
 import { legendItems, svgOfStyle } from "../../src/render/legendSamples";
 
 describe("Stage 25: the colours of the lines, and the legend that must show them", () => {
@@ -98,7 +98,7 @@ describe("Stage 25: the colours of the lines, and the legend that must show them
   it("there are six hues, the greys and the black and white that edge them, and one highlight colour that nothing else uses", () => {
     const all = allStyleColours(); const hues = new Set(Object.values(KIND_COLOUR)); expect(hues.size).toBe(6); expect(all.has(HIGHLIGHT_COLOUR)).toBe(true);
     for (const k of kinds) for (const t of tiers) for (const s of states) for (const q of [90, 50, 20, 5]) { const st = edgeStyle(k, t, s, q, { old: true, bypass: true }); for (const x of [st.casing, st.body, st.centre, st.ties]) if (x) expect(x.colour, `${k}${t}${s}${q}`).not.toBe(HIGHLIGHT_COLOUR); }
-    expect(COMPARE.good).not.toBe(HIGHLIGHT_COLOUR); expect(COMPARE.bad).not.toBe(HIGHLIGHT_COLOUR); expect(AIR_STYLE.body.colour).not.toBe(HIGHLIGHT_COLOUR);
+    expect(AIR_STYLE.body.colour).not.toBe(HIGHLIGHT_COLOUR);
     const nonHue = [...all].filter((c) => !hues.has(c)); expect(nonHue.length).toBeLessThanOrEqual(12 + 24);   // (the shades of a hue, its dark edge, white, black, greys)
   });
   it("Stage 26: condition (良/可/悪/荒廃) does NOT change a line's colour or shape; tier is told by thickness, state by the kind of line", () => {

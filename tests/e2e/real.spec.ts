@@ -81,13 +81,8 @@ test("rail and road layers, road-map background, and the year atlas never change
   await page.click("#dock-layers"); await page.uncheck("#layer-rail"); await page.waitForTimeout(100);
   expect(await app(page, "a => a.s.layers.rail")).toBe(false); await page.check("#layer-rail");
   await page.check("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(true); await page.waitForTimeout(200); await page.uncheck("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(false);
-  // atlas: look at an earlier year; time must not move and the simulation must be untouched
-  await page.click("#dock-atlas"); expect(await page.isVisible("#atlas-slider")).toBe(true);
-  await page.evaluate(() => (window as any).__kfm.setViewYear(1955)); await page.waitForTimeout(200);
-  expect(await app(page, "a => a.viewYear")).toBe(1955); expect(await page.textContent("#status")).toContain("閲覧中");
-  await page.waitForTimeout(800);
-  expect(await page.evaluate(() => { const a = (window as any).__kfm; return JSON.stringify([a.sim.month, Object.keys(a.sim.edges).length, a.sim.rngState]); })).toBe(hash);
-  await page.evaluate(() => (window as any).__kfm.setViewYear(null)); expect(await app(page, "a => a.viewYear")).toBeNull(); expect(month).toBeGreaterThan(0);
+  // Stage 26: the atlas has no past-year slider any more (no snapshots); it shows the present
+  await page.click("#dock-atlas"); expect(await page.locator("#atlas-slider").count()).toBe(0); expect(await page.isVisible("#atlas-summary")).toBe(true); expect(await app(page, "a => a.viewYear")).toBeUndefined(); expect(month).toBeGreaterThan(0); void hash;
   expect(errs).toEqual([]);
 });
 
@@ -342,7 +337,7 @@ test("凡例の「路線名」は国道だけでなく、鉄道と途中で自�
   const on = await stat(); expect(on.names).toBe(on.signs); expect(on.nameTexts.some((x: string) => x.includes("鉄道") || x.includes("線"))).toBe(true); expect(on.nameTexts.some((x: string) => x.includes("道"))).toBe(true);
   // zoom, the year slider and a reload keep the setting
   await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ zoom: 2.2 }, true); a.renderRoads(); }); const z = await stat(); expect(z.names).toBe(z.signs);
-  await page.evaluate(() => { const a = (window as any).__kfm; a.setViewYear(1975); }); const y = await stat(); expect(y.names).toBe(y.signs); await page.evaluate(() => { (window as any).__kfm.setViewYear(null); });
+  const y = await stat(); expect(y.names).toBe(y.signs);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ zoom: 1.4 }, true); a.renderRoads(); }); const back = await stat(); expect(back.names).toBe(back.signs);
   await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = "legend"; a.buildSheet(); }); await page.locator("#lg-names").uncheck(); const off2 = await stat(); expect(off2.names).toBe(0);
@@ -502,11 +497,6 @@ test("Stage 8: 港湾・空港・航路がレイヤーで切り替わり(シミ�
   await page.click("#dock-atlas"); await expect(page.locator("#hubs")).toBeVisible(); await expect(page.locator("#hub-summary")).toContainText("国際ハブ");
   expect(await page.locator("#trend-hubs polyline").count()).toBe(3);
   await page.click("#hub-airports summary"); await expect(page.locator("#hub-airports")).toContainText("国際ハブ空港");
-  // a past year: fewer airports than now, and the atlas says which year it shows
-  await page.evaluate(() => (window as any).__kfm.setViewYear(1960)); await page.waitForTimeout(200); if (!(await page.isVisible("#hubs"))) await page.click("#dock-atlas");
-  await expect(page.locator("#hubs")).toContainText("1960年");
-  expect(await app(page, "a => a.viewYear")).toBe(1960);
-  await page.evaluate(() => (window as any).__kfm.setViewYear(null));
   await page.click("#dock-timeline"); await page.click("#tl-hub");
   await expect(page.locator("#sheet-body .issue").filter({ hasText: /空港|港|便|航路/ }).first()).toBeVisible();
   expect(errs).toEqual([]);

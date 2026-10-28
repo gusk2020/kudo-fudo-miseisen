@@ -77,8 +77,6 @@ export interface CityState { pop: number; industry: number; popSource: "ne" | "s
 /** 集落: 合成の小さな居住地(実在の集落ではない)。旧道の「地域内需要」と孤立判定の根拠。 */
 export interface Settlement { id: string; name: string; cell: number; city: string; pop: number; pop0: number; isolatedYears: number; gone: boolean }
 export interface SimLink { id: string; kind: "bypass"; newEdges: string[]; oldEdges: string[]; month: number; routeId: string | null }
-/** Edge codes (state*16 + quality bucket). `delta`: only edges that changed since the previous snapshot (Stage 3; fold with codesAt). */
-export interface Snapshot { year: number; edges: Record<string, number>; delta?: true }
 export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number; paxRail?: number; frRail?: number; ports?: number; airports?: number; hubs?: number; seaCargo?: number; airPax?: number; airIntl?: number; seaLanes?: number; airLanes?: number }   // paxRail / frRail (Stage 7): the railway's share of passenger-km and of freight on land
 
 /** Stage 8 (hubs.ts): a trade port. tier 1..4 (地方港湾 → 国際戦略港湾); cargo/pax are the last year's figures; hi/lo count years running full/nearly empty. */
@@ -99,7 +97,7 @@ export interface SimState {
   next: { node: number; edge: number; route: number; project: number; event: number };
   nodes: Record<string, SimNode>; edges: Record<string, SimEdge>; routes: Record<string, SimRoute>; projects: Record<string, SimProject>;
   cities: Record<string, CityState>;
-  settlements: Record<string, Settlement>; links: SimLink[]; snaps: Snapshot[]; regionShare: Record<string, number>;
+  settlements: Record<string, Settlement>; links: SimLink[]; regionShare: Record<string, number>;
   macro: { mood: number; budgetBu: number; maintCoverage: number };
   regionSlack?: Record<string, number>;   // Stage 7: per region, the smoothed share of its monthly road purse left unspent (0..1); room to plan more when money sits idle
   routeCounters: Record<string, number>;   // `${grade}:${scope}` -> last number issued (numbers are never reused)

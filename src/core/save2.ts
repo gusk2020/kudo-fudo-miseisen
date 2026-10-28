@@ -52,7 +52,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   for (const r of Object.values<any>(raw.routes)) { if (!Array.isArray(r.oldEdges)) r.oldEdges = []; if (typeof r.nick !== "boolean") r.nick = false; if (r.mode !== "rail") { delete r.mode; r.name = `${{ national: "国道", ken: "県道", fu: "府道" }[r.grade as "national"]}${r.number}号`; } else if (typeof r.name !== "string") r.name = `${r.opName ?? "鉄道"}${r.number}号線`; }
   for (const p of Object.values<any>(raw.projects)) { if (typeof p.region !== "string") p.region = ""; if (!Array.isArray(p.replaces)) p.replaces = []; if (typeof p.kind !== "string") p.kind = "new"; }
   for (const n of Object.values<any>(raw.nodes)) void n;
-  if (!isRec(raw.settlements)) raw.settlements = {}; if (!Array.isArray(raw.links)) raw.links = []; if (!Array.isArray(raw.snaps)) raw.snaps = []; if (!isRec(raw.regionShare)) raw.regionShare = {}; if (raw.regionSlack !== undefined && !isRec(raw.regionSlack)) delete raw.regionSlack;
+  if (!isRec(raw.settlements)) raw.settlements = {}; if (!Array.isArray(raw.links)) raw.links = []; delete raw.snaps;   /* Stage 26: the year-by-year snapshots are gone; an older save's are dropped here */ if (!isRec(raw.regionShare)) raw.regionShare = {}; if (raw.regionSlack !== undefined && !isRec(raw.regionSlack)) delete raw.regionSlack;
   if (!isRec(raw.operators)) raw.operators = { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } };
   if (!Array.isArray(raw.mods)) raw.mods = [];
   raw.era = typeof raw.era === "string" ? raw.era : "kobun";

@@ -91,5 +91,3 @@ export function allStyleColours(): Set<number> {
 
 /** A domestic flight (Stage 26): a black long-short dashed line on a white under-stroke, so it reads over land, sea and roads alike and is told from a road (solid), a sea route (teal dashes) and a closed line (grey dashes). */
 export const AIR_STYLE: EdgeStyle = { casing: stroke(PAPER, 3.6, 0.75, undefined, "butt"), body: stroke(INK, 1.7, 0.9, [10, 4, 2, 4], "butt") };
-/** The overlay of "compared with year N": the line got better (or is new) / worse. Two colours, shown only while comparing. */
-export const COMPARE = { good: 0x39a0ff, bad: 0xff3b3b } as const;

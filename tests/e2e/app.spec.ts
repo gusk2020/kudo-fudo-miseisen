@@ -258,9 +258,6 @@ test("decline you can see: legend, comparison with 1950, and tap-for-why", async
   await page.click("#btn-legend"); const legend = await page.textContent("#sheet");
   for (const w of ["良", "荒廃", "休止", "閉鎖", "廃道", "旧道", "バイパス", "国道", "県道", "府道", "市町村道", "工事中", "未成線", "通称"]) expect(legend, w).toContain(w);
   await page.click("#sheet-close");
-  // comparison with 1950 switches on and is announced in the button itself
-  await page.click("#btn-compare"); await page.click("#cmp-1950");
-  expect(await app(page, "a => a.compareYear")).toBe(1950); await page.click("#sheet-close"); expect(await page.getAttribute("#btn-compare", "aria-pressed")).toBe("true"); expect(await page.textContent("#btn-compare")).toContain("1950");
   // tap a road that has a history: the sheet explains designation, state, demand and the history
   const spot = await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim, w = a.world; const e = Object.values<any>(s.edges).filter((x) => x.hist.length >= 2 && x.state !== "lost").sort((p: any, q: any) => q.hist.length - p.hist.length)[0]; const k = e.cells[Math.floor(e.cells.length / 2)]; return { id: e.id, pos: w.cellPos(k) }; });
   await page.click("#tool-why"); expect(await page.getAttribute("#tool-why", "aria-pressed")).toBe("true");

@@ -26,7 +26,7 @@ describe("time-sliced simulation (Issue #7)", () => {
   });
   test("bounded growth: events, histories and stats stay capped over 150 years", () => {
     const { sim, w } = startedSim(45); const r = new SimRunner(sim, w); r.request(24); while (sim.month < 12 * 150) { if (r.pending < 12) r.request(12); r.pump(50); }
-    expect(sim.events.length).toBeLessThanOrEqual(600); expect(sim.stats.length).toBeLessThanOrEqual(160); expect(sim.snaps.length).toBeLessThanOrEqual(14);
+    expect(sim.events.length).toBeLessThanOrEqual(600); expect(sim.stats.length).toBeLessThanOrEqual(160); expect((sim as unknown as { snaps?: unknown }).snaps).toBeUndefined();   // Stage 26: no year-by-year snapshots
     for (const e of Object.values(sim.edges)) expect(e.hist.length).toBeLessThanOrEqual(41);
     expect(JSON.stringify(sim).length).toBeLessThan(2_500_000);
   });
