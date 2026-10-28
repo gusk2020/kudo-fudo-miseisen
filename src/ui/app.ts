@@ -640,7 +640,7 @@ export class App {
     if (this.real && !this.lite && this.slowTicks > 1800) { this.setLite(true); this.toast("端末の処理が追いつかないため、軽量表示に切り替えました(レイヤーで戻せます)"); }
     if (done > 0) this.afterTick(now);
   }
-  cpBusy = false;
+  cpBusy = false; private costRoads = 0; private costHud = 0;
   /** Stage 26: the clock has stopped at a year boundary that owes a checkpoint: write it (a failure is announced and the game goes on; the previous checkpoints are never touched by a failed write). */
   async takeCheckpoint() {
     const sim = this.sim, run = this.runner; if (!sim || !run) return; const due = checkpointDue(sim);
@@ -655,8 +655,9 @@ export class App {
     finally { this.cpBusy = false; run.waiting = false; this.lastTick = performance.now(); this.acc = 0; }
   }
   private afterTick(now = performance.now()) {
-    if (now - this.lastRoads > (this.lite ? 1200 : 450)) { this.lastRoads = now; this.renderRoads(); }   // redrawing the road layer is the costly part: ~2 Hz is plenty
-    if (now - this.lastHud > 500) { this.lastHud = now; this.status(); if (this.sheet === "history" || this.sheet === "roads") this.buildSheet(); }
+    // Stage 26: the redraw and the status line wait longer the more they cost (the network grows with the years: ~1500 edges in 1960, ~2700 by 2250), so each stays about a tenth of the time whatever the era
+    if (now - this.lastRoads > (this.lite ? 1200 : Math.min(1500, Math.max(450, this.costRoads * 8)))) { this.lastRoads = now; const t0 = performance.now(); this.renderRoads(); this.costRoads = performance.now() - t0; }   // redrawing the road layer is the costly part: ~2 Hz is plenty
+    if (now - this.lastHud > Math.min(1500, Math.max(500, this.costHud * 20))) { this.lastHud = now; const t0 = performance.now(); this.status(); if (this.sheet === "history" || this.sheet === "roads") this.buildSheet(); this.costHud = performance.now() - t0; }
     if (now - this.lastPersist > 10000) this.persist();
   }
   async catchUp(elapsedMs: number) {
