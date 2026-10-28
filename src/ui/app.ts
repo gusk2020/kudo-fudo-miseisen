@@ -821,17 +821,19 @@ export class App {
     }
     const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
   }
+  /** Stage 26: the map switch (道路図 / 地形図) that stays at the end of the setup tab row whatever is being chosen -- it changes only the background; nothing chosen is touched. */
+  private bgSwitch(): HTMLElement { const to = this.bg === "roadmap" ? "terrain" : "roadmap"; return h("button", { id: "setup-bg", type: "button", class: "setup-tab setup-bg", title: "地図の表示を切り替え", onclick: () => { this.setBg(to); this.buildToolbar(); } }, this.bg === "roadmap" ? "道路図" : "地形図"); }
   /** Stage 19: the four setup tabs in one row (元号 首都 副首都 皇居); only the pressed tab's panel is open, and pressing it again (or 閉じる) closes it. */
   private buildSetupTabs(tb: HTMLElement) {
     const st = seatsOf(this.s), tabs: ["era" | "capital" | "sub" | "palace", string][] = [["era", "元号"], ["capital", "首都"], ["sub", "副首都"], ["palace", "皇居"]];
-    tb.append(h("div", { class: "setup-tabs", id: "setup-tabs", role: "tablist" }, ...tabs.map(([k, l]) => h("button", { id: "setup-tab-" + k, type: "button", role: "tab", class: "setup-tab" + (this.setupTab === k ? " on" : ""), "aria-selected": this.setupTab === k ? "true" : "false", onclick: () => this.openSetupTab(k) }, l))));
+    tb.append(h("div", { class: "setup-tabs", id: "setup-tabs", role: "tablist" }, ...tabs.map(([k, l]) => h("button", { id: "setup-tab-" + k, type: "button", role: "tab", class: "setup-tab" + (this.setupTab === k ? " on" : ""), "aria-selected": this.setupTab === k ? "true" : "false", onclick: () => this.openSetupTab(k) }, l)), this.bgSwitch()));
     const w = this.ensureWorld(), ll = (p: Vec) => { const [lo, la] = realToLonLat(p); return `東経${lo.toFixed(2)}° 北緯${la.toFixed(2)}°`; };
     const where = (which: "capital" | "sub" | "palace") => { const pos = which === "capital" ? this.s.capitalPos : which === "sub" ? this.s.subPos : this.s.palacePos; return `${seatPrefName(st[which])}${pos ? `(地図で指定 ${ll(pos)})` : "(県庁所在地)"}`; };
     if (!this.setupTab) return;   // closed: only the four tabs (each tab's own panel shows what is chosen)
     const panel = h("div", { id: "setup-panel" }), tab = this.setupTab;
     if (tab === "era") {
       panel.append(h("div", { class: "note", id: "era-now" }, `最初の元号: ${CAND_1945[this.firstEra]?.name ?? ""}`), h("button", { id: "era-open", type: "button", onclick: () => { this.eraOpen = true; this.buildToolbar(); } }, "元号を選ぶ"), h("div", { id: "era-desc", class: "note" }, eraDescText(this.firstEra)));
-      if (this.eraOpen) { this.radioShown = true; showRadio({ id: "era-list", title: "最初の元号(1926年の候補)", groups: eraRadioGroups(this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); }), close: () => { this.eraOpen = false; this.buildToolbar(); } }); }
+      if (this.eraOpen) { this.radioShown = true; showRadio({ id: "era-list", title: "最初の元号(1926年の候補)", groups: eraRadioGroups(this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); }), foot: [{ id: "rw-bg", label: this.bg === "roadmap" ? "地形図にする" : "道路図にする", act: () => { this.setBg(this.bg === "roadmap" ? "terrain" : "roadmap"); this.buildToolbar(); } }], close: () => { this.eraOpen = false; this.buildToolbar(); } }); }
       panel.append(h("div", { class: "grp", id: "bg-choice" }, h("span", {}, "地図の表示"), ...(["roadmap", "terrain"] as const).map((m) => h("button", { id: "bg-" + m, type: "button", class: this.bg === m ? "mode on" : "mode", "aria-pressed": this.bg === m ? "true" : "false", onclick: () => { this.setBg(m); this.buildToolbar(); } }, m === "roadmap" ? "道路図" : "地形図"))));
     } else {
       const which = tab, label = { capital: "首都", sub: "副首都", palace: "皇居" }[which];
