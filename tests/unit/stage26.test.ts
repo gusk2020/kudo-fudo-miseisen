@@ -76,7 +76,7 @@ describe("Stage 26: the map's lines", () => {
   });
   it("air lines have a style of their own (black long-short dashes on white), told from road, sea and closed lines; 新幹線・リニア are one legend entry but two kinds", () => {
     const air = AIR_STYLE.body, others = (["road", "hwy", "rail", "hsr", "maglev", "sea"] as Kind[]).map((k) => edgeStyle(k, "sub", "open", 90).body); for (const o of others) expect(JSON.stringify([air.colour, air.dash])).not.toBe(JSON.stringify([o.colour, o.dash]));
-    for (const st of ["closed", "lost", "planned", "unbuilt", "dormant"] as LineState[]) expect(air.dash).not.toEqual(STATE_DASH[st]);
+    for (const st of ["closed", "planned"] as LineState[]) expect(air.dash).not.toEqual(STATE_DASH[st]);
     expect(KIND_COLOUR.hsr).not.toBe(KIND_COLOUR.maglev); const items = legendItems(); expect(items.filter((i) => /新幹線|リニア/.test(i.caption)).length).toBe(1); expect(items.some((i) => i.ref.what === "air")).toBe(true);
     for (const t of ["main", "sub", "local"] as Tier[]) for (const k of ["road", "rail"] as Kind[]) for (const q of [0, 30, 60, 99]) expect(edgeStyle(k, t, "open", q).body.colour).toBe(KIND_COLOUR[k]);
   });

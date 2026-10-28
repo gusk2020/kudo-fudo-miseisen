@@ -15,10 +15,10 @@ export type Tier = "main" | "sub" | "local";
 export type LineState = "open" | "dormant" | "planned" | "unbuilt" | "closed" | "lost";
 
 /** The hue of each kind: the only colours the lines carry. */
-export const KIND_COLOUR: Record<Kind, number> = { road: 0xd9822b, hwy: 0x138a4a, rail: 0x1c2f55, hsr: 0x1e6fd9, maglev: 0xa52fd0, sea: 0x2a9db8 };
+export const KIND_COLOUR: Record<Kind, number> = { road: 0xe39b4a, hwy: 0x4fa874, rail: 0x4a5f8c, hsr: 0x5b9be6, maglev: 0xb98ad8, sea: 0x6bbfd0 };   // Stage 27: softer hues
 export const KIND_LABEL: Record<Kind, string> = { road: "道路", hwy: "高速道路", rail: "鉄道", hsr: "新幹線", maglev: "リニア", sea: "海路(国内)" };
 /** The neutrals: the edge of a road, the grey of a line that is gone, and the white and black of bridges, centre lines and the highlight's frame. */
-export const INK = 0x1a1a1a, PAPER = 0xffffff, ROAD_EDGE = 0x3d3d3d, GONE_GREY = 0x7d838a;
+export const INK = 0x1a1a1a, PAPER = 0xffffff, ROAD_EDGE = 0x7a6a5a, GONE_GREY = 0x7d838a;
 /** The one colour of "the line you chose". It is in no other style. */
 export const HIGHLIGHT_COLOUR = 0xff00d4;
 
@@ -34,9 +34,12 @@ export const TIER_LABEL: Record<Tier, string> = { main: "メイン", sub: "サ�
 /** Line widths by tier (px), for a road and for a railway. */
 export const ROAD_WIDTH: Record<Tier, number> = { local: 1.6, sub: 2.8, main: 4.6 }, RAIL_WIDTH_T: Record<Tier, number> = { local: 1.7, sub: 2.5, main: 4 };
 export const widthOf = (kind: Kind, tier: Tier) => (kind === "road" || kind === "hwy" ? ROAD_WIDTH[tier] : RAIL_WIDTH_T[tier]);
+/** What the map tells of a line's state (Stage 27): 供用中 (including a resting line), 計画・未成, 廃線・廃道. The game keeps its finer states; this is only how they are drawn. */
+export type ViewState = "open" | "planned" | "abolished";
+export const viewState = (s: LineState): ViewState => (s === "open" || s === "dormant" ? "open" : s === "planned" || s === "unbuilt" ? "planned" : "abolished");
+export const VIEW_STATE_LABEL: Record<ViewState, string> = { open: "供用中", planned: "計画・未成", abolished: "廃線・廃道" };
 /** The dash of each state (px; null = solid). */
-export const STATE_DASH: Record<LineState, number[] | null> = { open: null, dormant: [10, 6], planned: [7, 4], unbuilt: [1, 6], closed: [5, 4], lost: [2, 5] };
-export const STATE_LABEL: Record<"open" | "planned" | "abolished" | "unbuilt", string> = { open: "供用中", planned: "計画", abolished: "廃線", unbuilt: "未成" };
+export const STATE_DASH: Record<LineState, number[] | null> = { open: null, dormant: null, planned: [7, 4], unbuilt: [7, 4], closed: [4, 4], lost: [4, 4] };
 export const OLD_ROAD_DASH = [9, 3, 2, 3];   // 旧道: the stretch a bypass took the traffic from
 
 export interface Stroke { colour: number; width: number; alpha: number; dash?: number[]; cap: "round" | "butt" }
@@ -55,17 +58,15 @@ export function edgeStyle(kind: Kind, tier: Tier, state: LineState, quality: num
 function build(kind: Kind, tier: Tier, state: LineState, quality: number, o: StyleOpts): EdgeStyle {
   const thin = o.thin ? 0.6 : 1, wd = widthOf(kind, tier) * (kind === "road" || kind === "hwy" ? (o.undesignated ? 0.8 : 1) : 1) * thin, base = KIND_COLOUR[kind];
   if (kind === "sea") {   // a sea route is always dashed (it is not a road): state changes only how strong it is
-    const alpha = state === "open" ? 0.95 : state === "dormant" ? 0.6 : 0.35;
+    const v = viewState(state), alpha = v === "open" ? 0.95 : v === "planned" ? 0.8 : 0.45;
     return { body: stroke(base, 3, alpha, [7, 5], "butt") };
   }
-  if (state === "closed") return { body: stroke(GONE_GREY, 1.6, 0.95, STATE_DASH.closed!, "butt") };
-  if (state === "lost") return { body: stroke(GONE_GREY, 1.2, 0.85, STATE_DASH.lost!, "butt") };
-  if (state === "planned") return { body: stroke(base, 2.2, 0.95, STATE_DASH.planned!, "butt") };
-  if (state === "unbuilt") return { body: stroke(base, 2.2, 0.95, STATE_DASH.unbuilt!, "round") };
+  const vs = viewState(state);
+  if (vs === "abolished") return { body: stroke(mix(base, PAPER, 0.5), 1.8, 0.95, STATE_DASH.closed!, "butt") };   // a gone line: the kind's own hue, pale, dashed -- a road and a railway still differ
+  if (vs === "planned") return { body: stroke(base, 2.2, 0.95, STATE_DASH.planned!, "butt") };
   const body = base, tun = o.tunnel ? 0.5 : 1;
-  if (state === "dormant") return { body: stroke(body, wd * 0.9, 0.9, STATE_DASH.dormant!, "butt") };
-  if (kind === "road") return { casing: stroke(ROAD_EDGE, wd + 2.4, o.tunnel ? 0.4 : 0.95), body: stroke(body, wd, tun, o.old ? OLD_ROAD_DASH : undefined, o.old ? "butt" : "round"), ...(o.bypass ? { centre: stroke(PAPER, 1, 0.9) } : {}) };
-  if (kind === "hwy") return { casing: stroke(mix(base, INK, 0.45), wd + 3.4, o.tunnel ? 0.4 : 0.95), body: stroke(body, wd, tun, o.old ? OLD_ROAD_DASH : undefined, o.old ? "butt" : "round"), centre: stroke(PAPER, 1, 0.9) };
+  if (kind === "road") return { casing: stroke(ROAD_EDGE, wd + 2.4, o.tunnel ? 0.4 : 0.85), body: stroke(body, wd, tun) };
+  if (kind === "hwy") return { casing: stroke(mix(base, INK, 0.45), wd + 3.4, o.tunnel ? 0.4 : 0.9), body: stroke(body, wd, tun), centre: stroke(PAPER, 1, 0.9) };
   const casing = stroke(PAPER, wd + (thin < 1 ? 1.2 : 2.2), (thin < 1 ? 0.7 : 0.92) * (o.tunnel ? 0.45 : 1)), big = kind === "rail" ? 1 : 1.15;
   const out: EdgeStyle = { casing, body: stroke(body, wd * big, tun) };
   if (kind === "rail") out.ties = stroke(PAPER, wd * 0.7, 0.95, [4, 5], "butt");

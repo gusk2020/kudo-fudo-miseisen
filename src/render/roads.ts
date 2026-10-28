@@ -206,27 +206,27 @@ export class RoadLayer {
         if (e.facility === "ferry" && isIslandRoute(e) && (zoom < (eff.state === "open" ? (e.through > 50 ? 0 : 0.3) : 1))) continue;   // Stage 22/26: the many sea routes thin out far away: a resting one only close in, an island route from a middle zoom, an ocean route nobody uses (many leave 宮崎 and 大分 along the same coast) only from zoom 0.8, a busy one always
         if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("k:" + kindOf(e)) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (planned.get(e.id) ?? "planned")))) continue; }
         const pts = e.facility === "ferry" ? seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)) : edgeShape(w, sim, e); shapes.set(e.id, pts);
-        const thin = zoom < 0.35, kind: Kind = e.facility === "ferry" ? "sea" : kindOf(e), tier = TIER_OF[e.standard], isOld = e.bypassedBy.length > 0, wd = (rail ? RAIL_WIDTH_T[tier] : g ? ROAD_WIDTH[tier] : ROAD_WIDTH[tier] * 0.8) * (thin ? 0.6 : 1);
+        const thin = zoom < 0.35, kind: Kind = e.facility === "ferry" ? "sea" : kindOf(e), tier = TIER_OF[e.standard],  wd = (rail ? RAIL_WIDTH_T[tier] : g ? ROAD_WIDTH[tier] : ROAD_WIDTH[tier] * 0.8) * (thin ? 0.6 : 1);
         if (g && e.nick) nickGrade.set(e.id, g);
         if (e.facility === "ferry") {   // a sea route: a dashed line in the sea colour, never the road's casing and fill
           if (eff.built >= 1 && zoom >= 0.35) for (const q of quays(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e))) { line(fer, q); fer.stroke({ width: px(1.4), color: GONE_GREY, alpha: 0.8 }); }
           if (eff.built >= 1) put(fer, pts, { ...edgeStyle("sea", tier, eff.state, eff.q).body, width: rail ? 2.4 : 3 });
           continue;
         }
-        if (eff.built >= 1 && eff.state === "open") {
+        if (eff.built >= 1 && (eff.state === "open" || eff.state === "dormant")) {   // Stage 27: a resting line is drawn as an open one
           // Stage 23: a bridge is a white deck with a black edge on both sides; a tunnel is a faded line between two black dashed edges. The road or railway itself keeps its own colour on top,
           // so the kind of traffic can be read on the bridge and inside the tunnel; where both share the structure they run side by side (sharedSide).
           const side = sharedSide.get(e.id) ?? 0, dp = side ? offsetLine(pts, px(side * (wd + 3.2) * 0.5)) : pts, tun = e.facility === "tunnel" && zoom >= 0.35;
           if (e.facility === "bridge" && zoom >= 0.35) { put(facb, dp, BRIDGE.edge(wd)); put(facb, dp, BRIDGE.deck(wd)); if (zoom >= 0.6) { girders(facb, dp, px(BRIDGE.girderStep), px(wd * 0.5 + 6)); facb.stroke({ width: px(BRIDGE.girder.width), color: BRIDGE.girder.colour }); } }
           else if (tun) { const d = px(wd * 0.5 + 2.6); for (const sg of [1, -1]) put(fac, offsetLine(dp, sg * d), TUNNEL.edge); }
-          const st = edgeStyle(kind, tier, "open", eff.q, { thin, tunnel: tun, old: isOld && !rail, bypass: e.bypassOf.length > 0 && !rail, undesignated: !g });
+          const st = edgeStyle(kind, tier, "open", eff.q, { thin, tunnel: tun, undesignated: !g });
           if (rail) {   // every ordinary railway alike (national or private); 新幹線 with a white centre line, リニア with a dashed one
             put(rcas, dp, st.casing!); put(rfill, dp, st.body);
             if (st.ties) { if (zoom >= 0.8) put(rtie, dp, st.ties); } else put(mid, dp, st.centre!);
           } else {   // one style for every road whatever its administrative grade
-            put(cas, dp, st.casing!); put(isOld ? old : fill, dp, st.body); if (st.centre) put(mid, dp, st.centre);
+            put(cas, dp, st.casing!); put(fill, dp, st.body); if (st.centre) put(mid, dp, st.centre);
           }
-        } else if (eff.built >= 1 && eff.state === "dormant") put(rail ? rdash : fillDash, pts, edgeStyle(kind, tier, "dormant", eff.q, { thin }).body);
+        }
         else if (eff.built >= 1) put(ghost, pts, edgeStyle(kind, tier, eff.state === "lost" ? "lost" : "closed", eff.q).body);
         else if (a.layers.plans) {
           const st = planned.get(e.id) ?? "planned";

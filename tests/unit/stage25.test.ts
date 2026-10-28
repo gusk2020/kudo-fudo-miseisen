@@ -105,21 +105,23 @@ describe("Stage 25: the colours of the lines, and the legend that must show them
     for (const k of kinds) for (const t of tiers) for (const st of states) for (const o of [{}, { old: true, bypass: true, tunnel: true, thin: true }]) { const base = JSON.stringify(edgeStyle(k, t, st, 95, o)); for (const q of [80, 55, 30, 10, 0]) expect(JSON.stringify(edgeStyle(k, t, st, q, o)), `${k}${t}${st}${q}`).toBe(base); }
     for (const k of ["road", "hwy", "rail", "hsr", "maglev"] as Kind[]) expect(edgeStyle(k, "sub", "open", 3).body.colour).toBe(KIND_COLOUR[k]);
     for (const k of ["road", "rail"] as Kind[]) { const w = tiers.map((t) => edgeStyle(k, t, "open", 90).body.width); expect(w[0]).toBeGreaterThan(w[1]); expect(w[1]).toBeGreaterThan(w[2]); }
-    expect(edgeStyle("road", "sub", "open", 90).body.dash).toBeUndefined(); for (const s of ["dormant", "planned", "unbuilt", "closed", "lost"] as LineState[]) expect(edgeStyle("road", "sub", s, 90).body.dash).toEqual(STATE_DASH[s]);
-    const dashes = new Set(["dormant", "planned", "unbuilt", "closed", "lost"].map((s) => JSON.stringify(STATE_DASH[s as LineState]))); expect(dashes.size).toBe(5);   // every state has its own pattern
+    // Stage 27: three states on the map -- 供用中 (a resting line too), 計画・未成, 廃線・廃道 -- each told from the others by its line, and a road told from a railway inside each
+    const sig = (k: Kind, st: LineState) => JSON.stringify(edgeStyle(k, "sub", st, 90)); for (const k of ["road", "hwy", "rail", "hsr", "maglev"] as Kind[]) { expect(sig(k, "dormant")).toBe(sig(k, "open")); expect(sig(k, "unbuilt")).toBe(sig(k, "planned")); expect(sig(k, "lost")).toBe(sig(k, "closed")); expect(new Set([sig(k, "open"), sig(k, "planned"), sig(k, "closed")]).size).toBe(3); }
+    expect(edgeStyle("road", "sub", "open", 90).body.dash).toBeUndefined(); for (const st of ["planned", "closed"] as LineState[]) { expect(edgeStyle("road", "sub", st, 90).body.dash).toEqual(STATE_DASH[st]); expect(edgeStyle("road", "sub", st, 90).body.colour).not.toBe(edgeStyle("rail", "sub", st, 90).body.colour); }   // (a gone road and a gone railway still differ)
     expect(TIER_OF.highgrade).toBe("main");
   });
   it("the legend's samples ARE the map's styles: every entry carries the style it was made from and its svg holds that style's colour, width and dash", () => {
-    const items = legendItems(); expect(items.length).toBeGreaterThanOrEqual(20);
+    const items = legendItems(); expect(items.length).toBeGreaterThanOrEqual(15);
     for (const it of items) {
       const r = it.ref; if (!r.kind) continue; const st = edgeStyle(r.kind, r.tier!, r.state!, r.quality!); if (r.also) { expect(it.svg).toContain(svgOfStyle(st, 5)); expect(it.svg).toContain(svgOfStyle(edgeStyle(r.also, r.tier!, r.state!, r.quality!), 11)); continue; } expect(it.svg, it.caption).toContain(svgOfStyle(st));
-      expect(it.svg).toContain(`stroke="${hex(st.body.colour)}"`); expect(it.svg).toContain(`stroke-width="${st.body.width}"`); if (st.body.dash) expect(it.svg).toContain(`stroke-dasharray="${st.body.dash.join(" ")}"`); else if (r.state === "open") expect(it.svg).not.toContain("stroke-dasharray=\"" + STATE_DASH.dormant!.join(" "));
+      expect(it.svg).toContain(`stroke="${hex(st.body.colour)}"`); expect(it.svg).toContain(`stroke-width="${st.body.width}"`); if (st.body.dash) expect(it.svg).toContain(`stroke-dasharray="${st.body.dash.join(" ")}"`);;
     }
     for (const k of kinds) expect(items.some((i) => (i.ref.kind === k || i.ref.also === k) && i.group === "交通種別"), k).toBe(true);
     expect(items.filter((i) => i.caption.includes("新幹線") || i.caption.includes("リニア")).length).toBe(1);   // Stage 26: one entry for 新幹線・リニア (they stay two kinds everywhere else)
     expect(items.some((i) => i.ref.what === "air" && i.svg.includes(`stroke-dasharray="${AIR_STYLE.body.dash!.join(" ")}"`))).toBe(true); expect(items.some((i) => i.group.includes("傷み"))).toBe(false);
-    for (const t of tiers) expect(items.some((i) => i.ref.tier === t && i.group === "階層(太さ)")).toBe(true);
-    for (const s of states) expect(items.some((i) => i.ref.state === s && i.group === "状態(線種)")).toBe(true);
+    for (const t of tiers) expect(items.some((i) => i.ref.tier === t && i.group === "太さ")).toBe(true);
+    for (const s of ["open", "planned", "closed"] as LineState[]) expect(items.some((i) => i.ref.state === s && i.group === "状態" && i.ref.also === "rail")).toBe(true);
+    expect(items.map((i) => i.caption).some((c) => /破線|点線|鎖線|実線/.test(c))).toBe(false);   // Stage 27: the legend names things, it does not describe the stroke
     const hl = items.find((i) => i.ref.what === "highlight")!; expect(hl.svg).toContain(hex(HIGHLIGHT_COLOUR));
     const used = [...items.map((i) => i.svg).join("").matchAll(/stroke="(#[0-9a-f]{6})"/g)].map((m) => m[1]); const allowed = new Set([...allStyleColours()].map(hex).concat(["#3b1f6e", "#7a4fb5"])); for (const c of used) expect(allowed.has(c), c).toBe(true);
   });
