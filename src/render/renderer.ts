@@ -1,4 +1,6 @@
 import GMJ from "../data/coast-gmj.json";
+import { gridBordersWithin, splitGmj } from "./gmBorders";
+import { streamKeep } from "./streams";
 import { lonLatToReal } from "../core/data";
 import { maxCapitalNames, placeNames } from "./cityNames";
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
@@ -51,7 +53,8 @@ export class Renderer {
   baseNames: { name: string; p: Vec }[] | null = null;
   islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean; shaped?: boolean; tiny?: boolean }[] | null = null;
   /** Stage 22: the real-map coastline of 地球地図日本 (drawn once, reused; the 5 km grid underneath keeps the simulation's own land) */
-  private gm: { fill: Graphics; coast: Graphics; bg: string } | null = null;
+  private gm: { fill: Graphics; coast: Graphics; border: Graphics; bg: string } | null = null;
+  private gmSplit = splitGmj(GMJ.polys as unknown as number[][]);
   private root = new Container(); private base = new Container(); private overlay = new Container(); private labels = new Container();
   /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
   ridgeHandles = false;
@@ -112,7 +115,7 @@ export class Renderer {
     if (!this.lastArgs) return;
     const [s, t, issues, pending] = this.lastArgs, z = this.view.zoom, px = (n: number) => n / z;
     if (this.terrainSprite?.parent) this.terrainSprite.parent.removeChild(this.terrainSprite); // reused across rebuilds, destroyed only with its terrain
-    if (this.gm) { this.gm.fill.parent?.removeChild(this.gm.fill); this.gm.coast.parent?.removeChild(this.gm.coast); }
+    if (this.gm) { this.gm.fill.parent?.removeChild(this.gm.fill); this.gm.coast.parent?.removeChild(this.gm.coast); this.gm.border.parent?.removeChild(this.gm.border); }
     this.base.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.overlay.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.labels.removeChildren().forEach((c) => c.destroy());
     const P = (v: Vec): [number, number] => [v[0], -v[1]];
     const flat = (poly: Vec[]) => poly.flatMap((q) => P(q));
@@ -130,7 +133,7 @@ export class Renderer {
     const coast = new Graphics(), fills = new Graphics();
     const gmOn = !!s.real;   // Stage 22: on the real map the coastline is 地球地図日本's (the mainland, the added islands and the islets alike)
     if (gmOn) {
-      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.coast.destroy(); const f = new Graphics(), c = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); c.poly(pts).stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); } this.gm = { fill: f, coast: c, bg: bgKey }; }
+      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.coast.destroy(); this.gm?.border.destroy(); const f = new Graphics(), c = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); } const seg = (g: Graphics, a: number[]) => { for (let i = 0; i < a.length; i += 4) { const p = lonLatToReal(a[i] / 1000, a[i + 1] / 1000), q = lonLatToReal(a[i + 2] / 1000, a[i + 3] / 1000); g.moveTo(p[0], -p[1]).lineTo(q[0], -q[1]); } }, bd = new Graphics(); seg(c, this.gmSplit.coast); c.stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); seg(bd, this.gmSplit.border); bd.stroke({ width: 1, color: 0x5b1f6e, alpha: 0.9, pixelLine: true }); this.gm = { fill: f, coast: c, border: bd, bg: bgKey }; }
       this.base.addChild(this.gm.fill);
     }
     for (const id of gmOn ? [] : ISLAND_IDS) {
@@ -156,6 +159,7 @@ export class Renderer {
     this.base.addChild(lakes);
     if (showTerrain && t) this.drawHydro(t, s, px);
     if (gmOn && this.gm && s.layers.coast) this.base.addChild(this.gm.coast);
+    if (gmOn && this.gm && s.layers.borders) this.base.addChild(this.gm.border);   // Stage 26: the real prefecture borders, once
     this.base.addChild(coast);
     // fuji marker
     if (s.step >= 3 || s.step === 0) {
@@ -189,10 +193,18 @@ export class Renderer {
     }
     if (s.layers.cities) this.drawCities(s, t, showTerrain, px); this.drawSeats(s, t, px);
   }
+  private keepOf: { t: TerrainResult; keep: boolean[] } | null = null;
+  private hokb: { t: TerrainResult; a: number[] } | null = null;
+  private hokkaidoBorders(t: TerrainResult): number[] {
+    if (this.hokb?.t !== t) { const hk = new Set<number>(); JAPAN.prefectures.forEach((p, n) => { if (p.id.startsWith("HK-")) hk.add(n + 1); }); this.hokb = { t, a: gridBordersWithin(t.grid, t.land, t.pref, (n) => hk.has(n)) }; }
+    return this.hokb.a;
+  }
   private drawHydro(t: TerrainResult, s: ProjectState, px: (n: number) => number) {
     if (s.layers.rivers) {
       const buckets: Graphics[] = [new Graphics(), new Graphics(), new Graphics()];
+      if (this.keepOf?.t !== t) this.keepOf = { t, keep: streamKeep(t.streams) };
       for (let i = 0; i < t.streams.length; i += 5) {
+        if (!this.keepOf.keep[i / 5]) continue;   // Stage 26: a stream fragment that connects to nothing is not drawn
         const w = t.streams[i + 4], b = buckets[w < 1.5 ? 0 : w < 3 ? 1 : 2];
         b.moveTo(t.streams[i], -t.streams[i + 1]).lineTo(t.streams[i + 2], -t.streams[i + 3]);
       }
@@ -200,8 +212,8 @@ export class Renderer {
       buckets.forEach((b, n) => { if (n < minBucket) { b.destroy(); return; } b.stroke({ width: px(1 + n * 1.1), color: 0x3a82d0, alpha: 0.95, cap: "round" }); this.base.addChild(b); });
     }
     if (s.layers.borders) {
-      const g = new Graphics();
-      for (let i = 0; i < t.borders.length; i += 4) g.moveTo(t.borders[i], -t.borders[i + 1]).lineTo(t.borders[i + 2], -t.borders[i + 3]);
+      const g = new Graphics(), a = s.real ? this.hokkaidoBorders(t) : t.borders;   // Stage 26: on the real map the borders are 地球地図日本's (drawn with the coast layer above); the grid's stair-steps only where the data has none
+      for (let i = 0; i < a.length; i += 4) g.moveTo(a[i], -a[i + 1]).lineTo(a[i + 2], -a[i + 3]);
       g.stroke({ width: px(1.1), color: 0x5b1f6e, alpha: 0.9, cap: "round" }); this.base.addChild(g);
     }
   }
