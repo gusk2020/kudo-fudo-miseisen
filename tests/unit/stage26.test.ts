@@ -122,3 +122,14 @@ describe("Stage 26: a checkpoint is a complete save; the game goes on from it ex
     s.cp = { y50: "x", reloc: 1 }; expect(sanitizeSim(s).sim!.cp).toBeUndefined();   // a damaged record is dropped, not trusted
   }, 300000);
 });
+
+describe("Stage 27: Nara, Wakayama and Mie borders are one line", () => {
+  it("no coast segment lies on top of a border segment and no border is carried twice, in the Kinki/Tokai area where two copies of each border used to show", () => {
+    const polys = JSON.parse(readFileSync("src/data/coast-gmj.json", "utf8")).polys as number[][], sp = splitGmj(polys);
+    const inArea = (x: number, y: number) => x >= 135000 && x <= 137000 && y >= 33300 && y <= 35300, mids = (a: number[]) => { const o: [number, number][] = []; for (let i = 0; i < a.length; i += 4) { const m: [number, number] = [(a[i] + a[i + 2]) / 2, (a[i + 1] + a[i + 3]) / 2]; if (inArea(m[0], m[1])) o.push(m); } return o; };
+    const b = mids(sp.border), c = mids(sp.coast); expect(b.length).toBeGreaterThan(30);
+    let coastOnBorder = 0; for (const m of c) if (b.some((q) => Math.hypot(q[0] - m[0], q[1] - m[1]) < 4)) coastOnBorder++;
+    let twice = 0; for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++) if (Math.hypot(b[i][0] - b[j][0], b[i][1] - b[j][1]) < 1.5) twice++;
+    expect(coastOnBorder).toBeLessThanOrEqual(Math.ceil(c.length * 0.02)); expect(twice).toBe(0);
+  });
+});

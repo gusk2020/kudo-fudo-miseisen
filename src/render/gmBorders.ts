@@ -6,17 +6,39 @@
  * Pure: no pixi, no DOM.
  */
 export interface GmSplit { coast: number[]; border: number[] }   // [lon*1000, lat*1000, lon*1000, lat*1000] per segment
+const EPS = 3;   // how far (in 1/1000 degree, ~300 m) to step to either side of a segment to see what lies there
+const CELL = 500;
+function inside(p: number[], x: number, y: number): boolean {
+  let c = false; const n = p.length >> 1;
+  for (let i = 0, j = n - 1; i < n; j = i++) { const xi = p[2 * i], yi = p[2 * i + 1], xj = p[2 * j], yj = p[2 * j + 1]; if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; }
+  return c;
+}
+/**
+ * Stage 27: coast or border, decided by what is on the OTHER side of each segment. (Stage 26 asked only whether two polygons carried the identical segment; but the data's polygons were simplified one by one, so most
+ * borders -- Nara, Wakayama, Mie among them -- have two near-identical but not identical copies, were taken for "coast" twice, and showed as a double line.)
+ * For each segment of polygon P: step a little to both sides; the side inside P is P's own, the other side is land (another polygon Q holds it) -> a border, or sea -> coast.
+ * Both polygons carry their copy of a border, so only the one of the lower-numbered polygon is kept: one line.
+ */
 export function splitGmj(polys: number[][]): GmSplit {
-  const count = new Map<string, number>(), segs: [number, number, number, number, string][] = [];
-  for (const p of polys) {
-    const n = p.length >> 1; if (n < 2) continue; const closed = p[0] === p[2 * n - 2] && p[1] === p[2 * n - 1], m = closed ? n - 1 : n;
+  const boxes = polys.map((p) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (let i = 0; i < p.length; i += 2) { if (p[i] < x0) x0 = p[i]; if (p[i] > x1) x1 = p[i]; if (p[i + 1] < y0) y0 = p[i + 1]; if (p[i + 1] > y1) y1 = p[i + 1]; } return [x0, y0, x1, y1]; });
+  const grid = new Map<string, number[]>(); const key = (cx: number, cy: number) => `${cx},${cy}`;
+  boxes.forEach((b, k) => { for (let cx = Math.floor((b[0] - EPS) / CELL); cx <= Math.floor((b[2] + EPS) / CELL); cx++) for (let cy = Math.floor((b[1] - EPS) / CELL); cy <= Math.floor((b[3] + EPS) / CELL); cy++) { const kk = key(cx, cy), l = grid.get(kk); if (l) l.push(k); else grid.set(kk, [k]); } });
+  const holders = (x: number, y: number, skip: number): number => {   // the lowest-numbered polygon other than `skip` that holds the point (-1 = none)
+    const l = grid.get(key(Math.floor(x / CELL), Math.floor(y / CELL))); if (!l) return -1; let best = -1;
+    for (const k of l) { if (k === skip) continue; const b = boxes[k]; if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue; if ((best < 0 || k < best) && inside(polys[k], x, y)) best = k; }
+    return best;
+  };
+  const coast: number[] = [], border: number[] = [];
+  polys.forEach((p, k) => {
+    const n = p.length >> 1; if (n < 2) return; const closed = p[0] === p[2 * n - 2] && p[1] === p[2 * n - 1], m = closed ? n - 1 : n;
     for (let i = 0; i < m; i++) {
-      const j = (i + 1) % n, x1 = p[2 * i], y1 = p[2 * i + 1], x2 = p[2 * j], y2 = p[2 * j + 1]; if (x1 === x2 && y1 === y2) continue;
-      const key = x1 < x2 || (x1 === x2 && y1 <= y2) ? `${x1},${y1},${x2},${y2}` : `${x2},${y2},${x1},${y1}`; count.set(key, (count.get(key) ?? 0) + 1); segs.push([x1, y1, x2, y2, key]);
+      const j = (i + 1) % n, x1 = p[2 * i], y1 = p[2 * i + 1], x2 = p[2 * j], y2 = p[2 * j + 1], dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy); if (!len) continue;
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, nx = (-dy / len) * EPS, ny = (dx / len) * EPS, a = inside(p, mx + nx, my + ny), b = inside(p, mx - nx, my - ny);
+      let other = -1;
+      if (a !== b) other = a ? holders(mx - nx, my - ny, k) : holders(mx + nx, my + ny, k);   // the side that is not this polygon's own
+      if (other < 0) coast.push(x1, y1, x2, y2); else if (k < other) border.push(x1, y1, x2, y2);   // (the other polygon's copy of the same border is dropped)
     }
-  }
-  const coast: number[] = [], border: number[] = [], seen = new Set<string>();
-  for (const [x1, y1, x2, y2, key] of segs) { if ((count.get(key) ?? 1) >= 2) { if (seen.has(key)) continue; seen.add(key); border.push(x1, y1, x2, y2); } else coast.push(x1, y1, x2, y2); }
+  });
   return { coast, border };
 }
 /** The cell-assignment border segments (world km, x1 y1 x2 y2) that lie between two cells of the SAME group of prefectures `inside` (e.g. Hokkaido's three regions) -- the only borders the real data does not have. */
