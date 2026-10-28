@@ -33,3 +33,13 @@ export function cycleOf(sim: Pick<SimState, "startYear" | "month" | "e2200">): C
   const order: CyclePhase[] = ["rebuild", "balance", "decline"], within = since - k * PHASE_YEARS, next = k < 2 ? GROWTH_BY_PHASE[order[k + 1]] : GROWTH_BY_PHASE.rebuild, ramp = Math.max(0, (within - (PHASE_YEARS - 5)) / 5), growth = GROWTH_BY_PHASE[phase] + (next - GROWTH_BY_PHASE[phase]) * ramp * (k < 2 ? 1 : 0);
   return { phase, t: within / PHASE_YEARS, since, budget: budgetAt(since), growth };
 }
+
+/** How much the cycle lifts or damps the appetite to build (the era's own dial is the base): a floor in the rebuilding and early balance, a damping in the decline.
+ *  Without it the era tables, which fall to 0.15-0.3 by 2100, would leave a bigger purse with nothing to spend it on. */
+export const BUILD_FLOOR_POINTS: [number, number][] = [[0, 0.45], [8, 1.0], [50, 1.0], [75, 0.45], [100, 0]];
+export const BUILD_DAMP_POINTS: [number, number][] = [[0, 1], [100, 1], [125, 0.3], [150, 0.1]];
+export const AIR_SEA_FLOOR_POINTS: [number, number][] = [[0, 0.3], [10, 0.9], [50, 0.9], [80, 0.4], [100, 0]];
+export function cycleShape(e2200: SimState["e2200"], year: number) {
+  if (!e2200) return null; const since = Math.max(0, Math.min(CYCLE_YEARS - 1e-9, year - e2200.year));
+  return { build: budgetAt(since, BUILD_FLOOR_POINTS), damp: budgetAt(since, BUILD_DAMP_POINTS), airsea: budgetAt(since, AIR_SEA_FLOOR_POINTS) };
+}

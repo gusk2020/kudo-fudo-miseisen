@@ -1,3 +1,4 @@
+import { cycleShape } from "./cycle27";
 /**
  * The three world lines (世界線) and the dials they turn. Everything era-, event- or policy-dependent reaches the mechanics through
  * ONE object, `Dials`, so the mechanics (demand split, budgets, building appetite) never ask "which era is this?".
@@ -126,11 +127,13 @@ export function blendedDials(eras: { stance: EraKey; start: number }[], year: nu
 /** A time-limited nudge to the dials, from an event or a policy. `d` is additive; the reason is kept so the timeline can say why. */
 export interface Mod { id: string; kind: "event" | "policy"; label: string; from: number; until: number; d: Partial<Dials> }
 /** Baseline + every active mod, clamped. The only place dials are composed. */
-export function composeDials(sim: Pick<SimState, "era" | "mods" | "kaigen">, year: number): Dials {
+export function composeDials(sim: Pick<SimState, "era" | "mods" | "kaigen"> & Partial<Pick<SimState, "e2200">>, year: number): Dials {
   const d = sim.kaigen ? blendedDials(sim.kaigen.eras, year) : baseDials(eraKeyOf(sim.era), year);
   const pol = {} as Record<keyof Dials, number>; for (const k of DIAL_KEYS) pol[k] = 0;
   for (const m of sim.mods) if (year >= m.from && year < m.until) for (const k of DIAL_KEYS) { const v = m.d[k]; if (!v) continue; if (m.kind === "policy") pol[k] += v; else d[k] += v; }
   // Stage 7: the ten-yearly policies together may move a dial by at most POLICY_CAP of its range, so a policy steers within the world line and never replaces it
   for (const k of DIAL_KEYS) { const cap = POLICY_CAP * (DIAL_RANGE[k][1] - DIAL_RANGE[k][0]); d[k] += Math.max(-cap, Math.min(cap, pol[k])); d[k] = clampDial(k, d[k]); }
+  const cs = cycleShape(sim.e2200, year);   // Stage 27: the 150-year cycle moves the appetite to build, and nothing else
+  if (cs) { for (const k of ["hwyBuild", "railBuild"] as const) d[k] = clampDial(k, Math.max(d[k], cs.build) * cs.damp); for (const k of ["airBias", "seaBias"] as const) d[k] = clampDial(k, Math.max(d[k], cs.airsea) * cs.damp); }
   return d;
 }
