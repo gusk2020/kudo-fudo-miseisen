@@ -71,6 +71,7 @@ body.real #sheet { max-height: 62dvh; }
 .setup-tabs { display:flex; gap:4px; width:100%; }
 /* Stage 21: the same small tab as 地形 / 琵琶湖 / 富士山 */
 .setup-tab { flex:1 1 0; min-width:0; min-height:34px; padding:3px 5px; font-size:12.5px; border-radius:8px; white-space:nowrap; }
+.setup-tab.setup-bg { flex:0 0 auto; padding:3px 8px; background:#2c3e50; color:#fff; border-color:#8fb3d9; }
 .setup-tab.on { background:#1f6fd1; color:#fff; border-color:#9cc8ff; font-weight:700; }
 #setup-panel { margin:4px 0; padding:6px; border-radius:8px; background:#12283d; border:1px solid #4f7aa3; }
 #setup-panel .row2 { display:flex; gap:6px; margin:4px 0; } #setup-panel .row2 button { flex:1; min-height:44px; font-weight:700; border:2px solid #4f7aa3; background:#1d3a55; color:#fff; border-radius:8px; }

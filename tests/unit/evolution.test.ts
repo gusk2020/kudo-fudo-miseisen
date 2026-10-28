@@ -109,9 +109,6 @@ describe("1950-2050: roads, population and decline that can be seen", () => {
     const peakPop = Math.max(...Object.values(rows).map((r) => (typeof r === "object" ? (r as any).pop : 0)));
     expect(rows[2050].pop).toBeLessThan(peakPop * 0.85); expect(rows[2050].villagePop).toBeLessThan(rows[1950].villagePop * 0.97 || 1e12);
     expect(rows[2050].bypass).toBeGreaterThan(rows[1980].bypass); expect(rows[2050].nick).toBeGreaterThanOrEqual(3); expect(rows[1950].nick).toBe(0);
-    expect(sim.snaps.length).toBeGreaterThanOrEqual(9); expect(sim.snaps[0].year).toBe(1950);
-    const a = sim.snaps.find((s) => s.year === 2000)!, b = sim.snaps[sim.snaps.length - 1]; let worse = 0; for (const [id, c] of Object.entries(b.edges)) { const o = a.edges[id]; if (o !== undefined && Math.floor(c / 16) > Math.floor(o / 16)) worse++; }
-    expect(worse).toBeGreaterThanOrEqual(3);   // the map comparison has something to show
     process.stderr.write("\n" + [1950, 1970, 1990, 2010, 2030, 2050].map((y) => `${y}: 道路${rows[y].km}km 路線${rows[y].routes} 人口${Math.round(rows[y].pop / 1e6)}M 集落${Math.round(rows[y].villagePop / 1000)}k 休止${rows[y].dormant}/閉鎖${rows[y].closed}/廃道${rows[y].lost} バイパス${rows[y].bypass} 通称${rows[y].nick} 同時着工府県${rows[y].regionsBuilding}(着工中${(rows[y] as any).pending}件) 区間${(rows[y] as any).edgesTotal}`).join("\n") + "\n");
   });
   test("nicknames are earned: only rough, thin, designated roads; the official name never changes", () => {

@@ -7,7 +7,7 @@ import type { NumClass } from "../sim/numreg";
 import { DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey } from "../sim/eras";
 import { effectText } from "../sim/events";
 import { prefName, routeLabel } from "../sim/engine";
-import { codesAt, numberHistory } from "../sim/ledger";
+import { numberHistory } from "../sim/ledger";
 import { CAND_1945, ERA_GROUPS, ERA_GROUP_LABEL, ERA_GROUP_NOTE, STANCE_LABEL, eraGroup, type EraCand } from "../sim/kaigen";
 import { potentialWeights } from "../sim/potential17";
 import { reconText } from "../sim/recon";
@@ -132,23 +132,12 @@ export function buildLedger(app: App, body: HTMLElement) {
 }
 
 export function buildAtlas(app: App, body: HTMLElement) {
-  body.append(h("h3", {}, "交通地図帳(年代スライダー)")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
-  const years = sim.snaps.map((s) => s.year), cur = app.viewYear;
-  body.append(h("small", {}, "過去の年を選ぶと、その年の道路・鉄道を表示します。閲覧中は時間が止まり、歴史は書き換わりません。"));
-  if (years.length < 2) { body.append(h("small", {}, "5年ごとに記録されます。しばらく進めてから開いてください。")); return; }
-  const idx = cur === null ? years.length - 1 : Math.max(0, years.indexOf(cur)), slider = h("input", { type: "range", id: "atlas-slider", min: 0, max: years.length - 1, step: 1, value: idx, oninput: (e: Event) => { const i = +(e.target as HTMLInputElement).value; label.textContent = `${years[i]}年`; }, onchange: (e: Event) => { const i = +(e.target as HTMLInputElement).value; app.setViewYear(i === years.length - 1 && cur === null ? null : years[i]); } }) as HTMLInputElement;
-  const label = h("b", { id: "atlas-year" }, `${years[idx]}年`);
-  body.append(h("div", { class: "row" }, label, slider));
-  body.append(h("div", { class: "row" }, h("button", { id: "atlas-now", onclick: () => app.setViewYear(null) }, "現在に戻る"),
-    h("button", { id: "atlas-diff", class: app.compareYear ? "mode on" : "mode", "aria-pressed": app.compareYear ? "true" : "false", onclick: () => { app.compareYear = app.compareYear ? null : (cur ?? years[0]); app.renderRoads(); app.buildSheet(); } }, app.compareYear ? "✓ 差分表示(今との違い)" : "差分表示(今との違い)")));
-  const codes = codesAt(sim.snaps, cur ?? years[years.length - 1]);
-  if (codes) {
-    let rk = 0, rl = 0, sk = 0, sl = 0, lost = 0, plan = 0;
-    for (const e of Object.values(sim.edges)) { const c = codes[e.id]; if (c === undefined) continue; const st = c >> 4, rail = modeOf(e) === "rail"; if (st === 0) rail ? (rl += e.lengthKm) : (rk += e.lengthKm); else if (st === 4) plan++; else if (st === 3) lost++; else sk += rail ? 0 : 0; void sl; }
-    body.append(h("div", { class: "issue", id: "atlas-summary" }, `${cur ?? "現在"}年: 道路${Math.round(rk).toLocaleString()}km・鉄道${Math.round(rl).toLocaleString()}km(供用中) ／ 計画・工事中${plan}区間 ／ 廃道・廃線跡${lost}区間`));
-  }
-  buildTrends(sim, body); buildHubAtlas(app, sim, body, cur); buildCityEconomy(app, sim, body, cur); if (cur === null) buildCityTiers(app, sim, body);
-  if (cur !== null) body.append(h("div", { class: "issue warn", id: "atlas-readonly" }, `${cur}年を閲覧中(読み取り専用・時間は停止)。操作したい場合は「現在に戻る」を押してください。`));
+  body.append(h("h3", {}, "交通地図帳")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
+  // Stage 26: no past-year slider and no stored snapshots any more -- what the game was in an earlier year is reached through the 自動セーブポイント (menu), and what happened is in the 年表 and the 台帳
+  let rk = 0, rl = 0, plan = 0, lost = 0;
+  for (const e of Object.values(sim.edges)) { const rail = modeOf(e) === "rail"; if (e.built < 1) plan++; else if (e.state === "lost") lost++; else if (e.state === "open") rail ? (rl += e.lengthKm) : (rk += e.lengthKm); }
+  body.append(h("div", { class: "issue", id: "atlas-summary" }, `現在: 道路${Math.round(rk).toLocaleString()}km・鉄道${Math.round(rl).toLocaleString()}km(供用中) ／ 計画・工事中${plan}区間 ／ 廃道・廃線跡${lost}区間`));
+  buildTrends(sim, body); buildHubAtlas(app, sim, body, null); buildCityEconomy(app, sim, body, null); buildCityTiers(app, sim, body);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { AIR_LINE, allStyleColours, hex } from "../../src/render/style24";
+import { allStyleColours, hex } from "../../src/render/style24";
 
 const app = (page: Page, f: string) => page.evaluate(`(() => { const a = window.__kfm; return (${f})(a); })()`);
 const screenOf = (page: Page, p: [number, number]) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p) as Promise<[number, number]>;
@@ -81,13 +81,8 @@ test("rail and road layers, road-map background, and the year atlas never change
   await page.click("#dock-layers"); await page.uncheck("#layer-rail"); await page.waitForTimeout(100);
   expect(await app(page, "a => a.s.layers.rail")).toBe(false); await page.check("#layer-rail");
   await page.check("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(true); await page.waitForTimeout(200); await page.uncheck("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(false);
-  // atlas: look at an earlier year; time must not move and the simulation must be untouched
-  await page.click("#dock-atlas"); expect(await page.isVisible("#atlas-slider")).toBe(true);
-  await page.evaluate(() => (window as any).__kfm.setViewYear(1955)); await page.waitForTimeout(200);
-  expect(await app(page, "a => a.viewYear")).toBe(1955); expect(await page.textContent("#status")).toContain("閲覧中");
-  await page.waitForTimeout(800);
-  expect(await page.evaluate(() => { const a = (window as any).__kfm; return JSON.stringify([a.sim.month, Object.keys(a.sim.edges).length, a.sim.rngState]); })).toBe(hash);
-  await page.evaluate(() => (window as any).__kfm.setViewYear(null)); expect(await app(page, "a => a.viewYear")).toBeNull(); expect(month).toBeGreaterThan(0);
+  // Stage 26: the atlas has no past-year slider any more (no snapshots); it shows the present
+  await page.click("#dock-atlas"); expect(await page.locator("#atlas-slider").count()).toBe(0); expect(await page.isVisible("#atlas-summary")).toBe(true); expect(await app(page, "a => a.viewYear")).toBeUndefined(); expect(month).toBeGreaterThan(0); void hash;
   expect(errs).toEqual([]);
 });
 
@@ -342,7 +337,7 @@ test("凡例の「路線名」は国道だけでなく、鉄道と途中で自�
   const on = await stat(); expect(on.names).toBe(on.signs); expect(on.nameTexts.some((x: string) => x.includes("鉄道") || x.includes("線"))).toBe(true); expect(on.nameTexts.some((x: string) => x.includes("道"))).toBe(true);
   // zoom, the year slider and a reload keep the setting
   await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ zoom: 2.2 }, true); a.renderRoads(); }); const z = await stat(); expect(z.names).toBe(z.signs);
-  await page.evaluate(() => { const a = (window as any).__kfm; a.setViewYear(1975); }); const y = await stat(); expect(y.names).toBe(y.signs); await page.evaluate(() => { (window as any).__kfm.setViewYear(null); });
+  const y = await stat(); expect(y.names).toBe(y.signs);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ zoom: 1.4 }, true); a.renderRoads(); }); const back = await stat(); expect(back.names).toBe(back.signs);
   await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = "legend"; a.buildSheet(); }); await page.locator("#lg-names").uncheck(); const off2 = await stat(); expect(off2.names).toBe(0);
@@ -502,11 +497,6 @@ test("Stage 8: 港湾・空港・航路がレイヤーで切り替わり(シミ�
   await page.click("#dock-atlas"); await expect(page.locator("#hubs")).toBeVisible(); await expect(page.locator("#hub-summary")).toContainText("国際ハブ");
   expect(await page.locator("#trend-hubs polyline").count()).toBe(3);
   await page.click("#hub-airports summary"); await expect(page.locator("#hub-airports")).toContainText("国際ハブ空港");
-  // a past year: fewer airports than now, and the atlas says which year it shows
-  await page.evaluate(() => (window as any).__kfm.setViewYear(1960)); await page.waitForTimeout(200); if (!(await page.isVisible("#hubs"))) await page.click("#dock-atlas");
-  await expect(page.locator("#hubs")).toContainText("1960年");
-  expect(await app(page, "a => a.viewYear")).toBe(1960);
-  await page.evaluate(() => (window as any).__kfm.setViewYear(null));
   await page.click("#dock-timeline"); await page.click("#tl-hub");
   await expect(page.locator("#sheet-body .issue").filter({ hasText: /空港|港|便|航路/ }).first()).toBeVisible();
   expect(errs).toEqual([]);
@@ -950,7 +940,7 @@ test("Stage 25: 凡例の線の色は地図と同じ表の色だけ。×50はな
   const errs = watchErrors(page); await startReal(page);
   await page.evaluate(() => (window as any).__kfm.openSheet(null)); await page.click("#btn-legend"); await page.waitForSelector("#legend-side");
   const cols = (await page.evaluate(() => [...document.querySelectorAll("#legend-side svg")].flatMap((s) => [...s.querySelectorAll("[stroke]")].map((l) => l.getAttribute("stroke")!)))) as string[];
-  const allowed = new Set([...allStyleColours()].map(hex).concat(["#3b1f6e", "#7a4fb5", hex(AIR_LINE.colour)])); expect(cols.length).toBeGreaterThan(30); for (const c of cols) expect(allowed.has(c), c).toBe(true);
+  const allowed = new Set([...allStyleColours()].map(hex).concat(["#3b1f6e", "#7a4fb5"])); expect(cols.length).toBeGreaterThan(30); for (const c of cols) expect(allowed.has(c), c).toBe(true);
   expect(new Set(cols).size).toBeLessThanOrEqual(allowed.size);
   expect(await page.locator("#speed-50").count()).toBe(0); expect(await page.locator("#speed-20").count()).toBe(1);
   expect(errs).toEqual([]);
@@ -976,5 +966,52 @@ test("Stage 25: 150年後の2350年にも遷都と改元。元号は使った名
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n, a.sim.e2200hist.length]")).toEqual(["road0", 1, 1]);
   await page.click("#road0-skip"); await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForTimeout(2500);
   expect(await app(page, "a => [a.sim.e2200.n, a.sim.e2200hist.length, a.sim.e2200.state]")).toEqual([1, 1, "done"]);   // no second firing
+  expect(errs).toEqual([]);
+});
+
+test("Stage 26: 初期設定中でも地形図/道路図を切り替えられ、選んだ元号・首都は変わらない。府県境は1本だけ", async ({ page }) => {
+  test.setTimeout(240000); await page.setViewportSize({ width: 360, height: 740 });
+  const errs = watchErrors(page); await bootReal(page);
+  await page.waitForSelector("#setup-bg"); await page.click("#setup-tab-era");
+  if (!(await page.isVisible("#era-list"))) await page.click("#era-open"); await page.waitForSelector("#era-list"); await clickEra(page, 3); const era0 = await app(page, "a => a.firstEra");
+  const bg0 = await app(page, "a => a.bg"); await page.click("#rw-bg"); const bg1 = await app(page, "a => a.bg"); expect(bg1).not.toBe(bg0); expect(await app(page, "a => a.firstEra")).toBe(era0); expect(await page.isVisible("#era-list")).toBe(true);   // the list stays open, the choice stays
+  await page.click("#rw-close"); await seatSelect(page, "capital", "JP-40"); const seatNow = await page.textContent("#seat-now");
+  expect(await page.evaluate(() => { const r = document.getElementById("setup-bg")!.getBoundingClientRect(); return r.width >= 40 && r.height >= 30 && r.right <= innerWidth; })).toBe(true);   // reachable with a thumb on a narrow screen
+  await page.click("#setup-bg"); expect(await app(page, "a => a.bg")).toBe(bg0); expect(await page.textContent("#seat-now")).toBe(seatNow); expect(await app(page, "a => a.firstEra")).toBe(era0);   // nothing chosen was reset
+  // prefecture borders: the real ones (地球地図日本) are drawn once; the cell-assignment stair-steps remain only inside Hokkaido's three regions
+  const b = await app(page, "a => { const r = a.r; const bd = r.gm?.border; const hk = r.hokb?.a ?? r.hokkaidoBorders(a.terrain); return { real: r.gmSplit.border.length / 4, hasBorder: !!bd, hokkaido: hk.length / 4, all: a.terrain.borders.length / 4 }; }") as { real: number; hasBorder: boolean; hokkaido: number; all: number };
+  expect(b.hasBorder).toBe(true); expect(b.real).toBeGreaterThan(500); expect(b.hokkaido).toBeGreaterThan(0); expect(b.hokkaido).toBeLessThan(b.all / 4);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 26: 凡例は新幹線・リニアが1項目で劣化段階を出さない。空路は描かれる。過去年スライダーは無い", async ({ page }) => {
+  test.setTimeout(300000); await page.setViewportSize({ width: 360, height: 740 });
+  const errs = watchErrors(page); await startReal(page);
+  await page.evaluate(() => (window as any).__kfm.openSheet(null)); await page.click("#btn-legend"); await page.waitForSelector("#legend-side");
+  const caps = (await page.evaluate(() => [...document.querySelectorAll("#legend-side .lg-cap")].map((e) => e.textContent!))) as string[];
+  expect(caps.filter((c) => /新幹線|リニア/.test(c)).length).toBe(1); expect(caps.some((c) => /傷み|良|荒廃/.test(c))).toBe(false); expect(caps.some((c) => c.startsWith("空路"))).toBe(true);
+  await page.evaluate(() => (window as any).__kfm.ffYears(55)); await page.waitForTimeout(500);
+  const air = await app(page, "a => { const g = a.r.roads.g.lanes; const n = a.sim.hubs ? a.sim.hubs.routes.filter((r) => r.mode === 'air' && !r.intl && r.state === 'open').length : 0; return { routes: n, drawn: g.getLocalBounds().width > 0 }; }") as { routes: number; drawn: boolean };
+  expect(air.routes).toBeGreaterThan(0); expect(air.drawn).toBe(true);
+  await page.click("#dock-atlas"); expect(await page.locator("#atlas-slider").count()).toBe(0); expect(errs).toEqual([]);
+});
+
+test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①〜⑤と別に作られ、一覧から再開でき、再読込しても残る", async ({ page }) => {
+  test.setTimeout(400000); await page.setViewportSize({ width: 360, height: 740 }); page.on("dialog", (d) => void d.accept());
+  const errs = watchErrors(page); await startReal(page);
+  const menu = () => page.evaluate(() => { const a = (window as any).__kfm; if (a.sheet !== "menu") a.openSheet("menu"); else a.buildSheet(); });   // (openSheet on the open sheet would close it)
+  await menu(); await page.waitForSelector("#slot-1"); await page.click("#slot-1 .slot-save"); await page.waitForTimeout(600);
+  const slot1 = await page.textContent("#slot-1 .slot-text");
+  const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; }, y);
+  await jump(2000); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.y50 === 2000, null, { timeout: 90000 });
+  await menu(); await page.waitForSelector("#cp-2000-50y", { timeout: 20000 });
+  const m = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m, { timeout: 60000 });   // the clock went on after the checkpoint
+  await jump(2200); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.reloc === 1 && (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 });
+  expect(await app(page, "a => a.sim.e2200.n")).toBe(0); await menu(); await page.waitForSelector("#cp-2200-reloc"); expect(await page.textContent("#cp-2200-reloc")).toContain("遷都の直前");
+  expect(await page.locator("#cp-2200-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, not two
+  expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2200-reloc"); await page.waitForSelector("#cp-2000-50y");
+  await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12) <= 2001 && !a.sim.e2200")).toBe(true);   // (a game from the 2000 checkpoint, before the relocation event)
+  expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menu(); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
   expect(errs).toEqual([]);
 });

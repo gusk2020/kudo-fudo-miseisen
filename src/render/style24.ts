@@ -3,7 +3,7 @@
  *
  * Few colours: one hue per kind of traffic (six), the greys and black/white that edge and join them, and ONE highlight colour that nothing else uses.
  * Everything else is told by something other than a hue:
- *   - condition (良 / 可 / 悪 / 荒廃): the SHADE of the kind's own hue -- the worse, the paler (the game keeps the quality number; this is only how it shows);
+ *   - condition (良 / 可 / 悪 / 荒廃): NOT shown on the map (Stage 26) -- the game keeps the quality number and uses it; a line's colour is its kind's, whatever its state of repair;
  *   - tier (メイン / サブ / ローカル): how thick;
  *   - state (供用中 / 計画 / 廃線 / 未成): the kind of line -- solid, dashed, dotted;
  *   - bridge / tunnel: the edging and the cross-lines (the structure's own drawing, in the map's black and white).
@@ -62,7 +62,7 @@ function build(kind: Kind, tier: Tier, state: LineState, quality: number, o: Sty
   if (state === "lost") return { body: stroke(GONE_GREY, 1.2, 0.85, STATE_DASH.lost!, "butt") };
   if (state === "planned") return { body: stroke(base, 2.2, 0.95, STATE_DASH.planned!, "butt") };
   if (state === "unbuilt") return { body: stroke(base, 2.2, 0.95, STATE_DASH.unbuilt!, "round") };
-  const body = shade(kind, quality), tun = o.tunnel ? 0.5 : 1;
+  const body = base, tun = o.tunnel ? 0.5 : 1;
   if (state === "dormant") return { body: stroke(body, wd * 0.9, 0.9, STATE_DASH.dormant!, "butt") };
   if (kind === "road") return { casing: stroke(ROAD_EDGE, wd + 2.4, o.tunnel ? 0.4 : 0.95), body: stroke(body, wd, tun, o.old ? OLD_ROAD_DASH : undefined, o.old ? "butt" : "round"), ...(o.bypass ? { centre: stroke(PAPER, 1, 0.9) } : {}) };
   if (kind === "hwy") return { casing: stroke(mix(base, INK, 0.45), wd + 3.4, o.tunnel ? 0.4 : 0.95), body: stroke(body, wd, tun, o.old ? OLD_ROAD_DASH : undefined, o.old ? "butt" : "round"), centre: stroke(PAPER, 1, 0.9) };
@@ -85,11 +85,9 @@ export const HIGHLIGHT_LAYERS = [{ colour: PAPER, extra: 16, alpha: 0.85 }, { co
 export function allStyleColours(): Set<number> {
   const out = new Set<number>(); const add = (s?: Stroke) => { if (s) out.add(s.colour); };
   for (const kind of Object.keys(KIND_COLOUR) as Kind[]) for (const tier of ["main", "sub", "local"] as Tier[]) for (const state of ["open", "dormant", "planned", "unbuilt", "closed", "lost"] as LineState[]) for (const q of [90, 50, 20, 5]) for (const o of [{}, { old: true, bypass: true, tunnel: true, thin: true }] as StyleOpts[]) { const s = edgeStyle(kind, tier, state, q, o); add(s.casing); add(s.body); add(s.centre); add(s.ties); }
-  add(buildProgressStroke("road")); add(BRIDGE.edge(3)); add(BRIDGE.deck(3)); add(BRIDGE.girder); add(TUNNEL.edge); for (const l of HIGHLIGHT_LAYERS) out.add(l.colour);
+  add(buildProgressStroke("road")); add(AIR_STYLE.casing); add(AIR_STYLE.body); add(BRIDGE.edge(3)); add(BRIDGE.deck(3)); add(BRIDGE.girder); add(TUNNEL.edge); for (const l of HIGHLIGHT_LAYERS) out.add(l.colour);
   return out;
 }
 
-/** A domestic flight: a thin grey line between its two airports (not a road: no edging, no states). */
-export const AIR_LINE = { colour: GONE_GREY, width: 1.1, alpha: 0.7 } as const;
-/** The overlay of "compared with year N": the line got better (or is new) / worse. Two colours, shown only while comparing. */
-export const COMPARE = { good: 0x39a0ff, bad: 0xff3b3b } as const;
+/** A domestic flight (Stage 26): a black long-short dashed line on a white under-stroke, so it reads over land, sea and roads alike and is told from a road (solid), a sea route (teal dashes) and a closed line (grey dashes). */
+export const AIR_STYLE: EdgeStyle = { casing: stroke(PAPER, 3.6, 0.75, undefined, "butt"), body: stroke(INK, 1.7, 0.9, [10, 4, 2, 4], "butt") };

@@ -33,7 +33,7 @@ test("perf3: boot -> era -> ceremony -> x20 -> zoom/pan -> atlas -> save", async
   await page.click("#speed-0"); await stage("pan-zoom");
   for (let i = 0; i < 6; i++) { await page.evaluate((k) => { const a = (window as any).__kfm; a.r.setView({ cx: 100 + k * 40, cy: -150 + k * 20, zoom: [0.3, 0.9, 1.6, 0.6, 2.2, 0.35][k] }); }, i); await page.waitForTimeout(1500); }
   out.heap.push(await heap("panzoom"));
-  await stage("atlas"); for (const y of [1960, 1980, 2000, 1950]) { await page.evaluate((yy) => (window as any).__kfm.setViewYear(yy), y); await page.waitForTimeout(800); } await page.evaluate(() => (window as any).__kfm.setViewYear(null));
+  await stage("atlas"); await page.evaluate(() => (window as any).__kfm.openSheet("atlas")); await page.waitForTimeout(800);
   out.heap.push(await heap("atlas"));
   await stage("sheets"); for (const s of ["timeline", "ledger", "atlas", "policy", "layers"]) { await page.evaluate((x) => (window as any).__kfm.openSheet(x), s); await page.waitForTimeout(500); }
   await stage("ff40"); t = Date.now(); await page.evaluate(() => (window as any).__kfm.ffYears(40)); out.stages.push({ name: "ffYears(40) sync", ms: Date.now() - t }); out.heap.push(await heap("ff40"));

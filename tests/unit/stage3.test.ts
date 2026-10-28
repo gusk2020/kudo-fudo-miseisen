@@ -3,7 +3,7 @@ import { sanitizeSim } from "../../src/core/save2";
 import { advance, checkIntegrity, reviveRoutes, routeOfficial, simHash, stepMonthGen } from "../../src/sim/engine";
 import { HIST_EVENTS, REAL_HISTORY_UNTIL } from "../../src/sim/events";
 import { baseDials, composeDials } from "../../src/sim/eras";
-import { codesAt, routeAtYear, snapCode } from "../../src/sim/ledger";
+import { numberHistory } from "../../src/sim/ledger";
 import { displayName } from "../../src/sim/straits";
 import { ADOPT_BAR, POINTS_PER_WINDOW, autoResolve, boostOf, computeEnv, resolveWindow, topFive } from "../../src/sim/policy";
 import { modeOf, type SimState } from "../../src/sim/types";
@@ -209,16 +209,11 @@ describe("crossings between the islands", () => {
   });
 });
 
-describe("reading the past", () => {
-  test("snapshots fold back to the exact edge codes of that year; routes know what they were called", () => {
-    const { sim } = century("heisei"), years = sim.snaps.map((s) => s.year);
-    expect(years[0]).toBe(1950); expect(years.length).toBeGreaterThanOrEqual(18); expect(sim.snaps.slice(1).every((s) => s.delta)).toBe(true);
-    const last = sim.snaps[sim.snaps.length - 1], codes = codesAt(sim.snaps, last.year)!; expect(Object.keys(codes).length).toBeGreaterThan(Object.keys(sim.snaps[0].edges).length);
-    const now: Record<string, number> = {}; for (const e of Object.values(sim.edges)) now[e.id] = snapCode(e); let same = 0, n = 0; for (const [id, c] of Object.entries(codes)) { n++; if (now[id] === c) same++; } expect(same / n).toBeGreaterThan(0.6);
-    expect(codesAt(sim.snaps, 1949)).toBeNull(); expect(Object.keys(codesAt(sim.snaps, 1950)!).length).toBe(Object.keys(sim.snaps[0].edges).length);
-    const r = Object.values(sim.routes).find((x) => x.history.some((h) => /国鉄から/.test(h.text)))!;
-    expect(routeAtYear(sim, r, 1960).label).toMatch(/^国鉄\d+号線$/); expect(routeAtYear(sim, r, 2020).label).toBe(r.name); expect(routeAtYear(sim, r, 1960).exists).toBe(true);
-    const snapJson = JSON.stringify(sim.snaps).length; expect(snapJson).toBeLessThan(250_000);
+describe("a line's own history (Stage 26: no snapshots, no past-year view)", () => {
+  test("the game keeps no year-by-year snapshots; a line still knows what it was called, from its own history", () => {
+    const { sim } = century("heisei"); expect((sim as unknown as { snaps?: unknown }).snaps).toBeUndefined();
+    const r = Object.values(sim.routes).find((x) => x.history.some((h) => /国鉄から/.test(h.text)))!, hist = numberHistory(sim, r);
+    expect(hist[0].label).toMatch(/^国鉄\d+号線$/); expect(hist[hist.length - 1].label).toBe(r.name); expect(hist.every((x, i) => i === 0 || x.year >= hist[i - 1].year)).toBe(true);
   });
 });
 
