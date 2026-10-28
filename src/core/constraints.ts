@@ -1,5 +1,5 @@
 /** Pure placement rules. No rendering, no DOM: input is world-space geometry, output is verdicts. */
-import { centroid, containsWithClearance, pointInPolygon, dist, dot, polygonsOverlap, principalAxis, scaleAbout, sub } from "./geom";
+import { centroid, containsWithClearance, pointInPolygon, pointSegDist, dist, dot, polygonsOverlap, principalAxis, scaleAbout, sub } from "./geom";
 import type { Vec } from "./types";
 
 export const HOKKAIDO_MIN_T = 0.5;   // centre must lie in Honshu's NE half (t >= 0.5)
@@ -38,6 +38,15 @@ export function featureInside(honshuMain: Vec[], shape: Vec[]): boolean {
 }
 export function featuresOverlap(a: Vec[], b: Vec[]): boolean {
   return polygonsOverlap(scaleAbout(a, centroid(a), LINEAR_CHECK_FACTOR), scaleAbout(b, centroid(b), LINEAR_CHECK_FACTOR));
+}
+/** Stage 27: Lake Biwa and Fuji's foot may overlap (the game's own picture: the foot drops away in a cliff into the water, the lake wins where they meet); what may not happen is the lake reaching Fuji's SUMMIT AREA --
+ *  the centre of the cone and a core of CORE_FRACTION of its mean radius stay clear of the lake. Not a claim that the two stand side by side in reality. */
+export const FUJI_CORE_FRACTION = 0.4;
+export function fujiCoreClear(lake: Vec[], fuji: Vec[]): boolean {
+  const c = centroid(fuji); if (pointInPolygon(c, lake)) return false;
+  const r = FUJI_CORE_FRACTION * (fuji.reduce((s, q) => s + Math.hypot(q[0] - c[0], q[1] - c[1]), 0) / Math.max(1, fuji.length));
+  for (let i = 0; i < lake.length; i++) if (pointSegDist(c, lake[i], lake[(i + 1) % lake.length]) < r) return false;
+  return true;
 }
 export function islandsOverlap(a: Vec[][], b: Vec[][]): boolean {
   for (const p of a) for (const q of b) if (polygonsOverlap(p, q)) return true;
