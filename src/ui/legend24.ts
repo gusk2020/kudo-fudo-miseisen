@@ -5,11 +5,12 @@
  */
 import { h } from "./app";
 import { legendItems } from "../render/legendSamples";
+import { ROAD_LAND, hex } from "../render/style24";
 
 const SVG = (inner: string) => `<svg viewBox="0 0 64 16" width="100%" height="16" preserveAspectRatio="none" aria-hidden="true">${inner}</svg>`;
 /** The strip: a head (left/right switch, filters, close) and the entries. */
 export function buildLegendStrip(opts: { side: "left" | "right"; swap: () => void; close: () => void; filters: () => void }): HTMLElement {
-  const root = h("aside", { id: "legend-side", class: "legend-strip " + opts.side, "aria-label": "凡例" });
+  const root = h("aside", { id: "legend-side", class: "legend-strip " + opts.side, "aria-label": "凡例", style: `background:${hex(ROAD_LAND)}` });   // (Stage 29: the road map's own land colour, not a dark panel: a sample is read against the ground it is drawn on)
   const head = h("div", { class: "lg-head" },
     h("button", { id: "lg-swap", type: "button", title: opts.side === "left" ? "右へ移す" : "左へ移す", onclick: opts.swap }, opts.side === "left" ? "▶" : "◀"),
     h("button", { id: "lg-filters", type: "button", title: "表示の切替", onclick: opts.filters }, "切替"),

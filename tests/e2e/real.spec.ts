@@ -1153,3 +1153,13 @@ test("Stage 29: 2050年のセーブポイントを2079年で読み込むと2050�
   expect(await year()).toBe(saved); expect(await app(page, "a => a.sim.e2200 ?? null")).toBe(null);
   expect(errs).toEqual([]);
 });
+
+/** Stage 29-D: the vertical legend stands on the road map's own land colour (one shared value), its words stay readable, and its samples are the map's styles. */
+test("Stage 29: 縦型凡例の背景は道路地図の土地と同じ色(黒でない)。文字は読める", async ({ page }) => {
+  test.setTimeout(200000); await page.setViewportSize({ width: 360, height: 740 }); const errs = watchErrors(page); await startReal(page);
+  await page.evaluate(() => (window as any).__kfm.openSheet(null)); await page.click("#btn-legend"); await page.waitForSelector("#legend-side");
+  const land = await page.evaluate(() => { const c = getComputedStyle(document.getElementById("legend-side")!).backgroundColor, cap = getComputedStyle(document.querySelector("#legend-side .lg-cap")!).color; return { c, cap }; });
+  expect(land.c).toBe("rgb(243, 239, 228)");   // ROAD_LAND = 0xf3efe4, the colour the road map fills its land with
+  const lum = (s: string) => { const m = s.match(/\d+/g)!.map(Number); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }; expect(lum(land.cap)).toBeLessThan(90);   // dark words on the light ground
+  expect(await app(page, "a => a.bg")).toBe("roadmap"); expect(errs).toEqual([]);
+});

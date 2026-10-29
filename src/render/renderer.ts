@@ -1,3 +1,4 @@
+import { ROAD_LAND } from "./style24";
 import GMJ from "../data/coast-gmj.json";
 import { gridBordersWithin, splitGmj } from "./gmBorders";
 import { streamKeep } from "./streams";
@@ -137,23 +138,23 @@ export class Renderer {
     const coast = new Graphics(), fills = new Graphics();
     const gmOn = !!s.real;   // Stage 22: on the real map the coastline is 地球地図日本's (the mainland, the added islands and the islets alike)
     if (gmOn) {
-      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.mask.destroy(); this.gm?.coast.destroy(); this.gm?.border.destroy(); const f = new Graphics(), c = new Graphics(), m = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); else { f.poly(pts).fill({ color: 0x93b266 }); m.poly(pts).fill({ color: 0xffffff }); } } const seg = (g: Graphics, a: number[]) => { for (let i = 0; i < a.length; i += 4) { const p = lonLatToReal(a[i] / 1000, a[i + 1] / 1000), q = lonLatToReal(a[i + 2] / 1000, a[i + 3] / 1000); g.moveTo(p[0], -p[1]).lineTo(q[0], -q[1]); } }, bd = new Graphics(); seg(c, this.gmSplit.coast); c.stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); seg(bd, this.gmSplit.border); bd.stroke({ width: 1, color: 0x5b1f6e, alpha: 0.9, pixelLine: true }); this.gm = { fill: f, mask: m, coast: c, border: bd, bg: bgKey }; }
+      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.mask.destroy(); this.gm?.coast.destroy(); this.gm?.border.destroy(); const f = new Graphics(), c = new Graphics(), m = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); else { f.poly(pts).fill({ color: 0x93b266 }); m.poly(pts).fill({ color: 0xffffff }); } } const seg = (g: Graphics, a: number[]) => { for (let i = 0; i < a.length; i += 4) { const p = lonLatToReal(a[i] / 1000, a[i + 1] / 1000), q = lonLatToReal(a[i + 2] / 1000, a[i + 3] / 1000); g.moveTo(p[0], -p[1]).lineTo(q[0], -q[1]); } }, bd = new Graphics(); seg(c, this.gmSplit.coast); c.stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); seg(bd, this.gmSplit.border); bd.stroke({ width: 1, color: 0x5b1f6e, alpha: 0.9, pixelLine: true }); this.gm = { fill: f, mask: m, coast: c, border: bd, bg: bgKey }; }
       this.base.addChild(this.gm.fill);
       if (!landFlat && this.landSprite) { this.base.addChild(this.gm.mask); this.landSprite.mask = this.gm.mask; this.base.addChild(this.landSprite); }   // (the polygons' flat land, then the relief inside them)
     }
     for (const id of gmOn ? [] : ISLAND_IDS) {
       const bp = pending?.body?.id === id ? worldParts(id, { ops: s.bodies[id].ops, place: pending.body.place ?? s.bodies[id].place }, pending.body.op) : worldParts(id, s.bodies[id]);
       for (const poly of bp) {
-        if (landFlat) fills.poly(flat(poly)).fill({ color: bad.has(id) ? 0xd89090 : this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
+        if (landFlat) fills.poly(flat(poly)).fill({ color: bad.has(id) ? 0xd89090 : this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d });
         if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(bad.has(id) ? 3 : 1.4), color: bad.has(id) ? 0xd22 : 0x2c3e1f });
       }
     }
     if (s.islands && !gmOn) for (const id of EXTRA_IDS) for (const poly of EXTRA.islands[id].parts) {   // the added islands (world = real km; never deformed)
-      if (landFlat) fills.poly(flat(poly)).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
+      if (landFlat) fills.poly(flat(poly)).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d });
       if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(1.4), color: 0x2c3e1f });
     }
     if (this.islets) for (const o of this.islets) {   // Stage 20 / 22: the island's own outline is in the coastline above; a speck too small to see gets a small dot (never a made-up shape); one with no outline in the data, a dot too
-      if (!o.shaped || o.tiny || !gmOn) { const r = px(2.6); fills.circle(o.pos[0], -o.pos[1], r).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); coast.circle(o.pos[0], -o.pos[1], r).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f }); }
+      if (!o.shaped || o.tiny || !gmOn) { const r = px(2.6); fills.circle(o.pos[0], -o.pos[1], r).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); coast.circle(o.pos[0], -o.pos[1], r).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f }); }
       if (z > 0.9 || (z > 0.45 && o.len >= 12)) { const tx = new Text({ text: o.name, style: { fontSize: 10, fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(o.pos[0] + px(6), -o.pos[1] - px(5)); this.labels.addChild(tx); }
     }
     this.base.addChild(fills);
