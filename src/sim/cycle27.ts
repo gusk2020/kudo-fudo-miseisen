@@ -43,3 +43,11 @@ export function cycleShape(e2200: SimState["e2200"], year: number) {
   if (!e2200) return null; const since = Math.max(0, Math.min(CYCLE_YEARS - 1e-9, year - e2200.year));
   return { build: budgetAt(since, BUILD_FLOOR_POINTS), damp: budgetAt(since, BUILD_DAMP_POINTS), airsea: budgetAt(since, AIR_SEA_FLOOR_POINTS) };
 }
+
+/**
+ * Stage 28: the natural increase the rebuilding brings -- a baby boom after a reconstruction, the way 1950-75 was (about +1.6% a year in the real run-up); added to the nation's demographic rate,
+ * so the people are BORN (and the common rescale that keeps the nation on its course carries them), never moved or conjured between cities. It rises over the first years, holds through the
+ * rebuilding, and is gone by the middle of the balance phase; the decline and the time before the first relocation keep the ordinary course. All of it is this table.
+ */
+export const GROWTH_RATE_POINTS: [number, number][] = [[0, 0], [8, 0.012], [40, 0.012], [58, 0], [150, 0]];
+export const cycleGrowthRate = (sim: Pick<SimState, "startYear" | "month" | "e2200">): number => { const c = cycleOf(sim); return c ? budgetAt(c.since, GROWTH_RATE_POINTS) : 0; };

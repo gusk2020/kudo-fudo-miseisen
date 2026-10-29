@@ -5,7 +5,7 @@
  */
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
 import { due2200, open2200, waiting2200 } from "./event2200";
-import { cycleOf } from "./cycle27";
+import { cycleGrowthRate, cycleOf } from "./cycle27";
 import { newTier23, reviewTiers } from "./tier23";
 import { newNumReg, syncNumbers } from "./numreg";
 import { enforceCaps } from "./cap20";
@@ -255,7 +255,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   // moves people between cities. Otherwise the total itself drifted with how the people were spread (measured: +4..+69 % by 2100 with the migration on).
   const realRate = sim.stage3 === true && y <= 2026; let natNum = 0, natDen = 0, curNum = 0, curDen = 0;
   if (sim.econ) for (const c of w.cities) { const b = basePop(sim, w, c), p = sim.cities[c.id].pop; natNum += b * popRate(y, b, realRate); natDen += b; curNum += p * popRate(y, p, realRate); curDen += p; }
-  const natRate = natDen ? natNum / natDen : 0, curRate = curDen ? curNum / curDen : 0;
+  const natRate = (natDen ? natNum / natDen : 0) + cycleGrowthRate(sim), curRate = curDen ? curNum / curDen : 0;
   // Stage 14: in a game where the seats head the city order, what access and the regional boosts add to a city's growth only moves people between cities (the population-weighted mean is taken out, as the
   // migration and the policy already do); the nation then follows its demographic course, and the redistribution of the seats' people (seats14.ts) cannot make the total drift.
   const totalBefore = sim.seats14 ? w.cities.reduce((t, c) => t + sim.cities[c.id].pop, 0) : 0;

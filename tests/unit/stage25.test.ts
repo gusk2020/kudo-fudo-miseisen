@@ -11,7 +11,7 @@ const fresh = (): KaigenState => newKaigen(CAND_1945[0], 0, 1);
 const names = (g: { cands: { name: string }[] }) => g.cands.map((c) => c.name);
 
 describe("Stage 25: the era names of the relocation events", () => {
-  it("the schedule is 2200, 2350, 2500, 2650, 2800", () => { expect([0, 1, 2, 3, 4].map(relocYear)).toEqual([2200, 2350, 2500, 2650, 2800]); });
+  it("the schedule is 2200, 2350, 2500, 2650, 2800", () => { expect([0, 1, 2, 3, 4].map((n) => relocYear(n))).toEqual([2200, 2350, 2500, 2650, 2800]); });
   it("the first group is the 1912 group; the second is the game-start group minus the one chosen then", () => {
     const k = fresh(), g0 = relocGroup(k, 0, 2200); expect(names(g0)).toEqual(CAND_2200.map((c) => c.name));
     const g1 = relocGroup(k, 1, 2350); expect(names(g1)).toEqual(CAND_1945.map((c) => c.name).filter((n) => n !== "神化"));
@@ -90,7 +90,7 @@ describe("Stage 25: the 150-year relocation event", () => {
 });
 
 import { readFileSync } from "node:fs";
-import { AIR_STYLE, HIGHLIGHT_COLOUR, KIND_COLOUR, STATE_DASH, TIER_OF, allStyleColours, edgeStyle, hex, type Kind, type LineState, type Tier } from "../../src/render/style24";
+import { AIR_STYLE, HIGHLIGHT_COLOUR, KIND_COLOUR, TIER_OF, allStyleColours, edgeStyle, hex, type Kind, type LineState, type Tier } from "../../src/render/style24";
 import { legendItems, svgOfStyle } from "../../src/render/legendSamples";
 
 describe("Stage 25: the colours of the lines, and the legend that must show them", () => {
@@ -107,7 +107,7 @@ describe("Stage 25: the colours of the lines, and the legend that must show them
     for (const k of ["road", "rail"] as Kind[]) { const w = tiers.map((t) => edgeStyle(k, t, "open", 90).body.width); expect(w[0]).toBeGreaterThan(w[1]); expect(w[1]).toBeGreaterThan(w[2]); }
     // Stage 27: three states on the map -- 供用中 (a resting line too), 計画・未成, 廃線・廃道 -- each told from the others by its line, and a road told from a railway inside each
     const sig = (k: Kind, st: LineState) => JSON.stringify(edgeStyle(k, "sub", st, 90)); for (const k of ["road", "hwy", "rail", "hsr", "maglev"] as Kind[]) { expect(sig(k, "dormant")).toBe(sig(k, "open")); expect(sig(k, "unbuilt")).toBe(sig(k, "planned")); expect(sig(k, "lost")).toBe(sig(k, "closed")); expect(new Set([sig(k, "open"), sig(k, "planned"), sig(k, "closed")]).size).toBe(3); }
-    expect(edgeStyle("road", "sub", "open", 90).body.dash).toBeUndefined(); for (const st of ["planned", "closed"] as LineState[]) { expect(edgeStyle("road", "sub", st, 90).body.dash).toEqual(STATE_DASH[st]); expect(edgeStyle("road", "sub", st, 90).body.colour).not.toBe(edgeStyle("rail", "sub", st, 90).body.colour); }   // (a gone road and a gone railway still differ)
+    for (const st of ["planned", "closed"] as LineState[]) expect(edgeStyle("road", "sub", st, 90).body.colour).not.toBe(edgeStyle("rail", "sub", st, 90).body.colour);   // (a gone road and a gone railway still differ)
     expect(TIER_OF.highgrade).toBe("main");
   });
   it("the legend's samples ARE the map's styles: every entry carries the style it was made from and its svg holds that style's colour, width and dash", () => {

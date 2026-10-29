@@ -818,11 +818,11 @@ test("Stage 23: 府県は初期の選択式(地方ブロック別・北から南
   expect(errs).toEqual([]);
 });
 
-test("Stage 22: 2200年の遷都・改元・復興方針を選び、国道0号を逆向きに描いて開通。保存しても再発火しない", async ({ page }) => {
+test("Stage 22: 2100年の遷都・改元・復興方針を選び、国道0号を逆向きに描いて開通。保存しても再発火しない", async ({ page }) => {
   test.setTimeout(240000);
   const errs = watchErrors(page); await startReal(page);
   // jump the clock to the eve of 2200 (the event fires at the first year boundary on or after it)
-  await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (2200 - s.startYear) * 12; s.kaigen.next = 2230; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "priority"; s.speed = 20; });
+  await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (2100 - s.startYear) * 12; s.kaigen.next = 2130; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "priority"; s.speed = 20; });
   await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 });
   await page.waitForSelector("#e22-box", { timeout: 20000 });
   expect(await page.locator("[id^=e22-era-]").count()).toBe(5);
@@ -844,11 +844,11 @@ test("Stage 22: 2200年の遷都・改元・復興方針を選び、国道0号�
   expect(errs).toEqual([]);
 });
 
-test("Stage 23: 完全自動でも2200年で必ず止まり、選ぶまで進まない。現状維持は明示のボタン。保存スロットは1行で、保存した首都・副首都・西暦が出る", async ({ page }) => {
+test("Stage 23: 完全自動でも2100年で必ず止まり、選ぶまで進まない。現状維持は明示のボタン。保存スロットは1行で、保存した首都・副首都・西暦が出る", async ({ page }) => {
   test.setTimeout(240000);
   await page.setViewportSize({ width: 360, height: 740 });
   const errs = watchErrors(page); await startReal(page);
-  await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (2200 - s.startYear) * 12; s.kaigen.next = 2230; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; });
+  await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (2100 - s.startYear) * 12; s.kaigen.next = 2130; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; });
   await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 });
   await page.waitForSelector("#e22-box", { timeout: 20000 });
   const m = await app(page, "a => a.sim.month"); await page.waitForTimeout(2500); expect(await app(page, "a => a.sim.month")).toBe(m); expect(await app(page, "a => a.sim.e2200.state")).toBe("pending");   // ×20 and 完全自動: still waiting
@@ -859,7 +859,7 @@ test("Stage 23: 完全自動でも2200年で必ず止まり、選ぶまで進ま
   await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = null; a.openSheet("menu"); }); await page.waitForSelector("#slot-1");
   await page.locator("#slot-2 .slot-save").click(); await page.waitForFunction(() => /\d{4}年/.test(document.getElementById("slot-2")?.textContent ?? ""), null, { timeout: 15000 });
   const row = await page.evaluate(() => { const r = document.getElementById("slot-2")!, b = r.getBoundingClientRect(), t = r.querySelector(".slot-text") as HTMLElement; return { h: b.height, w: b.width, text: r.textContent, load: !!r.querySelector(".slot-load"), save: !!r.querySelector(".slot-save"), right: b.right }; });
-  expect(row.h).toBeLessThan(48); expect(row.right).toBeLessThanOrEqual(360); expect(row.load && row.save).toBe(true); expect(row.text).toMatch(/②.*東京府.*大阪府.*2200年/);
+  expect(row.h).toBeLessThan(48); expect(row.right).toBeLessThanOrEqual(360); expect(row.load && row.save).toBe(true); expect(row.text).toMatch(/②.*東京府.*大阪府.*2100年/);
   expect(await page.locator("#slot-5").textContent()).toContain("(空)");
   expect(errs).toEqual([]);
 });
@@ -891,10 +891,10 @@ test("Stage 23: 台帳から路線を選ぶと地図で強調され台帳が小�
   expect(errs).toEqual([]);
 });
 
-test("Stage 24: 2200年は改元・遷都を決めても国道0号を描くか見送るまで止まったまま。移転先が地図の印・保存表示に出る", async ({ page }) => {
+test("Stage 24: 2100年は改元・遷都を決めても国道0号を描くか見送るまで止まったまま。移転先が地図の印・保存表示に出る", async ({ page }) => {
   test.setTimeout(240000); await page.setViewportSize({ width: 360, height: 740 });
   const errs = watchErrors(page); await startReal(page);
-  await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (2200 - s.startYear) * 12; s.kaigen.next = 2230; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; });
+  await page.evaluate(() => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (2100 - s.startYear) * 12; s.kaigen.next = 2130; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; });
   await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box", { timeout: 20000 });
   await page.selectOption("#e22-sel-capital", "JP-40"); await page.selectOption("#e22-sel-sub", "JP-13"); await page.click("#e22-era-1"); await page.click("#e22-decide");
   expect(await app(page, "a => a.sim.e2200.state")).toBe("road0");
@@ -946,15 +946,15 @@ test("Stage 25: 凡例の線の色は地図と同じ表の色だけ。×50はな
   expect(errs).toEqual([]);
 });
 
-test("Stage 25: 150年後の2350年にも遷都と改元。元号は使った名が出ず、2回目の国道0号は別の路線。保存しても再発火しない", async ({ page }) => {
+test("Stage 25: 150年後の2250年にも遷都と改元。元号は使った名が出ず、2回目の国道0号は別の路線。保存しても再発火しない", async ({ page }) => {
   test.setTimeout(300000); await page.setViewportSize({ width: 360, height: 740 });
   const errs = watchErrors(page); await startReal(page);
   const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; }, y);
-  await jump(2200); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box");
+  await jump(2100); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box");
   await page.selectOption("#e22-sel-capital", "JP-40"); await page.selectOption("#e22-sel-sub", "JP-13"); await page.click("#e22-era-1"); await page.click("#e22-decide");
   const first = (await app(page, "a => a.sim.kaigen.eras[a.sim.kaigen.eras.length - 1].name")) as string; await page.click("#road0-skip");
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n]")).toEqual(["done", 0]);
-  await jump(2350); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.n === 1 && (window as any).__kfm.sim.e2200.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box");
+  await jump(2250); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.n === 1 && (window as any).__kfm.sim.e2200.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box");
   const m = (await app(page, "a => a.sim.month")) as number; await page.waitForTimeout(2000); expect(await app(page, "a => a.sim.month")).toBe(m);   // ×20 and 完全自動: stopped
   const labels = (await page.evaluate(() => [...document.querySelectorAll("[id^=e22-era-]")].map((b) => b.querySelector(".rw-label")!.textContent!))) as string[]; expect(labels.length).toBeGreaterThanOrEqual(10);
   const used = (await app(page, "a => a.sim.kaigen.eras.map((e) => e.name)")) as string[]; expect(used).toContain(first); for (const l of labels) expect(used.some((u) => l.startsWith(u + "(") || l === u), l).toBe(false);
@@ -1006,7 +1006,7 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   await jump(2000); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.y50 === 2000, null, { timeout: 90000 });
   await menu(); await page.waitForSelector("#cp-2000-50y", { timeout: 20000 });
   const m = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m, { timeout: 60000 });   // the clock went on after the checkpoint
-  await jump(2200); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
+  await jump(2100); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
   expect(await app(page, "a => a.sim.e2200.n")).toBe(0); expect(await app(page, "a => a.sim.cp?.reloc ?? 0")).toBe(0);   // Stage 27: nothing is saved before or in the middle of the event
   await page.waitForTimeout(1500); expect(await page.evaluate(() => (window as any).__kfm.sim.cp?.reloc ?? 0)).toBe(0);
   const bg0 = await app(page, "a => a.bg"); await page.click("#e22-bg"); expect(await app(page, "a => a.bg")).not.toBe(bg0); await page.waitForSelector("#e22-box");   // the map can be switched during the event; the sheet stays
@@ -1015,13 +1015,13 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   const palace = (await app(page, "a => { const w = a.world, p = a.sim.palace, c = w.cities.find((x) => x.pref === p.pref && x.kind === 'capital'); return { pref: p.pref, dx: Math.hypot(p.pos[0] - c.pos[0], p.pos[1] - c.pos[1]), marker: a.r.seatOverride ? Math.hypot(a.r.seatOverride.palace[0] - c.pos[0], a.r.seatOverride.palace[1] - c.pos[1]) : -1 }; }")) as { pref: string; dx: number; marker: number };
   expect(palace.pref).toBe("JP-04"); expect(palace.dx).toBeLessThan(1e-6); expect(palace.marker).toBeLessThan(1e-6);   // the palace really stands in the new prefecture (sim and map marker)
   await page.click("#road0-skip"); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.reloc === 1, null, { timeout: 90000 });
-  await menu(); await page.waitForSelector("#cp-2200-reloc"); expect(await page.textContent("#cp-2200-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2200-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
+  await menu(); await page.waitForSelector("#cp-2100-reloc"); expect(await page.textContent("#cp-2100-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2100-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
   expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
-  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2200-reloc"); await page.waitForSelector("#cp-2000-50y");
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.waitForSelector("#cp-2000-50y");
   await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12) <= 2001 && !a.sim.e2200")).toBe(true);   // (a game from the 2000 checkpoint, before the relocation event)
   expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menu(); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
   // the checkpoint taken after the 2200 event: loading it gives the world with the choices made, and nothing is asked again
-  await menu(); await page.waitForSelector("#cp-2200-reloc"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2200-reloc .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
+  await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2100-reloc .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n, a.sim.palace.pref, a.sim.cp.reloc]")).toEqual(["done", 0, "JP-04", 1]);
   const m2 = (await app(page, "a => a.sim.month")) as number; await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m2, { timeout: 60000 }); expect(await app(page, "a => a.sim.e2200.state")).toBe("done");   // it plays on; no event opens again
   expect(errs).toEqual([]);

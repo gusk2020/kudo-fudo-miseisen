@@ -38,9 +38,7 @@ export const widthOf = (kind: Kind, tier: Tier) => (kind === "road" || kind === 
 export type ViewState = "open" | "planned" | "abolished";
 export const viewState = (s: LineState): ViewState => (s === "open" || s === "dormant" ? "open" : s === "planned" || s === "unbuilt" ? "planned" : "abolished");
 export const VIEW_STATE_LABEL: Record<ViewState, string> = { open: "供用中", planned: "計画・未成", abolished: "廃線・廃道" };
-/** The dash of each state (px; null = solid). */
-export const STATE_DASH: Record<LineState, number[] | null> = { open: null, dormant: null, planned: [7, 4], unbuilt: [7, 4], closed: [4, 4], lost: [4, 4] };
-export const OLD_ROAD_DASH = [9, 3, 2, 3];   // 旧道: the stretch a bypass took the traffic from
+/** Stage 28: no line on the normal map is dashed or dotted -- every state is a continuous line. A planned line is an outline of its kind's hue with a pale core, a gone line a thin pale line of that hue; an open line is the plain solid one. */
 
 export interface Stroke { colour: number; width: number; alpha: number; dash?: number[]; cap: "round" | "butt" }
 /** What one edge is drawn with, bottom to top: the casing (if any), the body, a centre line (if any) and rail ties (if any). */
@@ -57,28 +55,26 @@ export function edgeStyle(kind: Kind, tier: Tier, state: LineState, quality: num
 }
 function build(kind: Kind, tier: Tier, state: LineState, quality: number, o: StyleOpts): EdgeStyle {
   const thin = o.thin ? 0.6 : 1, wd = widthOf(kind, tier) * (kind === "road" || kind === "hwy" ? (o.undesignated ? 0.8 : 1) : 1) * thin, base = KIND_COLOUR[kind];
-  if (kind === "sea") {   // a sea route is always dashed (it is not a road): state changes only how strong it is
-    const v = viewState(state), alpha = v === "open" ? 0.95 : v === "planned" ? 0.8 : 0.45;
-    return { body: stroke(base, 3, alpha, [7, 5], "butt") };
+  if (kind === "sea") {   // a sea route is a thin solid line in the sea colour: the state changes only how strong it is
+    const v = viewState(state), alpha = v === "open" ? 0.95 : v === "planned" ? 0.6 : 0.4;
+    return { body: stroke(v === "abolished" ? mix(base, PAPER, 0.4) : base, 2.4, alpha, undefined, "round") };
   }
   const vs = viewState(state);
-  if (vs === "abolished") return { body: stroke(mix(base, PAPER, 0.5), 1.8, 0.95, STATE_DASH.closed!, "butt") };   // a gone line: the kind's own hue, pale, dashed -- a road and a railway still differ
-  if (vs === "planned") return { body: stroke(base, 2.2, 0.95, STATE_DASH.planned!, "butt") };
+  if (vs === "abolished") return { body: stroke(mix(base, PAPER, 0.55), 1.4, 0.9, undefined, "round") };   // a gone line: the kind's own hue, pale and thin -- a road and a railway still differ
+  if (vs === "planned") return { casing: stroke(base, 3.6, 0.9, undefined, "round"), body: stroke(mix(base, PAPER, 0.8), 1.6, 1, undefined, "round") };   // a plan: the kind's hue as an outline round a pale core
   const body = base, tun = o.tunnel ? 0.5 : 1;
   if (kind === "road") return { casing: stroke(ROAD_EDGE, wd + 2.4, o.tunnel ? 0.4 : 0.85), body: stroke(body, wd, tun) };
   if (kind === "hwy") return { casing: stroke(mix(base, INK, 0.45), wd + 3.4, o.tunnel ? 0.4 : 0.9), body: stroke(body, wd, tun), centre: stroke(PAPER, 1, 0.9) };
   const casing = stroke(PAPER, wd + (thin < 1 ? 1.2 : 2.2), (thin < 1 ? 0.7 : 0.92) * (o.tunnel ? 0.45 : 1)), big = kind === "rail" ? 1 : 1.15;
   const out: EdgeStyle = { casing, body: stroke(body, wd * big, tun) };
-  if (kind === "rail") out.ties = stroke(PAPER, wd * 0.7, 0.95, [4, 5], "butt");
-  else if (kind === "hsr") out.centre = stroke(PAPER, 1.2, 0.95);
-  else out.centre = stroke(PAPER, 1.6, 0.95, [6, 4], "butt");
+  if (kind === "hsr" || kind === "maglev") out.centre = stroke(PAPER, 1.2, 0.95);   // (a 新幹線 and a リニア look alike on the map and share one legend entry; the game keeps them apart)
   return out;
 }
 /** The progress of a line being built: drawn solid over the dashes. */
 export const buildProgressStroke = (kind: Kind): Stroke => stroke(KIND_COLOUR[kind], 3, 1);
-/** A bridge: black edges, a white deck, girders (the road or rail itself runs on top). A tunnel: two dashed dark edges. */
+/** A bridge: black edges, a white deck, girders (the road or rail itself runs on top). A tunnel: two thin dark edges. */
 export const BRIDGE = { edge: (wd: number): Stroke => stroke(INK, wd + 8, 1, undefined, "butt"), deck: (wd: number): Stroke => stroke(PAPER, wd + 4.6, 0.97, undefined, "butt"), girder: stroke(INK, 1.5, 1), girderStep: 6 } as const;
-export const TUNNEL = { edge: stroke(INK, 1.7, 0.95, [4, 3], "butt") } as const;
+export const TUNNEL = { edge: stroke(INK, 1.2, 0.8, undefined, "butt") } as const;
 /** The chosen line: white halo, black edge, the highlight colour, a white core. */
 export const HIGHLIGHT_LAYERS = [{ colour: PAPER, extra: 16, alpha: 0.85 }, { colour: INK, extra: 11, alpha: 1 }, { colour: HIGHLIGHT_COLOUR, extra: 7, alpha: 1 }, { colour: PAPER, extra: 2, alpha: 1 }] as const;
 
@@ -90,7 +86,7 @@ export function allStyleColours(): Set<number> {
   return out;
 }
 
-/** A domestic flight (Stage 27): a pale blue-grey line drawn as a gentle arc between its two airports, on a faint white under-stroke -- light enough not to hide roads and names, and told from a road (solid, kind hue), a sea route (teal dashes) and a gone line (pale dashes) by being a thin curve. */
+/** A domestic flight (Stage 27): a pale blue-grey line drawn as a gentle arc between its two airports, on a faint white under-stroke -- light enough not to hide roads and names, and told from a road (solid, kind hue), a sea route and a gone line by being a thin curve. */
 export const AIR_STYLE: EdgeStyle = { casing: stroke(PAPER, 3.4, 0.5, undefined, "round"), body: stroke(0x9fb0c8, 1.5, 0.85, undefined, "round") };
 /** The arc of a flight: a quadratic curve from `a` to `b` (both end points exactly), bulging by 18% of the distance (at most 70 km, so a long flight is not a huge loop), always toward the north (toward the east for a flight that runs north-south), so two flights never bulge into each other. Display only. */
 export const AIR_BULGE = 0.18, AIR_BULGE_MAX_KM = 70, AIR_SEGMENTS = 12;

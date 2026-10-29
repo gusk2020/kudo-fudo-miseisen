@@ -31,3 +31,20 @@ describe("Stage 28: 遷都は1950年起点の150年周期(2100, 2250, 2400, 2550
     expect(createSim(w, "m", hash, 3, { stage3: true, firstEra: 0, techK: 2 }).relocFirst).toBeUndefined();   // (a game made without the option is the older kind)
   });
 });
+
+import { AIR_STYLE, KIND_COLOUR, edgeStyle, hex, TUNNEL, type Kind, type LineState, type Tier } from "../../src/render/style24";
+import { legendItems } from "../../src/render/legendSamples";
+describe("Stage 28: 通常地図の線は連続線だけ(点線・破線なし)", () => {
+  it("どの種別・段階・状態の線にも dash がなく、凡例の見本にも stroke-dasharray がない", () => {
+    const kinds = Object.keys(KIND_COLOUR) as Kind[];
+    for (const k of kinds) for (const t of ["main", "sub", "local"] as Tier[]) for (const st of ["open", "dormant", "planned", "unbuilt", "closed", "lost"] as LineState[]) for (const o of [{}, { thin: true, tunnel: true }]) {
+      const e = edgeStyle(k, t, st, 60, o); for (const s of [e.casing, e.body, e.centre, e.ties]) expect(s?.dash, `${k} ${t} ${st}`).toBeUndefined();
+    }
+    for (const s of [AIR_STYLE.casing, AIR_STYLE.body, TUNNEL.edge]) expect(s?.dash).toBeUndefined();
+    for (const it of legendItems()) { expect(it.svg).not.toContain("dasharray"); expect(it.caption).not.toMatch(/点線|破線|鎖線|ドット/); }
+  });
+  it("計画・未成と廃線・廃道は、道路と鉄道を見分けられ、供用中とも区別できる", () => {
+    for (const st of ["planned", "closed"] as LineState[]) { const r = edgeStyle("road", "sub", st, 90), l = edgeStyle("rail", "sub", st, 90); expect(JSON.stringify(r)).not.toBe(JSON.stringify(l)); expect(hex((r.casing ?? r.body).colour)).not.toBe(hex((l.casing ?? l.body).colour)); }
+    for (const k of ["road", "rail", "sea"] as Kind[]) expect(new Set(["open", "planned", "closed"].map((st) => JSON.stringify(edgeStyle(k, "sub", st as LineState, 90)))).size).toBe(3);
+  });
+});
