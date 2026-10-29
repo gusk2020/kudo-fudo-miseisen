@@ -1,0 +1,18 @@
+name: Build lakes
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  lakes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/build_lakes.py src/data/lakes.json
+      - run: python3 -c "import json;d=json.load(open('src/data/lakes.json'));n={l['name'] for l in d['lakes']};need={'琵琶湖','霞ヶ浦','サロマ湖','宍道湖','浜名湖'};m=need-n;assert not m,m;b=[l for l in d['lakes'] if l['name']=='琵琶湖'][0];assert len(b['holes'])>=1,'no islands in Biwa';print('ok',len(d['lakes']))"
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/data/lakes.json
+          git commit -m "Stage 29: lakes, brackish lakes and lake islands from OpenStreetMap (tools/build_lakes.py)" || echo "nothing to commit"
+          git push
