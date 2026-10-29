@@ -1,5 +1,9 @@
 name: Build lakes
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/stage29]
+    paths: ["tools/build_lakes.py", ".github/workflows/build-lakes.yml"]
 permissions:
   contents: write
 jobs:
