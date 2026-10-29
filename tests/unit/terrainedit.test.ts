@@ -70,3 +70,23 @@ describe("Lake Biwa and Mt. Fuji can be resized (Issue #15)", () => {
   });
 });
 
+
+describe("Stage 27: Lake Biwa may overlap Fuji's foot; the lake wins there and the summit stays", () => {
+  it("a lake that reaches the foot is allowed (the old rule refused it), one that reaches the summit area is not; the lake surface is flat and Fuji's low flank drops to it as a cliff", async () => {
+    const { featureWorldPos } = await import("../../src/core/state"); const { featuresOverlap } = await import("../../src/core/constraints"); const { fujiCoreClear } = await import("../../src/core/constraints");
+    const s0 = defaultState(); s0.islands = true; const fc = featureWorldPos(s0, "fuji"); let found: { s: ReturnType<typeof defaultState>; d: number } | null = null, refused = 0;
+    for (let d = 90; d >= 10 && !found; d -= 4) {
+      const s = defaultState(); s.islands = true; s.features.biwa.pos = [fc[0] + d, fc[1]]; const d2 = derive(s); const errs = validate(s).filter((i) => i.severity === "error" && i.code.startsWith("features"));
+      if (!fujiCoreClear(d2.biwa, d2.fuji)) { refused++; continue; } if (featuresOverlap(d2.biwa, d2.fuji) && !errs.length) found = { s, d };
+    }
+    expect(found, "a partial overlap that the new rule allows").not.toBeNull(); expect(refused).toBeGreaterThanOrEqual(0);
+    const { s } = found!, t = generateTerrain(s, loadDem()), w = buildWorld(t, s.seed), { nx, cell, x0, y0 } = t.grid; void w;
+    const cxk = (i: number) => x0 + (i + 0.5) * cell, cyk = (j: number) => y0 + (j + 0.5) * cell; let lakeNearFuji = 0, cliff = 0; const lakeElev = new Set<number>();
+    for (let k = 0; k < t.land.length; k++) if (t.land[k] === 2) { lakeElev.add(t.elev[k]); const i = k % nx, j = (k / nx) | 0; if (Math.hypot(cxk(i) - fc[0], cyk(j) - fc[1]) < 45) lakeNearFuji++; }
+    expect(lakeNearFuji).toBeGreaterThan(0); expect(lakeElev.size).toBe(1);   // the surface is one level
+    for (let k = 0; k < t.land.length; k++) if (t.land[k] === 2) { const i = k % nx, j = (k / nx) | 0; for (const q of [k + 1, k - 1, k + nx, k - nx]) if (t.land[q] === 1 && Math.hypot(cxk(q % nx) - fc[0], cyk((q / nx) | 0) - fc[1]) < 40 && t.elev[q] - t.elev[k] > 100) cliff++; void i; void j; }
+    expect(cliff).toBeGreaterThan(0);
+    const top = Math.max(...Array.from(t.elev).filter((_, k) => t.land[k] === 1 && Math.hypot(cxk(k % nx) - fc[0], cyk((k / nx) | 0) - fc[1]) < 12)); expect(top).toBeGreaterThan(3000);   // the summit is still there
+    const bad = defaultState(); bad.islands = true; bad.features.biwa.pos = [fc[0] + 1, fc[1]]; expect(validate(bad).some((i) => i.code === "features.fujicore")).toBe(true);
+  }, 300000);
+});

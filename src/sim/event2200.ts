@@ -37,7 +37,7 @@ export function groupOf2200(sim: SimState): RelocGroup | null {
   return (k.reloc ??= [])[n] ??= relocGroup(k, n, e.year);
 }
 /** The choice is applied. `null` = keep everything as it is (the player pressed 今のまま続ける). Returns the seat moves that change the world (the app rebuilds it with them). */
-export function apply2200(sim: SimState, ch: Choice2200 | null, auto = false): boolean {
+export function apply2200(sim: SimState, ch: Choice2200 | null, auto = false, seatPos?: (pref: string) => Vec | null): boolean {
   const e = sim.e2200, k = sim.kaigen; if (!e || e.state !== "pending" || !k) return false; const y = e.year;
   if (!ch) { e.state = "done"; e.kept = true; if (auto) e.auto = true; ev(sim, "kaigen", `${y}年: 遷都・改元は行わず、今の首都・元号・方針を続ける${auto ? "【自動】" : ""}`, "選択されなかったため現状を維持", {}); return false; }
   const g = groupOf2200(sim)!, used = usedKeys(k); let ci = Math.max(0, Math.min(g.cands.length - 1, Math.floor(ch.era)));
@@ -52,7 +52,7 @@ export function apply2200(sim: SimState, ch: Choice2200 | null, auto = false): b
     if (!pref) return;
     if (role === "capital") { if (sim.capital !== pref || pos) moved.push(role); sim.capital = pref; if (pos) sim.capitalPos = pos; else delete sim.capitalPos; }
     else if (role === "sub") { if (sim.subCapital !== pref || pos) moved.push(role); sim.subCapital = pref; if (pos) sim.subPos = pos; else delete sim.subPos; }
-    else { if (sim.palace?.pref !== pref || pos) moved.push(role); sim.palace = { pref, pos: pos ?? sim.palace?.pos ?? [0, 0] }; }
+    else { if (sim.palace?.pref !== pref || pos) moved.push(role); const same = sim.palace?.pref === pref; sim.palace = { pref, pos: pos ?? (same ? sim.palace!.pos : seatPos?.(pref) ?? sim.palace?.pos ?? [0, 0]) }; }   // Stage 27: a palace moved to another prefecture stands at THAT prefecture's 県庁所在地 (it used to keep the old coordinates: the name changed, the place did not)
     if (pos && sim.isl20 && !(sim.moves20 ?? []).some((m) => m.pref === pref && Math.hypot(m.pos[0] - pos[0], m.pos[1] - pos[1]) < 0.5)) { const list = (sim.moves20 ??= []).filter((m) => !(m.pref === pref && (m as { since?: number }).since === y)); list.push({ pref, pos: [pos[0], pos[1]], by: role, since: y } as (typeof list)[number]); sim.moves20 = list; }
   };
   if (ch.capital && ch.sub && ch.capital === ch.sub) ch = { ...ch, sub: undefined, subPos: undefined };
@@ -76,3 +76,11 @@ export function adoptWorld(sim: SimState, w: World): void {
 /** The 国道0号 is done (opened, or the player chose not to draw it): the event is over. */
 /** The event ends: 国道0号 opened (`road0` given) or given up (none: recorded as `skipped`). */
 export function close2200(sim: SimState, road0?: Road0Info) { if (sim.e2200) { sim.e2200.state = "done"; if (road0) sim.e2200.road0 = road0; else sim.e2200.skipped = true; } }
+
+/** Stage 27: after the world was rebuilt with the new seats, a palace chosen without a map point stands at its prefecture's (current) 県庁所在地; a palace point lying outside its own prefecture (a game saved by the version that kept the old coordinates) is put there too. */
+export function placePalace(sim: SimState, w: World, onlyIfOutside = false): boolean {
+  const pl = sim.palace; if (!pl) return false; const seat = w.cities.find((c) => c.pref === pl.pref && c.kind === "capital"); if (!seat) return false;
+  if (onlyIfOutside) { if (!sim.e2200 || sim.moves20?.some((m) => m.by === "palace" && m.pref === pl.pref)) return false; const k = w.cellOf(pl.pos);   // (only after a relocation, and never for a palace the player put on the map himself, an island's included)
+    if (k >= 0 && w.prefOf(k) === pl.pref) return false; }
+  if (Math.hypot(pl.pos[0] - seat.pos[0], pl.pos[1] - seat.pos[1]) < 1e-6) return false; sim.palace = { pref: pl.pref, pos: [seat.pos[0], seat.pos[1]] }; return true;
+}

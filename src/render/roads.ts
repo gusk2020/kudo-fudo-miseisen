@@ -12,7 +12,7 @@ import { LINE, nameWidth, placeNames, type Box, type NameCircle } from "./cityNa
 import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
-import { AIR_STYLE, BRIDGE, GONE_GREY, HIGHLIGHT_LAYERS, QUALITY_STEPS, RAIL_WIDTH_T, ROAD_WIDTH, TIER_OF, TUNNEL, buildProgressStroke, edgeStyle, shade, type Kind, type LineState, type Stroke } from "./style24";
+import { AIR_STYLE, airArc, BRIDGE, GONE_GREY, HIGHLIGHT_LAYERS, QUALITY_STEPS, RAIL_WIDTH_T, ROAD_WIDTH, TIER_OF, TUNNEL, buildProgressStroke, edgeStyle, shade, type Kind, type LineState, type Stroke } from "./style24";
 
 export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[]; strokes?: Vec[][]; handles?: boolean; sel?: number | null }   // Stage 9: strokes with their control points (handles) and the selected stroke   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
 export interface RoadArgs {
@@ -160,7 +160,7 @@ export class RoadLayer {
     const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && zoom >= 0.12, far = zoom < 0.5;
     if (showL && showA) {
       const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol).slice(0, lite ? 8 : far ? 14 : 30);
-      for (const r of dom) { const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; for (const sp of [AIR_STYLE.casing!, AIR_STYLE.body]) { pattern(lanes, [p, q], (sp.dash ?? [1e9]).map(px)); lanes.stroke({ width: px(sp.width), color: sp.colour, alpha: sp.alpha, cap: sp.cap }); } }
+      for (const r of dom) { const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; const arc = airArc(p, q); for (const sp of [AIR_STYLE.casing!, AIR_STYLE.body]) { line(lanes, arc); lanes.stroke({ width: px(sp.width), color: sp.colour, alpha: sp.alpha, cap: sp.cap, join: "round" }); } }
     }
     if (zoom < (lite ? 0.5 : 0.22)) return;
     if (showP) for (const p of at.ports) { const big = p.tier >= 3; if (far && !big) continue; const c = pos(p.city); if (!c) continue; const s = px(big ? PORT_SIZE[1] : PORT_SIZE[0]); nodes.rect(c[0] + px(5), -c[1] + px(2), s, s).fill({ color: big ? PORT_COL2[1] : PORT_COL2[0] }).stroke({ width: px(1.2), color: 0xffffff }); }
@@ -198,34 +198,35 @@ export class RoadLayer {
         const rail = modeOf(e) === "rail", g = best.get(e.id);
         const rank = (g ? GRADE_RANK[g] : 0) + (e.standard === "highgrade" ? 2 : 0) + (rail ? 1 : 0);
         const isPlan = eff.built < 1, isAband = eff.built >= 1 && (eff.state === "closed" || eff.state === "lost");
-        if (rank < minRank) { if (!(isPlan && zoom >= 0.35 && a.layers.plans)) continue; }
+        if (rank < minRank && !rail) { if (!(isPlan && zoom >= 0.35 && a.layers.plans)) continue; }   // (Stage 27: every railway the game keeps is drawn at every zoom; only the many local roads thin out as you zoom out)
         if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
         if (isAband && !showAband) continue;
         if (e.facility === "ferry" && (isLakeFerry(e) ? hide.has("fac:lake") : hide.has("fac:ferry"))) continue;
-        if (e.facility === "ferry" && (isOcean(e) || isIslandRoute(e)) && (zoom < (eff.state === "open" ? (e.through > 50 ? 0 : isOcean(e) ? 0.8 : 0.3) : 1))) continue;   // Stage 22/26: the many sea routes thin out far away: a resting one only close in, an island route from a middle zoom, an ocean route nobody uses (many leave 宮崎 and 大分 along the same coast) only from zoom 0.8, a busy one always
+        if (e.facility === "ferry" && isOcean(e) && !(e.through > 50 || (eff.state === "open" && e.peakThrough >= 1 && zoom >= 1.5))) continue;   // Stage 27: an ocean route is drawn while it carries people (any zoom) or, close in, while it is open and has ever been used; resting, closed and never-used ones (several leave 宮崎 and 大分 along the same coast) are in the ledger, not on the map
+        if (e.facility === "ferry" && isIslandRoute(e) && (zoom < (eff.state === "open" ? (e.through > 50 ? 0 : 0.3) : 1))) continue;   // Stage 22/26: the many sea routes thin out far away: a resting one only close in, an island route from a middle zoom, an ocean route nobody uses (many leave 宮崎 and 大分 along the same coast) only from zoom 0.8, a busy one always
         if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("k:" + kindOf(e)) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (planned.get(e.id) ?? "planned")))) continue; }
         const pts = e.facility === "ferry" ? seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)) : edgeShape(w, sim, e); shapes.set(e.id, pts);
-        const thin = zoom < 0.35, kind: Kind = e.facility === "ferry" ? "sea" : kindOf(e), tier = TIER_OF[e.standard], isOld = e.bypassedBy.length > 0, wd = (rail ? RAIL_WIDTH_T[tier] : g ? ROAD_WIDTH[tier] : ROAD_WIDTH[tier] * 0.8) * (thin ? 0.6 : 1);
+        const thin = zoom < 0.35, kind: Kind = e.facility === "ferry" ? "sea" : kindOf(e), tier = TIER_OF[e.standard],  wd = (rail ? RAIL_WIDTH_T[tier] : g ? ROAD_WIDTH[tier] : ROAD_WIDTH[tier] * 0.8) * (thin ? 0.6 : 1);
         if (g && e.nick) nickGrade.set(e.id, g);
         if (e.facility === "ferry") {   // a sea route: a dashed line in the sea colour, never the road's casing and fill
           if (eff.built >= 1 && zoom >= 0.35) for (const q of quays(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e))) { line(fer, q); fer.stroke({ width: px(1.4), color: GONE_GREY, alpha: 0.8 }); }
           if (eff.built >= 1) put(fer, pts, { ...edgeStyle("sea", tier, eff.state, eff.q).body, width: rail ? 2.4 : 3 });
           continue;
         }
-        if (eff.built >= 1 && eff.state === "open") {
+        if (eff.built >= 1 && (eff.state === "open" || eff.state === "dormant")) {   // Stage 27: a resting line is drawn as an open one
           // Stage 23: a bridge is a white deck with a black edge on both sides; a tunnel is a faded line between two black dashed edges. The road or railway itself keeps its own colour on top,
           // so the kind of traffic can be read on the bridge and inside the tunnel; where both share the structure they run side by side (sharedSide).
           const side = sharedSide.get(e.id) ?? 0, dp = side ? offsetLine(pts, px(side * (wd + 3.2) * 0.5)) : pts, tun = e.facility === "tunnel" && zoom >= 0.35;
           if (e.facility === "bridge" && zoom >= 0.35) { put(facb, dp, BRIDGE.edge(wd)); put(facb, dp, BRIDGE.deck(wd)); if (zoom >= 0.6) { girders(facb, dp, px(BRIDGE.girderStep), px(wd * 0.5 + 6)); facb.stroke({ width: px(BRIDGE.girder.width), color: BRIDGE.girder.colour }); } }
           else if (tun) { const d = px(wd * 0.5 + 2.6); for (const sg of [1, -1]) put(fac, offsetLine(dp, sg * d), TUNNEL.edge); }
-          const st = edgeStyle(kind, tier, "open", eff.q, { thin, tunnel: tun, old: isOld && !rail, bypass: e.bypassOf.length > 0 && !rail, undesignated: !g });
+          const st = edgeStyle(kind, tier, "open", eff.q, { thin, tunnel: tun, undesignated: !g });
           if (rail) {   // every ordinary railway alike (national or private); 新幹線 with a white centre line, リニア with a dashed one
             put(rcas, dp, st.casing!); put(rfill, dp, st.body);
             if (st.ties) { if (zoom >= 0.8) put(rtie, dp, st.ties); } else put(mid, dp, st.centre!);
           } else {   // one style for every road whatever its administrative grade
-            put(cas, dp, st.casing!); put(isOld ? old : fill, dp, st.body); if (st.centre) put(mid, dp, st.centre);
+            put(cas, dp, st.casing!); put(fill, dp, st.body); if (st.centre) put(mid, dp, st.centre);
           }
-        } else if (eff.built >= 1 && eff.state === "dormant") put(rail ? rdash : fillDash, pts, edgeStyle(kind, tier, "dormant", eff.q, { thin }).body);
+        }
         else if (eff.built >= 1) put(ghost, pts, edgeStyle(kind, tier, eff.state === "lost" ? "lost" : "closed", eff.q).body);
         else if (a.layers.plans) {
           const st = planned.get(e.id) ?? "planned";

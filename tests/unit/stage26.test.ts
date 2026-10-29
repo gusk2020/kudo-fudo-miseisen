@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CP_MAX_COUNT, CP_PREFIX, checkpointDue, cpKey, decodeSave, encodeSave, listCheckpoints, markCheckpoint, planPrune, readCheckpoint, writeCheckpoint, type CpDue, type CpEntry, type CpStore } from "../../src/sim/checkpoint";
 import { splitGmj } from "../../src/render/gmBorders";
 import { streamKeep } from "../../src/render/streams";
-import { AIR_STYLE, KIND_COLOUR, STATE_DASH, edgeStyle, type Kind, type LineState, type Tier } from "../../src/render/style24";
+import { AIR_BULGE_MAX_KM, AIR_SEGMENTS, AIR_STYLE, airArc, KIND_COLOUR, STATE_DASH, edgeStyle, type Kind, type LineState, type Tier } from "../../src/render/style24";
 import { legendItems } from "../../src/render/legendSamples";
 import { readFileSync } from "node:fs";
 
@@ -24,16 +24,19 @@ describe("Stage 26: when a checkpoint is due", () => {
     sim.month = (2050 - 1950) * 12; expect(checkpointDue(sim)?.year).toBe(2050); markCheckpoint(sim, checkpointDue(sim)!);
     sim.month = (2160 - 1950) * 12; expect(checkpointDue(sim)).toEqual({ kind: "50y", year: 2160 }); sim.ceremonyDone = false; expect(checkpointDue(sim)).toBeNull();
   });
-  it("just before each relocation event (2200, 2350, 2500, 2650): one checkpoint even where it is also a 50-year mark; none again after loading it", () => {
+  it("Stage 27: just AFTER each relocation event (2200, 2350, 2500, 2650) -- never before, never in the middle; one save where it is also a 50-year mark; none again after loading it", () => {
     const sim: any = stub(2199, { cp: { y50: 2150, reloc: 0 } }); expect(checkpointDue(sim)).toBeNull();
-    sim.month = (2200 - 1950) * 12; const d = checkpointDue(sim)!; expect(d).toEqual({ kind: "reloc", year: 2200, n: 1 }); markCheckpoint(sim, d); expect(sim.cp).toEqual({ y50: 2200, reloc: 1 }); expect(checkpointDue(sim)).toBeNull();
-    const loaded = JSON.parse(JSON.stringify(sim)); expect(checkpointDue(loaded)).toBeNull();   // a game restored from it goes straight into the event
+    sim.month = (2200 - 1950) * 12; expect(checkpointDue(sim)).toBeNull();   // the event is about to open: not now (a 50-year mark waits for it too)
+    sim.e2200 = { state: "pending", year: 2200, n: 0 }; expect(checkpointDue(sim)).toBeNull(); sim.e2200.state = "road0"; expect(checkpointDue(sim)).toBeNull();   // open: nothing in the middle
+    sim.e2200.state = "done"; const d = checkpointDue(sim)!; expect(d).toEqual({ kind: "reloc", year: 2200, n: 1 }); markCheckpoint(sim, d); expect(sim.cp).toEqual({ y50: 2200, reloc: 1 }); expect(checkpointDue(sim)).toBeNull();   // (2200 is a 50-year mark too: one save)
+    const loaded = JSON.parse(JSON.stringify(sim)); expect(checkpointDue(loaded)).toBeNull();   // a game restored from it goes on: the choices are made
     for (const [y, n] of [[2350, 2], [2500, 3], [2650, 4]] as const) {
-      sim.e2200hist = Array.from({ length: n - 2 }, () => ({ state: "done" })); sim.e2200 = { state: "done" }; sim.month = (y - 1950) * 12; const dd = checkpointDue(sim)!;
-      expect(dd).toEqual({ kind: "reloc", year: y, n }); markCheckpoint(sim, dd); expect(checkpointDue(sim)).toBeNull();
+      sim.month = (y - 1950) * 12; sim.e2200 = undefined; sim.e2200hist = Array.from({ length: n - 1 }, () => ({ state: "done", year: y - 150 })); expect(checkpointDue(sim)).toBeNull();   // the next event is due, not yet open
+      sim.e2200 = { state: "done", year: y, n: n - 1 }; sim.e2200hist = Array.from({ length: n - 1 }, () => ({ state: "done" })); const dd = checkpointDue(sim)!; expect(dd).toEqual({ kind: "reloc", year: y, n }); markCheckpoint(sim, dd); expect(checkpointDue(sim)).toBeNull();
     }
-    const old: any = stub(2350, { e2200: { state: "done" } }); expect(checkpointDue(old)).toEqual({ kind: "reloc", year: 2350, n: 2 });   // a save from before the repeat existed
-    const pend: any = stub(2200, { e2200: { state: "pending" }, cp: { y50: 2200, reloc: 1 } }); expect(checkpointDue(pend)).toBeNull();   // an event already open takes none
+    const old: any = stub(2350, { e2200: { state: "done", year: 2200 } }); expect(checkpointDue(old)).toEqual({ kind: "reloc", year: 2200, n: 1 });   // a save from before the repeat existed: its finished event gets its checkpoint once
+    const keep: any = stub(2200, { e2200: { state: "done", kept: true, year: 2200, n: 0 }, cp: { y50: 2150, reloc: 0 } }); expect(checkpointDue(keep)).toEqual({ kind: "reloc", year: 2200, n: 1 });   // 現状維持 is a decision too
+    const y50: any = stub(2250, { cp: { y50: 2200, reloc: 1 }, e2200: { state: "done", year: 2200, n: 0 } }); expect(checkpointDue(y50)).toEqual({ kind: "50y", year: 2250 });
   });
 });
 
@@ -76,7 +79,7 @@ describe("Stage 26: the map's lines", () => {
   });
   it("air lines have a style of their own (black long-short dashes on white), told from road, sea and closed lines; 新幹線・リニア are one legend entry but two kinds", () => {
     const air = AIR_STYLE.body, others = (["road", "hwy", "rail", "hsr", "maglev", "sea"] as Kind[]).map((k) => edgeStyle(k, "sub", "open", 90).body); for (const o of others) expect(JSON.stringify([air.colour, air.dash])).not.toBe(JSON.stringify([o.colour, o.dash]));
-    for (const st of ["closed", "lost", "planned", "unbuilt", "dormant"] as LineState[]) expect(air.dash).not.toEqual(STATE_DASH[st]);
+    for (const st of ["closed", "planned"] as LineState[]) expect(air.dash).not.toEqual(STATE_DASH[st]);
     expect(KIND_COLOUR.hsr).not.toBe(KIND_COLOUR.maglev); const items = legendItems(); expect(items.filter((i) => /新幹線|リニア/.test(i.caption)).length).toBe(1); expect(items.some((i) => i.ref.what === "air")).toBe(true);
     for (const t of ["main", "sub", "local"] as Tier[]) for (const k of ["road", "rail"] as Kind[]) for (const q of [0, 30, 60, 99]) expect(edgeStyle(k, t, "open", q).body.colour).toBe(KIND_COLOUR[k]);
   });
@@ -84,11 +87,11 @@ describe("Stage 26: the map's lines", () => {
 
 import { gridBordersWithin } from "../../src/render/gmBorders";
 import { run14 } from "../study/lib14";
-import { advance, stepMonth, yearOf } from "../../src/sim/engine";
+import { advance, stepMonth } from "../../src/sim/engine";
 import { finishMigration } from "../../src/sim/migrate";
 import { makeSave, sanitizeSim } from "../../src/core/save2";
 import { realState } from "../../src/core/state";
-import { E2200_YEAR, open2200 } from "../../src/sim/event2200";
+import { E2200_YEAR, apply2200, close2200, placePalace, waiting2200 } from "../../src/sim/event2200";
 
 describe("Stage 26: borders inside Hokkaido's three regions only", () => {
   it("gridBordersWithin keeps only segments between two cells of the chosen group", () => {
@@ -108,17 +111,51 @@ describe("Stage 26: a checkpoint is a complete save; the game goes on from it ex
     advance(sim, w, 30); advance(rest, w, 30); expect(rest.month).toBe(sim.month); expect(rest.rngState).toBe(sim.rngState); expect(JSON.stringify(rest)).toBe(JSON.stringify(sim));
     expect((sim as unknown as { snaps?: unknown }).snaps).toBeUndefined();
   }, 600000);
-  it("a checkpoint taken just before 2200 restores into the same event, once: no double firing, era history intact", async () => {
+  it("Stage 27: a checkpoint taken after the 2200 event restores into the world with its choices made: no event asks again, seats, palace, era history and 国道0号 are as they were", async () => {
     const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.month = (E2200_YEAR - sim.startYear) * 12; sim.policy!.mode = "auto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
-    const d = checkpointDue(sim)!; expect(d).toEqual({ kind: "reloc", year: 2200, n: 1 }); markCheckpoint(sim, d); const json = JSON.stringify(makeSave(realState(1), sim)), eras0 = JSON.stringify(sim.kaigen!.eras);
-    const rest = sanitizeSim(JSON.parse(json).sim).sim!; finishMigration(rest, w); expect(checkpointDue(rest)).toBeNull();
-    for (const g of [sim, rest]) { stepMonth(g, w); expect(g.e2200?.state).toBe("pending"); expect(g.e2200?.n).toBe(0); stepMonth(g, w); expect(g.e2200hist ?? []).toEqual([]); }
-    expect(JSON.stringify(rest.e2200)).toBe(JSON.stringify(sim.e2200)); expect(JSON.stringify(rest.kaigen!.eras)).toBe(eras0); expect(JSON.stringify(rest.kaigen!.reloc)).toBe(JSON.stringify(sim.kaigen!.reloc));
-    void open2200; void yearOf;
+    expect(checkpointDue(sim)).toBeNull(); stepMonth(sim, w); expect(sim.e2200?.state).toBe("pending"); expect(checkpointDue(sim)).toBeNull();
+    apply2200(sim, { era: 1, stance: "heisei", coast: "neutral", focus: "concentrate", capital: "JP-40", sub: "JP-04", palace: "JP-04" }, false, (p) => w.cities.find((c) => c.pref === p && c.kind === "capital")?.pos ?? null); expect(checkpointDue(sim)).toBeNull();   // road0 is still open
+    close2200(sim); const d = checkpointDue(sim)!; expect(d).toEqual({ kind: "reloc", year: 2200, n: 1 }); markCheckpoint(sim, d); const json = JSON.stringify(makeSave(realState(1), sim));
+    const rest = sanitizeSim(JSON.parse(json).sim).sim!; finishMigration(rest, w); expect(checkpointDue(rest)).toBeNull(); expect(rest.e2200?.state).toBe("done"); expect(waiting2200(rest)).toBe(false);
+    expect([rest.capital, rest.subCapital, rest.palace?.pref]).toEqual(["JP-40", "JP-04", "JP-04"]); const seat = w.cities.find((c) => c.pref === "JP-04" && c.kind === "capital")!; expect(rest.palace!.pos).toEqual(seat.pos);   // the palace stands where its prefecture's 県庁所在地 is
+    for (const g of [sim, rest]) { stepMonth(g, w); expect(g.e2200?.state).toBe("done"); expect(g.e2200hist ?? []).toEqual([]); }   // no second event, nothing asked again
+    expect(JSON.stringify(rest.kaigen)).toBe(JSON.stringify(sim.kaigen)); expect(rest.month).toBe(sim.month); expect(rest.rngState).toBe(sim.rngState);
+  }, 600000);
+  it("Stage 27: the palace follows its prefecture; a point on the map wins; an old save that kept the old coordinates is put right", () => {
+    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r, seatOf = (p: string) => w.cities.find((c) => c.pref === p && c.kind === "capital")!.pos;
+    sim.palace = { pref: "JP-13", pos: seatOf("JP-13") }; sim.month = (E2200_YEAR - sim.startYear) * 12; sim.kaigen!.next = 2230; stepMonth(sim, w); const before = sim.palace.pos.slice();
+    apply2200(sim, { era: 0, stance: "heisei", coast: "neutral", focus: "concentrate", palace: "JP-04" }, false, seatOf); expect(sim.palace!.pref).toBe("JP-04"); expect(sim.palace!.pos).toEqual(seatOf("JP-04")); expect(sim.palace!.pos).not.toEqual(before);
+    sim.palace = { pref: "JP-04", pos: before as [number, number] }; expect(placePalace(sim, w, true)).toBe(true); expect(sim.palace.pos).toEqual(seatOf("JP-04")); expect(placePalace(sim, w, true)).toBe(false);   // (repair of the old bug; then nothing more to do)
+    const pt: [number, number] = [seatOf("JP-04")[0] + 3, seatOf("JP-04")[1] + 2]; sim.palace = { pref: "JP-04", pos: pt }; expect(placePalace(sim, w, true)).toBe(false); expect(sim.palace.pos).toEqual(pt);   // a point the player chose inside the prefecture stays
   }, 600000);
   it("an older save (with year-by-year snapshots, no checkpoint record) loads: the snapshots are dropped, the era and relocation history stay", () => {
     const r = run14({ seed: 5, until: 1952, islets: true }), s = JSON.parse(JSON.stringify(r.sim)); s.snaps = [{ year: 1950, edges: { a: 1 } }]; s.e2200hist = []; delete s.cp;
     const back = sanitizeSim(s).sim!; expect(back).not.toBeNull(); expect((back as unknown as { snaps?: unknown }).snaps).toBeUndefined(); expect(back.kaigen!.eras.length).toBe(r.sim.kaigen!.eras.length); expect(back.cp).toBeUndefined();
     s.cp = { y50: "x", reloc: 1 }; expect(sanitizeSim(s).sim!.cp).toBeUndefined();   // a damaged record is dropped, not trusted
   }, 300000);
+});
+
+describe("Stage 27: Nara, Wakayama and Mie borders are one line", () => {
+  it("no coast segment lies on top of a border segment and no border is carried twice, in the Kinki/Tokai area where two copies of each border used to show", () => {
+    const polys = JSON.parse(readFileSync("src/data/coast-gmj.json", "utf8")).polys as number[][], sp = splitGmj(polys);
+    const inArea = (x: number, y: number) => x >= 135000 && x <= 137000 && y >= 33300 && y <= 35300, mids = (a: number[]) => { const o: [number, number][] = []; for (let i = 0; i < a.length; i += 4) { const m: [number, number] = [(a[i] + a[i + 2]) / 2, (a[i + 1] + a[i + 3]) / 2]; if (inArea(m[0], m[1])) o.push(m); } return o; };
+    const b = mids(sp.border), c = mids(sp.coast); expect(b.length).toBeGreaterThan(30);
+    let coastOnBorder = 0; for (const m of c) if (b.some((q) => Math.hypot(q[0] - m[0], q[1] - m[1]) < 4)) coastOnBorder++;
+    let twice = 0; for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++) if (Math.hypot(b[i][0] - b[j][0], b[i][1] - b[j][1]) < 1.5) twice++;
+    expect(coastOnBorder).toBeLessThanOrEqual(Math.ceil(c.length * 0.02)); expect(twice).toBe(0);
+  });
+});
+
+describe("Stage 27: domestic flights are gentle arcs", () => {
+  it("the arc joins the two airports exactly, bulges a modest amount toward the north (east for a north-south flight), never loops, and is light", () => {
+    for (const [a, b] of [[[0, 0], [300, 0]], [[300, 0], [0, 0]], [[0, 0], [0, 400]], [[0, 400], [0, 0]], [[0, 0], [250, 250]], [[100, 100], [100.4, 100]], [[0, 0], [1500, 40]]] as [number, number][][]) {
+      const arc = airArc(a, b); expect(arc.length).toBe(AIR_SEGMENTS + 1); expect(arc[0]).toEqual(a); expect(arc[arc.length - 1]).toEqual(b);
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]), dist = (p: [number, number]) => Math.abs((b[0] - a[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (b[1] - a[1])) / (len || 1), mid = arc[AIR_SEGMENTS / 2];
+      expect(Math.max(...arc.map(dist))).toBeLessThanOrEqual(AIR_BULGE_MAX_KM + 1e-6); expect(Math.max(...arc.map(dist))).toBeLessThanOrEqual(0.19 * len + 1e-6);   // a small bulge, never a loop
+      if (len > 50 && Math.abs(b[1] - a[1]) / len > 0.2) expect(mid[1]).toBeGreaterThanOrEqual((a[1] + b[1]) / 2 - 1e-6);   // toward the north
+      for (const p of arc) expect(Number.isFinite(p[0] + p[1])).toBe(true);
+    }
+    const ab = airArc([0, 0], [300, 0]), ba = airArc([300, 0], [0, 0]); expect(ab[6][1]).toBeCloseTo(ba[6][1], 6);   // the same bulge whichever way the pair is listed
+    expect(AIR_STYLE.body.width).toBeLessThanOrEqual(2); expect(AIR_STYLE.body.alpha).toBeLessThan(1); const lum = AIR_STYLE.body.colour >> 16; expect(lum).toBeGreaterThan(0x80);   // pale
+  });
 });

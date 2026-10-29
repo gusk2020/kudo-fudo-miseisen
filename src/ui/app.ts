@@ -1,5 +1,5 @@
 import { buildIndex } from "../sim/network";
-import { adoptWorld, apply2200, close2200, waiting2200, type Choice2200 } from "../sim/event2200";
+import { adoptWorld, apply2200, close2200, placePalace, waiting2200, type Choice2200 } from "../sim/event2200";
 import { buildE2200, e22Draft } from "./e2200";
 import { nearestPlace } from "../core/gazetteer";
 import { movesOfSettings, type SeatMove } from "../sim/seatmove20";
@@ -203,7 +203,7 @@ export class App {
     if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
-    finishMigration(sim, w); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
+    finishMigration(sim, w); placePalace(sim, w, true); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
     if (this.safeMode) { sim.speed = 0; this.status(); return; }
     const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
   }
@@ -508,8 +508,8 @@ export class App {
   /** 決める / 今のまま: applied to the game; a seat put on the map rebuilds the world with the new 県庁所在地 (people come from the old one, a little) and the runner goes on with it. */
   decideE2200(keep: boolean) {
     const sim = this.sim; if (!sim || sim.e2200?.state !== "pending") return; this.runner?.settle();
-    const moved = apply2200(sim, keep ? null : this.e22 ?? null); this.e22 = null; closeRadio();
-    if (moved) { const w = this.ensureWorld(); if (w) { adoptWorld(sim, w); if (this.runner) this.runner.w = w; } }
+    const ch = keep ? null : this.e22 ?? null, w0 = this.world, moved = apply2200(sim, ch, false, (pref) => w0?.cities.find((c) => c.pref === pref && c.kind === "capital")?.pos ?? null); this.e22 = null; closeRadio();
+    if (moved) { const w = this.ensureWorld(); if (w) { adoptWorld(sim, w); if (this.runner) this.runner.w = w; if (ch && !ch.palacePos) placePalace(sim, w); } }   // (Stage 27: the world was rebuilt: the palace follows its prefecture's new 県庁所在地)
     this.sheet = null; this.buildSheet(); if ((sim.e2200?.state as string) === "road0") this.toast("国道0号を描けます(新首都と新副首都を結ぶ。既存の道・旧道・廃道を優先して使います)");
     this.renderRoads(); this.render(); this.buildUI(); void this.persist(true);
   }
@@ -649,7 +649,7 @@ export class App {
     try {
       markCheckpoint(sim, due); sim.lastWallMs = Date.now(); const json = JSON.stringify(makeSave(this.s, sim)), st = seatsOf(this.s);   // (serialised in the same breath as the marking)
       const r = await writeCheckpoint(idbCpStore, json, due, { capital: seatPrefName(sim.capital ?? st.capital), sub: seatPrefName(sim.subCapital ?? st.sub) });
-      this.toast(r.ok ? `${due.year}年の自動セーブポイントを作りました${due.kind === "reloc" ? "(遷都の直前)" : ""}` : `自動セーブポイントを作れませんでした(${r.error})。ゲームはこのまま続けられます`);
+      this.toast(r.ok ? `${due.year}年の自動セーブポイントを作りました${due.kind === "reloc" ? "(遷都の直後)" : ""}` : `自動セーブポイントを作れませんでした(${r.error})。ゲームはこのまま続けられます`);
       if (this.sheet === "menu") this.buildSheet();
     } catch (e) { this.toast(`自動セーブポイントを作れませんでした(${e instanceof Error ? e.message : "不明"})。ゲームはこのまま続けられます`); }
     finally { this.cpBusy = false; run.waiting = false; this.lastTick = performance.now(); this.acc = 0; }
@@ -768,7 +768,7 @@ export class App {
     if (this.sim && this.e22Pick) {   // Stage 22: choosing a 2200 seat on the map (the same tap, hint and 決定 / 取り消し / 戻る as at the start)
       const tb0 = $("toolbar"); tb0.replaceChildren(); const p = this.seatPick, label = { capital: "首都", sub: "副首都", palace: "皇居" }[this.e22Pick];
       tb0.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」` : ""}${p.claim ? `／${p.claim}` : ""}(まだ決まっていません)` : `2200年の${label}にしたい場所を地図の陸地でタップしてください`),
-        h("div", { class: "grp" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => this.cancelSeatPick() }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.endE22Map() }, "戻る")));
+        h("div", { class: "grp" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => this.cancelSeatPick() }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.endE22Map() }, "戻る"), this.bgSwitch("e22-pick-bg")));
       return;
     }
     const tb = $("toolbar"); tb.replaceChildren(); tb.classList.remove("compact"); const st = this.stepId;
@@ -834,7 +834,7 @@ export class App {
     const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
   }
   /** Stage 26: the map switch (道路図 / 地形図) that stays at the end of the setup tab row whatever is being chosen -- it changes only the background; nothing chosen is touched. */
-  private bgSwitch(): HTMLElement { const to = this.bg === "roadmap" ? "terrain" : "roadmap"; return h("button", { id: "setup-bg", type: "button", class: "setup-tab setup-bg", title: "地図の表示を切り替え", onclick: () => { this.setBg(to); this.buildToolbar(); } }, this.bg === "roadmap" ? "道路図" : "地形図"); }
+  bgSwitch(id = "setup-bg"): HTMLElement { const to = this.bg === "roadmap" ? "terrain" : "roadmap"; return h("button", { id, type: "button", class: "setup-tab setup-bg", title: "地図の表示を切り替え", onclick: () => { this.setBg(to); this.buildToolbar(); if (this.sheet === "e2200") this.buildSheet(); } }, this.bg === "roadmap" ? "道路図" : "地形図"); }
   /** Stage 19: the four setup tabs in one row (元号 首都 副首都 皇居); only the pressed tab's panel is open, and pressing it again (or 閉じる) closes it. */
   private buildSetupTabs(tb: HTMLElement) {
     const st = seatsOf(this.s), tabs: ["era" | "capital" | "sub" | "palace", string][] = [["era", "元号"], ["capital", "首都"], ["sub", "副首都"], ["palace", "皇居"]];
@@ -1096,11 +1096,11 @@ export class App {
   /** Stage 26: the 自動セーブポイント list -- year, 50-year or just-before-relocation, the seats it was saved with; 読込 continues the game from there. Kept apart from the numbered slots. */
   private async buildCheckpoints(body: HTMLElement) {
     const list = await listCheckpoints(idbCpStore); body.append(h("h3", { id: "cp-title" }, "自動セーブポイント"));
-    body.append(h("small", { id: "cp-note" }, "50年ごと(2000年〜)と、150年ごとの遷都イベントの直前に自動で作られます。①〜⑤とは別です。最大8件で、古いものから自動で消えます。"));
+    body.append(h("small", { id: "cp-note" }, "50年ごと(2000年〜)と、150年ごとの遷都イベントの直後(選択と国道0号まで済んだ時点)に自動で作られます。①〜⑤とは別です。最大8件で、古いものから自動で消えます。"));
     if (!list.length) { body.append(h("div", { class: "slot-row", id: "cp-empty" }, h("span", { class: "slot-text empty" }, "(まだありません)"))); return; }
     const mb = (e: CpEntry) => `${(e.bytes / 1048576).toFixed(1)}MB`;
     for (const e of list) {
-      const label = e.kind === "reloc" ? `${e.year}年 遷都の直前(第${e.n ?? "?"}回)` : `${e.year}年 50年ごと`, text = `${label} / ${e.capital} / ${e.sub} / ${mb(e)}`;
+      const label = e.kind === "reloc" ? `${e.year}年 遷都の${e.v ? "直後" : "直前(旧)"}(第${e.n ?? "?"}回)` : `${e.year}年 50年ごと`, text = `${label} / ${e.capital} / ${e.sub} / ${mb(e)}`;
       body.append(h("div", { class: "slot-row cp-row", id: `cp-${e.year}-${e.kind}` }, h("span", { class: "slot-text", title: text }, text),
         h("button", { class: "slot-load cp-load", onclick: async () => { if (!confirm(`${label}から再開します。今のゲームは、保存していなければ失われます。よろしいですか?`)) return; const j = await readCheckpoint(idbCpStore, e); if (!j) { this.toast("読み込めません(データが見つかりません)"); return; } const p = parseSave(j); if (p.ok && p.sim) this.adopt(p); else this.toast("読み込めません: " + (p.problems[0] ?? "壊れたデータ")); } }, "読込")));
     }

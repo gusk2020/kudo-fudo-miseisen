@@ -1,5 +1,5 @@
 import { realToWorld, worldParts } from "./body";
-import { axisFrame, featureHost, featuresOverlap, hokkaidoOk, inKHRange, DEFAULT_MIN_SCALE, SMALL_LAND_KM2, islandsOverlap, kyushuOk, tOf, type AxisFrame } from "./constraints";
+import { axisFrame, featureHost, fujiCoreClear, hokkaidoOk, inKHRange, DEFAULT_MIN_SCALE, SMALL_LAND_KM2, islandsOverlap, kyushuOk, tOf, type AxisFrame } from "./constraints";
 import { BODY_DEFS, EXTRA, EXTRA_IDS, ISLAND_LABEL, JAPAN } from "./data";
 import { featureWorldPos } from "./state";
 import { centroid, pointInPolygon, polyArea, principalAxis, rot as rotv, selfIntersections } from "./geom";
@@ -93,7 +93,7 @@ export function validate(s: ProjectState): Issue[] {
     else if (s.real && Math.min(...featureScales(s.features[which])) < DEFAULT_MIN_SCALE && Math.abs(polyArea(host)) > SMALL_LAND_KM2) add("features", "error", `${which}.minscale`, `${nm}を0.5倍より小さくできるのは沖縄など小さな島だけです`);
   }
   if (!s.real) for (const which of ["biwa", "fuji"] as const) if (!inKHRange(kc, hc, centroid(d[which]))) add("features", "error", `${which}.range`, `${which === "biwa" ? "琵琶湖" : "富士山"}が北海道〜九州の軸範囲外です`);
-  if (featuresOverlap(d.biwa, d.fuji)) add("features", "error", "features.overlap", "琵琶湖と富士山が重なっています");
+  if (!fujiCoreClear(d.biwa, d.fuji)) add("features", "error", "features.fujicore", "琵琶湖が富士山の山頂近くまで届いています(裾野が重なるのはかまいません)");   // Stage 27: the foot may overlap; the lake wins there, the summit stays
   if (!s.real) for (const k of ["sw", "ne"] as const) {
     const r = s.ridges[k], nm = k === "sw" ? "南西側の山脈" : "北東側の山脈";
     if (!r || r.length < 2) { add("features", "error", `ridge.${k}.missing`, `${nm}が未描画です`); continue; }
