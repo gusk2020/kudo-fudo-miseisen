@@ -75,7 +75,7 @@ def join_rings(members):
     return rings
 
 def main(out):
-    q = '[out:json][timeout:600];area["ISO3166-1"="JP"][admin_level=2]->.jp;(relation["natural"="water"]["water"~"^(lake|lagoon)$"]["name"]["wikidata"](area.jp);way["natural"="water"]["water"~"^(lake|lagoon)$"]["name"]["wikidata"](area.jp););out geom tags;'
+    q = '[out:json][timeout:600];area["ISO3166-1"="JP"][admin_level=2]->.jp;(relation["natural"="water"]["water"~"^(lake|lagoon)$"]["name"]["wikidata"](area.jp);way["natural"="water"]["water"~"^(lake|lagoon)$"]["name"]["wikidata"](area.jp););out geom;'
     data = overpass(q); lakes = []
     for el in data["elements"]:
         tags = el.get("tags", {}); name = tags.get("name:ja") or tags.get("name")
@@ -91,7 +91,7 @@ def main(out):
     big = [l for l in lakes if l["km2"] >= 5]
     if big:
         bbs = "".join(f'way["place"~"^(island|islet)$"]({min(p[1] for p in l["outer"])},{min(p[0] for p in l["outer"])},{max(p[1] for p in l["outer"])},{max(p[0] for p in l["outer"])});' for l in big)
-        isl = overpass(f'[out:json][timeout:300];({bbs});out geom tags;')
+        isl = overpass(f'[out:json][timeout:300];({bbs});out geom;')
         for el in isl["elements"]:
             if not el.get("geometry") or el["geometry"][0] != el["geometry"][-1]: continue
             ring = to_ring(el["geometry"])[:-1]
