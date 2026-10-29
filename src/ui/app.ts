@@ -1,5 +1,6 @@
 import { buildIndex } from "../sim/network";
 import { RELOC_FIRST } from "../sim/kaigen";
+import { LAKE_LIST } from "../render/lakes";
 import { adoptRelocSchedule, adoptWorld, relocDiag, apply2200, close2200, placePalace, waiting2200, type Choice2200 } from "../sim/event2200";
 import { buildE2200, e22Draft } from "./e2200";
 import { nearestPlace } from "../core/gazetteer";
@@ -126,7 +127,7 @@ export class App {
     attachGestures(a.r.app.canvas, a.r, a.handler());
     a.store.subscribe(() => a.onChange()); a.store.onBlocked = () => a.toast("地図は最終確定済みでロックされています(保存メニューから解除できます)");
     a.bindStatic(); a.r.fit(a.store.state); a.onChange(true);
-    (window as any).__kfm = a; (window as any).__adv = advance;
+    (window as any).__kfm = a; (window as any).__adv = advance; (window as any).__lakes = { list: LAKE_LIST, toReal: lonLatToReal };   // (test hook: the lakes drawn, and the conversion from longitude/latitude)
     window.addEventListener("resize", () => a.r.setView({}, true));
     a.lastTick = performance.now(); const loop = (t: number) => { a.tickClock(t); requestAnimationFrame(loop); }; requestAnimationFrame(loop);
     if (a.safeMode) a.toast("前回は異常終了した可能性があります。安全モード(停止状態・追いつき計算なし)で再開します");

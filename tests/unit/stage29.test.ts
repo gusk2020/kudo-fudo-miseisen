@@ -3,6 +3,7 @@ import { smoothLine, streamChains, streamKeep } from "../../src/render/streams";
 import { CP_INDEX, writeCheckpoint, type CpStore } from "../../src/sim/checkpoint";
 import { adoptRelocSchedule, relocDiag } from "../../src/sim/event2200";
 import { ROAD_LAND } from "../../src/render/style24";
+import { LAKE_LIST, RAW_HOLE_COUNT, isBrackish } from "../../src/render/lakes";
 import { WATER, seaRgb } from "../../src/render/water";
 
 const memStore = (lossy = false): CpStore & { m: Map<string, Uint8Array | string> } => { const m = new Map<string, Uint8Array | string>(); return { m, put: async (k, d) => { if (lossy && k.startsWith("s3:cp:") && k !== CP_INDEX) return; m.set(k, d); }, get: async (k) => m.get(k), del: async (k) => void m.delete(k), keys: async () => [...m.keys()] }; };
@@ -51,13 +52,28 @@ describe.skipIf(!existsSync(lakesPath))("Stage 29: 湖と湖中島のデータ(O
   const inside = (p: number[], ring: number[][]) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i], [xj, yj] = ring[j]; if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) c = !c; } return c; };
   it("琵琶湖・霞ヶ浦・サロマ湖・宍道湖・浜名湖など主要な湖があり、汽水湖は区別されている", () => {
     for (const n of ["琵琶湖", "霞ヶ浦", "サロマ湖", "宍道湖", "浜名湖", "猪苗代湖", "洞爺湖"]) expect(d.lakes.some((l) => l.name.includes(n)), n).toBe(true);
-    for (const n of ["サロマ湖", "宍道湖", "浜名湖", "霞ヶ浦"]) expect(d.lakes.find((l) => l.name.includes(n))!.kind, n).toBe("brackish");
+    for (const n of ["サロマ湖", "宍道湖", "浜名湖", "霞ヶ浦"]) expect(isBrackish(d.lakes.find((l) => l.name.includes(n))!), n).toBe(true);
+    expect(isBrackish(d.lakes.find((l) => l.name === "琵琶湖")!)).toBe(false); expect(isBrackish(d.lakes.find((l) => l.name === "猪苗代湖")!)).toBe(false);
     expect(d.lakes.find((l) => l.name === "琵琶湖")!.kind).toBe("lake"); expect(d.lakes.length).toBeGreaterThan(20);
   });
-  it("湖中島はその湖の内側にあり(陸水が重ならない)、琵琶湖には沖島と竹生島などが入っている", () => {
-    for (const l of d.lakes) for (const h of l.holes) expect(inside(h[0], l.outer), `${l.name}の島の点が湖の外`).toBe(true);
-    const biwa = d.lakes.find((l) => l.name === "琵琶湖")!, names = (biwa.islands ?? []).map((i) => i.name); expect(biwa.holes.length).toBeGreaterThanOrEqual(3);
-    expect(names.join(",")).toMatch(/沖島|竹生島|多景島/);
+  it("湖中島はその湖の内側にだけ置かれ(陸水が食い違わない)、ほとんどのデータが残る。琵琶湖には沖島などが入っている", () => {
+    for (const l of LAKE_LIST) for (const h of l.holes) { const c = [h.reduce((t, p) => t + p[0], 0) / h.length, h.reduce((t, p) => t + p[1], 0) / h.length]; expect(inside(c, l.outer), `${l.name}の島の中心が湖の外`).toBe(true); }
+    expect(LAKE_LIST.reduce((t, l) => t + l.holes.length, 0)).toBeGreaterThan(RAW_HOLE_COUNT * 0.8);   // (a few rings that are not inside their lake are dropped, not most of them)
+    const biwa = d.lakes.find((l) => l.name === "琵琶湖")!; expect(biwa.holes.length).toBeGreaterThanOrEqual(3);
+    const km2 = (r: number[][]) => { let a = 0; for (let i = 0; i < r.length; i++) { const [x1, y1] = r[i], [x2, y2] = r[(i + 1) % r.length]; a += (x1 / 1e4) * 91 * (y2 / 1e4) * 111 - (x2 / 1e4) * 91 * (y1 / 1e4) * 111; } return Math.abs(a) / 2; };
+    expect(biwa.holes.some((h) => km2(h) > 1)).toBe(true);   // 沖島 (about 1.5 km2) is among them
     const lon = biwa.outer.map((p) => p[0] / 1e4), lat = biwa.outer.map((p) => p[1] / 1e4); expect(Math.min(...lon)).toBeGreaterThan(135.8); expect(Math.max(...lon)).toBeLessThan(136.3); expect(Math.min(...lat)).toBeGreaterThan(34.9); expect(Math.max(...lat)).toBeLessThan(35.7);
+  });
+});
+
+import { spreadSea } from "../../src/render/renderer";
+describe("Stage 29: 海の層は陸のセルにも最も近い海の色を使う(四角い色の段差を作らない)", () => {
+  it("深い海に接する陸のセルは深い色、浅い海に接する陸のセルは浅い色。一色の定数ではない", () => {
+    const nx = 12, ny = 2, land = new Float32Array(nx * ny).fill(1), elev = new Float32Array(nx * ny);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < 2; i++) { land[j * nx + i] = 0; }   // water on the left two columns
+    elev[0] = -900; elev[1] = -900; elev[nx] = -5; elev[nx + 1] = -5;   // row 0 deep, row 1 shallow
+    const rgb = spreadSea(land, elev, nx, ny), at = (i: number, j: number) => [rgb[3 * (j * nx + i)], rgb[3 * (j * nx + i) + 1], rgb[3 * (j * nx + i) + 2]];
+    expect(at(2, 0)).toEqual(at(1, 0)); expect(at(2, 1)).toEqual(at(1, 1)); expect(at(2, 0)).not.toEqual(at(2, 1));   // the land beside deep water is deep-coloured, beside shallow water shallow
+    expect(at(11, 0)).toEqual([40, 110, 160]);   // far from any water: the shallow default
   });
 });

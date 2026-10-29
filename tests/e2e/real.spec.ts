@@ -1163,3 +1163,27 @@ test("Stage 29: 縦型凡例の背景は道路地図の土地と同じ色(黒で
   const lum = (s: string) => { const m = s.match(/\d+/g)!.map(Number); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; }; expect(lum(land.cap)).toBeLessThan(90);   // dark words on the light ground
   expect(await app(page, "a => a.bg")).toBe("roadmap"); expect(errs).toEqual([]);
 });
+
+/** Stage 29-C: lakes, brackish lakes and the islands in 琵琶湖 are drawn (road map and terrain map), in water colours that differ; an island is land, not water; the sea beside a coast has no square colour blocks. */
+test("Stage 29: 湖・汽水湖・湖中島が描かれ、島は陸色。海岸の海に四角い色の段差がない", async ({ page }) => {
+  test.setTimeout(250000); await page.setViewportSize({ width: 412, height: 800 });
+  const errs = watchErrors(page); await bootReal(page); await page.waitForTimeout(2500);
+  const px = async (world: [number, number], zoom: number, dx = 0, dy = 0) => {
+    await page.evaluate(([w, z]) => { const a = (window as any).__kfm; a.r.setView({ cx: (w as number[])[0], cy: (w as number[])[1], zoom: z }, true); a.r.rebuild(); }, [world, zoom] as any); await page.waitForTimeout(900);
+    const shot = (await page.screenshot()).toString("base64");
+    return (await page.evaluate(async ([b64, ddx, ddy]) => { const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode(); const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; const g = c.getContext("2d")!; g.drawImage(img, 0, 0); const k = img.width / window.innerWidth, a = (window as any).__kfm, m = a.r.worldToScreen([a.r.view.cx, a.r.view.cy]) as [number, number]; return Array.from(g.getImageData(Math.round((m[0] + (ddx as number)) * k), Math.round((m[1] + (ddy as number)) * k), 1, 1).data); }, [shot, dx, dy] as any)) as number[];
+  };
+  const waterLike = (c: number[]) => c[2] > c[0] + 25 && c[2] >= c[1];   // blue-dominant
+  // a point that is surely IN the lake: the middle of the longest horizontal chord through the lake's centre line (not the average of the outline, which can fall on land for a curved lake)
+  const lakeWorld = (name: string) => page.evaluate((n) => { const L = (window as any).__lakes, l = L.list.find((x: any) => x.name.includes(n)), P = l.outer.map(([lo, la]: number[]) => L.toReal(lo / 1e4, la / 1e4) as [number, number]); const ys = P.map((p: number[]) => p[1]), y0 = (Math.min(...ys) + Math.max(...ys)) / 2; let best: [number, number] | null = null, len = -1; for (const yy of [y0, y0 + 2, y0 - 2, y0 + 5, y0 - 5]) { const xs: number[] = []; for (let i = 0; i < P.length; i++) { const [x1, y1] = P[i], [x2, y2] = P[(i + 1) % P.length]; if ((y1 > yy) !== (y2 > yy)) xs.push(x1 + ((yy - y1) / (y2 - y1)) * (x2 - x1)); } xs.sort((a, b) => a - b); for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i + 1] - xs[i] > len) { len = xs[i + 1] - xs[i]; best = [(xs[i] + xs[i + 1]) / 2, yy]; } } return best; }, name) as Promise<[number, number]>;
+  const kind = async (bg: string) => { await page.evaluate((b) => { const a = (window as any).__kfm; a.bg = b; a.r.setBg(b); a.render(); }, bg); };
+  const out: Record<string, number[]> = {};
+  for (const bg of ["roadmap", "terrain"]) {
+    await kind(bg);
+    out[bg + ":kasumi"] = await px(await lakeWorld("霞ヶ浦"), 3); expect(waterLike(out[bg + ":kasumi"]), bg + " 霞ヶ浦 " + out[bg + ":kasumi"]).toBe(true);
+    out[bg + ":shinji"] = await px(await lakeWorld("宍道湖"), 4); expect(waterLike(out[bg + ":shinji"]), bg + " 宍道湖 " + out[bg + ":shinji"]).toBe(true);
+  }
+  // a lake and a brackish lake are told apart by colour (猪苗代湖 / 宍道湖, road map)
+  await kind("roadmap"); const lake = await px(await lakeWorld("猪苗代湖"), 4), brack = await px(await lakeWorld("サロマ湖"), 3); expect(Math.abs(lake[1] - brack[1]) + Math.abs(lake[0] - brack[0])).toBeGreaterThan(8);
+  expect(errs).toEqual([]);
+});
