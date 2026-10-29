@@ -1087,3 +1087,69 @@ test("Stage 28: 地形図で島の内側は陸色、海岸線の外側は海色(
   const sea = await px([{ islet: "新島", dx: 120, dy: 0 }, { islet: "伊豆大島", dx: -120, dy: 60 }], 7); for (const c of sea) expect(seaLike(c), String(c)).toBe(true);
   expect(errs).toEqual([]);
 });
+
+/** Stage 29-A: the first relocation of a new game stands at 2100 whatever the mode and speed, and the clock waits there until everything is chosen. */
+for (const [mode, speed] of [["auto", 20], ["priority", 20], ["idleAuto", 1]] as const) {
+  test(`Stage 29: 新規ゲームの遷都は2100年(${mode}・×${speed})。通過して進まず、選択が終わるまで止まり、次は2250年`, async ({ page }) => {
+    test.setTimeout(300000); await page.setViewportSize({ width: 360, height: 740 }); page.on("dialog", (d) => void d.accept());
+    const errs = watchErrors(page); await startReal(page);
+    expect(await app(page, "a => [a.sim.relocFirst, a.sim.relocOrigin]")).toEqual([2100, "new"]);
+    await page.evaluate(() => { const a = (window as any).__kfm; a.openSheet("menu"); }); await page.waitForSelector("#reloc-diag"); expect(await page.textContent("#reloc-diag")).toMatch(/次は2100年.*新しいゲーム/);
+    const run = (y: number) => page.evaluate(([yy, md, sp]) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = ((yy as number) - s.startYear) * 12 + 6; s.kaigen.next = (yy as number) + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = md; s.speed = sp; }, [y, mode, speed] as any);
+    await run(2098); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 120000 });
+    expect(await app(page, "a => [a.sim.e2200.year, a.sim.e2200.n, Math.floor(a.sim.startYear + a.sim.month / 12)]")).toEqual([2100, 0, 2100]);   // it opened AT 2100, not after it
+    const m = (await app(page, "a => a.sim.month")) as number; await page.waitForTimeout(2500); expect(await app(page, "a => a.sim.month")).toBe(m);   // and the clock waits, whatever the mode
+    await page.waitForSelector("#e22-box"); await page.click("#e22-keep"); expect(await app(page, "a => a.sim.e2200.state")).toBe("done");
+    await page.waitForFunction(() => (window as any).__kfm.sim.cp?.reloc === 1, null, { timeout: 60000 });   // the save after the event is taken at once
+    await run(2248); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.n === 1 && (window as any).__kfm.sim.e2200.state === "pending", null, { timeout: 120000 });
+    expect(await app(page, "a => a.sim.e2200.year")).toBe(2250); expect(await app(page, "a => a.sim.e2200hist.length")).toBe(1);
+    expect(errs).toEqual([]);
+  });
+}
+
+/** Stage 29-A: an older game keeps its own schedule (no event is made up in the past); one that had not reached 2100 and had no event takes the new schedule when loaded. */
+test("Stage 29: 旧セーブ(2200起点)は履歴どおり2200/2350のまま。2100未満で未遷都の旧セーブは読込時に2100起点へ", async ({ page }) => {
+  test.setTimeout(300000); await page.setViewportSize({ width: 360, height: 740 }); page.on("dialog", (d) => void d.accept());
+  const errs = watchErrors(page); await startReal(page);
+  const menu = () => page.evaluate(() => { const a = (window as any).__kfm; if (a.sheet !== "menu") a.openSheet("menu"); else a.buildSheet(); });
+  const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; }, y);
+  // (a) an older game at 2150 with no event: it keeps 2200 -- loading it does not move it, and nothing opens at once
+  await page.evaluate(() => { const a = (window as any).__kfm; a.runner.settle(); delete a.sim.relocFirst; delete a.sim.relocOrigin; a.sim.month = (2150 - a.sim.startYear) * 12; a.sim.speed = 0; });
+  await menu(); await page.waitForSelector("#slot-3"); await page.click("#slot-3 .slot-save"); await page.waitForTimeout(800);
+  await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#slot-3 .slot-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
+  expect(await app(page, "a => [a.sim.relocFirst ?? null, a.sim.relocOrigin ?? null, a.sim.e2200 ?? null]")).toEqual([null, null, null]);
+  await menu(); await page.waitForSelector("#reloc-diag"); expect(await page.textContent("#reloc-diag")).toMatch(/次は2200年.*旧ゲーム/);
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; (window as any).__kfm.sim.policy.mode = "auto"; }); await page.waitForTimeout(2500); expect(await app(page, "a => a.sim.e2200 ?? null")).toBe(null);   // 2150 is past 2100: nothing is opened for it
+  // (b) an older game at 2060 with no event: it takes the new schedule on loading
+  await page.evaluate(() => { const a = (window as any).__kfm; a.runner.settle(); a.sim.speed = 0; a.sim.month = (2060 - a.sim.startYear) * 12; });
+  await menu(); await page.waitForSelector("#slot-4"); await page.click("#slot-4 .slot-save"); await page.waitForTimeout(800);
+  await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#slot-4 .slot-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
+  expect(await app(page, "a => [a.sim.relocFirst, a.sim.relocOrigin]")).toEqual([2100, "migrated"]);
+  await menu(); await page.waitForSelector("#reloc-diag"); expect(await page.textContent("#reloc-diag")).toMatch(/次は2100年.*2100年起点へ移行済み/);
+  await jump(2099); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 120000 }); expect(await app(page, "a => a.sim.e2200.year")).toBe(2100);
+  expect(errs).toEqual([]);
+});
+
+/** Stage 29-B: a checkpoint of 2050 loaded at 2079 puts the game back at 2050 and keeps it there -- even when a long time has passed since it was saved (the catch-up that follows a time away must not run on a load). */
+test("Stage 29: 2050年のセーブポイントを2079年で読み込むと2050年に戻り、時間が経っていても先へ進まない。再保存・再読込・進行も正しい", async ({ page }) => {
+  test.setTimeout(400000); await page.setViewportSize({ width: 360, height: 740 }); page.on("dialog", (d) => void d.accept());
+  const errs = watchErrors(page); await startReal(page);
+  const menu = () => page.evaluate(() => { const a = (window as any).__kfm; if (a.sheet !== "menu") a.openSheet("menu"); else a.buildSheet(); });
+  const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; }, y);
+  const year = () => app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12)") as Promise<number>;
+  await jump(2050); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.y50 === 2050, null, { timeout: 90000 });
+  const snap = (await app(page, "a => ({ m: a.sim.month, rng: a.sim.rngState, e: Object.keys(a.sim.edges).length, cap: a.sim.capital ?? null })")) as { m: number; rng: number; e: number; cap: string | null };
+  await jump(2079); await page.waitForTimeout(1500); await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; }); expect(await year()).toBeGreaterThanOrEqual(2079);
+  // an hour has passed since the save: the old code simulated up to 30 years on top of the loaded game
+  await page.evaluate(() => { const d0 = Date.now; (Date as any).now = () => d0() + 3600 * 1000; });
+  await menu(); await page.waitForSelector("#cp-2050-50y"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2050-50y .cp-load"); const h = await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old ? { m: a.sim.month, e: Object.keys(a.sim.edges).length } : false; }, null, { timeout: 90000 }), got = (await h.jsonValue()) as { m: number; e: number };
+  expect(got.m - snap.m).toBeGreaterThanOrEqual(0); expect(got.m - snap.m).toBeLessThanOrEqual(2); expect(got.e).toBe(snap.e);   // the very state that was saved (the clock may have run a month or two by the time it is read)
+  await page.waitForTimeout(1500); const after = (await app(page, "a => ({ m: a.sim.month })")) as { m: number }; expect(await year()).toBeLessThanOrEqual(2051); expect(after.m - snap.m).toBeLessThan(24);   // and a time away has not carried it on
+  // it plays on from there, a save and a reload keep it, and no event opens twice
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); const m0 = after.m; await page.waitForFunction((m) => (window as any).__kfm.sim.month > (m as number) + 6, m0, { timeout: 90000 }); await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; });
+  await menu(); await page.waitForSelector("#slot-2"); await page.click("#slot-2 .slot-save"); await page.waitForTimeout(800); const saved = await year();
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); expect(await year()).toBeLessThanOrEqual(saved + 1); expect(await year()).toBeLessThan(2060);
+  await menu(); await page.waitForSelector("#slot-2"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#slot-2 .slot-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
+  expect(await year()).toBe(saved); expect(await app(page, "a => a.sim.e2200 ?? null")).toBe(null);
+  expect(errs).toEqual([]);
+});

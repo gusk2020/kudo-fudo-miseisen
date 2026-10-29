@@ -1,6 +1,6 @@
 import { buildIndex } from "../sim/network";
 import { RELOC_FIRST } from "../sim/kaigen";
-import { adoptWorld, apply2200, close2200, placePalace, waiting2200, type Choice2200 } from "../sim/event2200";
+import { adoptRelocSchedule, adoptWorld, relocDiag, apply2200, close2200, placePalace, waiting2200, type Choice2200 } from "../sim/event2200";
 import { buildE2200, e22Draft } from "./e2200";
 import { nearestPlace } from "../core/gazetteer";
 import { movesOfSettings, type SeatMove } from "../sim/seatmove20";
@@ -204,7 +204,7 @@ export class App {
     if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
-    finishMigration(sim, w); placePalace(sim, w, true); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
+    finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
     this.render(); this.buildUI();   // Stage 28: the seat markers and names come from the loaded game (sim), which only now exists -- the render right after a load ran without it and drew the map state's 東京・大阪・東京
     if (this.safeMode) { sim.speed = 0; this.status(); return; }
     const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
@@ -514,14 +514,15 @@ export class App {
     if (moved) { const w = this.ensureWorld(); if (w) { adoptWorld(sim, w); if (this.runner) this.runner.w = w; if (ch && !ch.palacePos) placePalace(sim, w); } }   // (Stage 27: the world was rebuilt: the palace follows its prefecture's new 県庁所在地)
     this.sheet = null; this.buildSheet(); if ((sim.e2200?.state as string) === "road0") this.toast("国道0号を描けます(新首都と新副首都を結ぶ。既存の道・旧道・廃道を優先して使います)");
     this.renderRoads(); this.render(); this.buildUI(); void this.persist(true);
+    if ((sim.e2200?.state as string) === "done") void this.takeCheckpoint();   // (Stage 29: 今のまま ends the event here: the save after it is taken now, not when the clock next starts a year)
   }
   /** Stage 22: 開通の儀 of 国道0号 (or none). */
   openRoad0(skip = false) {
     const sim = this.sim, w = this.world; if (!sim || !w || sim.e2200?.state !== "road0") return;
-    if (skip) { close2200(sim); delete this.cerDraft.kokudo0; this.tool = "view"; this.buildUI(); this.renderRoads(); return; }
+    if (skip) { close2200(sim); delete this.cerDraft.kokudo0; this.tool = "view"; this.buildUI(); this.renderRoads(); void this.persist(true); void this.takeCheckpoint(); return; }
     const d = this.cerDraft.kokudo0; if (!d?.prev.ok) return; this.runner?.settle();
     const info = performRoad0(sim, w, d.prev as NatPreview); if (!info) { this.toast("国道0号を開通できませんでした"); return; }
-    close2200(sim, info); delete this.cerDraft.kokudo0; this.tool = "view"; this.toast(`国道0号が開通(転用${info.reusedKm}km・復旧${info.restoredKm}km・新設${info.newKm}km)`); this.renderRoads(); this.buildUI(); void this.persist(true);
+    close2200(sim, info); delete this.cerDraft.kokudo0; this.tool = "view"; this.toast(`国道0号が開通(転用${info.reusedKm}km・復旧${info.restoredKm}km・新設${info.newKm}km)`); this.renderRoads(); this.buildUI(); void this.persist(true); void this.takeCheckpoint();   // (Stage 29: the save after the event is taken as soon as 国道0号 is done)
   }
   /** Stage 21: 戻る in the map choice: back to the prefecture list, nothing changed. */
   backToSeatList() { if (this.e22Pick) { this.endE22Map(); return; } this.seatPick = null; this.r.seatPending = null; this.seatMode = "list"; if (this.tool === "seatpick") this.tool = "view"; this.buildToolbar(); this.render(); }
@@ -1066,6 +1067,7 @@ export class App {
     if (tok === this.menuTok && this.sheet === "menu") body.append(...Array.from(tmp.childNodes));
   }
   private async buildMenuInner(body: HTMLElement) {
+    if (this.real && this.sim?.stage3) body.append(h("div", { class: "note", id: "reloc-diag" }, relocDiag(this.sim)));   // Stage 29: the schedule of the relocation events, and whether this game began with it
     if (this.real) {
       body.append(h("h3", {}, "このゲームについて(史実と架空の区別)"));
       body.append(h("div", { class: "issue", id: "about-data" }, h("b", {}, "実在: "), "海岸線・標高・河川・府県・都市の位置(東京府、北海道は3県の設定)。鉄道・道路の通り道(Natural Earth)は初期網の参考。", h("br"),
@@ -1111,6 +1113,9 @@ export class App {
   private adopt(l: { map: any; sim: SimState | null; quarantine: unknown; problems: string[] }) {
     // the two games keep separate data: a file from the other one is refused rather than half-loaded
     if (this.real !== !!l.map?.real) { this.toast(this.real ? "旧版(架空の日本列島)のデータです。URLの末尾に ?legacy=1 を付けた旧版で開いてください" : "実在の日本版のデータです。?legacy=1 を付けない通常のURLで開いてください"); return; }
+    // Stage 29: a load the player asked for is the game AS IT WAS SAVED: the real time since it was saved (hours, a day) is never played forward -- the catch-up that carries a running game across a time away used to
+    // run on a loaded 2050 checkpoint too, simulated up to 30 years at once and put the game back at about 2080
+    if (l.sim) l.sim.lastWallMs = 0;
     this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.r.fit(l.map);
     if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
     this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();

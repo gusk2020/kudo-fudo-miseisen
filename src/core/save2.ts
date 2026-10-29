@@ -81,6 +81,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.tier23 !== undefined && !(isRec(raw.tier23) && isRec(raw.tier23.zones) && isRec(raw.tier23.hist) && isRec(raw.tier23.cnt))) delete raw.tier23;   // Stage 23
   if (raw.isl22 !== undefined && raw.isl22 !== true) delete raw.isl22;
   if (raw.relocFirst !== undefined && !(Number.isInteger(raw.relocFirst) && raw.relocFirst >= 2000 && raw.relocFirst <= 2300)) delete raw.relocFirst;   // Stage 28 (absent = an older game, which keeps the 2200 schedule)
+  if (raw.relocOrigin !== undefined && raw.relocOrigin !== "new" && raw.relocOrigin !== "migrated") delete raw.relocOrigin;   // Stage 29
   if (raw.cp !== undefined && !(isRec(raw.cp) && Number.isInteger(raw.cp.y50) && Number.isInteger(raw.cp.reloc))) delete raw.cp;   // Stage 26
   { const okEv = (e: any) => isRec(e) && Number.isInteger(e.year) && ["pending", "road0", "done"].includes(e.state);   // Stage 25: the earlier relocation events must be whole, each one done
     if (raw.e2200hist !== undefined && !(Array.isArray(raw.e2200hist) && raw.e2200hist.length < 60 && raw.e2200hist.every((e: any) => okEv(e) && e.state === "done"))) delete raw.e2200hist;
