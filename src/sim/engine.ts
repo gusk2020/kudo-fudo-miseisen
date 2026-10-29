@@ -5,7 +5,7 @@
  */
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
 import { due2200, open2200, waiting2200 } from "./event2200";
-import { cycleGrowthRate, cycleOf, reviveRule } from "./cycle27";
+import { cycleGrowthRate, cycleOf, rebuildDrive, reviveRule } from "./cycle27";
 import { newTier23, reviewTiers } from "./tier23";
 import { newNumReg, syncNumbers } from "./numreg";
 import { enforceCaps } from "./cap20";
@@ -342,7 +342,7 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
     const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
     if (e.state === "open" || e.state === "dormant") {
       if (e.through > e.peakThrough) e.peakThrough = e.through;
-      e.zeroYears = d < Z ? e.zeroYears + 1 : 0;
+      e.zeroYears = d < Z ? e.zeroYears + (rebuildDrive(sim.e2200, y) > 0.5 ? 0 : 1) : 0;   // (Stage 28: in the rebuilding the clocks of resting and closing stand still: nothing new goes to rest while the nation is building)
       e.congYears = e.through > 0.9 * capacityOf(e) ? e.congYears + 1 : 0;
       e.throughDropYears = e.peakThrough > 50 && e.bypassedBy.length && e.through < 0.25 * e.peakThrough ? e.throughDropYears + 1 : e.bypassedBy.length ? e.throughDropYears : 0;
       if (e.state === "dormant" && d >= Z * 2) { setEdgeState(sim, e, "open", `需要が回復(${Math.round(d)}${unit})`); ev(sim, "reopen", `${edgeName(sim, e)}が休止から再開`, `需要が${Math.round(d)}${unit}に回復`, { edge: e.id }); }
@@ -429,7 +429,8 @@ function* monthlyGen(sim: SimState, w: World): Generator<void> {
   }
   sim.macro.maintCoverage = need > 0 ? funded / need : 1;
   yield;   // Stage 7: upkeep, construction and the railways are separate slices of the month
-  for (const e of Object.values(sim.edges)) if (e.state === "closed" && e.built >= 1) { e.weathering = Math.min(100, e.weathering + 0.3); if (e.weathering >= 100) { setEdgeState(sim, e, "lost", "閉鎖後に放置され風化"); ev(sim, "lost", `${edgeName(sim, e)}が廃道化`, "閉鎖後に維持されず風化(復旧には再整備が必要)", { edge: e.id }); } }
+  const rbDrive = rebuildDrive(sim.e2200, y);   // Stage 28: ruins are kept from falling further while they wait to be restored
+  for (const e of Object.values(sim.edges)) if (e.state === "closed" && e.built >= 1) { e.weathering = Math.min(100, e.weathering + 0.3 * (1 - 0.8 * rbDrive)); if (e.weathering >= 100) { setEdgeState(sim, e, "lost", "閉鎖後に放置され風化"); ev(sim, "lost", `${edgeName(sim, e)}が廃道化`, "閉鎖後に維持されず風化(復旧には再整備が必要)", { edge: e.id }); } }
   // construction: each region funds its own queue; leftovers and the national pool fund the rest
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "road").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
   // Stage 7: what the national pool does not need for national projects goes to regional projects their own region could not fully fund this month
