@@ -1060,3 +1060,30 @@ test("Stage 28: 遷都後のセーブを読み込んでも首都・副首都・�
   await loadSlot(4); expect((await seats()).slice(0, 3)).toEqual(s3.slice(0, 3));
   expect(errs).toEqual([]);
 });
+
+/** Stage 28: on the terrain map the land inside a coastline is land-coloured and the water outside it is water-coloured (islets, Awaji, the Kii coast), checked in rendered pixels. */
+test("Stage 28: 地形図で島の内側は陸色、海岸線の外側は海色(伊豆諸島・淡路島・紀伊水道)", async ({ page }) => {
+  test.setTimeout(200000); await page.setViewportSize({ width: 412, height: 800 });
+  const errs = watchErrors(page); await bootReal(page); await page.waitForTimeout(2500);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.bg = "terrain"; a.r.setBg("terrain"); a.render(); });
+  const px = async (named: { islet?: string; city?: string; dx?: number; dy?: number }[], zoom: number) => {
+    const out: number[][] = [];
+    for (const n of named) {
+      await page.evaluate(([nm, ct, z]) => { const a = (window as any).__kfm, p = nm ? a.r.islets.find((x: any) => x.name === nm).pos : a.world.cities.find((x: any) => x.name === ct).pos; a.r.setView({ cx: p[0], cy: p[1], zoom: z }, true); a.r.rebuild(); }, [n.islet ?? "", n.city ?? "", zoom] as any);
+      await page.waitForTimeout(900);
+      const shot = (await page.screenshot()).toString("base64");
+      out.push((await page.evaluate(async ([b64, dx, dy]) => {
+        const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode(); const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; const g = c.getContext("2d")!; g.drawImage(img, 0, 0);
+        const k = img.width / window.innerWidth, a = (window as any).__kfm, mid = a.r.worldToScreen([a.r.view.cx, a.r.view.cy]) as [number, number];
+        return Array.from(g.getImageData(Math.round((mid[0] + (dx as number)) * k), Math.round((mid[1] + (dy as number)) * k), 1, 1).data);
+      }, [shot, n.dx ?? 0, n.dy ?? 0] as any)) as number[]);
+    }
+    return out;
+  };
+  const landLike = (c: number[]) => c[1] >= c[2] - 5 && c[0] > 70;   // the water colours are blue-dominant (B well above G and R)
+  const seaLike = (c: number[]) => c[2] > c[1] + 15 && c[2] > c[0] + 40;
+  const isl = await px([{ islet: "新島" }, { islet: "伊豆大島" }, { islet: "神津島" }], 7);   // the middle of each islet (the label sits beside it)
+  for (const c of isl) expect(landLike(c), String(c)).toBe(true);
+  const sea = await px([{ islet: "新島", dx: 120, dy: 0 }, { islet: "伊豆大島", dx: -120, dy: 60 }], 7); for (const c of sea) expect(seaLike(c), String(c)).toBe(true);
+  expect(errs).toEqual([]);
+});

@@ -22,13 +22,15 @@ function landColour(e: number): number[] {
   for (let i = 1; i < RAMP.length; i++) if (e <= RAMP[i][0]) { const [a, ca] = RAMP[i - 1], [b, cb] = RAMP[i], t = (e - a) / (b - a); return ca.map((v, k) => v + (cb[k] - v) * t); }
   return RAMP[RAMP.length - 1][1];
 }
-export function terrainCanvas(t: TerrainResult): HTMLCanvasElement {
+/** `part`: "all" is the whole picture; on the real map the coastline is the 地球地図's polygons, so the picture is drawn in two layers -- "sea" (every cell the water colour where it is not water in the grid, so no land colour spills past a coastline) under the polygons' flat land, and "land" (water cells transparent) on top, clipped to the polygons. */
+export function terrainCanvas(t: TerrainResult, part: "all" | "sea" | "land" = "all"): HTMLCanvasElement {
   const { nx, ny, cell } = t.grid, c = document.createElement("canvas"); c.width = nx; c.height = ny;
   const g = c.getContext("2d")!, img = g.createImageData(nx, ny);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const k = j * nx + i, o = ((ny - 1 - j) * nx + i) * 4; let col: number[];
-    if (t.land[k] === 0) { const d = Math.min(1, -t.elev[k] / 600); col = [40 - 22 * d, 110 - 50 * d, 160 - 55 * d]; }
+    if (t.land[k] === 0) { if (part === "land") continue; const d = Math.min(1, -t.elev[k] / 600); col = [40 - 22 * d, 110 - 50 * d, 160 - 55 * d]; }
     else if (t.land[k] === 2) col = [70, 130, 190];
+    else if (part === "sea") col = [40, 110, 160];
     else {
       const e = t.elev[k], gx = (t.elev[j * nx + Math.min(nx - 1, i + 1)] - t.elev[j * nx + Math.max(0, i - 1)]) / (2 * cell * 1000);
       const gy = (t.elev[Math.min(ny - 1, j + 1) * nx + i] - t.elev[Math.max(0, j - 1) * nx + i]) / (2 * cell * 1000);
@@ -53,13 +55,13 @@ export class Renderer {
   baseNames: { name: string; p: Vec }[] | null = null;
   islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean; shaped?: boolean; tiny?: boolean }[] | null = null;
   /** Stage 22: the real-map coastline of 地球地図日本 (drawn once, reused; the 5 km grid underneath keeps the simulation's own land) */
-  private gm: { fill: Graphics; coast: Graphics; border: Graphics; bg: string } | null = null;
+  private gm: { fill: Graphics; mask: Graphics; coast: Graphics; border: Graphics; bg: string } | null = null;
   private gmSplit = splitGmj(GMJ.polys as unknown as number[][]);
   private root = new Container(); private base = new Container(); private overlay = new Container(); private labels = new Container();
   /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
   ridgeHandles = false;
   roads = new RoadLayer(); private roadArgs: RoadArgs | null = null;
-  private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
+  private landSprite: Sprite | null = null; private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
   private lastArgs: [ProjectState, TerrainResult | null, Issue[], Pending | null] | null = null;
   private rebuildTimer: any = 0;
   /** Background map: shaded terrain, or a plain road-map style (flat land, no relief) that keeps the network readable. */
@@ -114,8 +116,8 @@ export class Renderer {
   private rebuild() {
     if (!this.lastArgs) return;
     const [s, t, issues, pending] = this.lastArgs, z = this.view.zoom, px = (n: number) => n / z;
-    if (this.terrainSprite?.parent) this.terrainSprite.parent.removeChild(this.terrainSprite); // reused across rebuilds, destroyed only with its terrain
-    if (this.gm) { this.gm.fill.parent?.removeChild(this.gm.fill); this.gm.coast.parent?.removeChild(this.gm.coast); this.gm.border.parent?.removeChild(this.gm.border); }
+    if (this.landSprite?.parent) this.landSprite.parent.removeChild(this.landSprite); if (this.terrainSprite?.parent) this.terrainSprite.parent.removeChild(this.terrainSprite); // reused across rebuilds, destroyed only with its terrain
+    if (this.gm) { this.gm.fill.parent?.removeChild(this.gm.fill); this.gm.mask.parent?.removeChild(this.gm.mask); this.gm.coast.parent?.removeChild(this.gm.coast); this.gm.border.parent?.removeChild(this.gm.border); }
     this.base.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.overlay.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.labels.removeChildren().forEach((c) => c.destroy());
     const P = (v: Vec): [number, number] => [v[0], -v[1]];
     const flat = (poly: Vec[]) => poly.flatMap((q) => P(q));
@@ -124,17 +126,20 @@ export class Renderer {
     const showTerrain = !!t && s.step >= 4;
     // terrain raster (or flat land)
     if (showTerrain && t) {
-      if (this.terrainRef !== t) { this.terrainSprite?.destroy(true); this.terrainSprite = new Sprite(Texture.from(terrainCanvas(t))); this.terrainRef = t; }
+      const two = !!s.real;   // Stage 28: on the real map the polygons decide what is land (see terrainCanvas)
+      if (this.terrainRef !== t) { this.terrainSprite?.destroy(true); this.landSprite?.destroy(true); this.terrainSprite = new Sprite(Texture.from(terrainCanvas(t, two ? "sea" : "all"))); this.landSprite = two ? new Sprite(Texture.from(terrainCanvas(t, "land"))) : null; this.terrainRef = t; }
       const sp = this.terrainSprite!, g = t.grid;
       sp.position.set(g.x0, -(g.y0 + g.ny * g.cell)); sp.scale.set(g.cell);
       sp.visible = s.layers.elevation && this.bg === "terrain"; if (sp.parent !== this.base) this.base.addChild(sp);
-    } else { this.terrainSprite?.destroy(true); this.terrainSprite = null; this.terrainRef = null; }
+      if (this.landSprite) { this.landSprite.position.copyFrom(sp.position); this.landSprite.scale.copyFrom(sp.scale); this.landSprite.visible = sp.visible; }
+    } else { this.terrainSprite?.destroy(true); this.terrainSprite = null; this.landSprite?.destroy(true); this.landSprite = null; this.terrainRef = null; }
     const landFlat = !(showTerrain && s.layers.elevation && this.bg === "terrain");
     const coast = new Graphics(), fills = new Graphics();
     const gmOn = !!s.real;   // Stage 22: on the real map the coastline is 地球地図日本's (the mainland, the added islands and the islets alike)
     if (gmOn) {
-      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.coast.destroy(); this.gm?.border.destroy(); const f = new Graphics(), c = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); } const seg = (g: Graphics, a: number[]) => { for (let i = 0; i < a.length; i += 4) { const p = lonLatToReal(a[i] / 1000, a[i + 1] / 1000), q = lonLatToReal(a[i + 2] / 1000, a[i + 3] / 1000); g.moveTo(p[0], -p[1]).lineTo(q[0], -q[1]); } }, bd = new Graphics(); seg(c, this.gmSplit.coast); c.stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); seg(bd, this.gmSplit.border); bd.stroke({ width: 1, color: 0x5b1f6e, alpha: 0.9, pixelLine: true }); this.gm = { fill: f, coast: c, border: bd, bg: bgKey }; }
+      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.mask.destroy(); this.gm?.coast.destroy(); this.gm?.border.destroy(); const f = new Graphics(), c = new Graphics(), m = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); else { f.poly(pts).fill({ color: 0x93b266 }); m.poly(pts).fill({ color: 0xffffff }); } } const seg = (g: Graphics, a: number[]) => { for (let i = 0; i < a.length; i += 4) { const p = lonLatToReal(a[i] / 1000, a[i + 1] / 1000), q = lonLatToReal(a[i + 2] / 1000, a[i + 3] / 1000); g.moveTo(p[0], -p[1]).lineTo(q[0], -q[1]); } }, bd = new Graphics(); seg(c, this.gmSplit.coast); c.stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); seg(bd, this.gmSplit.border); bd.stroke({ width: 1, color: 0x5b1f6e, alpha: 0.9, pixelLine: true }); this.gm = { fill: f, mask: m, coast: c, border: bd, bg: bgKey }; }
       this.base.addChild(this.gm.fill);
+      if (!landFlat && this.landSprite) { this.base.addChild(this.gm.mask); this.landSprite.mask = this.gm.mask; this.base.addChild(this.landSprite); }   // (the polygons' flat land, then the relief inside them)
     }
     for (const id of gmOn ? [] : ISLAND_IDS) {
       const bp = pending?.body?.id === id ? worldParts(id, { ops: s.bodies[id].ops, place: pending.body.place ?? s.bodies[id].place }, pending.body.op) : worldParts(id, s.bodies[id]);
