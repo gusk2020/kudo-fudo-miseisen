@@ -48,3 +48,36 @@ describe("Stage 28: 通常地図の線は連続線だけ(点線・破線なし)"
     for (const k of ["road", "rail", "sea"] as Kind[]) expect(new Set(["open", "planned", "closed"].map((st) => JSON.stringify(edgeStyle(k, "sub", st as LineState, 90)))).size).toBe(3);
   });
 });
+
+import { GROWTH_RATE_POINTS, budgetAt, cycleGrowthRate, rebuildDrive, reviveRule } from "../../src/sim/cycle27";
+describe("Stage 28: 復興の強化(表と連続性)", () => {
+  const ev = { year: 2100 } as any;
+  it("自然増は復興期だけ強く、平衡期で止まり、衰退期と遷都前は0。境界で飛ばない", () => {
+    const at = (y: number) => cycleGrowthRate({ startYear: y, month: 0, e2200: ev });
+    expect(cycleGrowthRate({ startYear: 2050, month: 0, e2200: undefined } as any)).toBe(0);
+    expect(at(2100)).toBe(0); expect(at(2125)).toBeGreaterThan(0.015); expect(at(2175)).toBeLessThan(0.012); expect(at(2230)).toBe(0); expect(at(2149)).toBeGreaterThan(0.005);
+    let prev = at(2100); for (let y = 2100.25; y < 2250; y += 0.25) { const v = at(y); expect(Math.abs(v - prev)).toBeLessThan(0.0035); prev = v; }
+    expect(GROWTH_RATE_POINTS[GROWTH_RATE_POINTS.length - 1][1]).toBe(0);
+    expect(budgetAt(100, GROWTH_RATE_POINTS)).toBeCloseTo(0.009, 6);
+  });
+  it("復興の駆動力は 0〜1 で、復興期に最大、平衡期の途中までに消え、衰退期は0。なだらか", () => {
+    expect(rebuildDrive(undefined, 2125)).toBe(0); expect(rebuildDrive(ev, 2130)).toBe(1); expect(rebuildDrive(ev, 2149)).toBe(1); expect(rebuildDrive(ev, 2180)).toBe(0); expect(rebuildDrive(ev, 2240)).toBe(0);
+    let prev = rebuildDrive(ev, 2100); for (let y = 2100.1; y < 2250; y += 0.1) { const v = rebuildDrive(ev, y); expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); expect(Math.abs(v - prev)).toBeLessThan(0.12); prev = v; }
+  });
+  it("復旧の基準は復興期だけ緩み、それ以外は従来のまま", () => {
+    expect(reviveRule(undefined, 2125, 30, 3)).toEqual({ demand: 30, years: 3 }); expect(reviveRule(ev, 2230, 30, 3)).toEqual({ demand: 30, years: 3 });
+    const r = reviveRule(ev, 2130, 30, 3); expect(r.demand).toBeLessThan(30); expect(r.years).toBeLessThan(3); expect(r.years).toBeGreaterThanOrEqual(1);
+  });
+});
+
+import { run14 } from "../study/lib14";
+describe("Stage 28: 2100年の遷都のあとの復興(実際にゲームを進める)", () => {
+  it("遷都は2100年に1度だけ。復興期に人口が自然増で増え(都市間の移動では増えない)、平衡期の入口で安定する", () => {
+    const pop: Record<number, number> = {}; let opened = 0, lastN = -1;
+    const { sim } = run14({ seed: 5, until: 2162, islets: true, relocFirst: 2100, hook: (s, _w, y) => { if (y >= 2098 && y <= 2162 && y % 2 === 0 && pop[y] === undefined) pop[y] = Object.values(s.cities).reduce((t, c) => t + c.pop, 0); if (s.e2200 && (s.e2200.n ?? 0) !== lastN) { lastN = s.e2200.n ?? 0; opened++; } } });
+    expect(opened).toBe(1); expect(sim.e2200!.year).toBe(2100); expect(sim.e2200!.n).toBe(0); expect(sim.relocFirst).toBe(2100);
+    expect(pop[2150]).toBeGreaterThan(pop[2100] * 1.3);   // the rebuilding: a baby boom, ~+2% a year net of the ordinary decline
+    expect(Math.abs(pop[2162] / pop[2150] - 1)).toBeLessThan(0.03);   // the balance phase: it holds
+    for (let y = 2100; y < 2162; y += 2) expect(Math.abs(pop[y + 2] / pop[y] - 1), String(y)).toBeLessThan(0.05);   // no jump between two samples, at the phase edge or anywhere
+  }, 600000);
+});
