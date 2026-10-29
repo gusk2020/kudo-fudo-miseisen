@@ -2,6 +2,7 @@
  * Yearly planning. Every prefecture keeps its own queue and purse, so many regions build at the same time.
  * Cost control ("performance budget"): at most MAX_PATHFINDS route searches per year, regions take turns.
  */
+import { REBUILD_DRIVE_MAX, rebuildDrive } from "./cycle27";
 import { basePop, capitalPref } from "./roles";
 import { RAIL_NEW_FACTOR, RAIL_UPGRADE_FACTOR, stance18 } from "./policy18";
 import { FAVOURED_LEAN, POLICY_HWY_SCORE, POLICY_HWY_SHARE, POLICY_RAIL_SCORE, POLICY_RAIL_SHARE, POLICY_TRUNK_KM, POLICY_TRUNK_MIN, POLICY_TRUNK_SCORE, reconCorridor, reconFade, reconMeanCore, reconOf, reconRegionLean, reconText } from "./recon";
@@ -96,7 +97,7 @@ export function createProject(sim: SimState, kind: ProjectKind, region: string, 
 const nodeName = (sim: SimState, id: string) => sim.nodes[id]?.name ?? "地点";
 
 export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
-  const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; let pf = sim.stage3 ? MAX_PATHFINDS_S3 : MAX_PATHFINDS; const RPY = sim.stage3 ? REGIONS_PER_YEAR_S3 : REGIONS_PER_YEAR;
+  const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; const drive = sim.stage3 ? rebuildDrive(sim.e2200, y) : 0; let pf = Math.round((sim.stage3 ? MAX_PATHFINDS_S3 : MAX_PATHFINDS) * (1 + REBUILD_DRIVE_MAX.pathfinds * drive)); const RPY = Math.round((sim.stage3 ? REGIONS_PER_YEAR_S3 : REGIONS_PER_YEAR) * (1 + REBUILD_DRIVE_MAX.regions * drive)), extraActive = drive > 0.5 ? 1 : 0;   // (Stage 28: the rebuilding lifts the yearly limits)
   const def = sim.stage3 ? accessDeficit(w, an) : null, rc = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined;
   const start = ((y - sim.startYear) * RPY) % n, slice = Array.from({ length: Math.min(n, RPY) }, (_, i) => regions[(start + i) % n]);
   const live = activeProjects(sim).filter((p) => modeOf(p) === "road"), busy = new Set(live.flatMap((p) => p.edgeIds)), perRegion = new Map<string, number>();
@@ -108,7 +109,7 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
   if (sim.stage3) { for (const v of Object.values(sim.settlements)) if (!v.gone && v.pop >= 300) others.push({ cell: v.cell, pos: w.cellPos(v.cell) as [number, number], name: v.name, pop: v.pop, isl: w.t.island[v.cell] }); for (const c of w.cities) others.push({ cell: c.cell, pos: c.pos as [number, number], name: c.name, pop: sim.cities[c.id].pop, isl: w.t.island[c.cell] }); }
   for (const r of slice) {
     const fav = sim.pop15 && rc && reconRegionLean(sim, w, r, rc.meanCore) >= FAVOURED_LEAN ? 1 : 0;   // (Stage 15: a region the policy favours works faster)
-    if ((perRegion.get(r) ?? 0) >= MAX_ACTIVE_PER_REGION + fav + ((sim.regionSlack?.[r] ?? 0) > 0.5 ? 1 : 0) + ((sim.regionSlack?.[r] ?? 0) > 0.75 ? 1 : 0)) continue;
+    if ((perRegion.get(r) ?? 0) >= MAX_ACTIVE_PER_REGION + extraActive + fav + ((sim.regionSlack?.[r] ?? 0) > 0.5 ? 1 : 0) + ((sim.regionSlack?.[r] ?? 0) > 0.75 ? 1 : 0)) continue;
     const purse = Math.max(8, B * 0.8 * (sim.regionShare[r] ?? 1 / n) * 48), cands: Cand[] = [];
     for (const vid of vilBy.get(r) ?? []) if (an.reach.get(vid) === false) cands.push({ score: 6 + sim.settlements[vid].pop / 2000, kind: "access", vid, reason: `${sim.settlements[vid].name}が道路網から孤立している` });
     for (const e of edgesBy.get(r) ?? []) {
@@ -149,7 +150,7 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
       let made = 0; for (const c of cands.slice(0, 8)) { if (made >= 2 || (made === 1 && !(c.kind === "access" || c.local || c.kind === "improve"))) continue; if (tryPlan(sim, w, c, r, purse, () => pf-- > 0, () => pf > 0, y)) made++; }
       yield; if (pf <= 0) break; continue;
     }
-    const isNew = (c: Cand) => c.kind === "new" || c.kind === "access", slack = sim.regionSlack?.[r] ?? 0, room = MAX_ACTIVE_PER_REGION + fav + (slack > 0.5 ? 1 : 0) + (slack > 0.75 ? 1 : 0) - (perRegion.get(r) ?? 0);   // a region whose money sits idle takes on more work
+    const isNew = (c: Cand) => c.kind === "new" || c.kind === "access", slack = sim.regionSlack?.[r] ?? 0, room = MAX_ACTIVE_PER_REGION + extraActive + fav + (slack > 0.5 ? 1 : 0) + (slack > 0.75 ? 1 : 0) - (perRegion.get(r) ?? 0);   // a region whose money sits idle takes on more work
     let made = 0, madeNew = 0, madeOld = 0;
     for (const c of [...cands.filter(isNew).slice(0, 5), ...cands.filter((x) => !isNew(x)).slice(0, 5)].sort((p, q) => q.score - p.score)) {
       if (made >= room) break; if (isNew(c) ? madeNew >= 1 + fav : madeOld >= 2) continue;

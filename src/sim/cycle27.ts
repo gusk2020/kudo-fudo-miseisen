@@ -49,5 +49,12 @@ export function cycleShape(e2200: SimState["e2200"], year: number) {
  * so the people are BORN (and the common rescale that keeps the nation on its course carries them), never moved or conjured between cities. It rises over the first years, holds through the
  * rebuilding, and is gone by the middle of the balance phase; the decline and the time before the first relocation keep the ordinary course. All of it is this table.
  */
-export const GROWTH_RATE_POINTS: [number, number][] = [[0, 0], [8, 0.012], [40, 0.012], [58, 0], [150, 0]];
+export const GROWTH_RATE_POINTS: [number, number][] = [[0, 0], [8, 0.02], [40, 0.02], [55, 0.009], [100, 0.009], [115, 0], [150, 0]];
 export const cycleGrowthRate = (sim: Pick<SimState, "startYear" | "month" | "e2200">): number => { const c = cycleOf(sim); return c ? budgetAt(c.since, GROWTH_RATE_POINTS) : 0; };
+
+/**
+ * Stage 28: how hard the rebuilding drives the works, 0..1 (0 outside the rebuilding and at the end of the balance): it lifts the yearly planning limits (route searches, regions looked at,
+ * works a region may run at once) in step with the purse, so a bigger purse is not left idle behind a limit written for the ordinary years. The cost is the measured price of the extra works.
+ */
+export const REBUILD_DRIVE_MAX = { pathfinds: 0.75, regions: 0.5 };
+export function rebuildDrive(e2200: SimState["e2200"], year: number): number { const cs = cycleShape(e2200, year); return cs ? Math.max(0, Math.min(1, (cs.build * cs.damp - 0.5) * 2)) : 0; }
