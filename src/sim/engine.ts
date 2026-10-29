@@ -41,7 +41,7 @@ import type { Vec } from "../core/types";
 import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
-import { ERA, FU_PREFS, GRADE_LABEL, GRADE_MODE, KIND_LABEL, NICK_LABEL, SIM_VERSION, modeOf, monthToYM, setActiveEra, setActiveTimeline, ymLabel, type Grade, type RouteEdgeRef, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
+import { ERA, FU_PREFS, GRADE_LABEL, GRADE_MODE, KIND_LABEL, NICK_LABEL, SIM_VERSION, modeOf, monthToYM, setActiveEra, setActiveTimeline, ymLabel, type Grade, type RouteEdgeRef, type Settlement, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
 import { cellDistKm, type World } from "./world";
 
 export const MONTHS_PER_YEAR_X1_MS = 60000;       // x1: one real minute is one game year
@@ -290,11 +290,15 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     if (v.pop < 120) { v.gone = true; v.pop = 0; ev(sim, "village", `${v.name}が無人化(廃村)`, ok ? "長期の人口減少" : "道路が途絶え孤立", { settlement: v.id }); }
   }
   // synthetic regional events (not real history): development, tourism or an industrial park raises demand somewhere
+  // (Stage 28: the settlements and the idle roads are grouped by prefecture ONCE a year, not searched again for each of the 49 prefectures; a new settlement made below puts the grouping right again. The same lists in the same order, so nothing changes.)
+  let sByPref: Map<string, Settlement[]> | null = null, idleByRegion: Map<string, SimEdge[]> | null = null;
+  const groupSettlements = () => { const m = new Map<string, Settlement[]>(); for (const v of Object.values(sim.settlements)) { if (v.gone) continue; const pr = w.prefOf(v.cell); if (pr === undefined || pr === null) continue; const l = m.get(pr); if (l) l.push(v); else m.set(pr, [v]); } for (const l of m.values()) l.sort((a, b) => (a.id < b.id ? -1 : 1)); return m; };
+  const groupIdle = () => { const m = new Map<string, SimEdge[]>(); for (const e of Object.values(sim.edges)) { if (!(e.built >= 1 && (e.state === "closed" || e.state === "lost" || e.state === "dormant"))) continue; const l = m.get(e.region); if (l) l.push(e); else m.set(e.region, [e]); } for (const l of m.values()) l.sort((a, b) => (a.id < b.id ? -1 : 1)); return m; };
   if (y >= 1960) for (const pref of w.t.prefOrder) {
-    const vs = Object.values(sim.settlements).filter((v) => !v.gone && w.prefOf(v.cell) === pref).sort((a, b) => (a.id < b.id ? -1 : 1));
+    const vs = (sByPref ??= groupSettlements()).get(pref) ?? [];
     if (vs.length && rand(sim) < 0.02) { const v = vs[Math.floor(rand(sim) * vs.length)]; v.pop = Math.round(Math.max(v.pop * 2.2, 1500) + 1200); ev(sim, "boom", `${prefName(pref)}の${v.name}が再開発され人口が回復`, "地域イベント(観光・工業団地・宅地開発。合成)", { settlement: v.id }); }
     // a road that fell out of use may get a reason to come back: people move in next to it
-    const idle = Object.values(sim.edges).filter((e) => e.region === pref && e.built >= 1 && (e.state === "closed" || e.state === "lost" || e.state === "dormant")).sort((a, b) => (a.id < b.id ? -1 : 1));
+    const idle = (idleByRegion ??= groupIdle()).get(pref) ?? [];
     if (idle.length && rand(sim) < 0.03) {
       const e = idle[Math.floor(rand(sim) * idle.length)], near = Object.values(sim.settlements).filter((v) => !v.gone && e.cells.some((c) => Math.abs((c % w.nx) - (v.cell % w.nx)) <= 2 && Math.abs(((c / w.nx) | 0) - ((v.cell / w.nx) | 0)) <= 2));
       if (near.length) { const v = near[Math.floor(rand(sim) * near.length)]; v.pop = Math.round(Math.max(v.pop * 2.2, 1500) + 1200); ev(sim, "boom", `${prefName(pref)}の${v.name}が再開発され、使われていない道の沿線に人が戻る`, "地域イベント(合成)", { settlement: v.id, edge: e.id }); continue; }
@@ -303,7 +307,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
       const city = w.cities.filter((c) => c.island === w.t.island[mid]).sort((p2, q2) => cellDistKm(w, p2.cell, mid) - cellDistKm(w, q2.cell, mid))[0];
       if (cell >= 0 && city) {
         const id = `s.${String(1 + Object.keys(sim.settlements).reduce((m, k) => Math.max(m, parseInt(k.slice(2), 10) || 0), 0)).padStart(4, "0")}`;
-        sim.settlements[id] = { id, name: `${city.name.replace(/市$/, "")}新開発地`, cell, city: city.id, pop: 3500, pop0: 3500, isolatedYears: 0, gone: false };
+        sim.settlements[id] = { id, name: `${city.name.replace(/市$/, "")}新開発地`, cell, city: city.id, pop: 3500, pop0: 3500, isolatedYears: 0, gone: false }; sByPref = null;
         ev(sim, "boom", `${prefName(pref)}に新開発地が誕生(${sim.settlements[id].name})`, "地域イベント(宅地・工業団地の開発。合成)。使われなくなった道の沿線に人が戻る", { settlement: id, edge: e.id });
       }
     }
