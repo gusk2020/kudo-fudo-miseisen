@@ -62,3 +62,6 @@ export function rebuildDrive(e2200: SimState["e2200"], year: number): number { c
 /** Stage 28: in the rebuilding a closed or ruined line is brought back on a smaller demand and after fewer years of it (the ordinary rule is REVIVE_DEMAND / REVIVE_YEARS in engine.ts). */
 export const REBUILD_REVIVE = { demandCut: 0.5, yearsCut: 1 };
 export const reviveRule = (e2200: SimState["e2200"], year: number, demand: number, years: number) => { const d = rebuildDrive(e2200, year); return { demand: demand * (1 - REBUILD_REVIVE.demandCut * d), years: Math.max(1, years - Math.round(REBUILD_REVIVE.yearsCut * d)) }; };
+
+/** Stage 28: how much slower the resting / closing clocks run at full drive (0.8 = a fifth of the speed). */
+export const REBUILD_CLOCK_SLOW = 0.8;

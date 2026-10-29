@@ -5,7 +5,7 @@
  */
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
 import { due2200, open2200, waiting2200 } from "./event2200";
-import { cycleGrowthRate, cycleOf, rebuildDrive, reviveRule } from "./cycle27";
+import { REBUILD_CLOCK_SLOW, cycleGrowthRate, cycleOf, rebuildDrive, reviveRule } from "./cycle27";
 import { newTier23, reviewTiers } from "./tier23";
 import { newNumReg, syncNumbers } from "./numreg";
 import { enforceCaps } from "./cap20";
@@ -342,7 +342,7 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
     const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
     if (e.state === "open" || e.state === "dormant") {
       if (e.through > e.peakThrough) e.peakThrough = e.through;
-      e.zeroYears = d < Z ? e.zeroYears + (rebuildDrive(sim.e2200, y) > 0.5 ? 0 : 1) : 0;   // (Stage 28: in the rebuilding the clocks of resting and closing stand still: nothing new goes to rest while the nation is building)
+      e.zeroYears = d < Z ? e.zeroYears + (1 - REBUILD_CLOCK_SLOW * rebuildDrive(sim.e2200, y)) : 0;   // (Stage 28: in the rebuilding the clocks of resting and closing run slowly -- fully as the drive fades over the balance phase, so no wave of closures is held back and then let go together)
       e.congYears = e.through > 0.9 * capacityOf(e) ? e.congYears + 1 : 0;
       e.throughDropYears = e.peakThrough > 50 && e.bypassedBy.length && e.through < 0.25 * e.peakThrough ? e.throughDropYears + 1 : e.bypassedBy.length ? e.throughDropYears : 0;
       if (e.state === "dormant" && d >= Z * 2) { setEdgeState(sim, e, "open", `需要が回復(${Math.round(d)}${unit})`); ev(sim, "reopen", `${edgeName(sim, e)}が休止から再開`, `需要が${Math.round(d)}${unit}に回復`, { edge: e.id }); }
