@@ -12,7 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 tools/build_lakes.py src/data/lakes.json
-      - run: python3 -c "import json;d=json.load(open('src/data/lakes.json'));n={l['name'] for l in d['lakes']};need={'琵琶湖','霞ヶ浦','サロマ湖','宍道湖','浜名湖'};m=need-n;assert not m,m;b=[l for l in d['lakes'] if l['name']=='琵琶湖'][0];assert len(b['holes'])>=1,'no islands in Biwa';print('ok',len(d['lakes']))"
+      - run: |
+          python3 - <<'PY'
+          import json
+          d = json.load(open('src/data/lakes.json'))
+          names = [l['name'] for l in d['lakes']]
+          need = ['琵琶湖', '霞ヶ浦', 'サロマ湖', '宍道湖', '浜名湖']
+          missing = [n for n in need if not any(n in x for x in names)]
+          assert not missing, missing
+          biwa = [l for l in d['lakes'] if l['name'] == '琵琶湖'][0]
+          assert len(biwa['holes']) >= 1, 'no islands in Biwa'
+          print('ok', len(d['lakes']), 'biwa islands', len(biwa['holes']), [i['name'] for i in biwa.get('islands', [])])
+          PY
       - name: Commit
         run: |
           git config user.name "github-actions"
