@@ -222,10 +222,11 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
 export function strandedWithout(sim: SimState, w: World, skip: SimEdge | null): { villages: number; cities: number } {
   if (skip && modeOf(skip) === "rail") return { villages: 0, cities: 0 };   // settlements reach their city by road; a railway closing strands no one in this model
   const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, number>(); for (const n of Object.values(sim.nodes)) nodeByCell.set(n.cell, pos.get(n.id)!);
+  // Stage 28: the passable road graph is built ONCE per call (it was built twice, with and without `skip`); leaving `skip` out is a flag on the walk. The same components, so the same answer.
+  const adj: [number, SimEdge][][] = nodeIds.map(() => []); for (const e of Object.values(sim.edges)) if (passable(e) && modeOf(e) === "road") { const a = pos.get(e.a)!, b = pos.get(e.b)!; adj[a].push([b, e]); adj[b].push([a, e]); }
   const comps = (omit: SimEdge | null) => {
-    const adj: number[][] = nodeIds.map(() => []); for (const e of Object.values(sim.edges)) if (passable(e) && modeOf(e) === "road" && e !== omit) { const a = pos.get(e.a)!, b = pos.get(e.b)!; adj[a].push(b); adj[b].push(a); }
     const comp = new Int32Array(nodeIds.length).fill(-1); let c = 0;
-    for (let s = 0; s < nodeIds.length; s++) if (comp[s] < 0) { const st = [s]; comp[s] = c; while (st.length) { const x = st.pop()!; for (const y of adj[x]) if (comp[y] < 0) { comp[y] = c; st.push(y); } } c++; }
+    for (let s = 0; s < nodeIds.length; s++) if (comp[s] < 0) { const st = [s]; comp[s] = c; while (st.length) { const x = st.pop()!; for (const [y, e] of adj[x]) if (e !== omit && comp[y] < 0) { comp[y] = c; st.push(y); } } c++; }
     return comp;
   };
   const cut = (comp: Int32Array) => { let n = 0; for (const v of Object.values(sim.settlements)) { if (v.gone) continue; const pc = w.cityById.get(v.city), a = nodeByCell.get(v.cell), b = pc ? nodeByCell.get(pc.cell) : undefined; if (a === undefined || b === undefined || comp[a] !== comp[b]) n++; } return n; };

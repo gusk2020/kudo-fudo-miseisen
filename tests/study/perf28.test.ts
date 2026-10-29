@@ -23,5 +23,7 @@ it.skipIf(!process.env.STUDY28)("perf profile", async () => {
   const self = new Map<string, number>(), byId = new Map<number, any>(); for (const n of profile.nodes) byId.set(n.id, n);
   const dt: number[] = profile.timeDeltas; profile.samples.forEach((id: number, i: number) => { const n = byId.get(id), k = `${n.callFrame.functionName || "(anon)"} ${String(n.callFrame.url).split("/").slice(-2).join("/")}:${n.callFrame.lineNumber + 1}`; self.set(k, (self.get(k) ?? 0) + (dt[i] ?? 0)); });
   const total = [...self.values()].reduce((a, b) => a + b, 0), top = [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, v]) => ({ fn: k, ms: Math.round(v / 1000), pct: Math.round((v / total) * 1000) / 10 }));
-  writeFileSync(OUT, JSON.stringify({ years, totalMs: Math.round(total / 1000), top }, null, 1));
+  const lines = new Map<string, number>(); for (const n of profile.nodes) for (const t of n.positionTicks ?? []) { const k = `${n.callFrame.functionName || "(anon)"}:${t.line}`; lines.set(k, (lines.get(k) ?? 0) + t.ticks); }
+  const topLines = [...lines.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30);
+  writeFileSync(OUT, JSON.stringify({ years, totalMs: Math.round(total / 1000), top, topLines }, null, 1));
 }, 3000000);
