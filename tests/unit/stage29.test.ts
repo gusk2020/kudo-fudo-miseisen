@@ -43,3 +43,21 @@ describe("Stage 29: 水と土地の色の共通定義", () => {
     const deep = seaRgb(5000), shallow = seaRgb(0); expect(deep[2]).toBeLessThan(shallow[2]);
   });
 });
+
+import { existsSync, readFileSync } from "node:fs";
+const lakesPath = new URL("../../src/data/lakes.json", import.meta.url);
+describe.skipIf(!existsSync(lakesPath))("Stage 29: 湖と湖中島のデータ(OpenStreetMap)", () => {
+  const d = JSON.parse(existsSync(lakesPath) ? readFileSync(lakesPath, "utf8") : "{\"lakes\":[]}") as { lakes: { name: string; kind: string; km2: number; outer: number[][]; holes: number[][][]; islands?: { name: string }[] }[] };
+  const inside = (p: number[], ring: number[][]) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i], [xj, yj] = ring[j]; if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) c = !c; } return c; };
+  it("琵琶湖・霞ヶ浦・サロマ湖・宍道湖・浜名湖など主要な湖があり、汽水湖は区別されている", () => {
+    for (const n of ["琵琶湖", "霞ヶ浦", "サロマ湖", "宍道湖", "浜名湖", "猪苗代湖", "洞爺湖"]) expect(d.lakes.some((l) => l.name.includes(n)), n).toBe(true);
+    for (const n of ["サロマ湖", "宍道湖", "浜名湖", "霞ヶ浦"]) expect(d.lakes.find((l) => l.name.includes(n))!.kind, n).toBe("brackish");
+    expect(d.lakes.find((l) => l.name === "琵琶湖")!.kind).toBe("lake"); expect(d.lakes.length).toBeGreaterThan(20);
+  });
+  it("湖中島はその湖の内側にあり(陸水が重ならない)、琵琶湖には沖島と竹生島などが入っている", () => {
+    for (const l of d.lakes) for (const h of l.holes) expect(inside(h[0], l.outer), `${l.name}の島の点が湖の外`).toBe(true);
+    const biwa = d.lakes.find((l) => l.name === "琵琶湖")!, names = (biwa.islands ?? []).map((i) => i.name); expect(biwa.holes.length).toBeGreaterThanOrEqual(3);
+    expect(names.join(",")).toMatch(/沖島|竹生島|多景島/);
+    const lon = biwa.outer.map((p) => p[0] / 1e4), lat = biwa.outer.map((p) => p[1] / 1e4); expect(Math.min(...lon)).toBeGreaterThan(135.8); expect(Math.max(...lon)).toBeLessThan(136.3); expect(Math.min(...lat)).toBeGreaterThan(34.9); expect(Math.max(...lat)).toBeLessThan(35.7);
+  });
+});
