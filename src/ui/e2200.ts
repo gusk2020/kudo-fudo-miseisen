@@ -10,7 +10,7 @@ import { DEFAULT_CAPITAL, DEFAULT_PALACE, DEFAULT_SUB, prefName } from "../core/
 export const e22Draft = (sim: SimState): Choice2200 => ({ era: 0, stance: "heisei", coast: sim.kaigen?.recon?.coast ?? "neutral", focus: sim.kaigen?.recon?.focus ?? "concentrate", capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: sim.palace?.pref ?? DEFAULT_PALACE });
 const radio = (id: string, label: string, on: boolean, pick: () => void, desc?: string) => h("button", { id, type: "button", role: "radio", "aria-checked": String(on), class: "rw-item" + (on ? " on" : ""), onclick: pick }, h("span", { class: "rw-dot" }, on ? "●" : "○"), h("span", { class: "rw-txt" }, h("span", { class: "rw-label" }, label), ...(desc ? [h("span", { class: "rw-desc" }, desc)] : [])));
 export function buildE2200(app: App, body: HTMLElement) {
-  const sim = app.sim, e = sim?.e2200; if (!sim || !e) { body.append(h("small", {}, "2200年の出来事はまだです")); return; }
+  const sim = app.sim, e = sim?.e2200; if (!sim || !e) { body.append(h("small", {}, "遷都の出来事はまだです")); return; }
   body.append(h("h3", {}, `${e.year}年 遷都と復興(第${(e.n ?? 0) + 1}回)`));
   if (e.state !== "pending") { body.append(h("div", { class: "issue", id: "e22-done" }, e.kept ? "現状を維持しました" : `元号: ${e.era}／方針は自由選択${e.state === "road0" ? "／国道0号を描けます(下の道具)" : ""}`)); return; }
   const d = (app.e22 ??= e22Draft(sim)), re = () => app.buildSheet(), list = h("div", { class: "radio-list", id: "e22-box" });

@@ -23,12 +23,12 @@ export const waiting2200 = (sim: Pick<SimState, "e2200">) => sim.e2200?.state ==
 /** Stage 25: the event repeats every 150 years (2200, 2350, 2500, ...). `sim.e2200` is the latest one; the earlier ones are kept, in order, in `sim.e2200hist`. */
 export const E2200_STEP = RELOC_STEP;
 export const eventsOpened = (sim: Pick<SimState, "e2200" | "e2200hist">) => (sim.e2200hist?.length ?? 0) + (sim.e2200 ? 1 : 0);
-export const nextYear2200 = (sim: Pick<SimState, "e2200" | "e2200hist">) => relocYear(eventsOpened(sim));
+export const nextYear2200 = (sim: Pick<SimState, "e2200" | "e2200hist"> & Partial<Pick<SimState, "relocFirst">>) => relocYear(eventsOpened(sim), sim.relocFirst);
 /** Due at a year boundary on or after the next scheduled year in a timeline game, once the previous event is over. The schedule counts events, not the year they happened to open in, so it cannot drift or fire twice. */
 export const due2200 = (sim: SimState) => !!sim.stage3 && !!sim.kaigen && (!sim.e2200 || sim.e2200.state === "done") && yearOf(sim) >= nextYear2200(sim);
 export function open2200(sim: SimState) {
   const n = eventsOpened(sim), k = sim.kaigen!; if (sim.e2200) (sim.e2200hist ??= []).push(sim.e2200);
-  sim.e2200 = { year: yearOf(sim), state: "pending", n, sched: relocYear(n) }; (k.reloc ??= [])[n] = relocGroup(k, n, yearOf(sim));
+  sim.e2200 = { year: yearOf(sim), state: "pending", n, sched: relocYear(n, sim.relocFirst) }; (k.reloc ??= [])[n] = relocGroup(k, n, yearOf(sim));
   ev(sim, "kaigen", `${yearOf(sim)}年: 遷都と復興の時を迎えた(第${n + 1}回)`, "首都・副首都・皇居、元号、復興方針を選び直せます(選ばなければ今のまま)", {});
 }
 /** The candidates put to the player at the open event (built now for a game saved before they were recorded). */

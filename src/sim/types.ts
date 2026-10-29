@@ -124,6 +124,8 @@ export interface SimState {
   moves20?: { pref: string; pos: Vec; by: "capital" | "sub" | "palace"; since?: number }[];
   cp?: { y50: number; reloc: number };   // Stage 26: the last 50-year mark a checkpoint was taken for, and how many relocation events have had theirs
   e2200hist?: import("./event2200").E2200[];   // Stage 25: the relocation events before the latest one (every 150 years from 2200)
+  /** Stage 28: the year of the first relocation event of this game (2100 for a game started in Stage 28 or later). Absent = an older game: its events keep the 2200, 2350, ... schedule. */
+  relocFirst?: number;
   e2200?: import("./event2200").E2200;   // Stage 22: the 2200 event (遷都・改元・復興方針・国道0号). Absent = not yet (or an older game before 2200)   // Stage 20: the seat points that made a new 県庁所在地 (the world is built with them). Absent = the Stage 19 meaning of a seat point
   numreg?: import("./numreg").NumReg;   // Stage 23: the route NUMBER register (numreg.ts): six classes, numbers never reused. Absent = an older save: started (marked estimated) at its next yearly step
   tier23?: import("./tier23").Tier23;   // Stage 23: 政令特区 / 政令指定都市 and their wards (tier23.ts). Absent = an older game (no tiers)

@@ -1026,3 +1026,37 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   const m2 = (await app(page, "a => a.sim.month")) as number; await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m2, { timeout: 60000 }); expect(await app(page, "a => a.sim.e2200.state")).toBe("done");   // it plays on; no event opens again
   expect(errs).toEqual([]);
 });
+
+/** Stage 28: the three seats after a numbered slot is loaded, for the first and the second relocation, then play on, save again and reload. */
+test("Stage 28: 遷都後のセーブを読み込んでも首都・副首都・皇居は保たれる(1回目・2回目、進行・再保存・再読込も)。遷都は2100/2250年", async ({ page }) => {
+  test.setTimeout(400000); await page.setViewportSize({ width: 360, height: 740 }); page.on("dialog", (d) => void d.accept());
+  const errs = watchErrors(page); await startReal(page);
+  const menu = () => page.evaluate(() => { const a = (window as any).__kfm; if (a.sheet !== "menu") a.openSheet("menu"); else a.buildSheet(); });
+  const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; }, y);
+  const seats = () => app(page, "a => [a.sim.capital, a.sim.subCapital, a.sim.palace?.pref, JSON.stringify(a.activeSeats()), a.r.seatOverride ? 1 : 0, a.sim.e2200.n, a.sim.e2200.state]") as Promise<any[]>;
+  expect(await app(page, "a => [a.sim.relocFirst, a.sim.startYear]")).toEqual([2100, 1950]);
+  const event = async (y: number, cap: string, sub: string, pal: string, era: number) => {
+    await jump(y); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
+    await page.selectOption("#e22-sel-capital", cap); await page.selectOption("#e22-sel-sub", sub); await page.selectOption("#e22-sel-palace", pal); await page.click("#e22-era-" + era); await page.click("#e22-decide");
+    await page.click("#road0-skip"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200.state === "done");
+  };
+  const loadSlot = async (n: number) => { await menu(); await page.waitForSelector("#slot-" + n); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click(`#slot-${n} .slot-load`); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); };
+  await event(2100, "JP-23", "JP-40", "JP-04", 1);
+  expect(await app(page, "a => a.sim.e2200.year")).toBe(2100); const s1 = await seats(); expect(s1.slice(0, 3)).toEqual(["JP-23", "JP-40", "JP-04"]);
+  await menu(); await page.waitForSelector("#slot-2"); await page.click("#slot-2 .slot-save"); await page.waitForTimeout(800); expect(await page.textContent("#slot-2 .slot-text")).toContain("愛知県 / 福岡県");
+  await loadSlot(2); expect(await seats()).toEqual(s1);   // the same seats in the game, in the names and on the map markers
+  await menu(); await page.waitForSelector("#slot-2"); expect(await page.textContent("#slot-2 .slot-text")).toContain("愛知県 / 福岡県");
+  const m0 = (await app(page, "a => a.sim.month")) as number; await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((m) => (window as any).__kfm.sim.month > (m as number) + 6, m0, { timeout: 90000 });
+  expect(await app(page, "a => [a.sim.e2200.n, a.sim.e2200.state, a.sim.e2200hist?.length ?? 0]")).toEqual([0, "done", 0]);   // no second opening of the same event
+  // the second relocation (2250), a different set of seats
+  await event(2250, "JP-13", "JP-27", "JP-26", 0);
+  expect(await app(page, "a => [a.sim.e2200.n, a.sim.e2200.year, a.sim.e2200hist.length]")).toEqual([1, 2250, 1]); const s2 = await seats(); expect(s2.slice(0, 3)).toEqual(["JP-13", "JP-27", "JP-26"]);
+  await menu(); await page.waitForSelector("#slot-3"); await page.click("#slot-3 .slot-save"); await page.waitForTimeout(800);
+  await loadSlot(3); expect(await seats()).toEqual(s2);
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); const m1 = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m) => (window as any).__kfm.sim.month > (m as number) + 6, m1, { timeout: 90000 });
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  const s3 = await seats(); expect(s3.slice(0, 5)).toEqual(s2.slice(0, 5)); expect(s3.slice(5)).toEqual([1, "done"]);
+  await menu(); await page.waitForSelector("#slot-4"); await page.click("#slot-4 .slot-save"); await page.waitForTimeout(500);   // (re-saving after a load keeps the seats too)
+  await loadSlot(4); expect((await seats()).slice(0, 3)).toEqual(s3.slice(0, 3));
+  expect(errs).toEqual([]);
+});
