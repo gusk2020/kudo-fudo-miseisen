@@ -58,3 +58,7 @@ export const cycleGrowthRate = (sim: Pick<SimState, "startYear" | "month" | "e22
  */
 export const REBUILD_DRIVE_MAX = { pathfinds: 0.75, regions: 0.5 };
 export function rebuildDrive(e2200: SimState["e2200"], year: number): number { const cs = cycleShape(e2200, year); return cs ? Math.max(0, Math.min(1, (cs.build * cs.damp - 0.5) * 2)) : 0; }
+
+/** Stage 28: in the rebuilding a closed or ruined line is brought back on a smaller demand and after fewer years of it (the ordinary rule is REVIVE_DEMAND / REVIVE_YEARS in engine.ts). */
+export const REBUILD_REVIVE = { demandCut: 0.5, yearsCut: 1 };
+export const reviveRule = (e2200: SimState["e2200"], year: number, demand: number, years: number) => { const d = rebuildDrive(e2200, year); return { demand: demand * (1 - REBUILD_REVIVE.demandCut * d), years: Math.max(1, years - Math.round(REBUILD_REVIVE.yearsCut * d)) }; };

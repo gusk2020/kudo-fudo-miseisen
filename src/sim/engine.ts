@@ -5,7 +5,7 @@
  */
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
 import { due2200, open2200, waiting2200 } from "./event2200";
-import { cycleGrowthRate, cycleOf } from "./cycle27";
+import { cycleGrowthRate, cycleOf, reviveRule } from "./cycle27";
 import { newTier23, reviewTiers } from "./tier23";
 import { newNumReg, syncNumbers } from "./numreg";
 import { enforceCaps } from "./cap20";
@@ -353,7 +353,7 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
         else if (e.zeroYears === CLOSE_YEARS) { pushHist(sim, e, "閉鎖を見送り: 代替路がない、または沿線に集落がある"); }
       }
     } else if (e.state === "closed" || e.state === "lost") {
-      const pot = an.potential.get(e.id) ?? 0; e.reviveYears = pot >= REVIVE_DEMAND ? e.reviveYears + 1 : 0;
+      const pot = an.potential.get(e.id) ?? 0; e.reviveYears = pot >= reviveRule(sim.e2200, y, REVIVE_DEMAND, REVIVE_YEARS).demand ? e.reviveYears + 1 : 0;
     }
     void y;
   }
