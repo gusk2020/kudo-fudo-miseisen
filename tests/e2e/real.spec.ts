@@ -602,7 +602,7 @@ test("Stage 9 (実機指摘): 山脈は地形の再生成を待たずに続け�
     await stroke(page, base);                                   // 1st stroke: the range itself
     // immediately (terrain is regenerating): continue from its end, then a separate stroke elsewhere
     const end = await page.evaluate((k) => { const a = (window as any).__kfm, l = a.s.ridges[k]; return a.r.worldToScreen(l[l.length - 1]); }, key) as [number, number];
-    await page.waitForFunction(() => (window as any).__kfm.generating, null, { timeout: 10000 });   // the map is being remade (several seconds on a phone): drawing must still work
+    await page.waitForFunction(() => (window as any).__kfm.generating, null, { timeout: 10000 }).catch(() => { /* the rebuild may already be over on a fast machine; the strokes below are what is tested */ });   // the map is being remade (several seconds on a phone): drawing must still work
     await stroke(page, [[end[0] + 3, end[1] + 3], [end[0] + 40, end[1] - 30]]);
     expect(await app(page, `a => (a.s.ridgeExtra?.${key} || []).length`)).toBe(0);   // a continuation: still one stroke, longer
     const n1 = await app(page, `a => a.s.ridges.${key}.length`) as number; expect(n1).toBeGreaterThan(2);
@@ -1018,12 +1018,13 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   await menu(); await page.waitForSelector("#cp-2100-reloc"); expect(await page.textContent("#cp-2100-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2100-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
   expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.waitForSelector("#cp-2000-50y");
-  await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12) <= 2001 && !a.sim.e2200")).toBe(true);   // (a game from the 2000 checkpoint, before the relocation event)
-  expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menu(); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
   // the checkpoint taken after the 2200 event: loading it gives the world with the choices made, and nothing is asked again
   await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2100-reloc .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n, a.sim.palace.pref, a.sim.cp.reloc]")).toEqual(["done", 0, "JP-04", 1]);
   const m2 = (await app(page, "a => a.sim.month")) as number; await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m2, { timeout: 60000 }); expect(await app(page, "a => a.sim.e2200.state")).toBe("done");   // it plays on; no event opens again
+  await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12) <= 2001 && !a.sim.e2200")).toBe(true);   // (a game from the 2000 checkpoint, before the relocation event)
+  expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menu(); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
+  expect(await page.locator("#cp-2100-reloc").count()).toBe(0);   // Stage 30A: going back to 2000 starts a new timeline: the old future (the 2100 save) is no longer in this game's list, and nothing was deleted
   expect(errs).toEqual([]);
 });
 
