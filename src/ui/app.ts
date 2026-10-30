@@ -12,7 +12,7 @@ import { FEATURE_LIMITS } from "../core/save";
 import { PREF_IDS, prefOfSeat, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
 import { exportGame, getRaw, idbCpStore, listSlots, slotMeta, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
-import { checkpointDue, listCheckpoints, markCheckpoint, readCheckpoint, writeCheckpoint, type CpEntry } from "../sim/checkpoint";
+import { assignBranch, checkpointDue, ensureIdentity, identityOf, inHistory, listCheckpoints, markCheckpoint, readCheckpoint, writeCheckpoint, type CpEntry } from "../sim/checkpoint";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
 import { suggestRidge } from "../core/suggest";
 import type { TerrainResult } from "../core/terrain";
@@ -205,7 +205,7 @@ export class App {
     if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
-    finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
+    ensureIdentity(sim); finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
     this.render(); this.buildUI();   // Stage 28: the seat markers and names come from the loaded game (sim), which only now exists -- the render right after a load ran without it and drew the map state's 東京・大阪・東京
     if (this.safeMode) { sim.speed = 0; this.status(); return; }
     const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
@@ -602,7 +602,7 @@ export class App {
     if (!(this.real ? performNational(sim, w, k as NatPreview) : performCeremony(sim, w, k, f!))) { this.toast("開通の儀を行えませんでした"); this.buildUI(); return; }
     // Stage 10: route-number signs start OFF once the roads exist, unless the player has already chosen (a stored OFF in an older save is kept as it is)
     if (!this.s.layersSet?.includes("signs") && this.s.layers.signs) this.store.set((s) => { s.layers.signs = false; });
-    sim.speed = 1; this.sim = sim; this.saveLocked = false; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.saveCer(); this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
+    ensureIdentity(sim); sim.speed = 1; this.sim = sim; this.saveLocked = false; this.runner = new SimRunner(sim, w); this.cerDraft = {}; this.saveCer(); this.tool = "view"; this.acc = 0; this.lastTick = performance.now();
     this.persist(); this.toast("開通の儀を終えました。時間が動き始めます"); this.onChange();
   }
   /** Stage 11: delete the selected stroke of a range (one Undo step), as 区間を消す does for the 国道1号. */
@@ -651,8 +651,8 @@ export class App {
     if (!due || this.cpBusy) { run.waiting = false; return; }
     this.cpBusy = true;
     try {
-      markCheckpoint(sim, due); sim.lastWallMs = Date.now(); const json = JSON.stringify(makeSave(this.s, sim)), st = seatsOf(this.s);   // (serialised in the same breath as the marking)
-      const r = await writeCheckpoint(idbCpStore, json, due, { capital: seatPrefName(sim.capital ?? st.capital), sub: seatPrefName(sim.subCapital ?? st.sub) });
+      ensureIdentity(sim); markCheckpoint(sim, due); sim.lastWallMs = Date.now(); const json = JSON.stringify(makeSave(this.s, sim)), st = seatsOf(this.s);   // (serialised in the same breath as the marking)
+      const r = await writeCheckpoint(idbCpStore, json, due, { capital: seatPrefName(sim.capital ?? st.capital), sub: seatPrefName(sim.subCapital ?? st.sub), id: identityOf(sim) });
       this.toast(r.ok ? `${due.year}年の自動セーブポイントを作りました${due.kind === "reloc" ? "(遷都の直後)" : ""}` : `自動セーブポイントを作れませんでした(${r.error})。ゲームはこのまま続けられます`);
       if (this.sheet === "menu") this.buildSheet();
     } catch (e) { this.toast(`自動セーブポイントを作れませんでした(${e instanceof Error ? e.message : "不明"})。ゲームはこのまま続けられます`); }
@@ -1083,12 +1083,12 @@ export class App {
       const m = metas[i], used = have.has(n), text = m ? `${m.capital} / ${m.sub} / ${m.year === null ? "開始前" : m.year + "年"}` : used ? "(読めないデータ)" : "(空)";
       body.append(h("div", { class: "slot-row", id: "slot-" + (i + 1) }, h("span", { class: "slot-no" }, NUM[i]), h("span", { class: "slot-text" + (used ? "" : " empty"), title: text }, text),
         h("button", { class: "slot-save", onclick: async () => { if (used && !confirm(`${NUM[i]}は使用中です(${text})。上書きしますか?`)) return; this.toast((await saveGame(n, makeSave(this.s, this.sim ?? this.pendingSim))) ? "セーブしました" : "セーブできません(ブラウザの保存が無効)"); this.buildSheet(); } }, "保存"),
-        h("button", { class: "slot-load", disabled: !used, onclick: async () => { const l = await loadGame(n); if (l) this.adopt(l); else this.toast("ロードできません"); } }, "読込")));
+        h("button", { class: "slot-load", disabled: !used, onclick: async () => { const l = await loadGame(n); if (l) void this.adopt(l); else this.toast("ロードできません"); } }, "読込")));
     });
     if (this.real) await this.buildCheckpoints(body);
     body.append(h("div", { class: "row" },
       h("button", { id: "export", onclick: () => this.exportFile() }, "JSONエクスポート"),
-      h("label", {}, "JSON読込 ", h("input", { type: "file", accept: ".json,application/json", id: "import", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; const p = parseSave(await f.text()); if (!p.ok) { this.toast("読み込めません: " + p.problems[0]); return; } this.adopt(p); } }))));
+      h("label", {}, "JSON読込 ", h("input", { type: "file", accept: ".json,application/json", id: "import", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; const p = parseSave(await f.text()); if (!p.ok) { this.toast("読み込めません: " + p.problems[0]); return; } void this.adopt(p); } }))));
     if (this.s.finalized) body.append(h("div", { class: "row" }, this.real ? "" : h("button", { id: "unlock-menu", onclick: () => this.unlockMap() }, "地図のロックを解除して編集"), this.sim ? h("button", { id: "restart-roads", onclick: () => { if (confirm("道路を消して開通の儀からやり直します(地図は維持)。よろしいですか?")) { this.sim = null; this.cerDraft = {}; this.persist(); this.go(6); this.onChange(); } } }, "道路だけやり直す") : h("small", {}, "")));
     if (this.stepId === "confirm") {
       const errs = this.issues.filter((i) => i.severity === "error").length, ready = errs === 0 && !!this.terrain;
@@ -1100,23 +1100,27 @@ export class App {
   }
   /** Stage 26: the 自動セーブポイント list -- year, 50-year or just-before-relocation, the seats it was saved with; 読込 continues the game from there. Kept apart from the numbered slots. */
   private async buildCheckpoints(body: HTMLElement) {
-    const list = await listCheckpoints(idbCpStore); body.append(h("h3", { id: "cp-title" }, "自動セーブポイント"));
-    body.append(h("small", { id: "cp-note" }, "50年ごと(2000年〜)と、150年ごとの遷都イベントの直後(選択と国道0号まで済んだ時点)に自動で作られます。①〜⑤とは別です。最大8件で、古いものから自動で消えます。"));
-    if (!list.length) { body.append(h("div", { class: "slot-row", id: "cp-empty" }, h("span", { class: "slot-text empty" }, "(まだありません)"))); return; }
+    const all = await listCheckpoints(idbCpStore), id = this.sim ? identityOf(this.sim) : null; body.append(h("h3", { id: "cp-title" }, "自動セーブポイント"));
+    body.append(h("small", { id: "cp-note" }, "50年ごと(2000年〜)と、遷都イベントの直後に自動で作られます。今の世界の分だけを表示します(最大8件・48MB、古いものから消えます)。別の世界は最大4つまで残ります。①〜⑤とは別です。"));
+    const list = id ? all.filter((e) => inHistory(e, id)) : [], old = id ? all.filter((e) => !e.wid) : all.filter((e) => !e.wid);
     const mb = (e: CpEntry) => `${(e.bytes / 1048576).toFixed(1)}MB`;
-    for (const e of list) {
+    const row = (e: CpEntry, legacy: boolean) => {
       const label = e.kind === "reloc" ? `${e.year}年 遷都の${e.v ? "直後" : "直前(旧)"}(第${e.n ?? "?"}回)` : `${e.year}年 50年ごと`, text = `${label} / ${e.capital} / ${e.sub} / ${mb(e)}`;
-      body.append(h("div", { class: "slot-row cp-row", id: `cp-${e.year}-${e.kind}` }, h("span", { class: "slot-text", title: text }, text),
-        h("button", { class: "slot-load cp-load", onclick: async () => { if (!confirm(`${label}から再開します。今のゲームは、保存していなければ失われます。よろしいですか?`)) return; const j = await readCheckpoint(idbCpStore, e); if (!j) { this.toast("読み込めません(データが見つかりません)"); return; } const p = parseSave(j); if (p.ok && p.sim) this.adopt(p); else this.toast("読み込めません: " + (p.problems[0] ?? "壊れたデータ")); } }, "読込")));
-    }
+      body.append(h("div", { class: "slot-row cp-row" + (legacy ? " cp-legacy" : ""), id: `cp-${e.year}-${e.kind}` + (legacy ? "-old" : "") }, h("span", { class: "slot-text", title: text }, text),
+        h("button", { class: "slot-load cp-load", onclick: async () => { if (!confirm(`${label}から再開します。今のゲームは、保存していなければ失われます。よろしいですか?`)) return; const j = await readCheckpoint(idbCpStore, e); if (!j) { this.toast("読み込めません(データが見つかりません)"); return; } const p = parseSave(j); if (p.ok && p.sim) void this.adopt(p); else this.toast("読み込めません: " + (p.problems[0] ?? "壊れたデータ")); } }, "読込")));
+    };
+    if (!list.length) body.append(h("div", { class: "slot-row", id: "cp-empty" }, h("span", { class: "slot-text empty" }, "(この世界ではまだありません)")));
+    for (const e of list) row(e, false);
+    if (old.length) { const d = h("details", { id: "cp-old" }, h("summary", {}, `出所不明の旧データ(${old.length}件)`)); body.append(d); const keep = body; const tmp = h("div", {}); body.append(tmp); for (const e of old) row(e, true); const rows = [...body.querySelectorAll(".cp-legacy")]; for (const r of rows) d.append(r); tmp.remove(); void keep; }
   }
-  /** Load a parsed save (slot or file): map first, then roads only if they verify against the regenerated terrain. */
-  private adopt(l: { map: any; sim: SimState | null; quarantine: unknown; problems: string[] }) {
+  private async adopt(l: { map: any; sim: SimState | null; quarantine: unknown; problems: string[] }) {
     // the two games keep separate data: a file from the other one is refused rather than half-loaded
     if (this.real !== !!l.map?.real) { this.toast(this.real ? "旧版(架空の日本列島)のデータです。URLの末尾に ?legacy=1 を付けた旧版で開いてください" : "実在の日本版のデータです。?legacy=1 を付けない通常のURLで開いてください"); return; }
     // Stage 29: a load the player asked for is the game AS IT WAS SAVED: the real time since it was saved (hours, a day) is never played forward -- the catch-up that carries a running game across a time away used to
     // run on a loaded 2050 checkpoint too, simulated up to 30 years at once and put the game back at about 2080
-    if (l.sim) l.sim.lastWallMs = 0;
+    if (l.sim) { l.sim.lastWallMs = 0;
+      // Stage 30A: a load restores the world and timeline it was saved in; if that timeline already holds a later checkpoint, the game goes on as a new branch (a save from before Stage 30A becomes a world of its own)
+      let br = false; try { br = assignBranch(l.sim, await listCheckpoints(idbCpStore)); } catch { ensureIdentity(l.sim); } if (br) l.problems = [...l.problems, "別の分岐として続けます"]; }
     this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.r.fit(l.map);
     if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
     this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();

@@ -122,6 +122,8 @@ export interface SimState {
   pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
   lastTunnelException18?: number;   // Stage 18: the year the last sea/lake tunnel was allowed under 海路重視 / 空路重視 (policy18.ts)
   moves20?: { pref: string; pos: Vec; by: "capital" | "sub" | "palace"; since?: number }[];
+  /** Stage 30A: the world this game belongs to, the timeline within it, and the timelines it branched from (with the year it left each). Absent = a save from before Stage 30A */
+  wid?: string; tl?: string; anc?: { tl: string; y: number }[];
   cp?: { y50: number; reloc: number };   // Stage 26: the last 50-year mark a checkpoint was taken for, and how many relocation events have had theirs
   e2200hist?: import("./event2200").E2200[];   // Stage 25: the relocation events before the latest one (every 150 years from 2200)
   /** Stage 28: the year of the first relocation event of this game (2100 for a game started in Stage 28 or later). Absent = an older game: its events keep the 2200, 2350, ... schedule. */
