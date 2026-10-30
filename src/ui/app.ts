@@ -835,6 +835,7 @@ export class App {
     tb.append(h("div", { class: "grp", id: "edit-tools" }, toggle, featBtn("biwa", "琵琶湖"), featBtn("fuji", "富士山"),
       this.tbtn("山脈", this.tool === "range", () => { if (this.tool === "range") this.setTool("range"); else { this.setTool("range"); this.rangeListOpen = !this.rangeSel; this.buildToolbar(); } }, "edit-ranges", false),
       h("button", { id: "edit-more", type: "button", title: "山脈の稜線を自分で描く道具", "aria-pressed": ridges ? "true" : "false", class: ridges ? "mode on" : "mode", onclick: () => { if (ridges) { this.editMore = false; if (ridgeOn) this.tool = "view"; } else this.editMore = true; this.buildToolbar(); this.render(); } }, "稜線"),
+      this.bgSwitch("edit-bg"),
       h("button", { id: "edit-undo", type: "button", "aria-label": "元に戻す", disabled: !this.store.canUndo, onclick: () => this.undoEdit() }, "↶"), h("button", { id: "edit-redo", type: "button", "aria-label": "やり直す", disabled: !this.store.canRedo, onclick: () => this.redoEdit() }, "↷")));
     if (this.tool === "feature") {
       const f = this.selFeature, row = h("div", { class: "grp", id: "feature-size" }, h("button", { id: "rot-l", type: "button", "aria-label": "左に回転", onclick: () => this.rotateSel(1) }, "⟲"), h("button", { id: "rot-r", type: "button", "aria-label": "右に回転", onclick: () => this.rotateSel(-1) }, "⟳"));
@@ -847,7 +848,7 @@ export class App {
       tb.append(row, ...(!this.axesOpen ? [] : [h("div", { class: "grp", id: "feature-axes" }, h("button", { id: `${f}-x-less`, type: "button", "aria-label": "横を縮める", onclick: () => this.scaleFeature(f, "scale", 1 / 1.15, "x") }, "横−"), h("button", { id: `${f}-x-more`, type: "button", "aria-label": "横を伸ばす", onclick: () => this.scaleFeature(f, "scale", 1.15, "x") }, "横＋"), h("button", { id: `${f}-y-less`, type: "button", "aria-label": "縦を縮める", onclick: () => this.scaleFeature(f, "scale", 1 / 1.15, "y") }, "縦−"), h("button", { id: `${f}-y-more`, type: "button", "aria-label": "縦を伸ばす", onclick: () => this.scaleFeature(f, "scale", 1.15, "y") }, "縦＋"), h("small", { class: "tag" }, "縦横は別々に最大5倍(回転に従う)"))]));
     }
     // Stage 30A: the 道路図/地形図 switch works while editing too -- it changes only the background, so a selected Fuji / Biwa / range, its outline and its settings stay exactly as they are
-    tb.append(h("div", { class: "grp", id: "edit-bg-row" }, this.bgSwitch("edit-bg"), ...(this.tool === "range" ? this.rangeControls() : [])));
+    if (this.tool === "range") tb.append(h("div", { class: "grp", id: "edit-range-row" }, ...this.rangeControls()));
     if (this.tool === "range" && this.rangeListOpen) tb.append(this.rangeList());
     if (ridges) tb.append(h("div", { class: "grp", id: "edit-more-row" }, tool("ridge-ne", "北"), tool("ridge-sw", "南"), tool("ridge-edit", "点"), tool("ridge-pick", "区間"), h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実アルプス"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "消去"), h("small", { class: "tag", id: "terrain-edit-note" }, "海岸線は固定")));
     if (ridgeOn) {
