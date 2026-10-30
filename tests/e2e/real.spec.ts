@@ -1187,3 +1187,37 @@ test("Stage 29: 湖・汽水湖・湖中島が描かれ、島は陸色。海岸�
   await kind("roadmap"); const lake = await px(await lakeWorld("猪苗代湖"), 4), brack = await px(await lakeWorld("サロマ湖"), 3); expect(Math.abs(lake[1] - brack[1]) + Math.abs(lake[0] - brack[0])).toBeGreaterThan(8);
   expect(errs).toEqual([]);
 });
+
+test("Stage 30A: 山脈ボタン→一覧と地図タップが同じ選択になり、増強・減衰が効き、平地まで下げられ、保存され、道路図/地形図を切り替えても選択が残る", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#terrain-edit-toggle"); await page.click("#edit-ranges");
+  expect(await page.locator("#range-list .range-item").count()).toBeGreaterThanOrEqual(10);
+  const box = await page.locator("#range-akaishi").boundingBox(); expect(box!.height).toBeGreaterThanOrEqual(36);   // touch-sized
+  // list -> selection, yellow outline in the renderer, controls appear; the list folds away
+  await page.click("#range-akaishi"); expect(await app(page, "a => a.rangeSel")).toBe("akaishi"); expect(await app(page, "a => !!a.r.rangeSel && a.r.rangeSel.pts.length > 1")).toBe(true);
+  expect(await page.isVisible("#range-list")).toBe(false); expect(await page.textContent("#range-level")).toContain("×1.0");
+  // the map switch keeps selection, outline and level (the terrain tab's own 道路図/地形図)
+  const bg0 = await app(page, "a => a.bg"); await page.click("#edit-bg"); expect(await app(page, "a => a.bg")).not.toBe(bg0);
+  expect(await app(page, "a => a.rangeSel")).toBe("akaishi"); expect(await app(page, "a => !!a.r.rangeSel")).toBe(true); expect(await page.textContent("#range-level")).toContain("×1.0");
+  await page.click("#edit-bg"); expect(await app(page, "a => a.bg")).toBe(bg0);
+  // amplify twice, attenuate once: the stored factor follows, undo/redo work, and the terrain is rebuilt with it
+  const crest = () => app(page, "a => { const t = a.terrain; if (!t) return -1; const d = a.s.rangeEdits; return JSON.stringify(d ?? null) + '|' + t.hash; }") as Promise<string>;
+  const h0 = (await crest()).split("|")[1];
+  await page.click("#range-more"); await page.click("#range-more"); await page.click("#range-less");
+  expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(1.1); expect(await page.textContent("#range-level")).toContain("×1.1");
+  await page.click("#edit-undo"); expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(1.2); await page.click("#edit-redo"); expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(1.1);
+  await page.waitForFunction((h) => { const a = (window as any).__kfm; return !a.generating && a.terrain && a.terrain.hash !== h; }, h0, { timeout: 90000 });
+  // down to the plain floor and no further
+  for (let i = 0; i < 14; i++) await page.click("#range-less", { force: true }).catch(() => {});
+  expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(0); expect(await page.textContent("#range-level")).toContain("平地"); expect(await page.isDisabled("#range-less")).toBe(true);
+  // the map tap selects the same way as the list (a different range), and deselects on a second tap
+  await page.click("#range-pick"); await page.click("#range-kyushu"); expect(await app(page, "a => a.rangeSel")).toBe("kyushu");
+  const mid = await app(page, "a => a.rangeScreenPoint('kiso')") as [number, number];
+  await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => a.rangeSel")).toBe("kiso"); expect(await page.textContent("#range-pick")).toContain("中央アルプス");
+  await page.click("#range-pick"); expect(await page.getAttribute("#range-kiso", "aria-selected")).toBe("true"); expect(await page.getAttribute("#range-kyushu", "aria-selected")).toBe("false");   // the list shows what the map chose
+  await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => a.rangeSel")).toBe(null);
+  // persistence: the edit comes back after a reload
+  await page.waitForTimeout(800); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(await app(page, "a => a.s.rangeEdits?.akaishi")).toBe(0);
+  expect(errs).toEqual([]);
+});

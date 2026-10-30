@@ -119,6 +119,8 @@ export class Renderer {
   setRoads(a: RoadArgs) { this.roadArgs = a; return this.roads.set(a, this.view.zoom); }
   /** The feature being edited by touch (null = none): drawn with a handle. */
   featureSel: "biwa" | "fuji" | null = null;
+  /** Stage 30A: the mountain range being edited -- its crest line and core half-width (world km); drawn with the same yellow outline as Fuji and Biwa */
+  rangeSel: { pts: Vec[]; core: number } | null = null;
   /** Stage 11: the stroke of a range picked with the 区間 tool (drawn highlighted). */
   ridgeSel: { key: "sw" | "ne"; si: number } | null = null;
   /** How many range strokes the last redraw put on the map (0 on the road map; for tests). */
@@ -202,6 +204,14 @@ export class Renderer {
       h.poly(flat(poly)).stroke({ width: px(2.5), color: col, alpha: 0.95 });
       h.moveTo(c[0], c[1]).lineTo(kn[0], kn[1]).stroke({ width: px(1.5), color: col }); h.circle(kn[0], kn[1], px(6)).fill({ color: col }).stroke({ width: px(1), color: 0x333333 });
       h.circle(c[0], c[1], px(8)).stroke({ width: px(2.5), color: col }).fill({ color: 0xffffff, alpha: 0.5 });
+      this.overlay.addChild(h);
+    }
+    if (this.rangeSel && this.rangeSel.pts.length > 1) {   // Stage 30A: the selected range -- a yellow band as wide as its core (never thinner than a fingertip) with a solid crest line and edge lines, like Fuji's / Biwa's outline
+      const rs = this.rangeSel, h = new Graphics(), cl = rs.pts.map(P), wd = 2 * Math.max(rs.core, px(11));
+      const path = () => { h.moveTo(cl[0][0], cl[0][1]); for (const q of cl.slice(1)) h.lineTo(q[0], q[1]); };
+      path(); h.stroke({ width: wd + px(5), color: 0xffd400, alpha: 0.95, cap: "round", join: "round" });
+      path(); h.stroke({ width: wd, color: 0xfff3a0, alpha: 0.55, cap: "round", join: "round" });
+      path(); h.stroke({ width: px(1.5), color: 0xc89b00 });
       this.overlay.addChild(h);
     }
     // Stage 11: the drawn ranges (lines, handles) belong to the terrain map: the road map does not show them (the barrier they make is still there in the simulation)

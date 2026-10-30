@@ -4,6 +4,7 @@ import { BODY_DEFS, EXTRA, EXTRA_IDS, JAPAN, realToLonLat, TOWNS } from "./data"
 import { MinHeap } from "./heap";
 import { dist, pointSegDist, rot as rotv } from "./geom";
 import { fbm, hashArrays } from "./rng";
+import { RANGES, RANGE_MAX_M, rangeFactor, rangeWorldLine } from "./ranges";
 import { featureWorldPos } from "./state";
 import { featureScales, featureWorld, FUJI_RADIUS_KM, fujiHeightFactor } from "./validate";
 import type { IslandId, ProjectState, Vec } from "./types";
@@ -184,6 +185,24 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   // ---- Stage 10: the real Alps removed (a range the player takes over is drawn anew; the original massif must not stay as a second barrier) ----
   for (const key of ["ne", "sw"] as const) if (s.alpsRemoved?.[key]) levelRealAlps(key, s, elev, land, { x0, y0, cell, nx, ny }, seed);
 
+  // ---- Stage 30A: the major ranges the player has raised or worn down. Only the RELIEF above the plain-equivalent ground (the same 2 m + 0.4 per km inland floor the land is built on) is scaled, by a weight that is 1 on the
+  // crest zone and falls off smoothly to 0 at the range's edge -- so the original ridges, valleys and noise stay, the join with the surroundings is continuous, and nothing goes below sea level or the plain. Untouched ranges cost nothing.
+  const rangeMask = new Float32Array(N);
+  for (const r of RANGES) {
+    const m = rangeFactor(s.rangeEdits, r.id); if (m === 1) continue;
+    const pts = rangeWorldLine(s, r);
+    let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity; for (const p of pts) { bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]); by0 = Math.min(by0, p[1]); by1 = Math.max(by1, p[1]); }
+    for (let j = Math.max(0, Math.floor((by0 - r.edge - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((by1 + r.edge - y0) / cell)); j++)
+      for (let i = Math.max(0, Math.floor((bx0 - r.edge - x0) / cell)); i <= Math.min(nx - 1, Math.ceil((bx1 + r.edge - x0) / cell)); i++) {
+        const k = j * nx + i; if (land[k] !== 1) continue;
+        const p: Vec = [cx(i), cy(j)]; let d = Infinity; for (let q = 0; q + 1 < pts.length; q++) d = Math.min(d, pointSegDist(p, pts[q], pts[q + 1]));
+        if (d >= r.edge) continue;
+        const t = d <= r.core ? 0 : (d - r.core) / (r.edge - r.core), w = 1 - t * t * (3 - 2 * t), plain = 2 + 0.4 * inland[k], e = elev[k]; if (e <= plain) continue;
+        const f = 1 + (m - 1) * w, ne = Math.max(plain, Math.min(Math.max(e, RANGE_MAX_M), plain + (e - plain) * f));   // (an amplified summit stops at RANGE_MAX_M; ground already higher than that is left as it is)
+        elev[k] = e > RANGE_MAX_M && f > 1 ? e : ne; if (m > 1 && w > rangeMask[k]) rangeMask[k] = w * Math.min(1, (m - 1) * 4);
+      }
+  }
+
   // ---- hand-drawn ridges ----
   progress(0.3, "山脈");
   const ridge = new Float32Array(N);
@@ -209,6 +228,8 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
 
   // Stage 11: the construction-barrier field = the drawn ranges plus the cone of Mt. Fuji (foot included). `ridge` itself stays the drawn ranges only: it also steers the rivers, and the terrain hash must not move for older saves
   const barrier = Float32Array.from(ridge);
+  // Stage 30A: a range raised by the player is a construction barrier where it now stands high (like Fuji's foot), in proportion to how much it was raised; a worn-down one is not (the DEM's own ranges never were)
+  for (let k = 0; k < N; k++) if (rangeMask[k] > 0) { const b = rangeMask[k] * Math.min(1, elev[k] / FUJI_BARRIER_FULL_M); if (b > barrier[k]) barrier[k] = b; }
   // ---- Mt. Fuji ----
   let fujiTop = -1;
   {

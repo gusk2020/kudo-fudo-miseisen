@@ -29,6 +29,8 @@ export interface ProjectState {
   ridgeExtra?: { sw: Vec[][]; ne: Vec[][] };
   /** Stage 10: the real Alps (北 = ne: 飛騨山脈, 南 = sw: 赤石山脈) levelled from the DEM, set the first time that range's tool is chosen. Absent on older saves. */
   alpsRemoved?: { ne?: true; sw?: true };
+  /** Stage 30A: relief factor per major mountain range (src/core/ranges.ts); only ranges that differ from 1 are stored. Absent = every range as the DEM has it */
+  rangeEdits?: Record<string, number>;
   /** Stage 10: the layers the player has switched by hand (their choice is never overridden by a later default, e.g. signs OFF after the ceremony). */
   layersSet?: string[];
   /** Stage 11: which map is shown, the road map or the terrain map -- chosen in the settings, kept with the game (a display choice: not part of the map hash). */
