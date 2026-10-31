@@ -18,6 +18,8 @@ export type LineState = "open" | "dormant" | "planned" | "unbuilt" | "closed" | 
 export const KIND_COLOUR: Record<Kind, number> = { road: 0xe39b4a, hwy: 0x4fa874, rail: 0x4a5f8c, hsr: 0x5b9be6, maglev: 0xb98ad8, sea: 0x6bbfd0 };   // Stage 27: softer hues
 export const KIND_LABEL: Record<Kind, string> = { road: "道路", hwy: "高速道路", rail: "鉄道", hsr: "新幹線", maglev: "リニア", sea: "海路(国内)" };
 /** The neutrals: the edge of a road, the grey of a line that is gone, and the white and black of bridges, centre lines and the highlight's frame. */
+/** Stage 29: the colour of the land on the road map -- the map's land fill and the legend's background are this one value, so a sample is read against the ground it is drawn on. */
+export const ROAD_LAND = 0xf3efe4;
 export const INK = 0x1a1a1a, PAPER = 0xffffff, ROAD_EDGE = 0x7a6a5a, GONE_GREY = 0x7d838a;
 /** The one colour of "the line you chose". It is in no other style. */
 export const HIGHLIGHT_COLOUR = 0xff00d4;

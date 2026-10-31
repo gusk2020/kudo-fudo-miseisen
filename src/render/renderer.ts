@@ -1,6 +1,9 @@
+import { ROAD_LAND } from "./style24";
+import { LAKE_LIST, buildBiwaIslands, buildLakeGraphics } from "./lakes";
+import { WATER } from "./water";
 import GMJ from "../data/coast-gmj.json";
 import { gridBordersWithin, splitGmj } from "./gmBorders";
-import { streamKeep } from "./streams";
+import { smoothLine, streamChains, streamKeep } from "./streams";
 import { lonLatToReal } from "../core/data";
 import { maxCapitalNames, placeNames } from "./cityNames";
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
@@ -22,15 +25,27 @@ function landColour(e: number): number[] {
   for (let i = 1; i < RAMP.length; i++) if (e <= RAMP[i][0]) { const [a, ca] = RAMP[i - 1], [b, cb] = RAMP[i], t = (e - a) / (b - a); return ca.map((v, k) => v + (cb[k] - v) * t); }
   return RAMP[RAMP.length - 1][1];
 }
+/** Stage 29: the "sea" layer as RGB per cell: a water cell its depth colour, and every other cell the colour of the NEAREST water cell (a breadth-first spread, `STEPS` cells deep; beyond that the shallow colour) -- so the water goes on past the grid's own coast
+ * with no square block where a flat colour would meet depth-shaded sea. */
+export function spreadSea(land: ArrayLike<number>, elev: ArrayLike<number>, nx: number, ny: number, steps = 6): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(nx * ny * 3), done = new Uint8Array(nx * ny); let q: number[] = [];
+  for (let k = 0; k < nx * ny; k++) if (land[k] === 0) { const d = Math.min(1, -elev[k] / 600); out[3 * k] = 40 - 22 * d; out[3 * k + 1] = 110 - 50 * d; out[3 * k + 2] = 160 - 55 * d; done[k] = 1; q.push(k); }
+  for (let step = 0; step < steps && q.length; step++) { const nq: number[] = []; for (const k of q) { const i = k % nx, j = (k / nx) | 0; for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue; const m = jj * nx + ii; if (done[m]) continue; done[m] = 1; out[3 * m] = out[3 * k]; out[3 * m + 1] = out[3 * k + 1]; out[3 * m + 2] = out[3 * k + 2]; nq.push(m); } } q = nq; }
+  for (let k = 0; k < nx * ny; k++) if (!done[k]) { out[3 * k] = 40; out[3 * k + 1] = 110; out[3 * k + 2] = 160; }
+  return out;
+}
 /** `part`: "all" is the whole picture; on the real map the coastline is the 地球地図's polygons, so the picture is drawn in two layers -- "sea" (every cell the water colour where it is not water in the grid, so no land colour spills past a coastline) under the polygons' flat land, and "land" (water cells transparent) on top, clipped to the polygons. */
 export function terrainCanvas(t: TerrainResult, part: "all" | "sea" | "land" = "all"): HTMLCanvasElement {
   const { nx, ny, cell } = t.grid, c = document.createElement("canvas"); c.width = nx; c.height = ny;
-  const g = c.getContext("2d")!, img = g.createImageData(nx, ny);
+  const g = c.getContext("2d")!, img = g.createImageData(nx, ny), seaCol = (k: number) => { const d = Math.min(1, -t.elev[k] / 600); return [40 - 22 * d, 110 - 50 * d, 160 - 55 * d]; };
+  // Stage 29: under the polygons' land the "sea" layer must be SEA everywhere. A land cell used to take one flat shallow colour, which sat beside depth-shaded sea cells as a square block; it now takes the colour
+  // of the nearest sea cell (a breadth-first spread, a few cells deep: the polygons cover the rest), so the water goes on past the grid's own coast without a seam.
+  const spread = part === "sea" ? spreadSea(t.land, t.elev, nx, ny) : null;
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    const k = j * nx + i, o = ((ny - 1 - j) * nx + i) * 4; let col: number[];
-    if (t.land[k] === 0) { if (part === "land") continue; const d = Math.min(1, -t.elev[k] / 600); col = [40 - 22 * d, 110 - 50 * d, 160 - 55 * d]; }
-    else if (t.land[k] === 2) col = [70, 130, 190];
-    else if (part === "sea") col = [40, 110, 160];
+    const k = j * nx + i, o = ((ny - 1 - j) * nx + i) * 4; let col: ArrayLike<number>;
+    if (t.land[k] === 0) { if (part === "land") continue; col = seaCol(k); }
+    else if (part === "sea") col = [spread![3 * k], spread![3 * k + 1], spread![3 * k + 2]];
+    else if (t.land[k] === 2 && part === "all") col = [70, 130, 190];   // (on the real map a lake is drawn from its own outline, so its cells are ordinary ground in the land layer)
     else {
       const e = t.elev[k], gx = (t.elev[j * nx + Math.min(nx - 1, i + 1)] - t.elev[j * nx + Math.max(0, i - 1)]) / (2 * cell * 1000);
       const gy = (t.elev[Math.min(ny - 1, j + 1) * nx + i] - t.elev[Math.max(0, j - 1) * nx + i]) / (2 * cell * 1000);
@@ -61,7 +76,7 @@ export class Renderer {
   /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
   ridgeHandles = false;
   roads = new RoadLayer(); private roadArgs: RoadArgs | null = null;
-  private landSprite: Sprite | null = null; private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
+  private lakeG: ReturnType<typeof buildLakeGraphics> | null = null; private biwaIsl: Graphics | null = null; private biwaIslBg = ""; private landSprite: Sprite | null = null; private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
   private lastArgs: [ProjectState, TerrainResult | null, Issue[], Pending | null] | null = null;
   private rebuildTimer: any = 0;
   /** Background map: shaded terrain, or a plain road-map style (flat land, no relief) that keeps the network readable. */
@@ -117,6 +132,8 @@ export class Renderer {
     if (!this.lastArgs) return;
     const [s, t, issues, pending] = this.lastArgs, z = this.view.zoom, px = (n: number) => n / z;
     if (this.landSprite?.parent) this.landSprite.parent.removeChild(this.landSprite); if (this.terrainSprite?.parent) this.terrainSprite.parent.removeChild(this.terrainSprite); // reused across rebuilds, destroyed only with its terrain
+    if (this.lakeG) { this.lakeG.big.parent?.removeChild(this.lakeG.big); this.lakeG.small.parent?.removeChild(this.lakeG.small); }
+    this.biwaIsl?.parent?.removeChild(this.biwaIsl);   // (built once, kept across rebuilds)
     if (this.gm) { this.gm.fill.parent?.removeChild(this.gm.fill); this.gm.mask.parent?.removeChild(this.gm.mask); this.gm.coast.parent?.removeChild(this.gm.coast); this.gm.border.parent?.removeChild(this.gm.border); }
     this.base.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.overlay.removeChildren().forEach((c) => c.destroy({ children: true, context: true })); this.labels.removeChildren().forEach((c) => c.destroy());
     const P = (v: Vec): [number, number] => [v[0], -v[1]];
@@ -137,31 +154,37 @@ export class Renderer {
     const coast = new Graphics(), fills = new Graphics();
     const gmOn = !!s.real;   // Stage 22: on the real map the coastline is 地球地図日本's (the mainland, the added islands and the islets alike)
     if (gmOn) {
-      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.mask.destroy(); this.gm?.coast.destroy(); this.gm?.border.destroy(); const f = new Graphics(), c = new Graphics(), m = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); else { f.poly(pts).fill({ color: 0x93b266 }); m.poly(pts).fill({ color: 0xffffff }); } } const seg = (g: Graphics, a: number[]) => { for (let i = 0; i < a.length; i += 4) { const p = lonLatToReal(a[i] / 1000, a[i + 1] / 1000), q = lonLatToReal(a[i + 2] / 1000, a[i + 3] / 1000); g.moveTo(p[0], -p[1]).lineTo(q[0], -q[1]); } }, bd = new Graphics(); seg(c, this.gmSplit.coast); c.stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); seg(bd, this.gmSplit.border); bd.stroke({ width: 1, color: 0x5b1f6e, alpha: 0.9, pixelLine: true }); this.gm = { fill: f, mask: m, coast: c, border: bd, bg: bgKey }; }
+      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.mask.destroy(); this.gm?.coast.destroy(); this.gm?.border.destroy(); const f = new Graphics(), c = new Graphics(), m = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); else f.poly(pts).fill({ color: 0x93b266 }); m.poly(pts).fill({ color: 0xffffff }); } const seg = (g: Graphics, a: number[]) => { for (let i = 0; i < a.length; i += 4) { const p = lonLatToReal(a[i] / 1000, a[i + 1] / 1000), q = lonLatToReal(a[i + 2] / 1000, a[i + 3] / 1000); g.moveTo(p[0], -p[1]).lineTo(q[0], -q[1]); } }, bd = new Graphics(); seg(c, this.gmSplit.coast); c.stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); seg(bd, this.gmSplit.border); bd.stroke({ width: 1, color: 0x5b1f6e, alpha: 0.9, pixelLine: true }); /* the same polygons are the mask of the relief and of the rivers */ this.gm = { fill: f, mask: m, coast: c, border: bd, bg: bgKey }; }
       this.base.addChild(this.gm.fill);
-      if (!landFlat && this.landSprite) { this.base.addChild(this.gm.mask); this.landSprite.mask = this.gm.mask; this.base.addChild(this.landSprite); }   // (the polygons' flat land, then the relief inside them)
+      this.base.addChild(this.gm.mask);
+      if (!landFlat && this.landSprite) { this.landSprite.mask = this.gm.mask; this.base.addChild(this.landSprite); }   // (the polygons' flat land, then the relief inside them)
     }
     for (const id of gmOn ? [] : ISLAND_IDS) {
       const bp = pending?.body?.id === id ? worldParts(id, { ops: s.bodies[id].ops, place: pending.body.place ?? s.bodies[id].place }, pending.body.op) : worldParts(id, s.bodies[id]);
       for (const poly of bp) {
-        if (landFlat) fills.poly(flat(poly)).fill({ color: bad.has(id) ? 0xd89090 : this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
+        if (landFlat) fills.poly(flat(poly)).fill({ color: bad.has(id) ? 0xd89090 : this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d });
         if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(bad.has(id) ? 3 : 1.4), color: bad.has(id) ? 0xd22 : 0x2c3e1f });
       }
     }
     if (s.islands && !gmOn) for (const id of EXTRA_IDS) for (const poly of EXTRA.islands[id].parts) {   // the added islands (world = real km; never deformed)
-      if (landFlat) fills.poly(flat(poly)).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d });
+      if (landFlat) fills.poly(flat(poly)).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d });
       if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(1.4), color: 0x2c3e1f });
     }
     if (this.islets) for (const o of this.islets) {   // Stage 20 / 22: the island's own outline is in the coastline above; a speck too small to see gets a small dot (never a made-up shape); one with no outline in the data, a dot too
-      if (!o.shaped || o.tiny || !gmOn) { const r = px(2.6); fills.circle(o.pos[0], -o.pos[1], r).fill({ color: this.bg === "roadmap" ? 0xf3efe4 : 0xbfd18d }); coast.circle(o.pos[0], -o.pos[1], r).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f }); }
+      if (!o.shaped || o.tiny || !gmOn) { const r = px(2.6); fills.circle(o.pos[0], -o.pos[1], r).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); coast.circle(o.pos[0], -o.pos[1], r).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f }); }
       if (z > 0.9 || (z > 0.45 && o.len >= 12)) { const tx = new Text({ text: o.name, style: { fontSize: 10, fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(o.pos[0] + px(6), -o.pos[1] - px(5)); this.labels.addChild(tx); }
     }
     this.base.addChild(fills);
     // lakes & features
     const lakes = new Graphics();
     const showFeat = s.step >= 3 || s.layers.lakes;
-    if (showFeat && s.layers.lakes) { const pw = this.withPending(s, pending, "biwa"); lakes.poly(flat(featureWorld(pw, "biwa"))).fill({ color: 0x4682c8 }).stroke({ width: px(1), color: 0x1d4f8a }); }
+    if (showFeat && s.layers.lakes) { const pw = this.withPending(s, pending, "biwa"); lakes.poly(flat(featureWorld(pw, "biwa"))).fill({ color: WATER.lake }).stroke({ width: px(1), color: WATER.shore }); }
+    // Stage 29: the other lakes of the real map (brackish ones included) from their own outlines, under the map's 琵琶湖; the islands of 琵琶湖 stand on it as land while that feature is where it began
+    if (gmOn && LAKE_LIST.length && s.layers.lakes) {
+      this.lakeG ??= buildLakeGraphics(); this.lakeG.small.visible = z >= 0.6; this.base.addChild(this.lakeG.big); this.base.addChild(this.lakeG.small);
+    }
     this.base.addChild(lakes);
+    if (gmOn && LAKE_LIST.length && s.layers.lakes && this.biwaUnmoved(s)) { if (this.biwaIsl && this.biwaIslBg !== this.bg) { this.biwaIsl.destroy(); this.biwaIsl = null; } this.biwaIslBg = this.bg; this.biwaIsl ??= buildBiwaIslands(this.bg === "roadmap" ? ROAD_LAND : 0x93b266, featureWorld(s, "biwa") as unknown as [number, number][]); this.base.addChild(this.biwaIsl); }
     if (showTerrain && t) this.drawHydro(t, s, px);
     if (gmOn && this.gm && s.layers.coast) this.base.addChild(this.gm.coast);
     if (gmOn && this.gm && s.layers.borders) this.base.addChild(this.gm.border);   // Stage 26: the real prefecture borders, once
@@ -198,23 +221,25 @@ export class Renderer {
     }
     if (s.layers.cities) this.drawCities(s, t, showTerrain, px); this.drawSeats(s, t, px);
   }
-  private keepOf: { t: TerrainResult; keep: boolean[] } | null = null;
+  private keepOf: { t: TerrainResult; keep: boolean[] } | null = null; private chainsOf: { t: TerrainResult; chains: { pts: number[]; w: number }[] } | null = null;
   private hokb: { t: TerrainResult; a: number[] } | null = null;
   private hokkaidoBorders(t: TerrainResult): number[] {
     if (this.hokb?.t !== t) { const hk = new Set<number>(); JAPAN.prefectures.forEach((p, n) => { if (p.id.startsWith("HK-")) hk.add(n + 1); }); this.hokb = { t, a: gridBordersWithin(t.grid, t.land, t.pref, (n) => hk.has(n)) }; }
     return this.hokb.a;
   }
+  /** 琵琶湖 stands where the real lake is (so its islands from the data are in the right place). */
+  private biwaUnmoved(s: ProjectState): boolean { const b = LAKE_LIST.find((l) => l.name === "琵琶湖"); if (!b) return false; const f = s.features.biwa, c = featureWorldPos(s, "biwa"); let x = 0, y = 0; for (const [lo, la] of b.outer) { const q = lonLatToReal(lo / 1e4, la / 1e4); x += q[0]; y += q[1]; } x /= b.outer.length; y /= b.outer.length; return Math.hypot(c[0] - x, c[1] - y) < 5 && !f.scale && !f.scaleY && Math.abs(f.rot) < 1e-6; }
   private drawHydro(t: TerrainResult, s: ProjectState, px: (n: number) => number) {
     if (s.layers.rivers) {
       const buckets: Graphics[] = [new Graphics(), new Graphics(), new Graphics()];
       if (this.keepOf?.t !== t) this.keepOf = { t, keep: streamKeep(t.streams) };
-      for (let i = 0; i < t.streams.length; i += 5) {
-        if (!this.keepOf.keep[i / 5]) continue;   // Stage 26: a stream fragment that connects to nothing is not drawn
-        const w = t.streams[i + 4], b = buckets[w < 1.5 ? 0 : w < 3 ? 1 : 2];
-        b.moveTo(t.streams[i], -t.streams[i + 1]).lineTo(t.streams[i + 2], -t.streams[i + 3]);
+      // Stage 29: the pieces are joined into lines and drawn as smooth curves (a stair of 5 km steps read as an unnatural river); a stream fragment that connects to nothing is still not drawn (Stage 26)
+      if (this.chainsOf?.t !== t) this.chainsOf = { t, chains: streamChains(t.streams, this.keepOf.keep).map((c) => ({ pts: smoothLine(c.pts), w: c.w })) };
+      for (const c of this.chainsOf.chains) {
+        const b = buckets[c.w < 1.5 ? 0 : c.w < 3 ? 1 : 2]; b.moveTo(c.pts[0], -c.pts[1]); for (let i = 2; i < c.pts.length; i += 2) b.lineTo(c.pts[i], -c.pts[i + 1]);
       }
       const minBucket = this.view.zoom < 0.35 ? 2 : this.view.zoom < 0.8 ? 1 : 0;   // national view: only the big rivers
-      buckets.forEach((b, n) => { if (n < minBucket) { b.destroy(); return; } b.stroke({ width: px(1 + n * 1.1), color: 0x3a82d0, alpha: 0.95, cap: "round" }); this.base.addChild(b); });
+      buckets.forEach((b, n) => { if (n < minBucket) { b.destroy(); return; } b.stroke({ width: px(1 + n * 1.1), color: WATER.river, alpha: 0.95, cap: "round", join: "round" }); if (s.real && this.gm) b.mask = this.gm.mask; this.base.addChild(b); });
     }
     if (s.layers.borders) {
       const g = new Graphics(), a = s.real ? this.hokkaidoBorders(t) : t.borders;   // Stage 26: on the real map the borders are 地球地図日本's (drawn with the coast layer above); the grid's stair-steps only where the data has none

@@ -78,6 +78,9 @@ export async function writeCheckpoint(store: CpStore, json: string, due: CpDue, 
     const next = [...index.filter((e) => e.key !== key), entry], pruned = planPrune(next);
     const kept = next.filter((e) => !pruned.includes(e.key));
     await store.put(CP_INDEX, JSON.stringify(kept));
+    // Stage 29: success is announced only after the write is READ BACK -- the blob is there at the size written and the index names it. A store that accepts a put and loses it is a failure, not a save.
+    const back = await store.get(key), listed = (await readIndex(store)).some((e) => e.key === key && e.year === due.year);
+    if (back === undefined || bytesOf(back) !== entry.bytes || !listed) { try { await store.put(CP_INDEX, JSON.stringify(index)); } catch { /* the earlier index stays as it was if this also fails */ } return { ok: false, error: "書き込みを確認できませんでした" }; }
     for (const k of pruned) { try { await store.del(k); } catch { /* a blob left behind is harmless: it is no longer listed */ } }
     return { ok: true, entry, pruned };
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message || e.name : String(e) }; }

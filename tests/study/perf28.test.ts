@@ -23,7 +23,13 @@ it.skipIf(!process.env.STUDY28)("perf profile", async () => {
   const self = new Map<string, number>(), byId = new Map<number, any>(); for (const n of profile.nodes) byId.set(n.id, n);
   const dt: number[] = profile.timeDeltas; profile.samples.forEach((id: number, i: number) => { const n = byId.get(id), k = `${n.callFrame.functionName || "(anon)"} ${String(n.callFrame.url).split("/").slice(-2).join("/")}:${n.callFrame.lineNumber + 1}`; self.set(k, (self.get(k) ?? 0) + (dt[i] ?? 0)); });
   const total = [...self.values()].reduce((a, b) => a + b, 0), top = [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, v]) => ({ fn: k, ms: Math.round(v / 1000), pct: Math.round((v / total) * 1000) / 10 }));
+  // inclusive time per function (a function's own time and everything it called), summed over every place it appears
+  const tick = new Map<number, number>(); profile.samples.forEach((id: number, i: number) => tick.set(id, (tick.get(id) ?? 0) + (dt[i] ?? 0)));
+  const incl = new Map<string, number>(), memo = new Map<number, number>(); const total1 = (id: number): number => { const hit = memo.get(id); if (hit !== undefined) return hit; const n = byId.get(id); let v = tick.get(id) ?? 0; for (const c of n.children ?? []) v += total1(c); memo.set(id, v); return v; };
+  const walk = (id: number, seen: Set<string>) => { const n = byId.get(id), f = `${n.callFrame.functionName || "(anon)"} ${String(n.callFrame.url).split("/").slice(-2).join("/")}`, first = !seen.has(f); if (first) { incl.set(f, (incl.get(f) ?? 0) + total1(id)); seen.add(f); } for (const c of n.children ?? []) walk(c, seen); if (first) seen.delete(f); };
+  walk(profile.nodes[0].id, new Set());
+  const topIncl = [...incl.entries()].sort((a, b) => b[1] - a[1]).slice(0, 45).map(([k, v]) => ({ fn: k, ms: Math.round(v / 1000), pct: Math.round((v / total) * 1000) / 10 }));
   const lines = new Map<string, number>(); for (const n of profile.nodes) for (const t of n.positionTicks ?? []) { const k = `${n.callFrame.functionName || "(anon)"}:${t.line}`; lines.set(k, (lines.get(k) ?? 0) + t.ticks); }
   const topLines = [...lines.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30);
-  writeFileSync(OUT, JSON.stringify({ years, totalMs: Math.round(total / 1000), top, topLines }, null, 1));
+  writeFileSync(OUT, JSON.stringify({ years, totalMs: Math.round(total / 1000), top, topIncl, topLines }, null, 1));
 }, 3000000);
