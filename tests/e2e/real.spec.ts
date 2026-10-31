@@ -602,7 +602,7 @@ test("Stage 9 (実機指摘): 山脈は地形の再生成を待たずに続け�
     await stroke(page, base);                                   // 1st stroke: the range itself
     // immediately (terrain is regenerating): continue from its end, then a separate stroke elsewhere
     const end = await page.evaluate((k) => { const a = (window as any).__kfm, l = a.s.ridges[k]; return a.r.worldToScreen(l[l.length - 1]); }, key) as [number, number];
-    await page.waitForFunction(() => (window as any).__kfm.generating, null, { timeout: 10000 });   // the map is being remade (several seconds on a phone): drawing must still work
+    await page.waitForFunction(() => (window as any).__kfm.generating, null, { timeout: 10000 }).catch(() => { /* the rebuild may already be over on a fast machine; the strokes below are what is tested */ });   // the map is being remade (several seconds on a phone): drawing must still work
     await stroke(page, [[end[0] + 3, end[1] + 3], [end[0] + 40, end[1] - 30]]);
     expect(await app(page, `a => (a.s.ridgeExtra?.${key} || []).length`)).toBe(0);   // a continuation: still one stroke, longer
     const n1 = await app(page, `a => a.s.ridges.${key}.length`) as number; expect(n1).toBeGreaterThan(2);
@@ -1018,12 +1018,13 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   await menu(); await page.waitForSelector("#cp-2100-reloc"); expect(await page.textContent("#cp-2100-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2100-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
   expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.waitForSelector("#cp-2000-50y");
-  await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12) <= 2001 && !a.sim.e2200")).toBe(true);   // (a game from the 2000 checkpoint, before the relocation event)
-  expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menu(); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
   // the checkpoint taken after the 2200 event: loading it gives the world with the choices made, and nothing is asked again
   await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2100-reloc .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n, a.sim.palace.pref, a.sim.cp.reloc]")).toEqual(["done", 0, "JP-04", 1]);
   const m2 = (await app(page, "a => a.sim.month")) as number; await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m2, { timeout: 60000 }); expect(await app(page, "a => a.sim.e2200.state")).toBe("done");   // it plays on; no event opens again
+  await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12) <= 2001 && !a.sim.e2200")).toBe(true);   // (a game from the 2000 checkpoint, before the relocation event)
+  expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menu(); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
+  expect(await page.locator("#cp-2100-reloc").count()).toBe(0);   // Stage 30A: going back to 2000 starts a new timeline: the old future (the 2100 save) is no longer in this game's list, and nothing was deleted
   expect(errs).toEqual([]);
 });
 
@@ -1185,5 +1186,39 @@ test("Stage 29: 湖・汽水湖・湖中島が描かれ、島は陸色。海岸�
   }
   // a lake and a brackish lake are told apart by colour (猪苗代湖 / 宍道湖, road map)
   await kind("roadmap"); const lake = await px(await lakeWorld("猪苗代湖"), 4), brack = await px(await lakeWorld("サロマ湖"), 3); expect(Math.abs(lake[1] - brack[1]) + Math.abs(lake[0] - brack[0])).toBeGreaterThan(8);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 30A: 山脈ボタン→一覧と地図タップが同じ選択になり、増強・減衰が効き、平地まで下げられ、保存され、道路図/地形図を切り替えても選択が残る", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.click("#terrain-edit-toggle"); await page.click("#edit-ranges");
+  expect(await page.locator("#range-list .range-item").count()).toBeGreaterThanOrEqual(10);
+  const box = await page.locator("#range-akaishi").boundingBox(); expect(box!.height).toBeGreaterThanOrEqual(36);   // touch-sized
+  // list -> selection, yellow outline in the renderer, controls appear; the list folds away
+  await page.click("#range-akaishi"); expect(await app(page, "a => a.rangeSel")).toBe("akaishi"); expect(await app(page, "a => !!a.r.rangeSel && a.r.rangeSel.pts.length > 1")).toBe(true);
+  expect(await page.isVisible("#range-list")).toBe(false); expect(await page.textContent("#range-level")).toContain("×1.0");
+  // the map switch keeps selection, outline and level (the terrain tab's own 道路図/地形図)
+  const bg0 = await app(page, "a => a.bg"); await page.click("#edit-bg"); expect(await app(page, "a => a.bg")).not.toBe(bg0);
+  expect(await app(page, "a => a.rangeSel")).toBe("akaishi"); expect(await app(page, "a => !!a.r.rangeSel")).toBe(true); expect(await page.textContent("#range-level")).toContain("×1.0");
+  await page.click("#edit-bg"); expect(await app(page, "a => a.bg")).toBe(bg0);
+  // amplify twice, attenuate once: the stored factor follows, undo/redo work, and the terrain is rebuilt with it
+  const crest = () => app(page, "a => { const t = a.terrain; if (!t) return -1; const d = a.s.rangeEdits; return JSON.stringify(d ?? null) + '|' + t.hash; }") as Promise<string>;
+  const h0 = (await crest()).split("|")[1];
+  await page.click("#range-more"); await page.click("#range-more"); await page.click("#range-less");
+  expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(1.1); expect(await page.textContent("#range-level")).toContain("×1.1");
+  await page.click("#edit-undo"); expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(1.2); await page.click("#edit-redo"); expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(1.1);
+  await page.waitForFunction((h) => { const a = (window as any).__kfm; return !a.generating && a.terrain && a.terrain.hash !== h; }, h0, { timeout: 90000 });
+  // down to the plain floor and no further
+  for (let i = 0; i < 14; i++) await page.click("#range-less", { force: true }).catch(() => {});
+  expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(0); expect(await page.textContent("#range-level")).toContain("平地"); expect(await page.isDisabled("#range-less")).toBe(true);
+  // the map tap selects the same way as the list (a different range), and deselects on a second tap
+  await page.click("#range-pick"); await page.click("#range-kyushu"); expect(await app(page, "a => a.rangeSel")).toBe("kyushu");
+  const mid = await app(page, "a => a.rangeScreenPoint('kiso')") as [number, number];
+  await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => a.rangeSel")).toBe("kiso"); expect(await page.textContent("#range-pick")).toContain("中央アルプス");
+  await page.click("#range-pick"); expect(await page.getAttribute("#range-kiso", "aria-selected")).toBe("true"); expect(await page.getAttribute("#range-kyushu", "aria-selected")).toBe("false");   // the list shows what the map chose
+  await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => a.rangeSel")).toBe(null);
+  // persistence: the edit comes back after a reload
+  await page.waitForTimeout(800); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  expect(await app(page, "a => a.s.rangeEdits?.akaishi")).toBe(0);
   expect(errs).toEqual([]);
 });

@@ -1,3 +1,4 @@
+import { cleanRangeEdits } from "./ranges";
 import { prefOfSeat } from "./seat";
 import { defaultBody, defaultState, SCHEMA_VERSION } from "./state";
 import type { BodyState, FeatureState, Op, ProjectState, Vec } from "./types";
@@ -55,6 +56,7 @@ export function parseState(input: unknown): { state: ProjectState; problems: str
     ridges: { sw: cleanLine(raw.ridges?.sw, problems, "南西山脈"), ne: cleanLine(raw.ridges?.ne, problems, "北東山脈") },
     ...(raw.ridgeExtra && typeof raw.ridgeExtra === "object" ? { ridgeExtra: { sw: (Array.isArray(raw.ridgeExtra.sw) ? raw.ridgeExtra.sw : []).map((l: unknown) => cleanLine(l, problems, "南西山脈")).filter((l: Vec[] | null): l is Vec[] => !!l && l.length >= 2), ne: (Array.isArray(raw.ridgeExtra.ne) ? raw.ridgeExtra.ne : []).map((l: unknown) => cleanLine(l, problems, "北東山脈")).filter((l: Vec[] | null): l is Vec[] => !!l && l.length >= 2) } } : {}),
     ...(raw.alpsRemoved && typeof raw.alpsRemoved === "object" && (raw.alpsRemoved.ne === true || raw.alpsRemoved.sw === true) ? { alpsRemoved: { ...(raw.alpsRemoved.ne === true ? { ne: true as const } : {}), ...(raw.alpsRemoved.sw === true ? { sw: true as const } : {}) } } : {}),
+    ...(cleanRangeEdits(raw.rangeEdits) ? { rangeEdits: cleanRangeEdits(raw.rangeEdits) } : {}),
     ...(Array.isArray(raw.layersSet) ? { layersSet: (raw.layersSet as unknown[]).filter((k): k is string => typeof k === "string" && k in d.layers).slice(0, 40) } : {}),
     ...(raw.bg === "roadmap" || raw.bg === "terrain" ? { bg: raw.bg as "roadmap" | "terrain" } : {}),
     finalized: raw.finalized === true,

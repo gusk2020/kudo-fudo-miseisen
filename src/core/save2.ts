@@ -15,7 +15,7 @@ import { ISLAND_IDS } from "./types";
 export const SAVE_VERSION = 2;
 /** Hash of everything that defines the finished map (not view prefs or step). Changes whenever the map is edited. */
 export function mapStateHash(s: ProjectState): string {
-  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne, ...(s.ridgeExtra && (s.ridgeExtra.sw.length || s.ridgeExtra.ne.length) ? [["ridgeExtra", s.ridgeExtra]] : []), ...(s.alpsRemoved && (s.alpsRemoved.ne || s.alpsRemoved.sw) ? [["alps", !!s.alpsRemoved.ne, !!s.alpsRemoved.sw]] : []), ...(s.islands ? ["islands"] : []), ...(s.capital ? ["capital", s.capital] : []), ...(s.subCapital ? ["sub", s.subCapital] : []), ...(s.palace ? ["palace", s.palace] : []), ...(s.palacePos ? ["palacePos", s.palacePos] : []), ...(s.capitalPos ? ["capitalPos", s.capitalPos] : []), ...(s.subPos ? ["subPos", s.subPos] : [])]));   // the extras are appended only when set, so a save made before them hashes exactly as it did
+  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne, ...(s.ridgeExtra && (s.ridgeExtra.sw.length || s.ridgeExtra.ne.length) ? [["ridgeExtra", s.ridgeExtra]] : []), ...(s.alpsRemoved && (s.alpsRemoved.ne || s.alpsRemoved.sw) ? [["alps", !!s.alpsRemoved.ne, !!s.alpsRemoved.sw]] : []), ...(s.rangeEdits && Object.keys(s.rangeEdits).length ? [["ranges", Object.keys(s.rangeEdits).sort().map((k) => [k, s.rangeEdits![k]])]] : []), ...(s.islands ? ["islands"] : []), ...(s.capital ? ["capital", s.capital] : []), ...(s.subCapital ? ["sub", s.subCapital] : []), ...(s.palace ? ["palace", s.palace] : []), ...(s.palacePos ? ["palacePos", s.palacePos] : []), ...(s.capitalPos ? ["capitalPos", s.capitalPos] : []), ...(s.subPos ? ["subPos", s.subPos] : [])]));   // the extras are appended only when set, so a save made before them hashes exactly as it did
 }
 export interface GameSave { format: "kudo-fudo-miseisen"; schemaVersion: 2; savedAt: number; map: ProjectState; mapHash: string; sim: SimState | null }
 export function makeSave(map: ProjectState, sim: SimState | null): GameSave {
@@ -82,6 +82,9 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.isl22 !== undefined && raw.isl22 !== true) delete raw.isl22;
   if (raw.relocFirst !== undefined && !(Number.isInteger(raw.relocFirst) && raw.relocFirst >= 2000 && raw.relocFirst <= 2300)) delete raw.relocFirst;   // Stage 28 (absent = an older game, which keeps the 2200 schedule)
   if (raw.relocOrigin !== undefined && raw.relocOrigin !== "new" && raw.relocOrigin !== "migrated") delete raw.relocOrigin;   // Stage 29
+  { const okId = (x: any) => typeof x === "string" && /^[a-z0-9]{3,40}$/.test(x);   // Stage 30A: world / timeline identity (all three or nothing)
+    if (!(okId(raw.wid) && okId(raw.tl))) { delete raw.wid; delete raw.tl; delete raw.anc; }
+    else if (raw.anc !== undefined && !(Array.isArray(raw.anc) && raw.anc.length <= 12 && raw.anc.every((a: any) => isRec(a) && okId(a.tl) && Number.isInteger(a.y)))) delete raw.anc; }
   if (raw.cp !== undefined && !(isRec(raw.cp) && Number.isInteger(raw.cp.y50) && Number.isInteger(raw.cp.reloc))) delete raw.cp;   // Stage 26
   { const okEv = (e: any) => isRec(e) && Number.isInteger(e.year) && ["pending", "road0", "done"].includes(e.state);   // Stage 25: the earlier relocation events must be whole, each one done
     if (raw.e2200hist !== undefined && !(Array.isArray(raw.e2200hist) && raw.e2200hist.length < 60 && raw.e2200hist.every((e: any) => okEv(e) && e.state === "done"))) delete raw.e2200hist;
