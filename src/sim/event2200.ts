@@ -6,7 +6,7 @@
  * Then a new 国道0号 may be drawn between the new capital and sub-capital, laid along existing, old and abandoned roads where it can (ceremony.ts).
  * Nothing is removed: the old seats stay as cities with their people, and people move only through the yearly settling (no one is moved in a day). The game waits for the player in EVERY mode (Stage 23: 完全自動 and an absent player included); keeping everything as it is (現状維持) is a choice the player makes with its own button, never a default. The event is recorded in `sim.e2200` and never fires twice; a game that jumps past 2200 still gets it at the first year boundary after.
  */
-import { RELOC_STEP, eraKey, futureInterval, relocGroup, relocYear, usedKeys, type RelocGroup, type Recon } from "./kaigen";
+import { RELOC_FIRST, RELOC_FIRST_LEGACY, RELOC_STEP, eraKey, futureInterval, relocGroup, relocYear, usedKeys, type RelocGroup, type Recon } from "./kaigen";
 import { composeDials, type EraKey } from "./eras";
 import { setActiveTimeline, type SimState } from "./types";
 import { ev, yearOf } from "./engine";
@@ -23,12 +23,12 @@ export const waiting2200 = (sim: Pick<SimState, "e2200">) => sim.e2200?.state ==
 /** Stage 25: the event repeats every 150 years (2200, 2350, 2500, ...). `sim.e2200` is the latest one; the earlier ones are kept, in order, in `sim.e2200hist`. */
 export const E2200_STEP = RELOC_STEP;
 export const eventsOpened = (sim: Pick<SimState, "e2200" | "e2200hist">) => (sim.e2200hist?.length ?? 0) + (sim.e2200 ? 1 : 0);
-export const nextYear2200 = (sim: Pick<SimState, "e2200" | "e2200hist">) => relocYear(eventsOpened(sim));
+export const nextYear2200 = (sim: Pick<SimState, "e2200" | "e2200hist"> & Partial<Pick<SimState, "relocFirst">>) => relocYear(eventsOpened(sim), sim.relocFirst);
 /** Due at a year boundary on or after the next scheduled year in a timeline game, once the previous event is over. The schedule counts events, not the year they happened to open in, so it cannot drift or fire twice. */
 export const due2200 = (sim: SimState) => !!sim.stage3 && !!sim.kaigen && (!sim.e2200 || sim.e2200.state === "done") && yearOf(sim) >= nextYear2200(sim);
 export function open2200(sim: SimState) {
   const n = eventsOpened(sim), k = sim.kaigen!; if (sim.e2200) (sim.e2200hist ??= []).push(sim.e2200);
-  sim.e2200 = { year: yearOf(sim), state: "pending", n, sched: relocYear(n) }; (k.reloc ??= [])[n] = relocGroup(k, n, yearOf(sim));
+  sim.e2200 = { year: yearOf(sim), state: "pending", n, sched: relocYear(n, sim.relocFirst) }; (k.reloc ??= [])[n] = relocGroup(k, n, yearOf(sim));
   ev(sim, "kaigen", `${yearOf(sim)}年: 遷都と復興の時を迎えた(第${n + 1}回)`, "首都・副首都・皇居、元号、復興方針を選び直せます(選ばなければ今のまま)", {});
 }
 /** The candidates put to the player at the open event (built now for a game saved before they were recorded). */
@@ -83,4 +83,20 @@ export function placePalace(sim: SimState, w: World, onlyIfOutside = false): boo
   if (onlyIfOutside) { if (!sim.e2200 || sim.moves20?.some((m) => m.by === "palace" && m.pref === pl.pref)) return false; const k = w.cellOf(pl.pos);   // (only after a relocation, and never for a palace the player put on the map himself, an island's included)
     if (k >= 0 && w.prefOf(k) === pl.pref) return false; }
   if (Math.hypot(pl.pos[0] - seat.pos[0], pl.pos[1] - seat.pos[1]) < 1e-6) return false; sim.palace = { pref: pl.pref, pos: [seat.pos[0], seat.pos[1]] }; return true;
+}
+
+/**
+ * Stage 29: an older game (made before the 2100 schedule) that has not reached 2100 and has had no relocation event takes the new schedule when it is loaded: nothing in its history is re-timed, and no event
+ * can have been missed. Any other older game keeps its own (2200, 2350, ...): one that is past 2100 cannot be given an event in the past, and one with events keeps its history's rhythm.
+ * Returns true when it changed the game.
+ */
+export function adoptRelocSchedule(sim: SimState): boolean {
+  if (sim.relocFirst !== undefined || sim.e2200 || (sim.e2200hist?.length ?? 0) > 0 || !sim.stage3 || !sim.kaigen) return false;
+  if (yearOf(sim) >= RELOC_FIRST) return false;
+  sim.relocFirst = RELOC_FIRST; sim.relocOrigin = "migrated"; return true;
+}
+/** What the menu tells about the schedule: the next event's year and where the schedule came from (so "is this a new game?" can be answered by looking). */
+export function relocDiag(sim: SimState): string {
+  const first = sim.relocFirst ?? RELOC_FIRST_LEGACY, origin = sim.relocOrigin === "new" ? "新しいゲーム" : sim.relocOrigin === "migrated" ? "旧ゲームから2100年起点へ移行済み" : "旧ゲーム(2200年起点を維持)", open = sim.e2200 && sim.e2200.state !== "done";
+  return open ? `遷都: ${sim.e2200!.year}年の遷都を選択中(起点${first}年・${origin})` : `遷都: 次は${nextYear2200(sim)}年(起点${first}年・${origin})`;
 }

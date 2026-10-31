@@ -5,7 +5,7 @@
  */
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
 import { due2200, open2200, waiting2200 } from "./event2200";
-import { cycleOf } from "./cycle27";
+import { REBUILD_CLOCK_SLOW, cycleGrowthRate, cycleOf, rebuildDrive, reviveRule } from "./cycle27";
 import { newTier23, reviewTiers } from "./tier23";
 import { newNumReg, syncNumbers } from "./numreg";
 import { enforceCaps } from "./cap20";
@@ -41,7 +41,7 @@ import type { Vec } from "../core/types";
 import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
-import { ERA, FU_PREFS, GRADE_LABEL, GRADE_MODE, KIND_LABEL, NICK_LABEL, SIM_VERSION, modeOf, monthToYM, setActiveEra, setActiveTimeline, ymLabel, type Grade, type RouteEdgeRef, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
+import { ERA, FU_PREFS, GRADE_LABEL, GRADE_MODE, KIND_LABEL, NICK_LABEL, SIM_VERSION, modeOf, monthToYM, setActiveEra, setActiveTimeline, ymLabel, type Grade, type RouteEdgeRef, type Settlement, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
 import { cellDistKm, type World } from "./world";
 
 export const MONTHS_PER_YEAR_X1_MS = 60000;       // x1: one real minute is one game year
@@ -101,7 +101,7 @@ export function projectTimeMult(sim: SimState, p: SimProject): number {
 }
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
-export interface SimOpts { moves?: SeatMove[]; capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
+export interface SimOpts { /** Stage 28: the year of the first relocation (a new game passes 2100; absent = the older 2200 schedule) */ relocFirst?: number; moves?: SeatMove[]; capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 /** Stage 19: the exact lon/lat of the seats put on the map (world = real for the real map); undefined when every seat stands at its 県庁所在地, so such a game orders the prefectures exactly as before. */
 function seatLL(sim: SimState, w: World): { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } | undefined {
   const ll = (p: Vec) => realToLonLat(p) as [number, number], o: { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } = {};
@@ -118,6 +118,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
     next: { node: 0, edge: 0, route: 0, project: 0, event: 0 }, nodes: {}, edges: {}, routes: {}, projects: {}, cities: {}, settlements: {}, links: [], regionShare: {},
     macro: { mood: 0, budgetBu: 0, maintCoverage: 1 }, routeCounters: {}, events: [], stats: [], skippedMonths: 0, lastWallMs: 0, ceremonyDone: false,
     operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0) } : {}), ...(opts.stage3 && (firstCand || opts.techK !== undefined) ? { tech: { k: opts.techK ?? TECH_K, ...(firstCand && opts.waterK !== 0 ? { wk: opts.waterK ?? WATER_K } : {}) } } : {}),
+    ...(opts.relocFirst ? { relocFirst: opts.relocFirst, relocOrigin: "new" as const } : {}),
     ...(prefOfSeat(opts.capital) && prefOfSeat(opts.capital) !== DEFAULT_CAPITAL ? { capital: prefOfSeat(opts.capital)! } : {}), ...(prefOfSeat(opts.subCapital) ? { subCapital: prefOfSeat(opts.subCapital)! } : {}), ...(opts.palace ? { palace: opts.palace } : {}), ...(opts.capitalPos ? { capitalPos: opts.capitalPos } : {}), ...(opts.subPos ? { subPos: opts.subPos } : {}),
     ...(firstCand ? { crossings: true as const } : {}),
   };
@@ -254,7 +255,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   // moves people between cities. Otherwise the total itself drifted with how the people were spread (measured: +4..+69 % by 2100 with the migration on).
   const realRate = sim.stage3 === true && y <= 2026; let natNum = 0, natDen = 0, curNum = 0, curDen = 0;
   if (sim.econ) for (const c of w.cities) { const b = basePop(sim, w, c), p = sim.cities[c.id].pop; natNum += b * popRate(y, b, realRate); natDen += b; curNum += p * popRate(y, p, realRate); curDen += p; }
-  const natRate = natDen ? natNum / natDen : 0, curRate = curDen ? curNum / curDen : 0;
+  const natRate = (natDen ? natNum / natDen : 0) + cycleGrowthRate(sim), curRate = curDen ? curNum / curDen : 0;
   // Stage 14: in a game where the seats head the city order, what access and the regional boosts add to a city's growth only moves people between cities (the population-weighted mean is taken out, as the
   // migration and the policy already do); the nation then follows its demographic course, and the redistribution of the seats' people (seats14.ts) cannot make the total drift.
   const totalBefore = sim.seats14 ? w.cities.reduce((t, c) => t + sim.cities[c.id].pop, 0) : 0;
@@ -289,11 +290,15 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     if (v.pop < 120) { v.gone = true; v.pop = 0; ev(sim, "village", `${v.name}が無人化(廃村)`, ok ? "長期の人口減少" : "道路が途絶え孤立", { settlement: v.id }); }
   }
   // synthetic regional events (not real history): development, tourism or an industrial park raises demand somewhere
+  // (Stage 28: the settlements and the idle roads are grouped by prefecture ONCE a year, not searched again for each of the 49 prefectures; a new settlement made below puts the grouping right again. The same lists in the same order, so nothing changes.)
+  let sByPref: Map<string, Settlement[]> | null = null, idleByRegion: Map<string, SimEdge[]> | null = null;
+  const groupSettlements = () => { const m = new Map<string, Settlement[]>(); for (const v of Object.values(sim.settlements)) { if (v.gone) continue; const pr = w.prefOf(v.cell); if (pr === undefined || pr === null) continue; const l = m.get(pr); if (l) l.push(v); else m.set(pr, [v]); } for (const l of m.values()) l.sort((a, b) => (a.id < b.id ? -1 : 1)); return m; };
+  const groupIdle = () => { const m = new Map<string, SimEdge[]>(); for (const e of Object.values(sim.edges)) { if (!(e.built >= 1 && (e.state === "closed" || e.state === "lost" || e.state === "dormant"))) continue; const l = m.get(e.region); if (l) l.push(e); else m.set(e.region, [e]); } for (const l of m.values()) l.sort((a, b) => (a.id < b.id ? -1 : 1)); return m; };
   if (y >= 1960) for (const pref of w.t.prefOrder) {
-    const vs = Object.values(sim.settlements).filter((v) => !v.gone && w.prefOf(v.cell) === pref).sort((a, b) => (a.id < b.id ? -1 : 1));
+    const vs = (sByPref ??= groupSettlements()).get(pref) ?? [];
     if (vs.length && rand(sim) < 0.02) { const v = vs[Math.floor(rand(sim) * vs.length)]; v.pop = Math.round(Math.max(v.pop * 2.2, 1500) + 1200); ev(sim, "boom", `${prefName(pref)}の${v.name}が再開発され人口が回復`, "地域イベント(観光・工業団地・宅地開発。合成)", { settlement: v.id }); }
     // a road that fell out of use may get a reason to come back: people move in next to it
-    const idle = Object.values(sim.edges).filter((e) => e.region === pref && e.built >= 1 && (e.state === "closed" || e.state === "lost" || e.state === "dormant")).sort((a, b) => (a.id < b.id ? -1 : 1));
+    const idle = (idleByRegion ??= groupIdle()).get(pref) ?? [];
     if (idle.length && rand(sim) < 0.03) {
       const e = idle[Math.floor(rand(sim) * idle.length)], near = Object.values(sim.settlements).filter((v) => !v.gone && e.cells.some((c) => Math.abs((c % w.nx) - (v.cell % w.nx)) <= 2 && Math.abs(((c / w.nx) | 0) - ((v.cell / w.nx) | 0)) <= 2));
       if (near.length) { const v = near[Math.floor(rand(sim) * near.length)]; v.pop = Math.round(Math.max(v.pop * 2.2, 1500) + 1200); ev(sim, "boom", `${prefName(pref)}の${v.name}が再開発され、使われていない道の沿線に人が戻る`, "地域イベント(合成)", { settlement: v.id, edge: e.id }); continue; }
@@ -302,7 +307,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
       const city = w.cities.filter((c) => c.island === w.t.island[mid]).sort((p2, q2) => cellDistKm(w, p2.cell, mid) - cellDistKm(w, q2.cell, mid))[0];
       if (cell >= 0 && city) {
         const id = `s.${String(1 + Object.keys(sim.settlements).reduce((m, k) => Math.max(m, parseInt(k.slice(2), 10) || 0), 0)).padStart(4, "0")}`;
-        sim.settlements[id] = { id, name: `${city.name.replace(/市$/, "")}新開発地`, cell, city: city.id, pop: 3500, pop0: 3500, isolatedYears: 0, gone: false };
+        sim.settlements[id] = { id, name: `${city.name.replace(/市$/, "")}新開発地`, cell, city: city.id, pop: 3500, pop0: 3500, isolatedYears: 0, gone: false }; sByPref = null;
         ev(sim, "boom", `${prefName(pref)}に新開発地が誕生(${sim.settlements[id].name})`, "地域イベント(宅地・工業団地の開発。合成)。使われなくなった道の沿線に人が戻る", { settlement: id, edge: e.id });
       }
     }
@@ -341,7 +346,7 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
     const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
     if (e.state === "open" || e.state === "dormant") {
       if (e.through > e.peakThrough) e.peakThrough = e.through;
-      e.zeroYears = d < Z ? e.zeroYears + 1 : 0;
+      e.zeroYears = d < Z ? e.zeroYears + (1 - REBUILD_CLOCK_SLOW * rebuildDrive(sim.e2200, y)) : 0;   // (Stage 28: in the rebuilding the clocks of resting and closing run slowly -- fully as the drive fades over the balance phase, so no wave of closures is held back and then let go together)
       e.congYears = e.through > 0.9 * capacityOf(e) ? e.congYears + 1 : 0;
       e.throughDropYears = e.peakThrough > 50 && e.bypassedBy.length && e.through < 0.25 * e.peakThrough ? e.throughDropYears + 1 : e.bypassedBy.length ? e.throughDropYears : 0;
       if (e.state === "dormant" && d >= Z * 2) { setEdgeState(sim, e, "open", `需要が回復(${Math.round(d)}${unit})`); ev(sim, "reopen", `${edgeName(sim, e)}が休止から再開`, `需要が${Math.round(d)}${unit}に回復`, { edge: e.id }); }
@@ -352,7 +357,7 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
         else if (e.zeroYears === CLOSE_YEARS) { pushHist(sim, e, "閉鎖を見送り: 代替路がない、または沿線に集落がある"); }
       }
     } else if (e.state === "closed" || e.state === "lost") {
-      const pot = an.potential.get(e.id) ?? 0; e.reviveYears = pot >= REVIVE_DEMAND ? e.reviveYears + 1 : 0;
+      const pot = an.potential.get(e.id) ?? 0; e.reviveYears = pot >= reviveRule(sim.e2200, y, REVIVE_DEMAND, REVIVE_YEARS).demand ? e.reviveYears + 1 : 0;
     }
     void y;
   }
@@ -428,7 +433,8 @@ function* monthlyGen(sim: SimState, w: World): Generator<void> {
   }
   sim.macro.maintCoverage = need > 0 ? funded / need : 1;
   yield;   // Stage 7: upkeep, construction and the railways are separate slices of the month
-  for (const e of Object.values(sim.edges)) if (e.state === "closed" && e.built >= 1) { e.weathering = Math.min(100, e.weathering + 0.3); if (e.weathering >= 100) { setEdgeState(sim, e, "lost", "閉鎖後に放置され風化"); ev(sim, "lost", `${edgeName(sim, e)}が廃道化`, "閉鎖後に維持されず風化(復旧には再整備が必要)", { edge: e.id }); } }
+  const rbDrive = rebuildDrive(sim.e2200, y);   // Stage 28: ruins are kept from falling further while they wait to be restored
+  for (const e of Object.values(sim.edges)) if (e.state === "closed" && e.built >= 1) { e.weathering = Math.min(100, e.weathering + 0.3 * (1 - 0.8 * rbDrive)); if (e.weathering >= 100) { setEdgeState(sim, e, "lost", "閉鎖後に放置され風化"); ev(sim, "lost", `${edgeName(sim, e)}が廃道化`, "閉鎖後に維持されず風化(復旧には再整備が必要)", { edge: e.id }); } }
   // construction: each region funds its own queue; leftovers and the national pool fund the rest
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "road").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
   // Stage 7: what the national pool does not need for national projects goes to regional projects their own region could not fully fund this month

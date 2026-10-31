@@ -134,9 +134,9 @@ body #sheet.mini h3 { display: none; }
 .num-grid .chip.sel { outline: 2px solid #ff00d4; }
 
 /* Stage 24: the vertical legend -- a narrow strip at the left or right edge, its own scroll, the words under each line sample */
-.legend-strip { position: fixed; top: 150px; bottom: 260px; width: 92px; z-index: 7; background: #0b1b2bee; border: 1px solid #3a5a78; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+.legend-strip { position: fixed; top: 150px; bottom: 260px; width: 92px; z-index: 7; background: #f3efe4; border: 1px solid #9a947f; border-radius: 8px; color: #222; display: flex; flex-direction: column; overflow: hidden; }
 .legend-strip.left { left: 4px; } .legend-strip.right { right: 4px; }
-.legend-strip .lg-head { display: flex; gap: 2px; padding: 2px; border-bottom: 1px solid #3a5a78; } .legend-strip .lg-head button { flex: 1; min-width: 0; padding: 4px 0; font-size: 12px; }
+.legend-strip .lg-head { display: flex; gap: 2px; padding: 2px; border-bottom: 1px solid #9a947f; } .legend-strip .lg-head button { flex: 1; min-width: 0; padding: 4px 0; font-size: 12px; background: #e2dccb; color: #222; border: 1px solid #9a947f; border-radius: 4px; }
 .legend-strip .lg-body { flex: 1; overflow-y: auto; padding: 4px 5px 10px; touch-action: pan-y; overscroll-behavior: contain; }
-.legend-strip .lg-title { font-size: 10px; color: #ffc83a; margin: 6px 0 2px; border-bottom: 1px solid #3a5a78; }
-.legend-strip .lg-item { display: flex; flex-direction: column; align-items: stretch; margin: 3px 0 5px; } .legend-strip .lg-cap { font-size: 10px; line-height: 1.2; color: #dce9f3; text-align: center; margin-top: 1px; }
+.legend-strip .lg-title { font-size: 10px; color: #7a4f00; margin: 6px 0 2px; border-bottom: 1px solid #b9b29a; }
+.legend-strip .lg-item { display: flex; flex-direction: column; align-items: stretch; margin: 3px 0 5px; } .legend-strip .lg-cap { font-size: 10px; line-height: 1.2; color: #222; text-align: center; margin-top: 1px; }

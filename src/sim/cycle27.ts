@@ -43,3 +43,25 @@ export function cycleShape(e2200: SimState["e2200"], year: number) {
   if (!e2200) return null; const since = Math.max(0, Math.min(CYCLE_YEARS - 1e-9, year - e2200.year));
   return { build: budgetAt(since, BUILD_FLOOR_POINTS), damp: budgetAt(since, BUILD_DAMP_POINTS), airsea: budgetAt(since, AIR_SEA_FLOOR_POINTS) };
 }
+
+/**
+ * Stage 28: the natural increase the rebuilding brings -- a baby boom after a reconstruction, the way 1950-75 was (about +1.6% a year in the real run-up); added to the nation's demographic rate,
+ * so the people are BORN (and the common rescale that keeps the nation on its course carries them), never moved or conjured between cities. It rises over the first years, holds through the
+ * rebuilding, and is gone by the middle of the balance phase; the decline and the time before the first relocation keep the ordinary course. All of it is this table.
+ */
+export const GROWTH_RATE_POINTS: [number, number][] = [[0, 0], [8, 0.02], [40, 0.02], [55, 0.009], [100, 0.009], [115, 0], [150, 0]];
+export const cycleGrowthRate = (sim: Pick<SimState, "startYear" | "month" | "e2200">): number => { const c = cycleOf(sim); return c ? budgetAt(c.since, GROWTH_RATE_POINTS) : 0; };
+
+/**
+ * Stage 28: how hard the rebuilding drives the works, 0..1 (0 outside the rebuilding and at the end of the balance): it lifts the yearly planning limits (route searches, regions looked at,
+ * works a region may run at once) in step with the purse, so a bigger purse is not left idle behind a limit written for the ordinary years. The cost is the measured price of the extra works.
+ */
+export const REBUILD_DRIVE_MAX = { pathfinds: 0.75, regions: 0.5 };
+export function rebuildDrive(e2200: SimState["e2200"], year: number): number { const cs = cycleShape(e2200, year); return cs ? Math.max(0, Math.min(1, (cs.build * cs.damp - 0.5) * 2)) : 0; }
+
+/** Stage 28: in the rebuilding a closed or ruined line is brought back on a smaller demand and after fewer years of it (the ordinary rule is REVIVE_DEMAND / REVIVE_YEARS in engine.ts). */
+export const REBUILD_REVIVE = { demandCut: 0.5, yearsCut: 1 };
+export const reviveRule = (e2200: SimState["e2200"], year: number, demand: number, years: number) => { const d = rebuildDrive(e2200, year); return { demand: demand * (1 - REBUILD_REVIVE.demandCut * d), years: Math.max(1, years - Math.round(REBUILD_REVIVE.yearsCut * d)) }; };
+
+/** Stage 28: how much slower the resting / closing clocks run at full drive (0.8 = a fifth of the speed). */
+export const REBUILD_CLOCK_SLOW = 0.8;

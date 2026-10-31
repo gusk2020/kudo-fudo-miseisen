@@ -186,8 +186,9 @@ export function stanceAt(sim: { era: string; kaigen?: KaigenState }, year: numbe
  * always minus every name used since. A group that has run low is topped up -- first from real past Japanese eras that this game never used, then (only when those are gone) from names made up by the game
  * and labelled as such, never passed off as history.
  */
-export const RELOC_FIRST = 2200, RELOC_STEP = 150, RELOC_MIN = 3, RELOC_TARGET = 5;
-export const relocYear = (n: number) => RELOC_FIRST + RELOC_STEP * n;
+/** Stage 28: a new game puts its first relocation in 2100 (150 years after the 1950 start); a game made before that (no `relocFirst` in its save) keeps 2200, so its history is never re-timed. */
+export const RELOC_FIRST_LEGACY = 2200, RELOC_FIRST = 2100, RELOC_STEP = 150, RELOC_MIN = 3, RELOC_TARGET = 5;
+export const relocYear = (n: number, first: number = RELOC_FIRST_LEGACY) => first + RELOC_STEP * n;
 export interface RelocCand { name: string; yomi?: string; real: boolean; note: string; origin: "inherit" | "history" | "fiction" }
 export interface RelocGroup { n: number; year: number; base: string; cands: RelocCand[]; chosen?: string }
 /** Old and new forms, and width variants, of the same name are one name. */
@@ -203,7 +204,7 @@ function relocBase(k: KaigenState, n: number): { cands: RelocCand[]; text: strin
   if (n <= 0) return { cands: CAND_2200.map((c) => toRelocCand(c)), text: "1912年(大正改元)に示された候補群" };
   if (n === 1) return { cands: CAND_1945.map((c) => toRelocCand(c)), text: "ゲーム開始時(1945年)の候補群" };
   const prev = k.reloc?.[n - 2];
-  return { cands: prev ? prev.cands : relocBase(k, n - 2).cands, text: `${relocYear(n - 2)}年に示した候補群の残り` };
+  return { cands: prev ? prev.cands : relocBase(k, n - 2).cands, text: `${prev?.year ?? relocYear(n - 2)}年に示した候補群の残り` };
 }
 /** The group put to the player at relocation event `n` (the `year` is the one it opens in). `pool` is the real-era supply (a parameter so a test can run it dry). */
 export function relocGroup(k: KaigenState, n: number, year: number, pool: string[] = REAL_POOL): RelocGroup {

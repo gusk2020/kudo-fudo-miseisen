@@ -98,21 +98,27 @@ export function ruralBase(w: World, cell: number): number {
   for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) { if (di * di + dj * dj > R * R) continue; const i = i0 + di, j = j0 + dj; if (i < 0 || j < 0 || i >= w.nx || j >= w.ny) continue; if (w.t.land[j * w.nx + i] === 1) n++; }
   const v = n * w.cell * w.cell * RURAL_PER_KM2; m.set(cell, v); return v;
 }
-/** One answer per (game, month, pair of shores): the planner, the demand block and the checks all ask for the same pairs within a month. */
-let popMemo: { sim: SimState; month: number; map: Map<number, [number, number]> } | null = null;
+/** One answer per (game, year, pair of shores): the planner, the demand block and the checks all ask for the same pairs, and the people only change in the yearly step (Stage 28: it was one answer per month, which measured as the same sum over every city and village twelve times a year). The stamp also holds the relocation event's state and the seats moved, so people moved by hand (the event) start a new answer. */
+let popMemo: { sim: SimState; stamp: string; map: Map<number, [number, number]> } | null = null;
 export function sidePops(sim: SimState, w: World, ca: number, cb: number): [number, number] {
-  if (!popMemo || popMemo.sim !== sim || popMemo.month !== sim.month) popMemo = { sim, month: sim.month, map: new Map() };
+  const stamp = `${Math.floor(sim.month / 12)}|${sim.e2200?.state ?? ""}|${sim.e2200hist?.length ?? 0}|${sim.moves20?.length ?? 0}`; if (!popMemo || popMemo.sim !== sim || popMemo.stamp !== stamp) popMemo = { sim, stamp, map: new Map() };
   const key = ca * 1_000_003 + cb, hit = popMemo.map.get(key); if (hit) return hit;
-  const r = sidePopsRaw(sim, w, ca, cb); popMemo.map.set(key, r); return r;
+  const r = sidePopsRaw(sim, w, ca, cb, stamp); popMemo.map.set(key, r); return r;
 }
-function sidePopsRaw(sim: SimState, w: World, ca: number, cb: number): [number, number] {
-  const pa = w.cellPos(ca), pb = w.cellPos(cb); let a = 0, b = 0, now = 0, base = 0;
-  for (const c of w.cities) { now += sim.cities[c.id]?.pop ?? 0; base += sim.roles?.p15 ? basePop(sim, w, c) : c.pop0; }
-  const scale = base > 0 ? now / base : 1;   // the countryside follows the nation's course
-  a += ruralBase(w, ca) * scale; b += ruralBase(w, cb) * scale;
-  const add = (p: Vec, n: number) => { const da = dist(p, pa), db = dist(p, pb); if (Math.min(da, db) > SHORE_REACH_KM) return; if (da <= db) a += n; else b += n; };
-  for (const c of w.cities) add(c.pos, sim.cities[c.id]?.pop ?? 0);
-  for (const v of Object.values(sim.settlements)) if (!v.gone) add(w.cellPos(v.cell), v.pop);
+/** Stage 28: what every pair of shores shares in a year -- the nation's course (the scale) and the flat list of everyone who counts (cities first, then villages, as before) -- is made once, not once per pair. */
+let flatMemo: { sim: SimState; stamp: string; scale: number; x: Float64Array; y: Float64Array; n: Float64Array } | null = null;
+function flatPeople(sim: SimState, w: World, stamp: string) {
+  if (flatMemo && flatMemo.sim === sim && flatMemo.stamp === stamp) return flatMemo;
+  let now = 0, base = 0; for (const c of w.cities) { now += sim.cities[c.id]?.pop ?? 0; base += sim.roles?.p15 ? basePop(sim, w, c) : c.pop0; }
+  const vs = Object.values(sim.settlements).filter((v) => !v.gone), m = w.cities.length + vs.length, x = new Float64Array(m), y = new Float64Array(m), n = new Float64Array(m); let k = 0;
+  for (const c of w.cities) { x[k] = c.pos[0]; y[k] = c.pos[1]; n[k++] = sim.cities[c.id]?.pop ?? 0; }
+  for (const v of vs) { const p = w.cellPos(v.cell); x[k] = p[0]; y[k] = p[1]; n[k++] = v.pop; }
+  return (flatMemo = { sim, stamp, scale: base > 0 ? now / base : 1, x, y, n });
+}
+function sidePopsRaw(sim: SimState, w: World, ca: number, cb: number, stamp = ""): [number, number] {
+  const pa = w.cellPos(ca), pb = w.cellPos(cb), f = flatPeople(sim, w, stamp); let a = 0, b = 0;   // (the countryside follows the nation's course)
+  a += ruralBase(w, ca) * f.scale; b += ruralBase(w, cb) * f.scale;
+  for (let i = 0; i < f.n.length; i++) { const da = Math.hypot(f.x[i] - pa[0], f.y[i] - pa[1]), db = Math.hypot(f.x[i] - pb[0], f.y[i] - pb[1]); if (Math.min(da, db) > SHORE_REACH_KM) continue; if (da <= db) a += f.n[i]; else b += f.n[i]; }
   return [a, b];
 }
 /**

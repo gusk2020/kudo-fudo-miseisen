@@ -222,7 +222,7 @@ export class RoadLayer {
           const st = edgeStyle(kind, tier, "open", eff.q, { thin, tunnel: tun, undesignated: !g });
           if (rail) {   // every ordinary railway alike (national or private); 新幹線 with a white centre line, リニア with a dashed one
             put(rcas, dp, st.casing!); put(rfill, dp, st.body);
-            if (st.ties) { if (zoom >= 0.8) put(rtie, dp, st.ties); } else put(mid, dp, st.centre!);
+            if (st.centre) put(mid, dp, st.centre);
           } else {   // one style for every road whatever its administrative grade
             put(cas, dp, st.casing!); put(fill, dp, st.body); if (st.centre) put(mid, dp, st.centre);
           }
@@ -230,7 +230,7 @@ export class RoadLayer {
         else if (eff.built >= 1) put(ghost, pts, edgeStyle(kind, tier, eff.state === "lost" ? "lost" : "closed", eff.q).body);
         else if (a.layers.plans) {
           const st = planned.get(e.id) ?? "planned";
-          put(plan, pts, edgeStyle(kind, tier, st === "unbuilt" ? "unbuilt" : "planned", eff.q).body);
+          const ps = edgeStyle(kind, tier, st === "unbuilt" ? "unbuilt" : "planned", eff.q); if (ps.casing) put(plan, pts, ps.casing); put(plan, pts, ps.body);
           if (st === "building" && e.built > 0) { const n = Math.max(1, Math.floor(pts.length * e.built)); put(plan, pts.slice(0, n + 1), buildProgressStroke(kind)); }
         }
       }
@@ -240,9 +240,9 @@ export class RoadLayer {
         for (const id of a.hl.edges) {
           const e = sim.edges[id]; if (!e) continue; const pts = e.facility === "ferry" ? seaPath(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e)) : edgeShape(w, sim, e), wdt = Math.max(4, hw(e)) * (zoom < 0.35 ? 0.8 : 1);
           // white halo, black edge, highlight body, white core: readable over roads of any colour, rail, sea and ground alike
-          for (const l of HIGHLIGHT_LAYERS) { if (e.facility === "ferry") pat(hl, pts, [px(9), px(5)]); else line(hl, pts); hl.stroke({ width: px(wdt + l.extra), color: l.colour, alpha: e.facility === "ferry" ? 1 : l.alpha, cap: e.facility === "ferry" ? "butt" : "round", join: "round" }); }
+          for (const l of HIGHLIGHT_LAYERS) { line(hl, pts); hl.stroke({ width: px(wdt + l.extra), color: l.colour, alpha: l.alpha, cap: "round", join: "round" }); }
         }
-        if (a.hl.air) { for (const l of HIGHLIGHT_LAYERS.slice(0, 3)) { pat(hl, a.hl.air, [px(10), px(6)]); hl.stroke({ width: px(l.extra - 2), color: l.colour }); } }
+        if (a.hl.air) { for (const l of HIGHLIGHT_LAYERS.slice(0, 3)) { line(hl, a.hl.air); hl.stroke({ width: px(l.extra - 2), color: l.colour, cap: "round", join: "round" }); } }
       }
       const nodes = this.g.nodes;
       for (const n of Object.values(sim.nodes)) {

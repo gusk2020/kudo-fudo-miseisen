@@ -219,16 +219,33 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
   return { T, TT, acc, cityNodes, reach, potential, ...(hub ? { hub } : {}), airPkm: Math.round(airPkm), seaTkm: Math.round(seaTkm), airShare: airFlow + landFlow > 0 ? airFlow / (airFlow + landFlow) : 0, seaShare: seaFr + landFr > 0 ? seaFr / (seaFr + landFr) : 0 };
 }
 /** Settlements (and city links) that would be cut off *because of* removing `skip` (already-cut-off ones are not counted). */
+/** Stage 29: what every call of `strandedWithout` shares -- the numbering of the nodes, the passable road graph, its components and how many settlements it cuts off -- is kept while the road network, the nodes and the settlements are as they were. A cheap signature
+ * over every edge (its place in the list and whether it is a passable road), the node count and the living settlements says so; a closed road, a new edge or an emptied village changes it and the work is done again. */
+interface StrandBase { sim: SimState; w: World; sig: number; nodeIds: string[]; pos: Map<string, number>; nodeByCell: Map<number, number>; adj: [number, SimEdge][][]; base: Int32Array; cutBase: number }
+let strandBase: StrandBase | null = null;
 export function strandedWithout(sim: SimState, w: World, skip: SimEdge | null): { villages: number; cities: number } {
   if (skip && modeOf(skip) === "rail") return { villages: 0, cities: 0 };   // settlements reach their city by road; a railway closing strands no one in this model
-  const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, i) => [id, i])), nodeByCell = new Map<number, number>(); for (const n of Object.values(sim.nodes)) nodeByCell.set(n.cell, pos.get(n.id)!);
-  const comps = (omit: SimEdge | null) => {
-    const adj: number[][] = nodeIds.map(() => []); for (const e of Object.values(sim.edges)) if (passable(e) && modeOf(e) === "road" && e !== omit) { const a = pos.get(e.a)!, b = pos.get(e.b)!; adj[a].push(b); adj[b].push(a); }
-    const comp = new Int32Array(nodeIds.length).fill(-1); let c = 0;
-    for (let s = 0; s < nodeIds.length; s++) if (comp[s] < 0) { const st = [s]; comp[s] = c; while (st.length) { const x = st.pop()!; for (const y of adj[x]) if (comp[y] < 0) { comp[y] = c; st.push(y); } } c++; }
+  let sig = 17, i = 0; for (const e of Object.values(sim.edges)) { sig = (Math.imul(sig, 31) + i * 2 + (passable(e) && modeOf(e) === "road" ? 1 : 0)) | 0; i++; }
+  let alive = 0; for (const v of Object.values(sim.settlements)) if (!v.gone) alive++;
+  sig = (Math.imul(sig, 31) + Object.keys(sim.nodes).length * 7 + alive) | 0;
+  let b = strandBase; const cutOf = (comp: Int32Array, bb: { nodeByCell: Map<number, number> }) => { let n = 0; for (const v of Object.values(sim.settlements)) { if (v.gone) continue; const pc = w.cityById.get(v.city), a = bb.nodeByCell.get(v.cell), c = pc ? bb.nodeByCell.get(pc.cell) : undefined; if (a === undefined || c === undefined || comp[a] !== comp[c]) n++; } return n; };
+  const comps = (adj: [number, SimEdge][][], omit: SimEdge | null, count: number) => {
+    const comp = new Int32Array(count).fill(-1); let c = 0;
+    for (let s = 0; s < count; s++) if (comp[s] < 0) { const st = [s]; comp[s] = c; while (st.length) { const x = st.pop()!; for (const [y, e] of adj[x]) if (e !== omit && comp[y] < 0) { comp[y] = c; st.push(y); } } c++; }
     return comp;
   };
-  const cut = (comp: Int32Array) => { let n = 0; for (const v of Object.values(sim.settlements)) { if (v.gone) continue; const pc = w.cityById.get(v.city), a = nodeByCell.get(v.cell), b = pc ? nodeByCell.get(pc.cell) : undefined; if (a === undefined || b === undefined || comp[a] !== comp[b]) n++; } return n; };
-  const base = comps(null), now = comps(skip);
-  return { villages: cut(now) - cut(base), cities: skip && now[pos.get(skip.a)!] !== now[pos.get(skip.b)!] ? 1 : 0 };
+  if (!b || b.sim !== sim || b.w !== w || b.sig !== sig) {
+    const nodeIds = Object.keys(sim.nodes), pos = new Map(nodeIds.map((id, k) => [id, k])), nodeByCell = new Map<number, number>(); for (const n of Object.values(sim.nodes)) nodeByCell.set(n.cell, pos.get(n.id)!);
+    const adj: [number, SimEdge][][] = nodeIds.map(() => []); for (const e of Object.values(sim.edges)) if (passable(e) && modeOf(e) === "road") { const a = pos.get(e.a)!, c = pos.get(e.b)!; adj[a].push([c, e]); adj[c].push([a, e]); }
+    const base = comps(adj, null, nodeIds.length);
+    b = strandBase = { sim, w, sig, nodeIds, pos, nodeByCell, adj, base, cutBase: cutOf(base, { nodeByCell }) };
+  }
+  // a road that has another way between its two ends takes nothing with it: the components are the same, so nobody is stranded (found by walking from one end and stopping at the other)
+  if (skip && passable(skip) && modeOf(skip) === "road") {
+    const from = b.pos.get(skip.a)!, to = b.pos.get(skip.b)!, seen = new Uint8Array(b.nodeIds.length), st = [from]; seen[from] = 1; let found = from === to;
+    while (!found && st.length) { const x = st.pop()!; for (const [y, e] of b.adj[x]) if (e !== skip && !seen[y]) { if (y === to) { found = true; break; } seen[y] = 1; st.push(y); } }
+    if (found) return { villages: 0, cities: 0 };
+  }
+  const now = comps(b.adj, skip, b.nodeIds.length);
+  return { villages: cutOf(now, b) - b.cutBase, cities: skip && now[b.pos.get(skip.a)!] !== now[b.pos.get(skip.b)!] ? 1 : 0 };
 }

@@ -2,6 +2,7 @@
  * Yearly planning. Every prefecture keeps its own queue and purse, so many regions build at the same time.
  * Cost control ("performance budget"): at most MAX_PATHFINDS route searches per year, regions take turns.
  */
+import { REBUILD_DRIVE_MAX, rebuildDrive, reviveRule } from "./cycle27";
 import { basePop, capitalPref } from "./roles";
 import { RAIL_NEW_FACTOR, RAIL_UPGRADE_FACTOR, stance18 } from "./policy18";
 import { FAVOURED_LEAN, POLICY_HWY_SCORE, POLICY_HWY_SHARE, POLICY_RAIL_SCORE, POLICY_RAIL_SHARE, POLICY_TRUNK_KM, POLICY_TRUNK_MIN, POLICY_TRUNK_SCORE, reconCorridor, reconFade, reconMeanCore, reconOf, reconRegionLean, reconText } from "./recon";
@@ -96,7 +97,7 @@ export function createProject(sim: SimState, kind: ProjectKind, region: string, 
 const nodeName = (sim: SimState, id: string) => sim.nodes[id]?.name ?? "地点";
 
 export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
-  const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; let pf = sim.stage3 ? MAX_PATHFINDS_S3 : MAX_PATHFINDS; const RPY = sim.stage3 ? REGIONS_PER_YEAR_S3 : REGIONS_PER_YEAR;
+  const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; const drive = sim.stage3 ? rebuildDrive(sim.e2200, y) : 0; let pf = Math.round((sim.stage3 ? MAX_PATHFINDS_S3 : MAX_PATHFINDS) * (1 + REBUILD_DRIVE_MAX.pathfinds * drive)); const RPY = Math.round((sim.stage3 ? REGIONS_PER_YEAR_S3 : REGIONS_PER_YEAR) * (1 + REBUILD_DRIVE_MAX.regions * drive)), extraActive = drive > 0.5 ? 1 : 0;   // (Stage 28: the rebuilding lifts the yearly limits)
   const def = sim.stage3 ? accessDeficit(w, an) : null, rc = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined;
   const start = ((y - sim.startYear) * RPY) % n, slice = Array.from({ length: Math.min(n, RPY) }, (_, i) => regions[(start + i) % n]);
   const live = activeProjects(sim).filter((p) => modeOf(p) === "road"), busy = new Set(live.flatMap((p) => p.edgeIds)), perRegion = new Map<string, number>();
@@ -108,7 +109,7 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
   if (sim.stage3) { for (const v of Object.values(sim.settlements)) if (!v.gone && v.pop >= 300) others.push({ cell: v.cell, pos: w.cellPos(v.cell) as [number, number], name: v.name, pop: v.pop, isl: w.t.island[v.cell] }); for (const c of w.cities) others.push({ cell: c.cell, pos: c.pos as [number, number], name: c.name, pop: sim.cities[c.id].pop, isl: w.t.island[c.cell] }); }
   for (const r of slice) {
     const fav = sim.pop15 && rc && reconRegionLean(sim, w, r, rc.meanCore) >= FAVOURED_LEAN ? 1 : 0;   // (Stage 15: a region the policy favours works faster)
-    if ((perRegion.get(r) ?? 0) >= MAX_ACTIVE_PER_REGION + fav + ((sim.regionSlack?.[r] ?? 0) > 0.5 ? 1 : 0) + ((sim.regionSlack?.[r] ?? 0) > 0.75 ? 1 : 0)) continue;
+    if ((perRegion.get(r) ?? 0) >= MAX_ACTIVE_PER_REGION + extraActive + fav + ((sim.regionSlack?.[r] ?? 0) > 0.5 ? 1 : 0) + ((sim.regionSlack?.[r] ?? 0) > 0.75 ? 1 : 0)) continue;
     const purse = Math.max(8, B * 0.8 * (sim.regionShare[r] ?? 1 / n) * 48), cands: Cand[] = [];
     for (const vid of vilBy.get(r) ?? []) if (an.reach.get(vid) === false) cands.push({ score: 6 + sim.settlements[vid].pop / 2000, kind: "access", vid, reason: `${sim.settlements[vid].name}が道路網から孤立している` });
     for (const e of edgesBy.get(r) ?? []) {
@@ -119,7 +120,7 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
       else if (fav && sim.towns16 && rc && e.state === "open" && e.standard === "standard" && e.surface === "paved" && e.lengthKm >= POLICY_TRUNK_KM && d >= POLICY_HWY_SHARE * CAPACITY.standard) cands.push({ score: POLICY_HWY_SCORE * reconFade(y, reconOf(sim)?.since), kind: "improve", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線の高規格化(需要${Math.round(d)}台/日)` });
       else if (sim.stage3 && e.state === "open" && e.standard === "rural" && e.surface === "paved" && e.local >= 250 && e.quality >= 50) cands.push({ score: 1.2 + e.local / 800, kind: "improve", edge: e, reason: `${LOCAL_TAG}沿線の生活需要${Math.round(e.local)}台/日が細道の容量に近づいている` });
       else if (e.state === "open" && e.surface !== "paved" && d >= 150 && e.quality < 80) cands.push({ score: 1 + d / 400, kind: "upgrade", edge: e, reason: `需要${Math.round(d)}台/日で未舗装・砂利のため舗装化` });
-      else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && e.region === r) cands.push({ score: 2.5 + (an.potential.get(e.id) ?? 0) / 60, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}台/日が${e.reviveYears}年続いている` });
+      else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= reviveRule(sim.e2200, y, 0, 3).years && e.region === r) cands.push({ score: 2.5 + (an.potential.get(e.id) ?? 0) / 60, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}台/日が${e.reviveYears}年続いている` });
     }
     // Stage 7: 地方道 -- a sizeable village whose way to its neighbour runs a long way round gets a link of its own (farm, forest and pass roads). Built while
     // the countryside grows and the era builds roads; once the village empties the link falls idle and the ordinary review closes it (廃道).
@@ -149,7 +150,7 @@ export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): 
       let made = 0; for (const c of cands.slice(0, 8)) { if (made >= 2 || (made === 1 && !(c.kind === "access" || c.local || c.kind === "improve"))) continue; if (tryPlan(sim, w, c, r, purse, () => pf-- > 0, () => pf > 0, y)) made++; }
       yield; if (pf <= 0) break; continue;
     }
-    const isNew = (c: Cand) => c.kind === "new" || c.kind === "access", slack = sim.regionSlack?.[r] ?? 0, room = MAX_ACTIVE_PER_REGION + fav + (slack > 0.5 ? 1 : 0) + (slack > 0.75 ? 1 : 0) - (perRegion.get(r) ?? 0);   // a region whose money sits idle takes on more work
+    const isNew = (c: Cand) => c.kind === "new" || c.kind === "access", slack = sim.regionSlack?.[r] ?? 0, room = MAX_ACTIVE_PER_REGION + extraActive + fav + (slack > 0.5 ? 1 : 0) + (slack > 0.75 ? 1 : 0) - (perRegion.get(r) ?? 0);   // a region whose money sits idle takes on more work
     let made = 0, madeNew = 0, madeOld = 0;
     for (const c of [...cands.filter(isNew).slice(0, 5), ...cands.filter((x) => !isNew(x)).slice(0, 5)].sort((p, q) => q.score - p.score)) {
       if (made >= room) break; if (isNew(c) ? madeNew >= 1 + fav : madeOld >= 2) continue;
@@ -187,7 +188,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     if (modeOf(e) !== "rail" || e.facility === "ferry" || busy.has(e.id) || e.built < 1) continue;
     if (e.state === "open" && e.congYears >= 2 && e.standard !== "highgrade" && (e.standard === "rural" || dl.hsr > 0.4) && !(rail18 && e.standard !== "rural")) cands.push({ score: (rail18 ? RAIL_UPGRADE_FACTOR : 1) * 3.2 + Math.min(3, (e.through / RAIL_CAPACITY_OF(e)) * 0.3), kind: "electrify", edge: e, reason: `輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%に達し${e.congYears}年混雑(${e.standard === "rural" ? "電化・複線化" : "高速化"})` });
     else if (sim.towns16 && !rail18 && rcr && e.state === "open" && e.standard !== "highgrade" && e.lengthKm >= POLICY_TRUNK_KM && e.through >= POLICY_RAIL_SHARE * RAIL_CAPACITY_OF(e) && favRegion(w.prefOf(e.cells[e.cells.length >> 1]) ?? e.region)) cands.push({ pol: true, score: POLICY_RAIL_SCORE * reconFade(y, reconOf(sim)?.since), kind: "electrify", edge: e, reason: `復興方針(${reconText(reconOf(sim)!)})による幹線鉄道の${e.standard === "rural" ? "電化・複線化" : "高速化"}(輸送量が容量の${Math.round((e.through / RAIL_CAPACITY_OF(e)) * 100)}%)` });
-    else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= 3 && dl.railBuild > 0.3 && !e.convertedTo) cands.push({ score: 2 + (an.potential.get(e.id) ?? 0) / 90, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}人/日が${e.reviveYears}年続いている` });
+    else if ((e.state === "closed" || e.state === "lost") && e.reviveYears >= reviveRule(sim.e2200, y, 0, 3).years && dl.railBuild > 0.3 && !e.convertedTo) cands.push({ score: 2 + (an.potential.get(e.id) ?? 0) / 90, kind: "restore", edge: e, reason: `沿線需要${Math.round(an.potential.get(e.id) ?? 0)}人/日が${e.reviveYears}年続いている` });
   }
   const dens = (c: { pop: number }) => c.pop, rdef = accessDeficit(w, an), rc = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined;
   for (let i = 0; i < nc; i++) for (let j = i + 1; j < nc; j++) {
