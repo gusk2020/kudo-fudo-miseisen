@@ -207,7 +207,7 @@ export class App {
     if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
-    ensureIdentity(sim); finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
+    ensureIdentity(sim); finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; if (this.saveAfterAttach) { this.saveAfterAttach = false; void this.persist(true); }   /* a game the player loaded is written as the running game at once: a reload right after must not bring back the one it replaced */ setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
     this.render(); this.buildUI();   // Stage 28: the seat markers and names come from the loaded game (sim), which only now exists -- the render right after a load ran without it and drew the map state's 東京・大阪・東京
     if (this.safeMode) { sim.speed = 0; this.status(); return; }
     const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
@@ -972,7 +972,7 @@ export class App {
     n = Math.max(0, Math.min(4, n)); if (this.seatMode === "map") { this.seatPick = null; this.r.seatPending = null; }
     this.wizStage = n; this.pending = null; this.editOpen = n === 0; this.editMore = false; this.eraOpen = false; this.radioShown = false;
     this.setupTab = n === 1 ? "era" : n === 2 ? (this.setupTab && this.setupTab !== "era" ? this.setupTab : "capital") : null;
-    this.seatMode = n === 2 ? "list" : null;   /* (the era list is a full-height window: it opens only when asked, or it would cover 戻る / 決定) */ this.tool = "view"; this.cerSel = null; if (n === 3) this.r.fit(this.s);   /* (the road is drawn across the country: the whole map, whatever prefecture the seat stage left the view on) */
+    this.seatMode = n === 2 ? "list" : null;   /* (the era list is a full-height window: it opens only when asked, or it would cover 戻る / 決定) */ this.tool = "view"; this.cerSel = null;
     this.buildToolbar(); this.render(); this.renderRoads();
   }
   wizEdit(k: number) { this.wizReview = true; this.wizGo(k); }
@@ -982,7 +982,7 @@ export class App {
     if (k === 0) { if (this.generating || !this.terrain) { this.toast("地形を作り直し中です。終わるまでお待ちください"); return; } if (this.issues.some((i) => i.severity === "error" && i.step === "features")) { this.toast("地形に不正があります。直してから決定してください"); return; } }
     if (k === 3 && !this.cerReady()) { this.toast("国道1号を描いて、✓が付いてから決定してください"); return; }
     this.wizOk[k] = { sig: this.wizSig(k) };
-    const back = this.wizReview; this.wizReview = false; this.wizGo(back ? 4 : k + 1);
+    const back = this.wizReview; this.wizReview = false; this.wizGo(back ? 4 : k + 1); if (!back && k + 1 === 3) this.r.fit(this.s);   // (the road is drawn across the country: the whole map, whatever prefecture the seat stage left the view on)
   }
   private wizSummary(k: number): string {
     const s = this.s, st = seatsOf(s);
@@ -1248,6 +1248,7 @@ export class App {
     for (const e of list) row(e, false);
     if (old.length) { const d = h("details", { id: "cp-old" }, h("summary", {}, `出所不明の旧データ(${old.length}件)`)); body.append(d); const keep = body; const tmp = h("div", {}); body.append(tmp); for (const e of old) row(e, true); const rows = [...body.querySelectorAll(".cp-legacy")]; for (const r of rows) d.append(r); tmp.remove(); void keep; }
   }
+  private saveAfterAttach = false;
   private async adopt(l: { map: any; sim: SimState | null; quarantine: unknown; problems: string[] }) {
     // the two games keep separate data: a file from the other one is refused rather than half-loaded
     if (this.real !== !!l.map?.real) { this.toast(this.real ? "旧版(架空の日本列島)のデータです。URLの末尾に ?legacy=1 を付けた旧版で開いてください" : "実在の日本版のデータです。?legacy=1 を付けない通常のURLで開いてください"); return; }
@@ -1256,7 +1257,7 @@ export class App {
     if (l.sim) { l.sim.lastWallMs = 0;
       // Stage 30A: a load restores the world and timeline it was saved in; if that timeline already holds a later checkpoint, the game goes on as a new branch (a save from before Stage 30A becomes a world of its own)
       let br = false; try { br = assignBranch(l.sim, await listCheckpoints(idbCpStore)); } catch { ensureIdentity(l.sim); } if (br) l.problems = [...l.problems, "別の分岐として続けます"]; }
-    this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.r.fit(l.map);
+    this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.saveAfterAttach = !!l.sim; this.r.fit(l.map);
     if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
     this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
     if (this.terrain && this.pendingSim) this.attachPendingSim();   // Stage 26: the same map (a checkpoint, or a slot of this very map) needs no new terrain, so nothing else would ever attach the loaded game
