@@ -478,7 +478,10 @@ export class App {
   // ---- Stage 19: the setup tabs (元号 / 首都 / 副首都 / 皇居) and the choice of a seat on the map ----
   setupTab: "era" | "capital" | "sub" | "palace" | null = null; seatMode: "list" | "map" | null = null; seatPick: { w: Vec; pref: string; name?: string; near?: string; km?: number; islet?: string; claim?: string } | null = null;
   openSetupTab(tab: "era" | "capital" | "sub" | "palace" | null) {
-    if (this.wizardActive() && (tab === null || tab === this.setupTab)) return;   // Stage 31: inside the setup wizard a tab stays open (the stage decides which are offered)
+    if (this.wizardActive() && (tab === null || tab === this.setupTab)) {   // (pressing the open tab again brings a seat tab back to its prefecture list)
+      if (tab && tab !== "era" && this.seatMode !== "list") { this.seatMode = "list"; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.buildToolbar(); this.render(); }
+      return;
+    }   // Stage 31: inside the setup wizard a tab stays open (the stage decides which are offered)
     this.setupTab = this.setupTab === tab ? null : tab; this.seatMode = this.setupTab && this.setupTab !== "era" ? "list" : null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view";   // Stage 21: a seat tab opens its prefecture list at once
     this.eraOpen = this.setupTab === "era";   // Stage 22: so does the era tab
     this.buildToolbar(); this.render();
@@ -648,7 +651,7 @@ export class App {
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
     if (run && !run.gate) run.gate = (sm) => checkpointDue(sm) !== null;   // Stage 26: the clock stops at a year boundary that owes a checkpoint
-    if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.toast(`${sim.e2200.year}年: 遷都と復興の時です(時間は止まっています)`); this.road0Told = false; }
+    if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.status(); this.toast(`${sim.e2200.year}年: 遷都と復興の時です(時間は止まっています)`); this.road0Told = false; }
     else if (sim?.e2200?.state === "road0" && !this.road0Told) { this.road0Told = true; this.toast("国道0号を描いて開通させるか、見送るかを選んでください(時間は止まっています)"); }   // Stage 24: choosing the era and seats is not the end of the event
     else if (sim?.kaigen?.pending && this.sheet !== "kaigen") { this.sheet = "kaigen"; this.buildSheet(); this.toast("改元の時です。元号を選んでください(時間は止まっています)"); }
     else if (sim?.policy?.pending && this.sheet !== "policy") { this.sheet = "policy"; this.buildSheet(); this.toast("10年ごとの政策介入の機会です(時間は止まっています)"); }
