@@ -1,0 +1,12 @@
+# Stage 32 — map placement of the seats
+
+- **Spatial unit**: the world grid is 344 x 447 cells of **5 km** (`world.cell`). Positions are stored as world coordinates; land / prefecture are decided per cell. One fine-adjust press moves exactly one cell (5 km, not the 1 km the plan hoped for -- the grid engine was not replaced).
+- **Nationwide view** (`App.updateFitExtra`, `Renderer.fitExtra`): the fit contains the four big islands, every added island and every islet (Northern Territories, all of Okinawa incl. Yaeyama / Senkaku / Daito, Ogasawara...) except the far Pacific specks (Okinotorishima, Minamitorishima). Refitted once when the world is first known. Pan / pinch zoom unchanged.
+- **Prefecture choice -> map**: choosing a prefecture (setup, relocation sheet) brings the map to its administrative capital; the player may pan and zoom anywhere and place the seat in another prefecture. 地図で選ぶ opens the map at the seat's current place.
+- **Tap -> candidate**: the tap shows 決定 / 微調整 / やり直し / 戻る, the candidate's place, the corrected point if the sea was tapped, and **最終位置の府県** (computed from the land under the point).
+- **Sea tap** (`src/core/placement.ts: nearestLandCell`): the nearest simulated land of ALL Japan (straight line between cell centres), any prefecture or island. The corrected point is the one shown, confirmed and stored (no visual-only snap). Cost: 0.15 ms near a coast, ~2.7 ms from the open Pacific, ≤3 ms worst case (ring search, stops when no later ring can be nearer).
+- **Fine adjust** (`stepSeat`): zoom to the target, four arrows; each press = one cell N/S/W/E; refused over sea, lakes or off the grid; capital / sub-capital in one prefecture refused.
+- **Rules** (`seatConflict`): capital and sub-capital in different prefectures; the residence may share a prefecture or point. No distance or political exclusion.
+- **Both flows**: the same panel (`seatPickPanel`) serves the setup wizard stage 3 and the relocation event; the relocation draft keeps `capitalPos` etc. until 決める and then becomes the sim's seats.
+- **Not done (as briefed)**: islands under 30 km² are not enlarged (Stage 34). Islets that are only drawn and not part of the simulated land (`offGrid`) still cannot be chosen: they have no land cell, so there is nothing to simulate; this is the one remaining exclusion and is documented, not a political one.
+- Tests: `tests/unit/stage32.test.ts` (brute-force check of the global nearest land, steps, rules, timing), E2E "Stage 32" x3 (nationwide view, setup flow, relocation flow).

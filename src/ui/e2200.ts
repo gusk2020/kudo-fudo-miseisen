@@ -20,7 +20,7 @@ export function buildE2200(app: App, body: HTMLElement) {
   list.append(h("div", { class: "rw-head" }, "首都・副首都・皇居"));
   for (const [role, label] of [["capital", "首都"], ["sub", "副首都"], ["palace", "皇居"]] as const) {
     const pref = d[role], pos = role === "capital" ? d.capitalPos : role === "sub" ? d.subPos : d.palacePos;
-    list.append(h("div", { class: "e22-seat", id: "e22-seat-" + role }, h("span", {}, `${label}: ${pref ? prefName(pref) : "-"}${pos ? "(地図で指定)" : ""}`), prefSelect("e22-sel-" + role, label, pref ?? "", role === "capital" ? d.sub ?? null : role === "sub" ? d.capital ?? null : null, (pid) => (app.world ? seatCity(app.world, pid)?.name ?? "" : ""), (pid) => { d[role] = pid; if (role === "capital") delete d.capitalPos; else if (role === "sub") delete d.subPos; else delete d.palacePos; re(); }), h("button", { id: "e22-map-" + role, type: "button", onclick: () => app.startE22Map(role) }, "地図で")));
+    list.append(h("div", { class: "e22-seat", id: "e22-seat-" + role }, h("span", {}, `${label}: ${pref ? prefName(pref) : "-"}${pos ? "(地図で指定)" : ""}`), prefSelect("e22-sel-" + role, label, pref ?? "", role === "capital" ? d.sub ?? null : role === "sub" ? d.capital ?? null : null, (pid) => (app.world ? seatCity(app.world, pid)?.name ?? "" : ""), (pid) => { app.centerOnPref(pid); d[role] = pid; if (role === "capital") delete d.capitalPos; else if (role === "sub") delete d.subPos; else delete d.palacePos; re(); }), h("button", { id: "e22-map-" + role, type: "button", onclick: () => app.startE22Map(role) }, "地図で")));
   }
   // era
   const g = groupOf2200(sim)!;

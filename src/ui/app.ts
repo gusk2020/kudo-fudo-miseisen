@@ -7,7 +7,7 @@ import { nearestPlace } from "../core/gazetteer";
 import { movesOfSettings, type SeatMove } from "../sim/seatmove20";
 import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
-import { ISLAND_LABEL, JAPAN, lonLatToReal, realToLonLat } from "../core/data";
+import { EXTRA, EXTRA_IDS, ISLAND_LABEL, JAPAN, lonLatToReal, realToLonLat } from "../core/data";
 import { FEATURE_LIMITS } from "../core/save";
 import { PREF_IDS, prefOfSeat, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
@@ -20,6 +20,7 @@ import { TerrainClient } from "../core/terrainClient";
 import { GeoMap } from "../core/geoid";
 import { STEPS, STEP_LABELS, type IslandId, type Issue, type Op, type Place, type StepId, type Vec } from "../core/types";
 import { clampOp } from "../core/warp";
+import { isSeatCell, nearestLandCell, seatConflict, stepSeat, type Dir } from "../core/placement";
 import { RANGES, RANGE_LIMITS, RANGE_STEP, clampRange, rangeAt, rangeById, rangeFactor, rangeWorldLine } from "../core/ranges";
 import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
@@ -206,7 +207,7 @@ export class App {
     if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
-    ensureIdentity(sim); finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
+    ensureIdentity(sim); finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; if (this.saveAfterAttach) { this.saveAfterAttach = false; void this.persist(true); }   /* a game the player loaded is written as the running game at once: a reload right after must not bring back the one it replaced */ setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
     this.render(); this.buildUI();   // Stage 28: the seat markers and names come from the loaded game (sim), which only now exists -- the render right after a load ran without it and drew the map state's 東京・大阪・東京
     if (this.safeMode) { sim.speed = 0; this.status(); return; }
     const away = sim.lastWallMs > 0 ? Date.now() - sim.lastWallMs : 0; void this.catchUp(away);
@@ -217,7 +218,7 @@ export class App {
     try {
       const res = await this.client.generate(JSON.parse(JSON.stringify(this.s)), (p) => { this.genProgress = p; this.status(); });
       if (stateKey(this.s) !== key) return;
-      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.attachPendingSim(); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.restoreCer();
+      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.updateFitExtra(); this.attachPendingSim(); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.restoreCer();
     } catch (e: any) { if (String(e?.message) !== "cancelled") this.toast("地形生成に失敗: " + e?.message); }
     finally { if (this.genTok === tok) { this.generating = false; this.render(); this.buildUI(); } }   // the busy state is always cleared, whatever happened
   }
@@ -471,12 +472,13 @@ export class App {
    */
   setSeat(which: "capital" | "sub" | "palace", pref: string, keepOpen = false): boolean {
     if (!PREF_IDS.includes(pref)) return false; const cur = seatsOf(this.s);
-    if ((which === "capital" && pref === cur.sub) || (which === "sub" && pref === cur.capital)) { this.toast("首都と副首都は別の府県にしてください"); this.buildToolbar(); return false; }
+    if (seatConflict(which, pref, cur)) { this.toast("首都と副首都は別の府県にしてください"); this.buildToolbar(); return false; }
+    this.centerOnPref(pref);
     const ok = this.commitEdit((s) => { if (which === "capital") s.capital = pref; else if (which === "sub") s.subCapital = pref; else { s.palace = pref; delete s.palacePos; } if (which === "capital") delete s.capitalPos; else if (which === "sub") delete s.subPos; });
     if (!keepOpen) this.seatMode = null; for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.renderRoads(); this.buildUI(); return ok;
   }
   // ---- Stage 19: the setup tabs (元号 / 首都 / 副首都 / 皇居) and the choice of a seat on the map ----
-  setupTab: "era" | "capital" | "sub" | "palace" | null = null; seatMode: "list" | "map" | null = null; seatPick: { w: Vec; pref: string; name?: string; near?: string; km?: number; islet?: string; claim?: string } | null = null;
+  setupTab: "era" | "capital" | "sub" | "palace" | null = null; seatMode: "list" | "map" | null = null; seatPick: { w: Vec; pref: string; name?: string; near?: string; km?: number; islet?: string; claim?: string; snapped?: number } | null = null;
   openSetupTab(tab: "era" | "capital" | "sub" | "palace" | null) {
     if (this.wizardActive() && (tab === null || tab === this.setupTab)) {   // (pressing the open tab again brings a seat tab back to its prefecture list)
       if (tab && tab !== "era" && this.seatMode !== "list") { this.seatMode = "list"; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.buildToolbar(); this.render(); }
@@ -487,10 +489,12 @@ export class App {
     this.buildToolbar(); this.render();
   }
   chooseSeatMode(m: "list" | "map") {
+    if (m === "map" && this.setupTab && this.setupTab !== "era") { const st = seatsOf(this.s), which = this.setupTab; this.centerOnPref(st[which], this.posOf(which)); }
     this.seatMode = m; this.seatPick = null; this.r.seatPending = null; this.tool = m === "map" ? "seatpick" : this.tool === "seatpick" ? "view" : this.tool; this.buildToolbar(); this.render();
   }
   /** A tap in the map-choice mode: only land, only inside a prefecture; the point is shown and waits for 決定 (a stray tap changes nothing). */
   tapSeat(w: Vec): boolean {
+    this.seatFine = false;
     const world = this.ensureWorld(), which = this.e22Pick ?? this.setupTab; if (!world || !which || which === "era") return false;
     // Stage 20: the hit area is a finger wide (about 24 px) whatever the zoom; the nearest island within it is the one chosen, so a speck of an island can be hit and two close ones are told apart
     let k = world.cellOf(w); const zoom = Math.max(0.02, this.r.view.zoom), hitKm = 24 / zoom, onLand = k >= 0 && world.t.land[k] === 1; let pt: Vec = [w[0], w[1]], isl: { name: string; claim?: string } | undefined, bd = Infinity, offIsl = false;
@@ -499,15 +503,55 @@ export class App {
       if ((own || d <= (onLand ? 8 : 24) / zoom) && (own ? -1 : d) < bd) { bd = own ? -1 : d; isl = { name: s.islet.name, claim: s.islet.claim }; offIsl = !!s.offGrid; if (!own) { pt = [s.pos[0], s.pos[1]]; k = world.cellOf(pt); } }
     }
     if (isl && offIsl) { this.toast(`${isl.name}には定住する人がいないため、県庁所在地には選べません`); return false; }   // Stage 22 (drawn on the map, not part of the simulated land)
-    if (!isl && (k < 0 || world.t.land[k] !== 1)) { let best = -1, bk = Infinity; const i0 = k % world.nx, j0 = (k / world.nx) | 0, r = Math.min(6, Math.ceil(hitKm / world.cell)); if (k >= 0) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const a = i0 + di, b = j0 + dj; if (a < 0 || b < 0 || a >= world.nx || b >= world.ny) continue; const q = b * world.nx + a; if (world.t.land[q] !== 1 || !world.prefOf(q)) continue; const c = world.cellPos(q), d = Math.hypot(c[0] - w[0], c[1] - w[1]); if (d <= hitKm && d < bk) { bk = d; best = q; } } if (best >= 0) { k = best; pt = world.cellPos(best); } }
+    // Stage 32: a tap that is not on land (open sea, a lake) goes to the nearest land of ALL Japan (straight line), whatever the prefecture; the corrected point is the one shown, confirmed and stored
+    let snapped: number | undefined; if (!isl && !isSeatCell(world, k)) { const n = nearestLandCell(world, w); if (n) { k = n.k; pt = n.pos; snapped = Math.round(n.km * 10) / 10; } }
+    return this.setSeatPick(world, which, k, pt, isl?.name, snapped);
+  }
+  /** Builds the candidate for cell `k` / point `pt` (prefecture from the land under it, the nearest place name) and shows it; false (with the reason) when the place is not allowed. */
+  private setSeatPick(world: World, which: "capital" | "sub" | "palace", k: number, pt: Vec, islet?: string, snapped?: number): boolean {
     if (k < 0 || world.t.land[k] !== 1 || !world.prefOf(k)) { this.toast("陸地の点をタップしてください(海や対象外の場所は選べません)"); return false; }
     const pref = world.prefOf(k)!, cur = this.e22Pick && this.e22 ? { capital: this.e22.capital!, sub: this.e22.sub!, palace: this.e22.palace! } : seatsOf(this.s);
     if ((which === "capital" && pref === cur.sub) || (which === "sub" && pref === cur.capital)) { this.toast("首都と副首都は別の府県にしてください"); return false; }
     const inCity = world.cities.filter((c) => c.island === world.t.island[k] && Math.hypot(c.pos[0] - pt[0], c.pos[1] - pt[1]) <= 25).sort((p, q) => Math.hypot(p.pos[0] - pt[0], p.pos[1] - pt[1]) - Math.hypot(q.pos[0] - pt[0], q.pos[1] - pt[1]))[0];   // (a city of the game within 25 km is the place: the 県庁所在地 becomes that city)
     const np = inCity ? { name: inCity.name, place: inCity.name, km: Math.round(Math.hypot(inCity.pos[0] - pt[0], inCity.pos[1] - pt[1]) * 10) / 10 } : nearestPlace(pt, new Set(world.cities.map((c) => c.name)));
-    this.seatPick = { w: [pt[0], pt[1]], pref, ...(np ? { name: np.name, near: np.place, km: np.km } : {}), ...(isl ? { islet: isl.name } : {}) }; this.r.seatPending = this.seatPick.w; this.buildToolbar(); this.render(); return true;
+    this.seatPick = { w: [pt[0], pt[1]], pref, ...(np ? { name: np.name, near: np.place, km: np.km } : {}), ...(islet ? { islet } : {}), ...(snapped !== undefined ? { snapped } : {}) }; this.r.seatPending = this.seatPick.w; this.buildToolbar(); this.render(); return true;
+  }
+  /** Stage 32: the points the nationwide view must contain beyond the four big islands: every added island and every islet (the Northern Territories, all of Okinawa...) except the far Pacific specks (Okinotorishima, Minamitorishima). The first time they are known, the view is refitted. */
+  private fitDone = false;
+  updateFitExtra() {
+    if (!this.real) return; const w = this.world; if (!w) return; const pts: Vec[] = [];
+    for (const id of EXTRA_IDS) for (const q of EXTRA.islands[id]?.parts.flat() ?? []) pts.push(q);
+    for (const x of w.islets ?? []) if (x.islet.group !== "その他の東京都の島") { const r = Math.max(x.islet.len, x.islet.wid) / 2; pts.push([x.pos[0] - r, x.pos[1] - r], [x.pos[0] + r, x.pos[1] + r]); }
+    this.r.fitExtra = pts; if (!this.fitDone) { this.fitDone = true; this.r.fit(this.s); }
+  }
+  /** Stage 32: choosing a prefecture brings the map to its administrative capital (the player may then pan anywhere and place the seat in another prefecture). */
+  centerOnPref(pref: string, pos?: Vec | null) {
+    const w = this.ensureWorld(); const c = pos ?? (w ? seatCity(w, pref)?.pos : null); if (!c) return;
+    this.r.setView({ cx: c[0], cy: c[1], zoom: Math.max(this.r.view.zoom, 2) }, true);
+  }
+  seatFine = false;
+  /** Stage 32: the map-choice panel shared by the setup (and the relocation event): hint, 決定 / 微調整 / やり直し / 戻る, and in fine-adjust mode the four arrows. */
+  private seatPickPanel(label: string, when: string, back: () => void): HTMLElement[] {
+    const p = this.seatPick, fine = this.seatFine && !!p, ll = (q: Vec) => { const [lo, la] = realToLonLat(q); return `東経${lo.toFixed(2)}° 北緯${la.toFixed(2)}°`; };
+    const hint = p ? `${label}の候補: ${seatPrefName(p.pref)}${p.name ? ` 「${p.name}」(最寄りの地名: ${p.near}${p.km ? ` ${p.km}km` : ""})` : ""} ${ll(p.w)}${p.snapped !== undefined ? ` ／海を選んだため、最寄りの陸地(約${p.snapped}km先)に補正しました` : ""}(まだ決まっていません)` : `${when}${label}にしたい場所を、地図でタップしてください(日本の陸地ならどの府県でも。海は最寄りの陸地に補正されます)`;
+    const out: HTMLElement[] = [h("div", { class: "note", id: "seat-map-hint" }, hint)];
+    if (p) out.push(h("div", { class: "note", id: "seat-target" }, `最終位置の府県: ${seatPrefName(p.pref)}(位置から自動で決まります)`));
+    if (fine) { const d = (dir: Dir, id: string, t: string) => h("button", { id, type: "button", "aria-label": { up: "北へ", down: "南へ", left: "西へ", right: "東へ" }[dir], onclick: () => this.fineStep(dir) }, t);
+      out.push(h("div", { class: "seat-arrows", id: "seat-arrows" }, d("up", "seat-up", "▲"), d("left", "seat-left", "◀"), d("right", "seat-right", "▶"), d("down", "seat-down", "▼")), h("div", { class: "note", id: "seat-fine-note" }, `1回押すと約${this.ensureWorld()?.cell ?? 5}km(地図の1マス)動きます`)); }
+    out.push(h("div", { class: "grp", id: "seat-actions" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"),
+      h("button", { id: "seat-fine", type: "button", disabled: p ? null : "", class: fine ? "mode on" : "mode", "aria-pressed": fine ? "true" : "false", onclick: () => this.startSeatFine() }, "微調整"),
+      h("button", { id: "seat-cancel", type: "button", onclick: () => this.cancelSeatPick() }, "やり直し"), h("button", { id: "seat-back", type: "button", onclick: back }, "戻る")));
+    return out;
+  }
+  startSeatFine() { const p = this.seatPick; if (!p) return; this.seatFine = true; this.r.setView({ cx: p.w[0], cy: p.w[1], zoom: Math.max(this.r.view.zoom, 6) }, true); this.buildToolbar(); this.render(); }
+  /** One fine-adjust step: the cell next to the candidate (one grid cell, 5 km), if it is land of a prefecture and does not make capital and sub-capital share one. */
+  fineStep(dir: Dir): boolean {
+    const world = this.ensureWorld(), p = this.seatPick, which = this.e22Pick ?? this.setupTab; if (!world || !p || !which || which === "era") return false;
+    const n = stepSeat(world, p.w, dir); if (!n) { this.toast("その先は陸地ではありません(海・湖・地図の外)"); return false; }
+    const ok = this.setSeatPick(world, which, n.k, n.pos); if (ok) this.r.setView({ cx: n.pos[0], cy: n.pos[1], zoom: this.r.view.zoom }, true); return ok;
   }
   confirmSeatPick(): boolean {
+    this.seatFine = false;
     if (this.e22Pick && this.e22 && this.seatPick) {   // Stage 22: a seat of the 2200 event, kept in the event's draft until 決める
       const p = this.seatPick, r = this.e22Pick, d = this.e22; if (r === "capital") { d.capital = p.pref; d.capitalPos = p.w; } else if (r === "sub") { d.sub = p.pref; d.subPos = p.w; } else { d.palace = p.pref; d.palacePos = p.w; }
       this.endE22Map(); return true;
@@ -529,7 +573,7 @@ export class App {
     return { capital: homeCity(w, a.capital)?.pos ?? pos(a.capital), sub: subCity(w, a.sub)?.pos ?? pos(a.sub), palace: sim.palace?.pos ?? pos(a.palace) };
   }
   road0Told = false; e22: Choice2200 | null = null; e22Pick: "capital" | "sub" | "palace" | null = null;
-  startE22Map(role: "capital" | "sub" | "palace") { this.e22Pick = role; this.seatPick = null; this.r.seatPending = null; this.tool = "seatpick"; this.sheet = null; this.buildSheet(); this.buildToolbar(); this.render(); }
+  startE22Map(role: "capital" | "sub" | "palace") { { const d = this.e22, pf = d?.[role === "sub" ? "sub" : role], ps = d ? (role === "capital" ? d.capitalPos : role === "sub" ? d.subPos : d.palacePos) : null; if (pf) this.centerOnPref(pf, ps ?? null); } this.e22Pick = role; this.seatPick = null; this.r.seatPending = null; this.tool = "seatpick"; this.sheet = null; this.buildSheet(); this.buildToolbar(); this.render(); }
   endE22Map() { this.e22Pick = null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.sheet = "e2200"; this.buildSheet(); this.buildToolbar(); this.render(); }
   /** 決める / 今のまま: applied to the game; a seat put on the map rebuilds the world with the new 県庁所在地 (people come from the old one, a little) and the runner goes on with it. */
   decideE2200(keep: boolean) {
@@ -550,7 +594,7 @@ export class App {
   }
   /** Stage 21: 戻る in the map choice: back to the prefecture list, nothing changed. */
   backToSeatList() { if (this.e22Pick) { this.endE22Map(); return; } this.seatPick = null; this.r.seatPending = null; this.seatMode = "list"; if (this.tool === "seatpick") this.tool = "view"; this.buildToolbar(); this.render(); }
-  cancelSeatPick() { this.seatPick = null; this.r.seatPending = null; this.buildToolbar(); this.render(); }
+  cancelSeatPick() { this.seatFine = false; this.seatPick = null; this.r.seatPending = null; this.buildToolbar(); this.render(); }
   /** Back to the prefecture's 県庁所在地 for one seat. */
   resetSeatPos(which: "capital" | "sub" | "palace") { this.commitEdit((s) => { if (which === "capital") delete s.capitalPos; else if (which === "sub") delete s.subPos; else delete s.palacePos; }); this.buildToolbar(); this.render(); }
   scaleSel(dir: number) { const id = this.bodyForTool(); this.store.commit((s) => { s.bodies[id].place.scale = Math.max(0.3, Math.min(3, s.bodies[id].place.scale * (dir > 0 ? 1.05 : 1 / 1.05))); }); }
@@ -796,8 +840,7 @@ export class App {
   private buildToolbarInner() {
     if (this.sim && this.e22Pick) {   // Stage 22: choosing a 2200 seat on the map (the same tap, hint and 決定 / 取り消し / 戻る as at the start)
       const tb0 = $("toolbar"); tb0.replaceChildren(); const p = this.seatPick, label = { capital: "首都", sub: "副首都", palace: "皇居" }[this.e22Pick];
-      tb0.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」` : ""}(まだ決まっていません)` : `2200年の${label}にしたい場所を地図の陸地でタップしてください`),
-        h("div", { class: "grp" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => this.cancelSeatPick() }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.endE22Map() }, "戻る"), this.bgSwitch("e22-pick-bg")));
+      tb0.append(...this.seatPickPanel(label, "2200年の", () => this.endE22Map()), this.bgSwitch("e22-pick-bg"));
       return;
     }
     const tb = $("toolbar"); tb.replaceChildren(); tb.classList.remove("compact"); const st = this.stepId;
@@ -900,9 +943,7 @@ export class App {
         panel.append(h("div", { class: "note", id: "seat-now" }, `${label}: ${where(which)}`), h("div", { class: "grp seat-pick" }, prefSelect("seat-sel-" + which, label, st[which], other, (pid) => (w ? seatCity(w, pid)?.name ?? "" : ""), (pid) => { this.setSeat(which, pid, true); }), h("button", { id: "pref-map", type: "button", onclick: () => this.chooseSeatMode("map") }, "地図で選ぶ")));
       }
       if (this.seatMode === "map") {
-        const p = this.seatPick;
-        panel.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」(最寄りの地名: ${p.near}${p.km ? ` ${p.km}km` : ""})` : ""} ${ll(p.w)}(まだ決まっていません。地図をタップし直すと動かせます)` : `${label}にしたい場所を、地図の陸地でタップしてください(府県内ならどこでも。海は選べません)`));
-        panel.append(h("div", { class: "row2" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => { this.cancelSeatPick(); } }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.backToSeatList() }, "戻る")));
+        panel.append(...this.seatPickPanel(label, "", () => this.backToSeatList()));
       }
       if ((which === "capital" && this.s.capitalPos) || (which === "sub" && this.s.subPos) || (which === "palace" && this.s.palacePos)) panel.append(h("div", { class: "note", id: "seat-current" }, `地図で指定: ${where(which)}`), h("button", { id: "seat-reset", type: "button", onclick: () => this.resetSeatPos(which) }, "県庁所在地に戻す"));
     }
@@ -941,7 +982,7 @@ export class App {
     if (k === 0) { if (this.generating || !this.terrain) { this.toast("地形を作り直し中です。終わるまでお待ちください"); return; } if (this.issues.some((i) => i.severity === "error" && i.step === "features")) { this.toast("地形に不正があります。直してから決定してください"); return; } }
     if (k === 3 && !this.cerReady()) { this.toast("国道1号を描いて、✓が付いてから決定してください"); return; }
     this.wizOk[k] = { sig: this.wizSig(k) };
-    const back = this.wizReview; this.wizReview = false; this.wizGo(back ? 4 : k + 1);
+    const back = this.wizReview; this.wizReview = false; this.wizGo(back ? 4 : k + 1); if (!back && k + 1 === 3) this.r.fit(this.s);   // (the road is drawn across the country: the whole map, whatever prefecture the seat stage left the view on)
   }
   private wizSummary(k: number): string {
     const s = this.s, st = seatsOf(s);
@@ -1207,6 +1248,7 @@ export class App {
     for (const e of list) row(e, false);
     if (old.length) { const d = h("details", { id: "cp-old" }, h("summary", {}, `出所不明の旧データ(${old.length}件)`)); body.append(d); const keep = body; const tmp = h("div", {}); body.append(tmp); for (const e of old) row(e, true); const rows = [...body.querySelectorAll(".cp-legacy")]; for (const r of rows) d.append(r); tmp.remove(); void keep; }
   }
+  private saveAfterAttach = false;
   private async adopt(l: { map: any; sim: SimState | null; quarantine: unknown; problems: string[] }) {
     // the two games keep separate data: a file from the other one is refused rather than half-loaded
     if (this.real !== !!l.map?.real) { this.toast(this.real ? "旧版(架空の日本列島)のデータです。URLの末尾に ?legacy=1 を付けた旧版で開いてください" : "実在の日本版のデータです。?legacy=1 を付けない通常のURLで開いてください"); return; }
@@ -1215,7 +1257,7 @@ export class App {
     if (l.sim) { l.sim.lastWallMs = 0;
       // Stage 30A: a load restores the world and timeline it was saved in; if that timeline already holds a later checkpoint, the game goes on as a new branch (a save from before Stage 30A becomes a world of its own)
       let br = false; try { br = assignBranch(l.sim, await listCheckpoints(idbCpStore)); } catch { ensureIdentity(l.sim); } if (br) l.problems = [...l.problems, "別の分岐として続けます"]; }
-    this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.r.fit(l.map);
+    this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.saveAfterAttach = !!l.sim; this.r.fit(l.map);
     if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
     this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
     if (this.terrain && this.pendingSim) this.attachPendingSim();   // Stage 26: the same map (a checkpoint, or a slot of this very map) needs no new terrain, so nothing else would ever attach the loaded game
