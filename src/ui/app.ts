@@ -533,7 +533,7 @@ export class App {
   /** Stage 32: the map-choice panel shared by the setup (and the relocation event): hint, 決定 / 微調整 / やり直し / 戻る, and in fine-adjust mode the four arrows. */
   private seatPickPanel(label: string, when: string, back: () => void): HTMLElement[] {
     const p = this.seatPick, fine = this.seatFine && !!p, ll = (q: Vec) => { const [lo, la] = realToLonLat(q); return `東経${lo.toFixed(2)}° 北緯${la.toFixed(2)}°`; };
-    const hint = p ? `${label}の候補: ${seatPrefName(p.pref)}${p.name ? ` 付近「${p.near ?? p.name}」${p.km ? ` ${p.km}km` : ""}` : ""} ${ll(p.w)}${p.snapped !== undefined ? ` ／海を選んだため、最寄りの陸地(約${p.snapped}km先)に補正しました` : ""}(まだ決まっていません)` : `${when}${label}にしたい場所を、地図でタップしてください(日本の陸地ならどの府県でも。海は最寄りの陸地に補正されます)`;
+    const hint = p ? `${label}の候補: ${seatPrefName(p.pref)}${p.name ? ` 「${p.name}」(最寄りの地名: ${p.near}${p.km ? ` ${p.km}km` : ""})` : ""} ${ll(p.w)}${p.snapped !== undefined ? ` ／海を選んだため、最寄りの陸地(約${p.snapped}km先)に補正しました` : ""}(まだ決まっていません)` : `${when}${label}にしたい場所を、地図でタップしてください(日本の陸地ならどの府県でも。海は最寄りの陸地に補正されます)`;
     const out: HTMLElement[] = [h("div", { class: "note", id: "seat-map-hint" }, hint)];
     if (p) out.push(h("div", { class: "note", id: "seat-target" }, `最終位置の府県: ${seatPrefName(p.pref)}(位置から自動で決まります)`));
     if (fine) { const d = (dir: Dir, id: string, t: string) => h("button", { id, type: "button", "aria-label": { up: "北へ", down: "南へ", left: "西へ", right: "東へ" }[dir], onclick: () => this.fineStep(dir) }, t);
@@ -972,7 +972,7 @@ export class App {
     n = Math.max(0, Math.min(4, n)); if (this.seatMode === "map") { this.seatPick = null; this.r.seatPending = null; }
     this.wizStage = n; this.pending = null; this.editOpen = n === 0; this.editMore = false; this.eraOpen = false; this.radioShown = false;
     this.setupTab = n === 1 ? "era" : n === 2 ? (this.setupTab && this.setupTab !== "era" ? this.setupTab : "capital") : null;
-    this.seatMode = n === 2 ? "list" : null;   /* (the era list is a full-height window: it opens only when asked, or it would cover 戻る / 決定) */ this.tool = "view"; this.cerSel = null;
+    this.seatMode = n === 2 ? "list" : null;   /* (the era list is a full-height window: it opens only when asked, or it would cover 戻る / 決定) */ this.tool = "view"; this.cerSel = null; if (n === 3) this.r.fit(this.s);   /* (the road is drawn across the country: the whole map, whatever prefecture the seat stage left the view on) */
     this.buildToolbar(); this.render(); this.renderRoads();
   }
   wizEdit(k: number) { this.wizReview = true; this.wizGo(k); }

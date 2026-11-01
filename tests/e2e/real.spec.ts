@@ -315,7 +315,7 @@ test("皇居: 49府県から選べ、首都と同じ府県でもよく、地図�
   // Stage 19: choose the palace on the map (anywhere on land, in any prefecture): the tap only proposes a point; 決定 keeps it, 取り消し drops it, the sea is refused
   await openMapPick(page, "palace"); expect(await app(page, "a => a.tool")).toBe("seatpick");
   const k = await app(page, "a => a.world.cellPos(a.world.cities.find((c) => c.pref === 'JP-26' && c.kind === 'capital').cell)") as [number, number];
-  expect(await app(page, "a => a.tapSeat([0, -9999])")).toBe(false); expect(await app(page, "a => a.s.palacePos")).toBeUndefined();
+  expect(await app(page, "a => a.tapSeat([0, -9999])")).toBe(true); expect(await app(page, "a => a.seatPick.snapped")).toBeGreaterThan(0); expect(await app(page, "a => a.s.palacePos")).toBeUndefined();   // Stage 32: far sea goes to the nearest land and waits for 決定
   await page.evaluate((p) => { (window as any).__kfm.tapSeat([p[0] + 5, p[1] + 5]); }, k); expect(await app(page, "a => a.seatPick && a.seatPick.pref")).toBe("JP-26"); expect(await app(page, "a => a.s.palacePos")).toBeUndefined();
   await page.click("#seat-cancel"); expect(await app(page, "a => a.seatPick")).toBeNull();
   await page.evaluate((p) => { (window as any).__kfm.tapSeat([p[0] + 5, p[1] + 5]); }, k); await page.click("#seat-confirm");
@@ -587,7 +587,7 @@ test("Stage 19: 首都を地図の任意の陸地でタップして選べる。�
   await page.mouse.click(sx, sy); expect(await app(page, "a => a.seatPick && a.seatPick.pref")).toBe("JP-23"); expect(await app(page, "a => a.s.capital")).toBeUndefined();   // proposed only
   expect(await page.isVisible("#seat-confirm")).toBe(true); expect(await page.textContent("#seat-map-hint")).toContain("愛知県");
   await page.click("#seat-cancel"); expect(await app(page, "a => a.seatPick")).toBeNull(); expect(await app(page, "a => a.s.capital")).toBeUndefined();
-  expect(await app(page, "a => a.tapSeat([0, -9999])")).toBe(false);   // the sea (or anywhere off the land) is refused safely
+  expect(await app(page, "a => a.tapSeat([0, -9999])")).toBe(true); expect(await app(page, "a => a.seatPick.snapped")).toBeGreaterThan(0);   // Stage 32: the sea goes to the nearest land of Japan and only proposes it
   expect(await app(page, "a => a.tapSeat(a.world.cellPos(a.world.cities.find((c) => c.pref === 'JP-27' && c.kind === 'capital').cell))")).toBe(false);   // Osaka's prefecture is the sub-capital's: refused for the capital
   await page.mouse.click(sx, sy); await page.click("#seat-confirm");
   expect(await app(page, "a => a.s.capital")).toBe("JP-23"); const cp = await app(page, "a => a.s.capitalPos") as [number, number]; expect(Math.abs(cp[0] - spot[0])).toBeLessThan(2); expect(await app(page, "a => a.s.subCapital")).toBeUndefined();
@@ -810,10 +810,10 @@ test("Stage 23: 府県は初期の選択式(地方ブロック別・北から南
   await page.click("#pref-map"); expect(await app(page, "a => a.tool")).toBe("seatpick");
   const nagoya = await cityPos(page, "名古屋市"), spot: [number, number] = [nagoya[0] + 12, nagoya[1] + 9];
   await page.evaluate((p) => { const a = (window as any).__kfm, H = window.innerHeight; a.r.setView({ cx: p[0], cy: p[1] + (200 - H / 2) / 3, zoom: 3 }, true); }, spot);
-  { const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-cancel"); expect(await app(page, "a => a.s.capital")).toBe("JP-13");
+  { await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 1 }, true), spot); const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-cancel"); expect(await app(page, "a => a.s.capital")).toBe("JP-13");
   await page.click("#setup-tab-capital").catch(() => {}); if (!(await page.isVisible("#pref-map"))) await page.click("#setup-tab-capital");
-  await page.click("#pref-map"); { const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-back"); expect(await page.isVisible("#seat-sel-capital")).toBe(true); expect(await app(page, "a => a.s.capitalPos")).toBeUndefined();
-  await page.click("#pref-map"); { const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-confirm");
+  await page.click("#pref-map"); { await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 1 }, true), spot); const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-back"); expect(await page.isVisible("#seat-sel-capital")).toBe(true); expect(await app(page, "a => a.s.capitalPos")).toBeUndefined();
+  await page.click("#pref-map"); { await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 1 }, true), spot); const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-confirm");
   expect(await app(page, "a => a.s.capital")).toBe("JP-23"); expect(await app(page, "a => a.world.cities.filter((c) => c.pref === 'JP-23' && c.kind === 'capital').length")).toBe(1);
   // the era list: the same window; each name with its own policy under it; choosing keeps it open
   await wizTo(page, 1); await page.click("#era-open"); expect(await page.isVisible("#era-list")).toBe(true);
@@ -1253,7 +1253,7 @@ test("Stage 31: 初期設定は4段階+最終確認。戻っても設定は残�
   expect(await page.isVisible("#era-list")).toBe(false); await page.click("#era-open"); await page.click("#era-opt-1"); expect(await app(page, "a => a.firstEra")).toBe(1); await page.click("#rw-close"); await page.click("#wiz-ok");
   expect(await page.textContent("#wiz-head")).toContain("首都"); await page.click("#setup-tab-palace"); await page.selectOption("#seat-sel-palace", "JP-04");
   expect(await app(page, "a => a.s.palace")).toBe("JP-04"); await page.click("#wiz-ok");
-  expect(await page.textContent("#wiz-head")).toContain("1号線"); const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市"); await clickRoadTool(page); await draw(page, tokyo, osaka);
+  expect(await page.textContent("#wiz-head")).toContain("1号線"); const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市"); await clickRoadTool(page); await page.evaluate(() => { const a = (window as any).__kfm; a.r.fit(a.s); }); await draw(page, tokyo, osaka);   // (choosing a prefecture brought the map to Sendai: back to the whole country to draw)
   await expect.poll(() => app(page, "a => a.cerReady()"), { timeout: 60000 }).toBe(true);
   // back keeps everything chosen
   await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.s.palace]")).toEqual([2, "JP-04"]); await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.firstEra]")).toEqual([1, 1]);
