@@ -928,14 +928,14 @@ export class App {
     n = Math.max(0, Math.min(4, n)); if (this.seatMode === "map") { this.seatPick = null; this.r.seatPending = null; }
     this.wizStage = n; this.pending = null; this.editOpen = n === 0; this.editMore = false; this.eraOpen = false; this.radioShown = false;
     this.setupTab = n === 1 ? "era" : n === 2 ? (this.setupTab && this.setupTab !== "era" ? this.setupTab : "capital") : null;
-    this.seatMode = n === 2 ? "list" : null; this.eraOpen = n === 1; this.tool = "view"; this.cerSel = null;
+    this.seatMode = n === 2 ? "list" : null;   /* (the era list is a full-height window: it opens only when asked, or it would cover 戻る / 決定) */ this.tool = "view"; this.cerSel = null;
     this.buildToolbar(); this.render(); this.renderRoads();
   }
   wizEdit(k: number) { this.wizReview = true; this.wizGo(k); }
   wizBack() { if (this.wizReview) { this.wizReview = false; this.wizGo(4); } else this.wizGo(this.wizStage - 1); }
   wizConfirm() {
     const k = this.wizStage; if (k > 3) return;
-    if (k === 0) { if (this.generating) { this.toast("地形を作り直し中です。終わるまでお待ちください"); return; } if (this.issues.some((i) => i.severity === "error" && i.step === "features")) { this.toast("地形に不正があります。直してから決定してください"); return; } }
+    if (k === 0) { if (this.generating || !this.terrain) { this.toast("地形を作り直し中です。終わるまでお待ちください"); return; } if (this.issues.some((i) => i.severity === "error" && i.step === "features")) { this.toast("地形に不正があります。直してから決定してください"); return; } }
     if (k === 3 && !this.cerReady()) { this.toast("国道1号を描いて、✓が付いてから決定してください"); return; }
     this.wizOk[k] = { sig: this.wizSig(k) };
     const back = this.wizReview; this.wizReview = false; this.wizGo(back ? 4 : k + 1);
@@ -987,9 +987,9 @@ export class App {
   }
   private buildRoadToolbar(tb: HTMLElement, names: Record<Tool, string>) {
     const label = (t: string) => tb.append(h("div", { id: "mode-label", role: "status", "aria-live": "polite", "data-tool": this.tool }, t));
+    if (this.real && !this.sim) { this.buildWizard(tb); return; }   // Stage 31: the setup is four stages and a final review (it stays on screen while the terrain is being remade)
     if (!this.s.finalized || !this.terrain) { const bad = this.issues.some((i) => i.severity === "error"); label(!this.s.finalized ? "地図を最終確定すると道路を始められます" : bad ? "地図に不正があるため地形を作れません(元に戻すで直せます)" : "地形を生成中…"); if (bad && this.real && !this.sim) this.buildTerrainEdit(tb); return; }
     if (!this.sim) {
-      if (this.real) { this.buildWizard(tb); return; }   // Stage 31: the setup is four stages and a final review
       if (this.real && this.editOpen) { tb.classList.add("compact"); this.buildTerrainEdit(tb); return; }   // the editor alone: nothing else competes with the map
       label(`選択中: ${names[this.tool]}`);
       if (this.real) this.buildSetupTabs(tb);

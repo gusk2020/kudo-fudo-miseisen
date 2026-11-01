@@ -20,7 +20,7 @@ async function editor(page: Page, open: boolean) { if (!open) { await wizTo(page
 /** Stage 31: the setup is a wizard -- this puts it on stage n (0 terrain, 1 era, 2 seats, 3 国道1号, 4 review). */
 async function wizTo(page: Page, n: number) { await page.evaluate((k) => (window as any).__kfm.wizGo(k), n); }
 /** Confirms every stage with the real 「これで決定」 button (terrain first), ending on the final review. */
-async function confirmAll(page: Page) { await wizTo(page, 0); await page.waitForFunction(() => !(window as any).__kfm.generating, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) { await page.click("#wiz-ok"); } await page.waitForSelector("#wiz-review"); }
+async function confirmAll(page: Page) { await wizTo(page, 0); await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) { await page.click("#wiz-ok"); } await page.waitForSelector("#wiz-review"); }
 async function goCeremony(page: Page) { await confirmAll(page); await page.click("#cer-go"); }
 async function clickRoadTool(page: Page) { if (!(await page.isVisible("#tool-cer-kokudo1"))) await wizTo(page, 3); await page.click("#tool-cer-kokudo1"); }
 async function openTab(page: Page, tab: string) { if (await page.isVisible("#rw-close")) await page.click("#rw-close"); await wizTo(page, tab === "era" ? 1 : 2); if ((await page.getAttribute("#setup-tab-" + tab, "aria-selected")) !== "true") await page.click("#setup-tab-" + tab); }
@@ -448,7 +448,7 @@ test("Stage 7: 地形編集は1行の小さなメニュー(対象を選んだ時
   expect(await page.locator("#toolbar #setup-tabs, #toolbar #tool-cer-kokudo1, #toolbar #cer-go").count()).toBe(0);   // nothing but the editor while it is open
   // the editor still does everything: undo / redo, rotate, size, close returns the ceremony controls
   await page.click("#rot-l"); expect(await app(page, "a => a.s.features.fuji.rot")).not.toBe(0); await page.click("#edit-undo"); expect(await app(page, "a => a.s.features.fuji.rot")).toBe(0); await page.click("#edit-redo"); expect(await app(page, "a => a.s.features.fuji.rot")).not.toBe(0);
-  await wizTo(page, 0); expect(await app(page, "a => a.tool")).toBe("view"); expect(await page.isVisible("#tool-cer-kokudo1")).toBe(true);
+  await wizTo(page, 3); expect(await app(page, "a => a.tool")).toBe("view"); expect(await page.isVisible("#tool-cer-kokudo1")).toBe(true);
   expect(errs).toEqual([]);
 });
 
@@ -1249,13 +1249,13 @@ test("Stage 31: 初期設定は4段階+最終確認。戻っても設定は残�
   const st = () => app(page, "a => [a.wizStage, !!a.sim, !!a.runner, a.wizValid(0), a.wizValid(1), a.wizValid(2), a.wizValid(3)]") as Promise<(number | boolean)[]>;
   expect(await st()).toEqual([0, false, false, false, false, false, false]); expect(await page.textContent("#wiz-head")).toContain("1/4"); expect(await page.isDisabled("#wiz-back")).toBe(true);
   expect(await page.isVisible("#sel-fuji")).toBe(true);   // stage 1: the terrain editor
-  await page.evaluate(() => (window as any).__kfm.setRangeFactor("kiso", 0.5)); await page.waitForFunction(() => !(window as any).__kfm.generating, null, { timeout: 90000 });
+  await page.evaluate(() => (window as any).__kfm.setRangeFactor("kiso", 0.5)); await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });
   await page.click("#wiz-ok"); expect((await st())[0]).toBe(1); expect(await page.textContent("#wiz-head")).toContain("元号選択");
-  await page.click("#era-opt-1"); expect(await app(page, "a => a.firstEra")).toBe(1); await page.click("#wiz-ok");
-  expect(await page.textContent("#wiz-head")).toContain("首都"); await page.selectOption("#seat-sel-palace", "JP-04").catch(async () => { await page.click("#setup-tab-palace"); await page.selectOption("#seat-sel-palace", "JP-04"); });
+  expect(await page.isVisible("#era-list")).toBe(false); await page.click("#era-open"); await page.click("#era-opt-1"); expect(await app(page, "a => a.firstEra")).toBe(1); await page.click("#rw-close"); await page.click("#wiz-ok");
+  expect(await page.textContent("#wiz-head")).toContain("首都"); await page.click("#setup-tab-palace"); await page.selectOption("#seat-sel-palace", "JP-04");
   expect(await app(page, "a => a.s.palace")).toBe("JP-04"); await page.click("#wiz-ok");
   expect(await page.textContent("#wiz-head")).toContain("1号線"); const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市"); await clickRoadTool(page); await draw(page, tokyo, osaka);
-  await page.waitForFunction(() => (window as any).__kfm.cerReady(), null, { timeout: 60000 });
+  await expect.poll(() => app(page, "a => a.cerReady()"), { timeout: 60000 }).toBe(true);
   // back keeps everything chosen
   await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.s.palace]")).toEqual([2, "JP-04"]); await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.firstEra]")).toEqual([1, 1]);
   await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.s.rangeEdits.kiso]")).toEqual([0, 0.5]); expect(await page.isDisabled("#wiz-back")).toBe(true);
@@ -1264,13 +1264,13 @@ test("Stage 31: 初期設定は4段階+最終確認。戻っても設定は残�
   for (let k = 0; k < 3; k++) await page.click("#wiz-ok"); expect((await st()).slice(3)).toEqual([true, true, true, false]); await page.click("#wiz-ok"); await page.waitForSelector("#wiz-review");
   expect(await st()).toEqual([4, false, false, true, true, true, true]); expect(await page.isEnabled("#cer-go")).toBe(true);
   // the review reopens any stage; a change to the era touches nothing else
-  await page.click("#wiz-edit-1"); expect(await page.textContent("#wiz-head")).toContain("最終確認から修正中"); await page.click("#era-opt-2"); await page.click("#wiz-ok");
+  await page.click("#wiz-edit-1"); expect(await page.textContent("#wiz-head")).toContain("最終確認から修正中"); await page.click("#era-open"); await page.click("#era-opt-2"); await page.click("#rw-close"); await page.click("#wiz-ok");
   expect(await app(page, "a => [a.wizStage, a.firstEra]")).toEqual([4, 2]); expect((await st()).slice(3)).toEqual([true, true, true, true]);
   // a terrain change asks again for the road (which depends on it) and for nothing else; the start button waits
   await page.click("#wiz-edit-0"); await page.evaluate(() => (window as any).__kfm.setRangeFactor("kiso", 0.8)); await page.click("#wiz-back"); expect((await app(page, "a => a.wizStage"))).toBe(4);
   expect((await st()).slice(3)).toEqual([false, true, true, false]); expect(await page.isDisabled("#cer-go")).toBe(true); expect(await page.isVisible("#wiz-warn")).toBe(true);
-  await page.click("#wiz-edit-0"); await page.waitForFunction(() => !(window as any).__kfm.generating, null, { timeout: 90000 }); await page.click("#wiz-ok");
-  await page.click("#wiz-edit-3"); await page.waitForFunction(() => (window as any).__kfm.cerReady(), null, { timeout: 60000 }); await page.click("#wiz-ok");
+  await page.click("#wiz-edit-0"); await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); await page.click("#wiz-ok");
+  await page.click("#wiz-edit-3"); await expect.poll(() => app(page, "a => a.cerReady()"), { timeout: 60000 }).toBe(true); await page.click("#wiz-ok");
   expect((await st()).slice(3)).toEqual([true, true, true, true]); expect(await page.isEnabled("#cer-go")).toBe(true);
   expect((await st()).slice(1, 3)).toEqual([false, false]);   // (through all of it: no simulation, no runner)
   await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
