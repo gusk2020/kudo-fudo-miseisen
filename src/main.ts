@@ -1,7 +1,10 @@
 import "./style.css";
 import { App } from "./ui/app";
+import { showIntro } from "./ui/intro";
 // Stage 3 (real Japan) is the default; the Stage 1/2 hand-edited-map flow stays reachable at ?legacy=1 with its own saves.
 const legacy = new URLSearchParams(location.search).has("legacy");
+// Stage 31: one startup window (what this world is, and the save cautions) -- shown once per launch; ?nointro skips it for development and automated tests
+if (!legacy && !new URLSearchParams(location.search).has("nointro")) showIntro(document.body, () => {});
 App.start(document.getElementById("stage")!, !legacy).catch((e) => {
   console.error(e);
   const t = document.getElementById("step-title"); if (t) t.textContent = "起動に失敗しました: " + String(e?.message ?? e);

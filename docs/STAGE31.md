@@ -1,0 +1,8 @@
+# Stage 31
+
+- **Startup window** (`src/ui/intro.ts`, shown from `src/main.ts`, once per launch; `?nointro` skips it for development/tests): fictional-world Japan, 49 prefectures, the 【史実】/【架空】/【予測モデル】 key and the save cautions. The same notes were removed from the save tab; the territorial notes on islets are no longer shown.
+- **Setup wizard** (`App.wiz*`, `buildWizard`): 1 terrain, 2 era, 3 capital / sub-capital / palace, 4 国道1号, then a final review. Each stage reuses the existing controls and has 戻る / これで決定. Everything chosen lives in the game state, so going back keeps it. Each confirmed stage stores a signature of what it depends on (terrain, era, seats; the road depends on terrain + seats + its strokes): a change re-asks only the affected stages. The review lists the four stages with 修正; 開通の儀 is enabled only when all four are valid. No simulation exists before 開通の儀. The era list is a full-height window and opens only on request (it would cover the buttons).
+- **Relocation**: while an event is open (choices or 国道0号) the status line is hidden; it returns when the event closes.
+- **Skipped time**: `sim.skippedWallMs` = the real milliseconds the skipped months stand for. On return, the away time is measured with the clock (page hidden→visible, or now − the last saved stamp); of it, the share beyond the 30-year catch-up cap is `elapsed × skipped / (simulated + skipped)`. Shown as 「省略 約3.5時間」. A skip recorded before Stage 31 shows 「実時間は未計測」. If the device clock moves backwards the value is 0. Time the app was closed counts (wall clock); nothing is estimated beyond that split.
+- Tests: `tests/unit/stage31.test.ts`; E2E "Stage 31" (3) and the existing flows adapted to the wizard.
+- Pages: this branch is not in `pages.yml`, so it is not deployed.

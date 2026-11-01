@@ -10,13 +10,19 @@ async function draw(page: Page, from: [number, number], to: [number, number]) {
   await page.mouse.move(a[0], a[1]); await page.mouse.down(); await page.mouse.move(b[0], b[1], { steps: 14 }); await page.mouse.up();
 }
 async function bootReal(page: Page) {
-  await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(300);
+  await page.goto("/?nointro"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(300);
 }
 /** The first era is chosen from the 14 candidates of 1926; index 0/1/2 carry the balanced / road / rail stance. */
 /** Issue #20: the era and the seats live in their own sheet (⚙ 元号・首都), not in the terrain menu. */
 /** Stage 7: the terrain editor takes the whole toolbar while it is open, so it is closed first (the settings button lives outside it). */
-async function editor(page: Page, open: boolean) { const on = (await page.getAttribute("#terrain-edit-toggle", "aria-pressed")) === "true"; if (on !== open) await page.click("#terrain-edit-toggle"); }
-async function openTab(page: Page, tab: string) { if (await page.isVisible("#rw-close")) await page.click("#rw-close"); if (!(await page.isVisible("#setup-tab-" + tab))) await editor(page, false); if ((await page.getAttribute("#setup-tab-" + tab, "aria-selected")) !== "true") await page.click("#setup-tab-" + tab); }
+async function editor(page: Page, open: boolean) { await wizTo(page, open ? 0 : 3); return; }   // (Stage 31: closing the editor = moving on to the road stage)
+/** Stage 31: the setup is a wizard -- this puts it on stage n (0 terrain, 1 era, 2 seats, 3 国道1号, 4 review). */
+async function wizTo(page: Page, n: number) { await page.evaluate((k) => (window as any).__kfm.wizGo(k), n); }
+/** Confirms every stage with the real 「これで決定」 button (terrain first), ending on the final review. */
+async function confirmAll(page: Page) { await wizTo(page, 0); await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) { await page.click("#wiz-ok"); } await page.waitForSelector("#wiz-review"); }
+async function goCeremony(page: Page) { await confirmAll(page); await page.click("#cer-go"); }
+async function clickRoadTool(page: Page) { if (!(await page.isVisible("#tool-cer-kokudo1"))) await wizTo(page, 3); await page.click("#tool-cer-kokudo1"); }
+async function openTab(page: Page, tab: string) { if (await page.isVisible("#rw-close")) await page.click("#rw-close"); await wizTo(page, tab === "era" ? 1 : 2); if ((await page.getAttribute("#setup-tab-" + tab, "aria-selected")) !== "true") await page.click("#setup-tab-" + tab); }
 async function openSetup(page: Page) { await openTab(page, "era"); if (!(await page.isVisible("#era-list"))) await page.click("#era-open"); await page.waitForSelector("#era-list"); }
 async function openSeat(page: Page, which: string) { await openTab(page, which); await page.waitForSelector("#seat-sel-" + which); }
 async function openMapPick(page: Page, which: string) { await openSeat(page, which); await page.click("#pref-map"); }
@@ -30,25 +36,25 @@ async function startReal(page: Page, era = "heisei") {
   await pickEra(page, era);
   // Issue #15: the player draws one road only, from the capital (Tokyo by default) to the sub-capital (Osaka by default)
   const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市");
-  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, osaka);
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  await clickRoadTool(page); await draw(page, tokyo, osaka);
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
 }
 
 test("real Japan opens by default: finalised, step 6, no map-editing controls, era choice before the ceremony", async ({ page }) => {
   await bootReal(page); expect(await app(page, "a => ['X-SADO','X-AWAJI','X-TSUSHIMA','X-IKI','X-OKI'].every((id) => a.world.cityById.has(id))")).toBe(true);
   const errs = watchErrors(page); await bootReal(page);
   expect(await app(page, "a => a.real")).toBe(true); expect(await app(page, "a => a.s.step")).toBe(6); expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.real")).toBe(true);
-  expect(await page.isVisible("#btn-prev")).toBe(false); expect(await page.isVisible("#setup-tabs")).toBe(true);
+  expect(await page.isVisible("#btn-prev")).toBe(false); expect(await page.isVisible("#wiz-nav")).toBe(true); await wizTo(page, 2); expect(await page.isVisible("#setup-tabs")).toBe(true);   // Stage 31: the setup tabs live in the wizard stages
   // Stage 19: four small tabs that fit the phone width; every panel is closed until a tab is pressed, and pressing another tab closes the first
-  { const vw = page.viewportSize()!.width, boxes = await page.evaluate(() => ["era", "capital", "sub", "palace"].map((k) => { const r = document.getElementById("setup-tab-" + k)!.getBoundingClientRect(); return [r.left, r.right, r.height]; }));
-    for (const [l, r, h] of boxes) { expect(l).toBeGreaterThanOrEqual(0); expect(r).toBeLessThanOrEqual(vw); expect(h).toBeGreaterThanOrEqual(30); } expect(await page.locator("#setup-panel").count()).toBe(0);
+  { const vw = page.viewportSize()!.width, boxes = await page.evaluate(() => ["capital", "sub", "palace"].map((k) => { const r = document.getElementById("setup-tab-" + k)!.getBoundingClientRect(); return [r.left, r.right, r.height]; }));
+    for (const [l, r, h] of boxes) { expect(l).toBeGreaterThanOrEqual(0); expect(r).toBeLessThanOrEqual(vw); expect(h).toBeGreaterThanOrEqual(30); } expect(await page.locator("#setup-panel").count()).toBe(1);   // (a seat stage opens on its first tab)
     await page.click("#setup-tab-capital"); expect(await page.isVisible("#seat-sel-capital")).toBe(true); expect(await page.isVisible("#pref-map")).toBe(true);   // Stage 23: the tab shows the early picker (a select grouped by block) at once
-    await page.click("#setup-tab-sub"); await page.selectOption("#seat-sel-sub", "JP-27"); expect(await page.locator("#setup-panel").count()).toBe(1); expect(await page.getAttribute("#setup-tab-capital", "aria-selected")).toBe("false"); await page.click("#setup-close"); expect(await page.locator("#setup-panel").count()).toBe(0); }
+    await page.click("#setup-tab-sub"); await page.selectOption("#seat-sel-sub", "JP-27"); expect(await page.locator("#setup-panel").count()).toBe(1); expect(await page.getAttribute("#setup-tab-capital", "aria-selected")).toBe("false"); }
   await openSetup(page); expect(await page.locator("#era-current").count()).toBe(0);
   { const heads = await page.locator("#era-list .rw-head").evaluateAll((es) => es.map((e) => e.firstChild!.textContent)); expect(heads).toEqual(["道路重視", "鉄道・公共交通重視", "海路重視", "空路重視", "均衡"]); expect(await page.locator("#era-list .rw-item").count()).toBe(14); expect(await page.locator("#era-list .rw-item.on").count()).toBe(1);
     const rows = await page.locator("#era-list .rw-item").allTextContents(); for (const r of rows) { expect(r).not.toMatch(/道路重視|鉄道|海路重視|空路重視|均衡/); }   // the group says the policy once; a row carries only its own conditions
     expect(await page.locator("#era-list .rw-item.on .rw-dot").textContent()).toBe("●"); await page.click("#rw-close"); }
-  await closeSheet(page); expect(await page.isDisabled("#cer-go")).toBe(true);
+  await closeSheet(page); await wizTo(page, 4); expect(await page.isDisabled("#cer-go")).toBe(true);
   expect(await app(page, "a => a.world.cities.length")).toBeGreaterThan(40);
   expect(errs).toEqual([]);
 });
@@ -188,7 +194,7 @@ test("開通の儀 takes several strokes, undo/redo/restart work per kind, and a
   const errs = watchErrors(page); await bootReal(page);
   await pickEra(page, "heisei");
   const tokyo = await cityPos(page, "東京"), nagoya = await cityPos(page, "大阪市"), mid: [number, number] = [(tokyo[0] + nagoya[0]) / 2, (tokyo[1] + nagoya[1]) / 2];
-  await page.click("#tool-cer-kokudo1");
+  await clickRoadTool(page);
   await draw(page, tokyo, mid); await draw(page, mid, nagoya);
   expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
   await page.click("#cer-undo"); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(1);
@@ -199,7 +205,7 @@ test("開通の儀 takes several strokes, undo/redo/restart work per kind, and a
   await page.waitForTimeout(600); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   await page.waitForFunction(() => (window as any).__kfm.cerDraft.kokudo1, null, { timeout: 30000 });
   expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
-  await page.click("#tool-cer-kokudo1"); await page.click("#cer-restart"); expect(await app(page, "a => !a.cerDraft.kokudo1")).toBe(true);
+  await clickRoadTool(page); await page.click("#cer-restart"); expect(await app(page, "a => !a.cerDraft.kokudo1")).toBe(true);
   expect(errs).toEqual([]);
 });
 
@@ -233,7 +239,7 @@ test("改元: time stops at 1989, the sheet opens by itself, the choice is kept 
 
 test("限定の地形編集: capital, Alps and Fuji can be set before the first road, undo/redo work, edits survive a reload, and the ceremony locks them", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle"); await page.click("#edit-more"); await expect(page.locator("#terrain-edit-note")).toContainText("海岸線");
+  await wizTo(page, 0); await page.click("#edit-more"); await expect(page.locator("#terrain-edit-note")).toContainText("海岸線");
   const hash0 = await app(page, "a => a.terrain.hash") as string;
   await page.click("#alps-real"); expect(await app(page, "a => !!a.s.ridges.ne && !!a.s.ridges.sw")).toBe(true);
   await page.waitForFunction((h) => (window as any).__kfm.terrain?.hash && (window as any).__kfm.terrain.hash !== h, hash0, { timeout: 60000 });
@@ -242,7 +248,7 @@ test("限定の地形編集: capital, Alps and Fuji can be set before the first 
   await seatSelect(page, "sub", "HK-SAP"); expect(await app(page, "a => a.s.subCapital")).toBe("HK-SAP");   // Sapporo
   await seatSelect(page, "palace", "JP-26"); expect(await app(page, "a => a.s.palace")).toBe("JP-26");
   await openSeat(page, "capital"); expect(await page.locator("#seat-sel-capital option").count()).toBe(49); await openSeat(page, "sub"); expect(await page.locator("#seat-sel-sub option[value=JP-47]").evaluate((o: HTMLOptionElement) => o.disabled)).toBe(true);   // the capital cannot be chosen again as the sub-capital
-  await closeSheet(page); expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇");
+  await closeSheet(page); await wizTo(page, 3); expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇");
   expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(0);   // the outline is never touched
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.capital === 'JP-47' && a.s.subCapital === 'HK-SAP' && a.s.palace === 'JP-26' && !!a.s.ridges.ne")).toBe(true); expect(await app(page, "a => a.s.islands")).toBe(true);
@@ -275,11 +281,11 @@ test("政策介入: 「点を使わず決定」が最初から並び、「この
 
 test("沖縄を首都、札幌を副首都にしても国道1号が成立し、海は船でつながり、保存・再読み込みで残る", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle");
+  await wizTo(page, 0);
   await seatSelect(page, "capital", "JP-47"); await seatSelect(page, "sub", "HK-SAP"); await closeSheet(page); await closeSetup(page);
   await editor(page, false);   // fold the panel so it does not cover the map
   expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇"); expect(await page.locator("#tool-cer-fudo1").count()).toBe(0);   // no 府道1号 to draw any more
-  await page.click("#tool-cer-kokudo1");   // (the toolbar settles before the view is fitted to what is left of the screen)
+  await clickRoadTool(page);   // (the toolbar settles before the view is fitted to what is left of the screen)
   // fit the seven cities into the part of the screen above the toolbar
   const pts = await page.evaluate(() => {
     const a = (window as any).__kfm, w = a.world, c = (n: string) => w.cities.find((x: any) => x.name === n).pos, names = ["那覇市", "鹿児島市", "福岡市", "大阪市", "東京", "青森市", "札幌市"], P = names.map(c) as [number, number][];
@@ -291,7 +297,7 @@ test("沖縄を首都、札幌を副首都にしても国道1号が成立し、�
   for (let i = 0; i + 1 < pts.length; i++) { await page.mouse.move(pts[i][0], pts[i][1]); await page.mouse.down(); await page.mouse.move(pts[i + 1][0], pts[i + 1][1], { steps: 8 }); await page.mouse.up(); }
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo1.prev.ferries.length")).toBeGreaterThanOrEqual(3);
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.segments.filter((s) => s.ferry).every((s) => s.cells.length === 2)")).toBe(true);
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
   expect(await app(page, "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.filter((e) => a.sim.edges[e.edgeId].facility === 'ferry').length; }")).toBeGreaterThanOrEqual(3);
   expect(await app(page, "a => a.sim.capital === 'JP-47' && a.sim.subCapital === 'HK-SAP'")).toBe(true);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
@@ -302,7 +308,7 @@ test("沖縄を首都、札幌を副首都にしても国道1号が成立し、�
 
 test("皇居: 49府県から選べ、首都と同じ府県でもよく、地図の点で位置を決めて保存される。琵琶湖・富士山の拡大縮小はUndo/Redoできる", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle");
+  await wizTo(page, 0);
   expect(await app(page, "a => a.s.palace")).toBeUndefined();   // the default (Tokyo) is not stored until chosen
   await seatSelect(page, "palace", "JP-13"); expect(await app(page, "a => a.s.palace")).toBe("JP-13");   // same prefecture as the capital is fine
   await seatSelect(page, "palace", "JP-26");
@@ -351,7 +357,7 @@ async function touch(page: Page, steps: { type: "touchStart" | "touchMove" | "to
 }
 test("琵琶湖・富士山のタッチ操作: 1本指で移動、2本指で拡大縮小と回転、置けない所では元に戻り、Undo/Redo・保存で残る", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle"); await page.click("#sel-biwa");
+  await wizTo(page, 0); await page.click("#sel-biwa");
   const lake = await app(page, "a => { let sx = 0, sy = 0, n = 0; for (let k = 0; k < a.world.N; k++) if (a.world.t.land[k] === 2) { const p = a.world.cellPos(k); sx += p[0]; sy += p[1]; n++; } return [sx / n, sy / n]; }") as [number, number];
   const box = await page.locator("#app canvas, canvas").first().boundingBox(); const off = { x: box?.x ?? 0, y: box?.y ?? 0 };
   const c = await screenOf(page, lake), P = (dx: number, dy: number, id: number) => ({ x: off.x + c[0] + dx, y: off.y + c[1] + dy, id });
@@ -388,7 +394,7 @@ test("琵琶湖・富士山のタッチ操作: 1本指で移動、2本指で拡�
 test("Issue #20: 置けない所で指を離しても止まらない(直前の状態に戻り、地形生成中のまま残らない)。ツールは再度押すと解除。府県は北から南", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
   const healthy = async () => { await page.waitForFunction(() => { const a = (window as any).__kfm; return !!a.terrain && !a.generating; }, null, { timeout: 60000 }); expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error').length")).toBe(0); expect(await page.textContent("#status")).not.toContain("不正"); };
-  await page.click("#terrain-edit-toggle"); await page.click("#sel-biwa"); expect(await app(page, "a => a.tool")).toBe("feature");
+  await wizTo(page, 0); await page.click("#sel-biwa"); expect(await app(page, "a => a.tool")).toBe("feature");
   const box = await page.locator("canvas").first().boundingBox(); const off = { x: box?.x ?? 0, y: box?.y ?? 0 };
   const lakeAt = async () => screenOf(page, await app(page, "a => { let sx = 0, sy = 0, n = 0; for (let k = 0; k < a.world.N; k++) if (a.world.t.land[k] === 2) { const p = a.world.cellPos(k); sx += p[0]; sy += p[1]; n++; } return [sx / n, sy / n]; }") as [number, number]);
   // 1) one finger: drag the lake far out to sea and let go -> refused, put back, nothing stuck
@@ -403,7 +409,7 @@ test("Issue #20: 置けない所で指を離しても止まらない(直前の�
   const moved = await app(page, "a => JSON.stringify(a.s.features.biwa.pos)") as string; expect(moved).not.toBe("null"); await healthy();
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => JSON.stringify(a.s.features.biwa.pos)")).toBe(moved); await healthy();
-  await page.click("#terrain-edit-toggle"); await page.click("#sel-biwa");
+  await wizTo(page, 0); await page.click("#sel-biwa");
   // 3) the rotation buttons, many times in a row on a big lake: each press is either a valid map or refused; never a stuck map
   for (let i = 0; i < 6; i++) await page.click("#biwa-bigger");
   for (let i = 0; i < 18; i++) await page.click("#rot-l");
@@ -422,7 +428,7 @@ test("Issue #20: 置けない所で指を離しても止まらない(直前の�
   const lake0 = await app(page, "a => JSON.stringify(a.s.features.biwa)"), cx0 = await app(page, "a => a.r.view.cx") as number; c = await lakeAt();
   await touch(page, [{ type: "touchStart", pts: [{ x: off.x + c[0], y: off.y + c[1], id: 1 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] + 40, y: off.y + c[1], id: 1 }] }, { type: "touchEnd", pts: [] }]);
   expect(await app(page, "a => a.r.view.cx")).not.toBe(cx0); expect(await app(page, "a => JSON.stringify(a.s.features.biwa)")).toBe(lake0);   // panned, not edited
-  await page.click("#terrain-edit-toggle"); await page.click("#terrain-edit-toggle"); await page.click("#sel-biwa"); await page.click("#sel-biwa"); expect(await app(page, "a => a.tool")).toBe("view");
+  await wizTo(page, 0); await wizTo(page, 0); await page.click("#sel-biwa"); await page.click("#sel-biwa"); expect(await app(page, "a => a.tool")).toBe("view");
   // 7) the compact terrain menu holds no era / seat controls; the seats are listed north to south (Hokkaido's three first, Okinawa last)
   expect(await page.locator("#toolbar #setup-tabs").count()).toBe(0);
   const tbH = await page.evaluate(() => document.getElementById("toolbar")!.getBoundingClientRect().height), vh = await page.evaluate(() => innerHeight); expect(tbH).toBeLessThan(vh * 0.45);
@@ -434,14 +440,14 @@ test("Issue #20: 置けない所で指を離しても止まらない(直前の�
 test("Stage 7: 地形編集は1行の小さなメニュー(対象を選んだ時だけ2行目)。地図の見える範囲が広い", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
   const tbH = () => page.evaluate(() => Math.round(document.getElementById("toolbar")!.getBoundingClientRect().height));
-  const closed = await tbH(); await page.click("#terrain-edit-toggle"); const open = await tbH(); const rows = await page.evaluate(() => new Set([...document.querySelectorAll("#toolbar button")].map((b) => Math.round(b.getBoundingClientRect().y))).size);
+  const closed = await tbH(); await wizTo(page, 0); const open = await tbH(); const rows = await page.evaluate(() => new Set([...document.querySelectorAll("#toolbar button")].map((b) => Math.round(b.getBoundingClientRect().y))).size);
   await page.click("#sel-biwa"); const biwa = await tbH(); await page.click("#sel-fuji"); const fuji = await tbH(); await page.click("#edit-more"); const more = await tbH();
   console.log("toolbar heights", JSON.stringify({ closed, open, rows, biwa, fuji, more }));
-  expect(rows).toBe(1); expect(open).toBeLessThan(closed * 0.5); expect(fuji).toBeLessThan(100); expect(more).toBeLessThan(140);
+  expect(rows).toBeLessThanOrEqual(3); expect(fuji).toBeLessThan(180); expect(more).toBeLessThan(230); void closed; void open;   // Stage 31: the editor sits in the wizard: a heading and 戻る / 決定 come with it
   expect(await page.locator("#toolbar #setup-tabs, #toolbar #tool-cer-kokudo1, #toolbar #cer-go").count()).toBe(0);   // nothing but the editor while it is open
   // the editor still does everything: undo / redo, rotate, size, close returns the ceremony controls
   await page.click("#rot-l"); expect(await app(page, "a => a.s.features.fuji.rot")).not.toBe(0); await page.click("#edit-undo"); expect(await app(page, "a => a.s.features.fuji.rot")).toBe(0); await page.click("#edit-redo"); expect(await app(page, "a => a.s.features.fuji.rot")).not.toBe(0);
-  await page.click("#terrain-edit-toggle"); expect(await app(page, "a => a.tool")).toBe("view"); expect(await page.isVisible("#tool-cer-kokudo1")).toBe(true);
+  await wizTo(page, 3); expect(await app(page, "a => a.tool")).toBe("view"); expect(await page.isVisible("#tool-cer-kokudo1")).toBe(true);
   expect(errs).toEqual([]);
 });
 
@@ -466,7 +472,7 @@ test("Stage 8: 国道1号を琵琶湖の上に引くと湖岸で止まり湖上�
     const zoom = Math.min((W - 80) / (x1 - x0), (H * 0.45) / (y1 - y0)); a.r.setView({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 + (Math.min(300, H * 0.37) - H / 2) / zoom, zoom }, true);
     return P.map((p) => a.r.worldToScreen(p)) as [number, number][];
   });
-  await page.click("#tool-cer-kokudo1");
+  await clickRoadTool(page);
   for (let i = 0; i + 1 < pts.length; i++) { await page.mouse.move(pts[i][0], pts[i][1]); await page.mouse.down(); await page.mouse.move(pts[i + 1][0], pts[i + 1][1], { steps: 10 }); await page.mouse.up(); }
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true);
   expect(await app(page, "a => (a.cerDraft.kokudo1.prev.lakes || []).length")).toBe(1);
@@ -474,7 +480,7 @@ test("Stage 8: 国道1号を琵琶湖の上に引くと湖岸で止まり湖上�
   expect(await page.textContent("#cer-status-kokudo1")).toContain("湖上フェリー");
   await page.click("#cer-undo"); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
   await page.click("#cer-redo"); expect(await app(page, "a => (a.cerDraft.kokudo1.prev.lakes || []).length")).toBe(1);
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
   const lakeOnR1 = "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.some((e) => (a.sim.edges[e.edgeId].facilityName || '').includes('【湖】')); }";
   expect(await app(page, lakeOnR1)).toBe(true);
   // no road cell of 国道1号 lies on the lake
@@ -516,7 +522,7 @@ async function stroke(page: Page, pts: [number, number][]) { await page.mouse.mo
 test("Stage 9: 四国を通る国道1号は四国経由のまま。制御点を動かせ、区間を選んで消す・描き直すと前後につながり、Undo/Redo・再読み込みで残る", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page); await pickEra(page, "heisei");
   const P = await fitPts(page, ["東京", "名古屋市", "大阪市", "徳島市", "高松市", "松山市", "広島市", "岡山市", "大阪市"]);
-  await page.click("#tool-cer-kokudo1");
+  await clickRoadTool(page);
   await stroke(page, P.slice(0, 4)); await stroke(page, P.slice(3, 7)); await stroke(page, P.slice(6));
   expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(3);
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true);
@@ -544,14 +550,14 @@ test("Stage 9: 四国を通る国道1号は四国経由のまま。制御点を�
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true); expect(await app(page, shikoku)).toBe(true);
   await page.waitForTimeout(500); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.cerDraft?.kokudo1, null, { timeout: 90000 });
   expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(3); expect(await app(page, shikoku)).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo1.past.length")).toBeGreaterThan(0);
-  await page.click("#tool-cer-kokudo1"); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  await clickRoadTool(page); await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
   expect(await app(page, "a => { const w = a.world, lm = w.lm[w.cities.find((c) => c.name === '高松市').cell], r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.some((e) => a.sim.edges[e.edgeId].cells.some((k) => w.lm[k] === lm)); }")).toBe(true);
   expect(errs).toEqual([]);
 });
 
 test("Stage 9: 山脈は何本でも継ぎ足せて、点を動かせる。Undo/Redo・再読み込みで残り、地形に反映される。首都・副首都・皇居は1行ずつ", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle"); await page.click("#edit-more");
+  await wizTo(page, 0); await page.click("#edit-more");
   const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市"]);
   const hash0 = await app(page, "a => a.terrain.hash") as string;
   await page.click("#tool-ridge-ne"); await stroke(page, [P[0], P[2]]);
@@ -594,7 +600,7 @@ test("Stage 19: 首都を地図の任意の陸地でタップして選べる。�
 
 test("Stage 9 (実機指摘): 山脈は地形の再生成を待たずに続けて描き足せる。端点から描くと続き、別の場所なら新しい線、点は指で掴める", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle"); await page.click("#edit-more");
+  await wizTo(page, 0); await page.click("#edit-more");
   const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市", "岐阜市"]);
   for (const key of ["ne", "sw"] as const) {
     await page.click(`#tool-ridge-${key}`);
@@ -633,7 +639,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   await seatSelect(page, "capital", "HK-NEM"); expect(await app(page, "a => a.s.capital")).toBe("HK-NEM"); await seatSelect(page, "capital", "JP-13");
   await closeSheet(page);
   // 北 removes the real Hida range, and only that; one Undo brings it back
-  await page.click("#terrain-edit-toggle"); await page.click("#edit-more");
+  await wizTo(page, 0); await page.click("#edit-more");
   const h0 = await app(page, "a => a.terrain.hash") as string;
   await page.click("#tool-ridge-ne"); expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true}');
   await page.waitForFunction((h) => { const a = (window as any).__kfm; return !!a.terrain && !a.generating && a.terrain.hash !== h; }, h0, { timeout: 60000 });
@@ -649,7 +655,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   expect(await app(page, "a => a.s.layers.signs")).toBe(true);
   await editor(page, false);
   const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市");
-  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, osaka); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  await clickRoadTool(page); await draw(page, tokyo, osaka); await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.layers.signs")).toBe(false); expect(await app(page, "a => !!a.sim.roles && !!a.sim.kaigen.recon")).toBe(true);
   await page.evaluate(() => { const a = (window as any).__kfm; a.openSheet("layers"); }); await page.click("#layer-signs");
   expect(await app(page, "a => a.s.layers.signs")).toBe(true); expect(await app(page, "a => a.s.layersSet")).toContain("signs");
@@ -668,7 +674,7 @@ test("Stage 11: 道路図/地形図を最初に選べて保存される。道路
   expect(await app(page, "a => a.bg")).toBe("terrain");
   await openSetup(page); await page.click("#rw-close"); await page.click("#bg-roadmap"); await closeSheet(page); expect(await app(page, "a => a.bg")).toBe("roadmap");
   // draw two ranges: on the road map the lines are not drawn, while the range tools are on the terrain map is shown, and afterwards the road map returns
-  await page.click("#terrain-edit-toggle"); await page.click("#edit-more");
+  await wizTo(page, 0); await page.click("#edit-more");
   const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市", "岐阜市"]);
   await page.click("#tool-ridge-ne"); expect(await app(page, "a => a.bg")).toBe("terrain");
   await stroke(page, [P[0], P[2]]); await stroke(page, [P[1], P[3]]);
@@ -692,7 +698,7 @@ test("Stage 11: 道路図/地形図を最初に選べて保存される。道路
 
 test("Stage 11: 琵琶湖・富士山の縦と横を別々に伸ばせる(各最大5倍・回転を保つ)。富士山の高さは面積相当の倍率に連動し、保存・Undo/Redoで残る", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle"); await page.click("#sel-fuji");
+  await wizTo(page, 0); await page.click("#sel-fuji");
   const size = () => app(page, "a => JSON.stringify([a.s.features.fuji.scale ?? 1, a.s.features.fuji.scaleY ?? a.s.features.fuji.scale ?? 1])") as Promise<string>;
   await page.click("#rot-l"); const rot = await app(page, "a => a.s.features.fuji.rot") as number; expect(rot).not.toBe(0);
   await page.click("#fuji-size");   // tapping the size opens the 縦横 row (the closed toolbar stays one short row)
@@ -706,7 +712,7 @@ test("Stage 11: 琵琶湖・富士山の縦と横を別々に伸ばせる(各最
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(JSON.parse(await size())).toEqual([sx, sy2]);
   // the lake: its own two axes, each stops at 5x (the map check may stop it sooner: the lake must stay off the coast)
-  await page.click("#terrain-edit-toggle").catch(() => {}); if (!(await page.isVisible("#sel-biwa"))) await page.click("#terrain-edit-toggle");
+  await wizTo(page, 0).catch(() => {}); if (!(await page.isVisible("#sel-biwa"))) await wizTo(page, 0);
   await page.click("#sel-biwa"); if (!(await page.isVisible("#biwa-y-more"))) await page.click("#biwa-size"); await page.click("#biwa-y-more"); await page.click("#biwa-y-more");
   const lake = await app(page, "a => JSON.stringify([a.s.features.biwa.scale ?? 1, a.s.features.biwa.scaleY ?? a.s.features.biwa.scale ?? 1])") as string; const [lx, ly] = JSON.parse(lake) as [number, number];
   expect(ly).toBeGreaterThan(lx); expect(Math.max(lx, ly)).toBeLessThanOrEqual(5); expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error').length")).toBe(0);
@@ -747,12 +753,12 @@ test("Stage 20: 離島(硫黄島)を地図で首都に選べる。最寄りの�
   expect(await app(page, "a => { const c = a.world.cityById.get('C-JP-13'); return c.kind + ':' + !!c.former; }")).toBe("city:true");   // the old one stays an ordinary city
   await closeSetup(page); await editor(page, false);
   expect(await page.textContent("#tool-cer-kokudo1")).toContain("硫黄島");
-  await page.click("#tool-cer-kokudo1");
+  await clickRoadTool(page);
   const pts = await fitPts(page, ["硫黄島市", "東京", "大阪市"]);
   for (const [x, y] of pts) { const hit = await page.evaluate(([px, py]) => (document.elementFromPoint(px, py) as HTMLElement)?.tagName ?? "", [x, y]); expect(hit, `(${x},${y}) is on the map`).toBe("CANVAS"); }
   await stroke(page, pts);
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true);
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
   expect(await app(page, "a => a.sim.isl20 === true && a.sim.moves20.length === 1 && a.sim.moves20[0].pref === 'JP-13'")).toBe(true);
   expect(await app(page, "a => { const c = a.world.cities.find((x) => x.name === '硫黄島市'); return a.sim.cities[c.id].pop <= c.capPop && a.sim.cities['C-JP-13'].pop > 100000; }")).toBe(true);   // the island city holds only what the island can; Tokyo still has its people
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
@@ -760,7 +766,7 @@ test("Stage 20: 離島(硫黄島)を地図で首都に選べる。最寄りの�
   expect(errs).toEqual([]);
 });
 
-test("Stage 20: 尖閣・竹島・北方四島・硫黄島はどれも地図で選べ、領有の事実が表示され、島は表示される", async ({ page }) => {
+test("Stage 20: 尖閣・竹島・北方四島・硫黄島はどれも地図で選べ、領有の注意書きは出ず、島は表示される", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
   await openMapPick(page, "palace");
   expect(await app(page, "a => a.r.islets.length")).toBeGreaterThan(80);
@@ -769,7 +775,7 @@ test("Stage 20: 尖閣・竹島・北方四島・硫黄島はどれも地図で�
     await page.evaluate((q) => { const a = (window as any).__kfm, H = window.innerHeight; a.r.setView({ cx: q[0], cy: q[1] + (200 - H / 2) / 1.5, zoom: 1.5 }, true); }, p);
     const [x, y] = await screenOf(page, p); await page.mouse.click(x, y);
     expect(await app(page, "a => a.seatPick && a.seatPick.islet"), name).toBe(name); expect(await app(page, "a => a.seatPick.pref"), name).toBe(pref);
-    if (claim) expect(await page.textContent("#seat-map-hint"), name).toContain(claim);
+    expect(await page.textContent("#seat-map-hint"), name).not.toMatch(/領有|実効支配|争い/);   // Stage 31: no territorial note in the game
     await page.click("#seat-cancel");
   }
   expect(errs).toEqual([]);
@@ -778,19 +784,19 @@ test("Stage 20: 尖閣・竹島・北方四島・硫黄島はどれも地図で�
 test("Stage 21: 国道1号は副首都側から描いても開通し、近くの県庁所在地は道路網につながる", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
   await closeSetup(page); await editor(page, false);
-  await page.click("#tool-cer-kokudo1");
+  await clickRoadTool(page);
   const pts = await fitPts(page, ["大阪市", "名古屋市", "東京"]);   // Osaka -> Nagoya -> Tokyo: the sub-capital end first
   await stroke(page, pts);
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo1.prev.reversed === true")).toBe(true);
   expect(await page.textContent("#cer-status-kokudo1")).toContain("向き直し");
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
   expect(await app(page, "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return !!r && r.edges.length > 3; }")).toBe(true);
   expect(await app(page, "a => { const ids = ['名古屋市', '横浜市', '岐阜市']; return ids.every((n) => { const c = a.world.cities.find((x) => x.name === n); return Object.values(a.sim.edges).some((e) => e.state === 'open' && (e.mode ?? 'road') === 'road' && e.cells.includes(c.cell)); }); }")).toBe(true);
   expect(errs).toEqual([]);
 });
 
 test("Stage 23: 府県は初期の選択式(地方ブロック別・北から南)。360px幅で押せ、選んでも設定欄が残り、地図選択と往復できる。元号は○/●の一覧", async ({ page }) => {
-  const errs = watchErrors(page); await page.setViewportSize({ width: 360, height: 740 }); await bootReal(page);
+  const errs = watchErrors(page); await page.setViewportSize({ width: 360, height: 740 }); await bootReal(page); await wizTo(page, 2);
   await page.click("#setup-tab-capital"); const sel = page.locator("#seat-sel-capital"); expect(await sel.isVisible()).toBe(true);
   { const b = await sel.boundingBox(); expect(b!.x).toBeGreaterThanOrEqual(0); expect(b!.x + b!.width).toBeLessThanOrEqual(360); expect(b!.y + b!.height).toBeLessThanOrEqual(740 - 40); }
   const groups = await sel.evaluate((e) => [...e.querySelectorAll("optgroup")].map((g) => [g.getAttribute("label"), g.querySelectorAll("option").length] as [string, number]));
@@ -810,7 +816,7 @@ test("Stage 23: 府県は初期の選択式(地方ブロック別・北から南
   await page.click("#pref-map"); { const [x, y] = await screenOf(page, spot); await page.mouse.click(x, y); } await page.click("#seat-confirm");
   expect(await app(page, "a => a.s.capital")).toBe("JP-23"); expect(await app(page, "a => a.world.cities.filter((c) => c.pref === 'JP-23' && c.kind === 'capital').length")).toBe(1);
   // the era list: the same window; each name with its own policy under it; choosing keeps it open
-  await page.click("#setup-tab-era"); expect(await page.isVisible("#era-list")).toBe(true);
+  await wizTo(page, 1); await page.click("#era-open"); expect(await page.isVisible("#era-list")).toBe(true);
   const items = await page.locator("#era-list .rw-item").count(); expect(items).toBe(14);
   await page.locator("#era-opt-3").click(); expect(await app(page, "a => a.firstEra")).toBe(3); expect(await page.isVisible("#era-list")).toBe(true); expect(await page.locator("#era-opt-3 .rw-dot").textContent()).toBe("●");
   expect(await page.locator("#era-list .rw-desc").count()).toBeGreaterThan(5);
@@ -972,7 +978,7 @@ test("Stage 25: 150年後の2250年にも遷都と改元。元号は使った名
 test("Stage 26: 初期設定中でも地形図/道路図を切り替えられ、選んだ元号・首都は変わらない。府県境は1本だけ", async ({ page }) => {
   test.setTimeout(240000); await page.setViewportSize({ width: 360, height: 740 });
   const errs = watchErrors(page); await bootReal(page);
-  await page.waitForSelector("#setup-bg"); await page.click("#setup-tab-era");
+  await wizTo(page, 1); await page.waitForSelector("#setup-bg");
   if (!(await page.isVisible("#era-list"))) await page.click("#era-open"); await page.waitForSelector("#era-list"); await clickEra(page, 3); const era0 = await app(page, "a => a.firstEra");
   const bg0 = await app(page, "a => a.bg"); await page.click("#rw-bg"); const bg1 = await app(page, "a => a.bg"); expect(bg1).not.toBe(bg0); expect(await app(page, "a => a.firstEra")).toBe(era0); expect(await page.isVisible("#era-list")).toBe(true);   // the list stays open, the choice stays
   await page.click("#rw-close"); await seatSelect(page, "capital", "JP-40"); const seatNow = await page.textContent("#seat-now");
@@ -1009,12 +1015,14 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   await jump(2100); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
   expect(await app(page, "a => a.sim.e2200.n")).toBe(0); expect(await app(page, "a => a.sim.cp?.reloc ?? 0")).toBe(0);   // Stage 27: nothing is saved before or in the middle of the event
   await page.waitForTimeout(1500); expect(await page.evaluate(() => (window as any).__kfm.sim.cp?.reloc ?? 0)).toBe(0);
+  expect(await page.isVisible("#status")).toBe(false);   // Stage 31: the ordinary information line is put away while the event is open
   const bg0 = await app(page, "a => a.bg"); await page.click("#e22-bg"); expect(await app(page, "a => a.bg")).not.toBe(bg0); await page.waitForSelector("#e22-box");   // the map can be switched during the event; the sheet stays
   await page.selectOption("#e22-sel-palace", "JP-04"); await page.click("#e22-era-1"); await page.click("#e22-decide");
   expect(await app(page, "a => a.sim.e2200.state")).toBe("road0"); expect(await app(page, "a => a.sim.cp?.reloc ?? 0")).toBe(0);   // 国道0号 is still to be built or given up
   const palace = (await app(page, "a => { const w = a.world, p = a.sim.palace, c = w.cities.find((x) => x.pref === p.pref && x.kind === 'capital'); return { pref: p.pref, dx: Math.hypot(p.pos[0] - c.pos[0], p.pos[1] - c.pos[1]), marker: a.r.seatOverride ? Math.hypot(a.r.seatOverride.palace[0] - c.pos[0], a.r.seatOverride.palace[1] - c.pos[1]) : -1 }; }")) as { pref: string; dx: number; marker: number };
   expect(palace.pref).toBe("JP-04"); expect(palace.dx).toBeLessThan(1e-6); expect(palace.marker).toBeLessThan(1e-6);   // the palace really stands in the new prefecture (sim and map marker)
   await page.click("#road0-skip"); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.reloc === 1, null, { timeout: 90000 });
+  expect(await page.isVisible("#status")).toBe(true);   // (the event is over: the line is back)
   await menu(); await page.waitForSelector("#cp-2100-reloc"); expect(await page.textContent("#cp-2100-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2100-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
   expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.waitForSelector("#cp-2000-50y");
@@ -1191,7 +1199,7 @@ test("Stage 29: 湖・汽水湖・湖中島が描かれ、島は陸色。海岸�
 
 test("Stage 30A: 山脈ボタン→一覧と地図タップが同じ選択になり、増強・減衰が効き、平地まで下げられ、保存され、道路図/地形図を切り替えても選択が残る", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await page.click("#terrain-edit-toggle"); await page.click("#edit-ranges");
+  await wizTo(page, 0); await page.click("#edit-ranges");
   expect(await page.locator("#range-list .range-item").count()).toBeGreaterThanOrEqual(10);
   const box = await page.locator("#range-akaishi").boundingBox(); expect(box!.height).toBeGreaterThanOrEqual(36);   // touch-sized
   // list -> selection, yellow outline in the renderer, controls appear; the list folds away
@@ -1221,4 +1229,55 @@ test("Stage 30A: 山脈ボタン→一覧と地図タップが同じ選択にな
   await page.waitForTimeout(800); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.rangeEdits?.akaishi")).toBe(0);
   expect(errs).toEqual([]);
+});
+
+test("Stage 31: 起動時の説明は1枚だけ。架空の世界線・49府県・保存の注意をまとめ、確認で閉じ、ゲーム中のタブには注意書きが残らない", async ({ page }) => {
+  const errs = watchErrors(page); await page.goto("/"); await page.waitForSelector("#intro-modal");
+  const t = (await page.textContent("#intro-modal")) ?? ""; expect(t).toContain("架空の世界線の日本"); expect(t).toContain("49府県"); expect(t).toContain("自動セーブポイント"); expect(t).not.toMatch(/北方|領有|実効支配/);
+  expect(await page.locator("#intro-modal").count()).toBe(1); const bb = await page.locator("#intro-ok").boundingBox(); expect(bb!.height).toBeGreaterThanOrEqual(44);   // a thumb-sized button
+  await page.click("#intro-ok"); expect(await page.locator("#intro-modal").count()).toBe(0);
+  await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  await page.evaluate(() => (window as any).__kfm.openSheet("menu")); await page.waitForSelector("#slot-1");
+  expect(await page.locator("#about-data, #cp-note").count()).toBe(0); expect(await page.textContent("#sheet-body")).not.toMatch(/領有|実効支配|このゲームについて/);
+  expect(await page.locator("#intro-modal").count()).toBe(0);   // never repeated on the ordinary screens
+  expect(errs).toEqual([]);
+});
+
+test("Stage 31: 初期設定は4段階+最終確認。戻っても設定は残り、前を直すと影響を受ける段階だけ要確認になり、最終確認から再編集でき、その間シミュレーションは動かない", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  const st = () => app(page, "a => [a.wizStage, !!a.sim, !!a.runner, a.wizValid(0), a.wizValid(1), a.wizValid(2), a.wizValid(3)]") as Promise<(number | boolean)[]>;
+  expect(await st()).toEqual([0, false, false, false, false, false, false]); expect(await page.textContent("#wiz-head")).toContain("1/4"); expect(await page.isDisabled("#wiz-back")).toBe(true);
+  expect(await page.isVisible("#sel-fuji")).toBe(true);   // stage 1: the terrain editor
+  await page.evaluate(() => (window as any).__kfm.setRangeFactor("kiso", 0.5)); await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });
+  await page.click("#wiz-ok"); expect((await st())[0]).toBe(1); expect(await page.textContent("#wiz-head")).toContain("元号選択");
+  expect(await page.isVisible("#era-list")).toBe(false); await page.click("#era-open"); await page.click("#era-opt-1"); expect(await app(page, "a => a.firstEra")).toBe(1); await page.click("#rw-close"); await page.click("#wiz-ok");
+  expect(await page.textContent("#wiz-head")).toContain("首都"); await page.click("#setup-tab-palace"); await page.selectOption("#seat-sel-palace", "JP-04");
+  expect(await app(page, "a => a.s.palace")).toBe("JP-04"); await page.click("#wiz-ok");
+  expect(await page.textContent("#wiz-head")).toContain("1号線"); const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市"); await clickRoadTool(page); await draw(page, tokyo, osaka);
+  await expect.poll(() => app(page, "a => a.cerReady()"), { timeout: 60000 }).toBe(true);
+  // back keeps everything chosen
+  await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.s.palace]")).toEqual([2, "JP-04"]); await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.firstEra]")).toEqual([1, 1]);
+  await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.s.rangeEdits.kiso]")).toEqual([0, 0.5]); expect(await page.isDisabled("#wiz-back")).toBe(true);
+  expect((await st()).slice(0, 3)).toEqual([0, false, false]);
+  // forward again: the earlier confirmations still stand (only the road waits for its own)
+  for (let k = 0; k < 3; k++) await page.click("#wiz-ok"); expect((await st()).slice(3)).toEqual([true, true, true, false]); await page.click("#wiz-ok"); await page.waitForSelector("#wiz-review");
+  expect(await st()).toEqual([4, false, false, true, true, true, true]); expect(await page.isEnabled("#cer-go")).toBe(true);
+  // the review reopens any stage; a change to the era touches nothing else
+  await page.click("#wiz-edit-1"); expect(await page.textContent("#wiz-head")).toContain("最終確認から修正中"); await page.click("#era-open"); await page.click("#era-opt-2"); await page.click("#rw-close"); await page.click("#wiz-ok");
+  expect(await app(page, "a => [a.wizStage, a.firstEra]")).toEqual([4, 2]); expect((await st()).slice(3)).toEqual([true, true, true, true]);
+  // a terrain change asks again for the road (which depends on it) and for nothing else; the start button waits
+  await page.click("#wiz-edit-0"); await page.evaluate(() => (window as any).__kfm.setRangeFactor("kiso", 0.8)); await page.click("#wiz-back"); expect((await app(page, "a => a.wizStage"))).toBe(4);
+  expect((await st()).slice(3)).toEqual([false, true, true, false]); expect(await page.isDisabled("#cer-go")).toBe(true); expect(await page.isVisible("#wiz-warn")).toBe(true);
+  await page.click("#wiz-edit-0"); await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); await page.click("#wiz-ok");
+  await page.click("#wiz-edit-3"); await expect.poll(() => app(page, "a => a.cerReady()"), { timeout: 60000 }).toBe(true); await page.click("#wiz-ok");
+  expect((await st()).slice(3)).toEqual([true, true, true, true]); expect(await page.isEnabled("#cer-go")).toBe(true);
+  expect((await st()).slice(1, 3)).toEqual([false, false]);   // (through all of it: no simulation, no runner)
+  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  expect(await page.locator("#wiz-nav").count()).toBe(0); expect(errs).toEqual([]);
+});
+
+test("Stage 31: 設定の操作ボタンはスマホで押しやすく、画面の下半分以内に収まる", async ({ page }) => {
+  await bootReal(page); const vh = page.viewportSize()!.height;
+  for (const n of [0, 1, 2, 3, 4]) { await wizTo(page, n); const r = await page.evaluate(() => { const b = (id: string) => document.getElementById(id)!.getBoundingClientRect(), tb = document.getElementById("toolbar")!.getBoundingClientRect(); return { back: b("wiz-back").height, ok: document.getElementById("wiz-ok") ? b("wiz-ok").height : 99, top: tb.top, w: b("wiz-back").width }; });
+    expect(r.back, "stage " + n).toBeGreaterThanOrEqual(44); expect(r.ok).toBeGreaterThanOrEqual(44); expect(r.w).toBeGreaterThan(80); expect(r.top, "toolbar top, stage " + n).toBeGreaterThan(vh * 0.35); }
 });

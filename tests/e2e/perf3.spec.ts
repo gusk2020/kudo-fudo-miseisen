@@ -14,13 +14,13 @@ test("perf3: boot -> era -> ceremony -> x20 -> zoom/pan -> atlas -> save", async
   const stage = (s: string) => page.evaluate((x) => ((window as any).__stage = x), s);
   const heap = async (tag: string) => { await cdp.send("HeapProfiler.collectGarbage"); return { tag, heapMB: await page.evaluate(() => Math.round(((performance as any).memory?.usedJSHeapSize ?? 0) / 1e6)) }; };
   const out: any = { cpu: CPU, stages: [], heap: [] };
-  let t = Date.now(); await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 300000 }); out.stages.push({ name: "boot+terrain", ms: Date.now() - t }); out.heap.push(await heap("boot"));
+  let t = Date.now(); await page.goto("/?nointro"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 300000 }); out.stages.push({ name: "boot+terrain", ms: Date.now() - t }); out.heap.push(await heap("boot"));
   const cityPos = (n: string) => page.evaluate((x) => (window as any).__kfm.world.cities.find((c: any) => c.name === x).pos, n) as Promise<[number, number]>;
   const scr = (p: [number, number]) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p) as Promise<[number, number]>;
   const draw = async (a: [number, number], b: [number, number]) => { const s = await scr(a), e = await scr(b); await page.mouse.move(s[0], s[1]); await page.mouse.down(); await page.mouse.move(e[0], e[1], { steps: 10 }); await page.mouse.up(); };
   await page.click("#setup-tab-era"); await page.click("#era-opt-0"); await page.click("#rw-close"); await page.click("#setup-close"); const tokyo = await cityPos("東京"), osk = await cityPos("大阪市");
   await page.click("#tool-cer-kokudo1"); await draw(tokyo, osk);
-  await stage("ceremony"); t = Date.now(); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 300000 }); out.stages.push({ name: "ceremony(1950 network)", ms: Date.now() - t }); out.heap.push(await heap("ceremony"));
+  await stage("ceremony"); t = Date.now(); await page.evaluate(() => (window as any).__kfm.wizGo(0)); await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) await page.click("#wiz-ok"); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 300000 }); out.stages.push({ name: "ceremony(1950 network)", ms: Date.now() - t }); out.heap.push(await heap("ceremony"));
   await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; });
   await page.evaluate(() => {
     const a = (window as any).__kfm, P: Record<string, number[]> = (window as any).__prof = { render: [], pump: [], status: [], persist: [], rebuild: [] };

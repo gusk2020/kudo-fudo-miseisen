@@ -25,7 +25,7 @@ import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, valid
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
 import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, performRoad0, snapKmFor, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
-import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
+import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, skippedLabel, skippedWallMsOf, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
 import { displayName } from "../sim/straits";
 import { finishMigration } from "../sim/migrate";
@@ -221,8 +221,12 @@ export class App {
     } catch (e: any) { if (String(e?.message) !== "cancelled") this.toast("地形生成に失敗: " + e?.message); }
     finally { if (this.genTok === tok) { this.generating = false; this.render(); this.buildUI(); } }   // the busy state is always cleared, whatever happened
   }
+  /** Is a relocation event open (waiting for the choices, or for 国道0号)? */
+  relocOpen(): boolean { const st = this.sim?.e2200?.state as string | undefined; return st === "pending" || st === "road0"; }
   status() {
     const el = $("status"); el.replaceChildren();
+    // Stage 31: while a relocation event is open (choices, then 国道0号) the ordinary information line over the map is put away; it returns when the event closes
+    el.hidden = this.relocOpen();
     const add = (t: string, c = "") => el.append(h("span", { class: c }, t));
     const errs = this.issues.filter((i) => i.severity === "error" && STEPS.indexOf(i.step) <= Math.min(this.s.step, 3));
     if (this.building > 0) add(`1950年の道路網を生成中 ${Math.round(this.building * 100)}%`, "bad");
@@ -234,7 +238,7 @@ export class App {
       if (this.catching) add(this.catchInfo, "bad");
       if (this.behind) add("端末の処理が追いつかず、速度を自動で落としています", "bad");
       if (this.safeMode) add("安全モード", "bad");
-      if (this.sim.skippedMonths) add(`省略${Math.floor(this.sim.skippedMonths / 12)}年分`, "bad");
+      if (this.sim.skippedMonths) add(skippedLabel(this.sim), "bad");
     }
     if (this.generating) add(`地形生成中 ${Math.round(this.genProgress * 100)}%`);
     if (errs.length) add(`⚠ 不正 ${errs.length}件`, "bad");
@@ -474,6 +478,10 @@ export class App {
   // ---- Stage 19: the setup tabs (元号 / 首都 / 副首都 / 皇居) and the choice of a seat on the map ----
   setupTab: "era" | "capital" | "sub" | "palace" | null = null; seatMode: "list" | "map" | null = null; seatPick: { w: Vec; pref: string; name?: string; near?: string; km?: number; islet?: string; claim?: string } | null = null;
   openSetupTab(tab: "era" | "capital" | "sub" | "palace" | null) {
+    if (this.wizardActive() && (tab === null || tab === this.setupTab)) {   // (pressing the open tab again brings a seat tab back to its prefecture list)
+      if (tab && tab !== "era" && this.seatMode !== "list") { this.seatMode = "list"; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.buildToolbar(); this.render(); }
+      return;
+    }   // Stage 31: inside the setup wizard a tab stays open (the stage decides which are offered)
     this.setupTab = this.setupTab === tab ? null : tab; this.seatMode = this.setupTab && this.setupTab !== "era" ? "list" : null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view";   // Stage 21: a seat tab opens its prefecture list at once
     this.eraOpen = this.setupTab === "era";   // Stage 22: so does the era tab
     this.buildToolbar(); this.render();
@@ -497,7 +505,7 @@ export class App {
     if ((which === "capital" && pref === cur.sub) || (which === "sub" && pref === cur.capital)) { this.toast("首都と副首都は別の府県にしてください"); return false; }
     const inCity = world.cities.filter((c) => c.island === world.t.island[k] && Math.hypot(c.pos[0] - pt[0], c.pos[1] - pt[1]) <= 25).sort((p, q) => Math.hypot(p.pos[0] - pt[0], p.pos[1] - pt[1]) - Math.hypot(q.pos[0] - pt[0], q.pos[1] - pt[1]))[0];   // (a city of the game within 25 km is the place: the 県庁所在地 becomes that city)
     const np = inCity ? { name: inCity.name, place: inCity.name, km: Math.round(Math.hypot(inCity.pos[0] - pt[0], inCity.pos[1] - pt[1]) * 10) / 10 } : nearestPlace(pt, new Set(world.cities.map((c) => c.name)));
-    this.seatPick = { w: [pt[0], pt[1]], pref, ...(np ? { name: np.name, near: np.place, km: np.km } : {}), ...(isl ? { islet: isl.name, ...(isl.claim ? { claim: isl.claim } : {}) } : {}) }; this.r.seatPending = this.seatPick.w; this.buildToolbar(); this.render(); return true;
+    this.seatPick = { w: [pt[0], pt[1]], pref, ...(np ? { name: np.name, near: np.place, km: np.km } : {}), ...(isl ? { islet: isl.name } : {}) }; this.r.seatPending = this.seatPick.w; this.buildToolbar(); this.render(); return true;
   }
   confirmSeatPick(): boolean {
     if (this.e22Pick && this.e22 && this.seatPick) {   // Stage 22: a seat of the 2200 event, kept in the event's draft until 決める
@@ -643,7 +651,7 @@ export class App {
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
     if (run && !run.gate) run.gate = (sm) => checkpointDue(sm) !== null;   // Stage 26: the clock stops at a year boundary that owes a checkpoint
-    if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.toast(`${sim.e2200.year}年: 遷都と復興の時です(時間は止まっています)`); this.road0Told = false; }
+    if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.status(); this.toast(`${sim.e2200.year}年: 遷都と復興の時です(時間は止まっています)`); this.road0Told = false; }
     else if (sim?.e2200?.state === "road0" && !this.road0Told) { this.road0Told = true; this.toast("国道0号を描いて開通させるか、見送るかを選んでください(時間は止まっています)"); }   // Stage 24: choosing the era and seats is not the end of the event
     else if (sim?.kaigen?.pending && this.sheet !== "kaigen") { this.sheet = "kaigen"; this.buildSheet(); this.toast("改元の時です。元号を選んでください(時間は止まっています)"); }
     else if (sim?.policy?.pending && this.sheet !== "policy") { this.sheet = "policy"; this.buildSheet(); this.toast("10年ごとの政策介入の機会です(時間は止まっています)"); }
@@ -689,8 +697,8 @@ export class App {
       this.catchInfo = `放置分を計算中 ${Math.floor((plan.months - (target - sim.month)) / 12)}/${Math.floor(plan.months / 12)}年`; this.status();
       await new Promise((r) => setTimeout(r, 0));
     }
-    run.settle(); if (sim.policy) sim.policy.away = false; noteSkipped(sim, plan.skipped); this.catching = false; this.catchInfo = ""; this.lastTick = performance.now(); this.acc = 0;
-    if (plan.skipped) this.toast(`放置が長いため${Math.floor(plan.skipped / 12)}年分の経過を省略しました`);
+    run.settle(); if (sim.policy) sim.policy.away = false; noteSkipped(sim, plan.skipped, skippedWallMsOf(elapsedMs, plan)); this.catching = false; this.catchInfo = ""; this.lastTick = performance.now(); this.acc = 0;
+    if (plan.skipped) this.toast(`放置が長いため、約${(skippedWallMsOf(elapsedMs, plan) / 3600000).toFixed(1)}時間分(実時間)の計算を省略しました`);
     this.renderRoads(); this.status(); this.persist();
   }
   onVisibility() {
@@ -788,7 +796,7 @@ export class App {
   private buildToolbarInner() {
     if (this.sim && this.e22Pick) {   // Stage 22: choosing a 2200 seat on the map (the same tap, hint and 決定 / 取り消し / 戻る as at the start)
       const tb0 = $("toolbar"); tb0.replaceChildren(); const p = this.seatPick, label = { capital: "首都", sub: "副首都", palace: "皇居" }[this.e22Pick];
-      tb0.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」` : ""}${p.claim ? `／${p.claim}` : ""}(まだ決まっていません)` : `2200年の${label}にしたい場所を地図の陸地でタップしてください`),
+      tb0.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」` : ""}(まだ決まっていません)` : `2200年の${label}にしたい場所を地図の陸地でタップしてください`),
         h("div", { class: "grp" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => this.cancelSeatPick() }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.endE22Map() }, "戻る"), this.bgSwitch("e22-pick-bg")));
       return;
     }
@@ -824,7 +832,7 @@ export class App {
   /** 限定の地形編集: the coastline stays the real one; only the capital, Fuji, Lake Biwa and the two Alps ranges can be set, until the first road. */
   private buildTerrainEdit(tb: HTMLElement) {
     const open = this.editOpen;
-    const toggle = h("button", { id: "terrain-edit-toggle", type: "button", title: "海岸線は固定。最初の道を引くまで、富士山・琵琶湖・南北アルプスを変えられます", class: open ? "mode on" : "mode", "aria-pressed": open ? "true" : "false", onclick: () => { this.editOpen = !this.editOpen; this.editMore = false; if (!this.editOpen && this.tool !== "view" && !String(this.tool).startsWith("cer-")) this.tool = "view"; this.buildToolbar(); this.render(); } }, open ? "✕ 地形" : "地形編集");
+    const toggle = h("button", { id: "terrain-edit-toggle", type: "button", title: "海岸線は固定。最初の道を引くまで、富士山・琵琶湖・南北アルプスを変えられます", class: open ? "mode on" : "mode", "aria-pressed": open ? "true" : "false", onclick: () => { if (this.wizardActive()) return; this.editOpen = !this.editOpen; this.editMore = false; if (!this.editOpen && this.tool !== "view" && !String(this.tool).startsWith("cer-")) this.tool = "view"; this.buildToolbar(); this.render(); } }, open ? "✕ 地形" : "地形編集");
     if (!open) { tb.append(toggle); return; }
     // Issue #20 (round 2): while editing, the whole toolbar is ONE short row -- [close] [targets] [undo/redo] [more]; the target's own controls appear only while it is
     // selected, and the rarely used ones (real Alps, clear, the note) sit behind "⋯". Nothing else (era, seats, ceremony) is shown until the editor is closed.
@@ -875,7 +883,7 @@ export class App {
   bgSwitch(id = "setup-bg"): HTMLElement { const to = this.bg === "roadmap" ? "terrain" : "roadmap"; return h("button", { id, type: "button", class: "setup-tab setup-bg", title: "地図の表示を切り替え", onclick: () => { this.setBg(to); this.buildToolbar(); if (this.sheet === "e2200") this.buildSheet(); } }, this.bg === "roadmap" ? "道路図" : "地形図"); }
   /** Stage 19: the four setup tabs in one row (元号 首都 副首都 皇居); only the pressed tab's panel is open, and pressing it again (or 閉じる) closes it. */
   private buildSetupTabs(tb: HTMLElement) {
-    const st = seatsOf(this.s), tabs: ["era" | "capital" | "sub" | "palace", string][] = [["era", "元号"], ["capital", "首都"], ["sub", "副首都"], ["palace", "皇居"]];
+    const st = seatsOf(this.s), all: ["era" | "capital" | "sub" | "palace", string][] = [["era", "元号"], ["capital", "首都"], ["sub", "副首都"], ["palace", "皇居"]], wiz = this.wizardActive(), tabs = wiz ? all.filter(([k]) => (this.wizStage === 1 ? k === "era" : k !== "era")) : all;
     tb.append(h("div", { class: "setup-tabs", id: "setup-tabs", role: "tablist" }, ...tabs.map(([k, l]) => h("button", { id: "setup-tab-" + k, type: "button", role: "tab", class: "setup-tab" + (this.setupTab === k ? " on" : ""), "aria-selected": this.setupTab === k ? "true" : "false", onclick: () => this.openSetupTab(k) }, l)), this.bgSwitch()));
     const w = this.ensureWorld(), ll = (p: Vec) => { const [lo, la] = realToLonLat(p); return `東経${lo.toFixed(2)}° 北緯${la.toFixed(2)}°`; };
     const where = (which: "capital" | "sub" | "palace") => { const pos = which === "capital" ? this.s.capitalPos : which === "sub" ? this.s.subPos : this.s.palacePos; return `${seatPrefName(st[which])}${pos ? `(地図で指定 ${ll(pos)})` : "(県庁所在地)"}`; };
@@ -893,28 +901,76 @@ export class App {
       }
       if (this.seatMode === "map") {
         const p = this.seatPick;
-        panel.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」(最寄りの地名: ${p.near}${p.km ? ` ${p.km}km` : ""})` : ""} ${ll(p.w)}${p.claim ? `／${p.claim}(ゲーム内の府県は仮の設定)` : ""}(まだ決まっていません。地図をタップし直すと動かせます)` : `${label}にしたい場所を、地図の陸地でタップしてください(府県内ならどこでも。海は選べません)`));
+        panel.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」(最寄りの地名: ${p.near}${p.km ? ` ${p.km}km` : ""})` : ""} ${ll(p.w)}(まだ決まっていません。地図をタップし直すと動かせます)` : `${label}にしたい場所を、地図の陸地でタップしてください(府県内ならどこでも。海は選べません)`));
         panel.append(h("div", { class: "row2" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => { this.cancelSeatPick(); } }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.backToSeatList() }, "戻る")));
       }
       if ((which === "capital" && this.s.capitalPos) || (which === "sub" && this.s.subPos) || (which === "palace" && this.s.palacePos)) panel.append(h("div", { class: "note", id: "seat-current" }, `地図で指定: ${where(which)}`), h("button", { id: "seat-reset", type: "button", onclick: () => this.resetSeatPos(which) }, "県庁所在地に戻す"));
     }
-    panel.append(h("button", { id: "setup-close", type: "button", onclick: () => this.openSetupTab(null) }, "✕ 設定欄を閉じる"));
+    if (!wiz) panel.append(h("button", { id: "setup-close", type: "button", onclick: () => this.openSetupTab(null) }, "✕ 設定欄を閉じる"));
     tb.append(panel);
   }
   private posOf(which: "capital" | "sub" | "palace") { return which === "capital" ? this.s.capitalPos : which === "sub" ? this.s.subPos : this.s.palacePos; }
   unlockMap() {
     if (this.sim && !confirm("地図の編集を再開すると、作成済みの道路とシミュレーションは消えます。よろしいですか?")) return;
-    this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.pin = null; this.store.unlock(); this.persist(); this.toast("ロックを解除しました");
+    this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.wizReset(); this.pin = null; this.store.unlock(); this.persist(); this.toast("ロックを解除しました");
   }
-  private buildRoadToolbar(tb: HTMLElement, names: Record<Tool, string>) {
-    const label = (t: string) => tb.append(h("div", { id: "mode-label", role: "status", "aria-live": "polite", "data-tool": this.tool }, t));
-    if (!this.s.finalized || !this.terrain) { const bad = this.issues.some((i) => i.severity === "error"); label(!this.s.finalized ? "地図を最終確定すると道路を始められます" : bad ? "地図に不正があるため地形を作れません(元に戻すで直せます)" : "地形を生成中…"); if (bad && this.real && !this.sim) this.buildTerrainEdit(tb); return; }
-    if (!this.sim) {
-      if (this.real && this.editOpen) { tb.classList.add("compact"); this.buildTerrainEdit(tb); return; }   // the editor alone: nothing else competes with the map
-      label(`選択中: ${names[this.tool]}`);
-      if (this.real) this.buildSetupTabs(tb);
-      else tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));
-      if (this.real) this.buildTerrainEdit(tb);
+  // ---- Stage 31: the setup as four stages and a final review (terrain -> era -> seats -> 国道1号 -> review). Each stage reuses the controls the setup always had; the wizard decides which are on screen, keeps
+  // what was chosen (it all lives in the game state, so going back loses nothing), and re-asks only what a change really affects: every confirmed stage remembers a signature of what it depends on. ----
+  wizStage = 0; wizReview = false; private wizOk: ({ sig: string } | null)[] = [null, null, null, null];
+  readonly WIZ_LABELS = ["地形変更", "元号選択", "首都・副首都・皇居", "1号線の配置", "最終確認"];
+  wizardActive() { return this.real && !this.sim && !this.pendingSim; }
+  private wizSig(k: number): string {
+    const terr = stateKey(this.s), seats = JSON.stringify([this.s.capital, this.s.subCapital, this.s.palace, this.s.capitalPos ?? null, this.s.subPos ?? null, this.s.palacePos ?? null]);
+    return k === 0 ? terr : k === 1 ? String(this.firstEra) : k === 2 ? seats : terr + "|" + seats + "|" + JSON.stringify(this.cerDraft.kokudo1?.strokes ?? null);   // (the road depends on the terrain and the seats it joins)
+  }
+  wizValid(k: number) { return this.wizOk[k]?.sig === this.wizSig(k); }
+  wizAllValid() { return [0, 1, 2, 3].every((k) => this.wizValid(k)); }
+  wizReset() { this.wizStage = 0; this.wizReview = false; this.wizOk = [null, null, null, null]; }
+  /** Moves to a stage and puts on screen only what that stage uses. */
+  wizGo(n: number) {
+    n = Math.max(0, Math.min(4, n)); if (this.seatMode === "map") { this.seatPick = null; this.r.seatPending = null; }
+    this.wizStage = n; this.pending = null; this.editOpen = n === 0; this.editMore = false; this.eraOpen = false; this.radioShown = false;
+    this.setupTab = n === 1 ? "era" : n === 2 ? (this.setupTab && this.setupTab !== "era" ? this.setupTab : "capital") : null;
+    this.seatMode = n === 2 ? "list" : null;   /* (the era list is a full-height window: it opens only when asked, or it would cover 戻る / 決定) */ this.tool = "view"; this.cerSel = null;
+    this.buildToolbar(); this.render(); this.renderRoads();
+  }
+  wizEdit(k: number) { this.wizReview = true; this.wizGo(k); }
+  wizBack() { if (this.wizReview) { this.wizReview = false; this.wizGo(4); } else this.wizGo(this.wizStage - 1); }
+  wizConfirm() {
+    const k = this.wizStage; if (k > 3) return;
+    if (k === 0) { if (this.generating || !this.terrain) { this.toast("地形を作り直し中です。終わるまでお待ちください"); return; } if (this.issues.some((i) => i.severity === "error" && i.step === "features")) { this.toast("地形に不正があります。直してから決定してください"); return; } }
+    if (k === 3 && !this.cerReady()) { this.toast("国道1号を描いて、✓が付いてから決定してください"); return; }
+    this.wizOk[k] = { sig: this.wizSig(k) };
+    const back = this.wizReview; this.wizReview = false; this.wizGo(back ? 4 : k + 1);
+  }
+  private wizSummary(k: number): string {
+    const s = this.s, st = seatsOf(s);
+    if (k === 0) { const n = Object.keys(s.rangeEdits ?? {}).length, ridge = (s.ridges.ne ? 1 : 0) + (s.ridges.sw ? 1 : 0) + (s.ridgeExtra?.ne.length ?? 0) + (s.ridgeExtra?.sw.length ?? 0), f = s.features; return `富士山${f.fuji.pos || f.fuji.scale !== undefined || f.fuji.height !== undefined ? "変更あり" : "そのまま"}・琵琶湖${f.biwa.pos || f.biwa.scale !== undefined ? "変更あり" : "そのまま"}・山脈${n}件・稜線${ridge}本`; }
+    if (k === 1) return CAND_1945[this.firstEra]?.name ?? "";
+    if (k === 2) return `首都${seatPrefName(st.capital)}・副首都${seatPrefName(st.sub)}・皇居${seatPrefName(st.palace)}`;
+    const d = this.cerDraft.kokudo1; return d ? (d.prev.ok ? `国道1号 約${d.prev.lengthKm}km` : "国道1号 要修正") : "まだ描いていません";
+  }
+  private buildWizard(tb: HTMLElement) {
+    const n = this.wizStage, nav = h("div", { class: "grp", id: "wiz-nav" });
+    this.editOpen = n === 0; if (n === 1) this.setupTab = "era"; else if (n === 2 && (!this.setupTab || this.setupTab === "era")) { this.setupTab = "capital"; this.seatMode = "list"; } else if (n !== 1 && n !== 2) this.setupTab = null;   // (a load or a reset may leave the screen out of step with the stage)
+    tb.append(h("div", { id: "wiz-head", class: "note", role: "status", "aria-live": "polite" }, n < 4 ? `初期設定 ${n + 1}/4  ${this.WIZ_LABELS[n]}${this.wizReview ? "(最終確認から修正中)" : ""}` : "初期設定 最終確認"));
+    if (n === 0) { tb.classList.add("compact"); this.buildTerrainEdit(tb); }
+    else if (n === 1 || n === 2) this.buildSetupTabs(tb);
+    else if (n === 3) {
+      tb.append(h("div", { id: "mode-label", role: "status", "aria-live": "polite", "data-tool": this.tool }, "国道1号を描く: 起点=首都の県庁所在地、終点=副首都"));
+      this.buildCerControls(tb, false);
+    } else {
+      const box = h("div", { id: "wiz-review", class: "wiz-review" });
+      for (let k = 0; k < 4; k++) { const ok = this.wizValid(k); box.append(h("div", { class: "wiz-row" + (ok ? "" : " bad"), id: "wiz-row-" + k }, h("span", { class: "wiz-name" }, `${k + 1}. ${this.WIZ_LABELS[k]}`), h("span", { class: "wiz-sum" }, this.wizSummary(k)), h("span", { class: "wiz-st" }, ok ? "✓" : "要確認"), h("button", { type: "button", id: "wiz-edit-" + k, onclick: () => this.wizEdit(k) }, "修正"))); }
+      tb.append(box, h("button", { id: "cer-go", type: "button", disabled: !(this.wizAllValid() && this.cerReady()), onclick: () => void this.doCeremony() }, "この設定で開通の儀を行う"));
+      if (!this.wizAllValid()) tb.append(h("div", { class: "note badc", id: "wiz-warn" }, "「要確認」の段階を開き、確かめて「これで決定」を押してください(前の段階を直すと、影響を受ける段階だけ確認し直しになります)"));
+    }
+    nav.append(h("button", { id: "wiz-back", type: "button", disabled: n === 0 && !this.wizReview, onclick: () => this.wizBack() }, "‹ 戻る"));
+    if (n < 4) nav.append(h("button", { id: "wiz-ok", type: "button", class: "mode on", onclick: () => this.wizConfirm() }, this.wizReview ? "これで決定(確認へ)" : "これで決定 ›"));
+    tb.append(nav);
+  }
+  /** The 国道1号 controls (draw tool, status, undo / redo / restart); `withGo` adds the 開通の儀 button (Stage 31: the setup wizard puts it on the final review instead). */
+  private buildCerControls(tb: HTMLElement, withGo: boolean) {
       const g = h("div", { class: "grp" });
       for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const t = ("cer-" + k) as Tool, d = this.cerDraft[k], w2 = this.world; g.append(this.tbtn(this.real ? cerLabel(k, w2 ? homeCity(w2, seatsOf(this.s).capital) : null, w2 ? subCity(w2, seatsOf(this.s).sub) : null) + (d ? (d.prev.ok ? " 済" : " 要修正") : "") : CER_LABEL[k] + (d ? (d.prev.ok ? " 済" : " 要修正") : ""), this.tool === t, () => this.setTool(t), "tool-" + t)); }
       tb.append(g);
@@ -930,7 +986,19 @@ export class App {
         tb.append(mrow);
       }
       if (ak) row.append(h("span", { class: "note", id: "cer-count" }, `線${dd?.strokes.length ?? 0}本`), h("button", { id: "cer-undo", type: "button", disabled: !dd?.past.length, onclick: () => this.cerUndo(ak) }, "↶ 戻す"), h("button", { id: "cer-redo", type: "button", disabled: !dd?.redo.length, onclick: () => this.cerRedo(ak) }, "↷ やり直す"), h("button", { id: "cer-restart", type: "button", disabled: !dd, onclick: () => this.cerRestart(ak) }, "最初から"));
-      row.append(h("button", { id: "cer-go", type: "button", disabled: !this.cerReady(), onclick: () => void this.doCeremony() }, "開通の儀を行う")); tb.append(row);
+      if (withGo) row.append(h("button", { id: "cer-go", type: "button", disabled: !this.cerReady(), onclick: () => void this.doCeremony() }, "開通の儀を行う")); tb.append(row);
+  }
+  private buildRoadToolbar(tb: HTMLElement, names: Record<Tool, string>) {
+    const label = (t: string) => tb.append(h("div", { id: "mode-label", role: "status", "aria-live": "polite", "data-tool": this.tool }, t));
+    if (this.real && !this.sim) { this.buildWizard(tb); return; }   // Stage 31: the setup is four stages and a final review (it stays on screen while the terrain is being remade)
+    if (!this.s.finalized || !this.terrain) { const bad = this.issues.some((i) => i.severity === "error"); label(!this.s.finalized ? "地図を最終確定すると道路を始められます" : bad ? "地図に不正があるため地形を作れません(元に戻すで直せます)" : "地形を生成中…"); if (bad && this.real && !this.sim) this.buildTerrainEdit(tb); return; }
+    if (!this.sim) {
+      if (this.real && this.editOpen) { tb.classList.add("compact"); this.buildTerrainEdit(tb); return; }   // the editor alone: nothing else competes with the map
+      label(`選択中: ${names[this.tool]}`);
+      if (this.real) this.buildSetupTabs(tb);
+      else tb.append(h("div", { id: "era-note", class: "note" }, `${eraLabel(1950)}(1950年)開始。${ERA.note}。元号による政策差はごく小さな初期値のみです。`));
+      if (this.real) this.buildTerrainEdit(tb);
+      this.buildCerControls(tb, true);
       return;
     }
     label(`選択中: ${names[this.tool]}`);
@@ -987,7 +1055,7 @@ export class App {
   private buildHistory(body: HTMLElement) {
     body.append(h("h3", {}, "年表(新しい順)"));
     if (!this.sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
-    if (this.sim.skippedMonths) body.append(h("div", { class: "issue warn" }, `放置により合計${Math.floor(this.sim.skippedMonths / 12)}年${this.sim.skippedMonths % 12}か月分の経過を省略しています`));
+    if (this.sim.skippedMonths) body.append(h("div", { class: "issue warn" }, `${skippedLabel(this.sim)}(放置した実時間のうち、計算しきれず飛ばした分)`));
     for (const e of [...this.sim.events].reverse().slice(0, 80)) body.append(h("div", { class: "issue" }, `${ymLabel(this.sim.startYear, e.month)} ${e.text}`, h("br"), h("small", {}, `原因: ${e.cause}`)));
   }
   private buildRoadList(body: HTMLElement) {
@@ -1103,13 +1171,6 @@ export class App {
   }
   private async buildMenuInner(body: HTMLElement) {
     if (this.real && this.sim?.stage3) body.append(h("div", { class: "note", id: "reloc-diag" }, relocDiag(this.sim)));   // Stage 29: the schedule of the relocation events, and whether this game began with it
-    if (this.real) {
-      body.append(h("h3", {}, "このゲームについて(史実と架空の区別)"));
-      body.append(h("div", { class: "issue", id: "about-data" }, h("b", {}, "実在: "), "海岸線・標高・河川・府県・都市の位置(東京府、北海道は3県の設定)。鉄道・道路の通り道(Natural Earth)は初期網の参考。", h("br"),
-        h("b", {}, "再構成: "), "1950年の道路網・鉄道網。実在の路線台帳ではありません。", h("br"),
-        h("b", {}, "史実: "), "平成の世界線の国内の出来事(2026年まで)と、全世界線共通の国際事件。年表に【史実】と付きます。", h("br"),
-        h("b", {}, "架空: "), "修文・正化の国内の出来事、人口・需要・予算・事業者名・路線番号。【架空】と付きます。2027年以降は【予測モデル】です。"));
-    }
     body.append(h("h3", {}, "セーブ / ロード / 出力"));
     const pfx = this.real ? "s3:" : "", slots = [1, 2, 3, 4, 5].map((i) => `${pfx}slot${i}`), have = new Set(await listSlots()), metas = await Promise.all(slots.map((n) => (have.has(n) ? slotMeta(n) : Promise.resolve(null))));
     const NUM = ["①", "②", "③", "④", "⑤"];   // Stage 23: one line a slot -- number, the capital and sub-capital OF THAT SAVE, the year it was saved, 保存 / 読込
@@ -1130,12 +1191,11 @@ export class App {
       body.append(h("div", { class: "row" }, h("button", { id: "finalize", disabled: !ready, onclick: () => this.finalize() }, this.s.finalized ? "確定済み(再確定)" : "この地図を最終確定"), h("small", {}, ready ? "確定すると地理IDと座標変換APIが固定されます" : errs ? "不正を直してください" : "地形生成の完了を待ってください")));
       if (this.terrain) { const t = this.terrain.stats; body.append(h("small", {}, `陸地${t.landCells}セル / 河川${t.riverCount}本 / 府県${t.prefCount} / 都市補正${t.citiesMoved} / hash ${this.terrain.hash}`)); }
     }
-    body.append(h("div", { class: "row" }, h("button", { id: "reset", onclick: () => { if (confirm("初期状態に戻します。よろしいですか?")) { this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.store.replace(this.real ? realState(this.s.seed) : defaultState(this.s.seed)); this.r.fit(this.s); } } }, "最初からやり直す")));
+    body.append(h("div", { class: "row" }, h("button", { id: "reset", onclick: () => { if (confirm("初期状態に戻します。よろしいですか?")) { this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.wizReset(); this.store.replace(this.real ? realState(this.s.seed) : defaultState(this.s.seed)); this.r.fit(this.s); } } }, "最初からやり直す")));
   }
   /** Stage 26: the 自動セーブポイント list -- year, 50-year or just-before-relocation, the seats it was saved with; 読込 continues the game from there. Kept apart from the numbered slots. */
   private async buildCheckpoints(body: HTMLElement) {
     const all = await listCheckpoints(idbCpStore), id = this.sim ? identityOf(this.sim) : null; body.append(h("h3", { id: "cp-title" }, "自動セーブポイント"));
-    body.append(h("small", { id: "cp-note" }, "50年ごと(2000年〜)と、遷都イベントの直後に自動で作られます。今の世界の分だけを表示します(最大8件・48MB、古いものから消えます)。別の世界は最大4つまで残ります。①〜⑤とは別です。"));
     const list = id ? all.filter((e) => inHistory(e, id)) : [], old = id ? all.filter((e) => !e.wid) : all.filter((e) => !e.wid);
     const mb = (e: CpEntry) => `${(e.bytes / 1048576).toFixed(1)}MB`;
     const row = (e: CpEntry, legacy: boolean) => {

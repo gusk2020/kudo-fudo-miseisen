@@ -616,8 +616,16 @@ export function planCatchUp(elapsedWallMs: number, speed: number): { months: num
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };
   const raw = Math.floor((elapsedWallMs * speed) / MS_PER_MONTH_X1); return { months: Math.min(raw, CATCHUP_CAP_MONTHS), skipped: Math.max(0, raw - CATCHUP_CAP_MONTHS) };
 }
-export function noteSkipped(sim: SimState, skipped: number) {
-  if (skipped > 0) { sim.skippedMonths += skipped; ev(sim, "skip", `放置により${Math.floor(skipped / 12)}年${skipped % 12}か月分の経過を省略`, `復帰時の集約計算は上限${CATCHUP_CAP_MONTHS / 12}年`, {}); }
+/** Stage 31: the real time a skip stands for. Of the `elapsedWallMs` the player was away (measured with the clock), the share that fell beyond the catch-up cap is skipped: elapsed x skipped / (simulated + skipped). */
+export function skippedWallMsOf(elapsedWallMs: number, plan: { months: number; skipped: number }): number { const tot = plan.months + plan.skipped; return plan.skipped > 0 && tot > 0 && elapsedWallMs > 0 ? Math.round((elapsedWallMs * plan.skipped) / tot) : 0; }
+/** "省略 約3.5時間" -- hours of real time. A skip recorded before Stage 31 has no measured duration, so it says so instead of guessing. */
+export function skippedLabel(sim: { skippedMonths: number; skippedWallMs?: number }): string {
+  if (!sim.skippedMonths) return "";
+  if (!sim.skippedWallMs) return "省略あり(実時間は未計測)";
+  const h = sim.skippedWallMs / 3600000; return h < 0.1 ? "省略 0.1時間未満" : h < 100 ? `省略 約${h.toFixed(1)}時間` : `省略 約${Math.round(h)}時間`;
+}
+export function noteSkipped(sim: SimState, skipped: number, wallMs = 0) {
+  if (skipped > 0) { sim.skippedMonths += skipped; if (wallMs > 0) sim.skippedWallMs = (sim.skippedWallMs ?? 0) + wallMs; ev(sim, "skip", `放置により${Math.floor(skipped / 12)}年${skipped % 12}か月分の経過を省略`, `復帰時の集約計算は上限${CATCHUP_CAP_MONTHS / 12}年`, {}); }
 }
 export function summary(sim: SimState) {
   const edges = Object.values(sim.edges), routes = Object.values(sim.routes).filter((r) => r.active), live = edges.filter((e) => e.state === "open" && e.built >= 1);

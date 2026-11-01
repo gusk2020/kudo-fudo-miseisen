@@ -101,7 +101,7 @@ export interface SimState {
   macro: { mood: number; budgetBu: number; maintCoverage: number };
   regionSlack?: Record<string, number>;   // Stage 7: per region, the smoothed share of its monthly road purse left unspent (0..1); room to plan more when money sits idle
   routeCounters: Record<string, number>;   // `${grade}:${scope}` -> last number issued (numbers are never reused)
-  events: SimEvent[]; stats: StatSample[]; skippedMonths: number; lastWallMs: number;
+  events: SimEvent[]; stats: StatSample[]; skippedMonths: number; /** Stage 31: the REAL time (ms) the skipped months stand for, measured when the player came back (absent = skipped before Stage 31: its real duration was never recorded) */ skippedWallMs?: number; lastWallMs: number;
   ceremonyDone: boolean;
   // ---- v3 (Stage 3) ----
   operators: Record<string, Operator>;

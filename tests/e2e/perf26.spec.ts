@@ -8,13 +8,13 @@ test("perf26: x20 at several eras", async ({ page }) => {
   test.setTimeout(7200000);
   await page.addInitScript(() => { (window as any).__long = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) (window as any).__long.push(Math.round(e.duration)); }).observe({ type: "longtask", buffered: true }); } catch {} });
   const cdp = await page.context().newCDPSession(page); await cdp.send("Performance.enable");
-  await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 300000 });
+  await page.goto("/?nointro"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 300000 });
   const cityPos = (n: string) => page.evaluate((x) => (window as any).__kfm.world.cities.find((c: any) => c.name === x).pos, n) as Promise<[number, number]>;
   const scr = (p: [number, number]) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p) as Promise<[number, number]>;
   await page.click("#setup-tab-era"); await page.click("#era-opt-0"); await page.click("#rw-close"); await page.click("#setup-close");
   const tokyo = await cityPos("東京"), osk = await cityPos("大阪市"); await page.click("#tool-cer-kokudo1");
   { const a = await scr(tokyo), b = await scr(osk); await page.mouse.move(a[0], a[1]); await page.mouse.down(); await page.mouse.move(b[0], b[1], { steps: 10 }); await page.mouse.up(); }
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 600000 });
+  await page.evaluate(() => (window as any).__kfm.wizGo(0)); await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) await page.click("#wiz-ok"); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 600000 });
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; const P: Record<string, number[]> = (window as any).__prof = {}; const wrap = (o: any, k: string, name: string) => { const f = o[k]; if (typeof f !== "function") return; P[name] = []; o[k] = function (...args: any[]) { const t = performance.now(); const r = f.apply(this, args); P[name].push(performance.now() - t); return r; }; };
     wrap(a, "renderRoads", "render"); wrap(a.runner, "pump", "pump"); wrap(a, "status", "status"); wrap(a, "persist", "persist"); wrap(a.r, "rebuild", "rebuild"); wrap(a, "tickClock", "tick"); });
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: CPU });
