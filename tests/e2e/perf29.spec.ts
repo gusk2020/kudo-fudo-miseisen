@@ -14,7 +14,7 @@ test("perf29: x20 at several eras", async ({ page }) => {
   await page.click("#setup-tab-era"); await page.click("#era-opt-0"); await page.click("#rw-close"); await page.click("#setup-close");
   const tokyo = await cityPos("東京"), osk = await cityPos("大阪市"); await page.click("#tool-cer-kokudo1");
   { const a = await scr(tokyo), b = await scr(osk); await page.mouse.move(a[0], a[1]); await page.mouse.down(); await page.mouse.move(b[0], b[1], { steps: 10 }); await page.mouse.up(); }
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 600000 });
+  await page.evaluate(() => (window as any).__kfm.wizGo(0)); await page.waitForFunction(() => !(window as any).__kfm.generating, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) await page.click("#wiz-ok"); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 600000 });
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; const P: Record<string, number[]> = (window as any).__prof = {}; const wrap = (o: any, k: string, name: string) => { const f = o[k]; if (typeof f !== "function") return; P[name] = []; o[k] = function (...args: any[]) { const t = performance.now(); const r = f.apply(this, args); P[name].push(performance.now() - t); return r; }; };
     wrap(a, "renderRoads", "render"); wrap(a.runner, "pump", "pump"); wrap(a, "status", "status"); wrap(a, "persist", "persist"); wrap(a.r, "rebuild", "rebuild"); wrap(a, "tickClock", "tick"); });
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: CPU });

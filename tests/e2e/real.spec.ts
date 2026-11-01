@@ -15,8 +15,14 @@ async function bootReal(page: Page) {
 /** The first era is chosen from the 14 candidates of 1926; index 0/1/2 carry the balanced / road / rail stance. */
 /** Issue #20: the era and the seats live in their own sheet (⚙ 元号・首都), not in the terrain menu. */
 /** Stage 7: the terrain editor takes the whole toolbar while it is open, so it is closed first (the settings button lives outside it). */
-async function editor(page: Page, open: boolean) { const on = (await page.getAttribute("#terrain-edit-toggle", "aria-pressed")) === "true"; if (on !== open) await page.click("#terrain-edit-toggle"); }
-async function openTab(page: Page, tab: string) { if (await page.isVisible("#rw-close")) await page.click("#rw-close"); if (!(await page.isVisible("#setup-tab-" + tab))) await editor(page, false); if ((await page.getAttribute("#setup-tab-" + tab, "aria-selected")) !== "true") await page.click("#setup-tab-" + tab); }
+async function editor(page: Page, open: boolean) { if (!open) { await wizTo(page, 3); return; }   // (Stage 31: closing the editor = moving on to the road stage)
+   const on = (await page.getAttribute("#terrain-edit-toggle", "aria-pressed")) === "true"; if (on !== open) await page.click("#terrain-edit-toggle"); }
+/** Stage 31: the setup is a wizard -- this puts it on stage n (0 terrain, 1 era, 2 seats, 3 国道1号, 4 review). */
+async function wizTo(page: Page, n: number) { await page.evaluate((k) => (window as any).__kfm.wizGo(k), n); }
+/** Confirms every stage with the real 「これで決定」 button (terrain first), ending on the final review. */
+async function confirmAll(page: Page) { await wizTo(page, 0); await page.waitForFunction(() => !(window as any).__kfm.generating, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) { await page.click("#wiz-ok"); } await page.waitForSelector("#wiz-review"); }
+async function goCeremony(page: Page) { await confirmAll(page); await page.click("#cer-go"); }
+async function openTab(page: Page, tab: string) { if (await page.isVisible("#rw-close")) await page.click("#rw-close"); await wizTo(page, tab === "era" ? 1 : 2); if ((await page.getAttribute("#setup-tab-" + tab, "aria-selected")) !== "true") await page.click("#setup-tab-" + tab); }
 async function openSetup(page: Page) { await openTab(page, "era"); if (!(await page.isVisible("#era-list"))) await page.click("#era-open"); await page.waitForSelector("#era-list"); }
 async function openSeat(page: Page, which: string) { await openTab(page, which); await page.waitForSelector("#seat-sel-" + which); }
 async function openMapPick(page: Page, which: string) { await openSeat(page, which); await page.click("#pref-map"); }
@@ -31,7 +37,7 @@ async function startReal(page: Page, era = "heisei") {
   // Issue #15: the player draws one road only, from the capital (Tokyo by default) to the sub-capital (Osaka by default)
   const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市");
   await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, osaka);
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
 }
 
 test("real Japan opens by default: finalised, step 6, no map-editing controls, era choice before the ceremony", async ({ page }) => {
@@ -48,7 +54,7 @@ test("real Japan opens by default: finalised, step 6, no map-editing controls, e
   { const heads = await page.locator("#era-list .rw-head").evaluateAll((es) => es.map((e) => e.firstChild!.textContent)); expect(heads).toEqual(["道路重視", "鉄道・公共交通重視", "海路重視", "空路重視", "均衡"]); expect(await page.locator("#era-list .rw-item").count()).toBe(14); expect(await page.locator("#era-list .rw-item.on").count()).toBe(1);
     const rows = await page.locator("#era-list .rw-item").allTextContents(); for (const r of rows) { expect(r).not.toMatch(/道路重視|鉄道|海路重視|空路重視|均衡/); }   // the group says the policy once; a row carries only its own conditions
     expect(await page.locator("#era-list .rw-item.on .rw-dot").textContent()).toBe("●"); await page.click("#rw-close"); }
-  await closeSheet(page); expect(await page.isDisabled("#cer-go")).toBe(true);
+  await closeSheet(page); await wizTo(page, 4); expect(await page.isDisabled("#cer-go")).toBe(true);
   expect(await app(page, "a => a.world.cities.length")).toBeGreaterThan(40);
   expect(errs).toEqual([]);
 });
@@ -291,7 +297,7 @@ test("沖縄を首都、札幌を副首都にしても国道1号が成立し、�
   for (let i = 0; i + 1 < pts.length; i++) { await page.mouse.move(pts[i][0], pts[i][1]); await page.mouse.down(); await page.mouse.move(pts[i + 1][0], pts[i + 1][1], { steps: 8 }); await page.mouse.up(); }
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo1.prev.ferries.length")).toBeGreaterThanOrEqual(3);
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.segments.filter((s) => s.ferry).every((s) => s.cells.length === 2)")).toBe(true);
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
   expect(await app(page, "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.filter((e) => a.sim.edges[e.edgeId].facility === 'ferry').length; }")).toBeGreaterThanOrEqual(3);
   expect(await app(page, "a => a.sim.capital === 'JP-47' && a.sim.subCapital === 'HK-SAP'")).toBe(true);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
@@ -474,7 +480,7 @@ test("Stage 8: 国道1号を琵琶湖の上に引くと湖岸で止まり湖上�
   expect(await page.textContent("#cer-status-kokudo1")).toContain("湖上フェリー");
   await page.click("#cer-undo"); expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(2);
   await page.click("#cer-redo"); expect(await app(page, "a => (a.cerDraft.kokudo1.prev.lakes || []).length")).toBe(1);
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
   const lakeOnR1 = "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.some((e) => (a.sim.edges[e.edgeId].facilityName || '').includes('【湖】')); }";
   expect(await app(page, lakeOnR1)).toBe(true);
   // no road cell of 国道1号 lies on the lake
@@ -544,7 +550,7 @@ test("Stage 9: 四国を通る国道1号は四国経由のまま。制御点を�
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true); expect(await app(page, shikoku)).toBe(true);
   await page.waitForTimeout(500); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.cerDraft?.kokudo1, null, { timeout: 90000 });
   expect(await app(page, "a => a.cerDraft.kokudo1.strokes.length")).toBe(3); expect(await app(page, shikoku)).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo1.past.length")).toBeGreaterThan(0);
-  await page.click("#tool-cer-kokudo1"); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  await page.click("#tool-cer-kokudo1"); await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
   expect(await app(page, "a => { const w = a.world, lm = w.lm[w.cities.find((c) => c.name === '高松市').cell], r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return r.edges.some((e) => a.sim.edges[e.edgeId].cells.some((k) => w.lm[k] === lm)); }")).toBe(true);
   expect(errs).toEqual([]);
 });
@@ -649,7 +655,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   expect(await app(page, "a => a.s.layers.signs")).toBe(true);
   await editor(page, false);
   const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市");
-  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, osaka); await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, osaka); await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.layers.signs")).toBe(false); expect(await app(page, "a => !!a.sim.roles && !!a.sim.kaigen.recon")).toBe(true);
   await page.evaluate(() => { const a = (window as any).__kfm; a.openSheet("layers"); }); await page.click("#layer-signs");
   expect(await app(page, "a => a.s.layers.signs")).toBe(true); expect(await app(page, "a => a.s.layersSet")).toContain("signs");
@@ -752,7 +758,7 @@ test("Stage 20: 離島(硫黄島)を地図で首都に選べる。最寄りの�
   for (const [x, y] of pts) { const hit = await page.evaluate(([px, py]) => (document.elementFromPoint(px, py) as HTMLElement)?.tagName ?? "", [x, y]); expect(hit, `(${x},${y}) is on the map`).toBe("CANVAS"); }
   await stroke(page, pts);
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true);
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
   expect(await app(page, "a => a.sim.isl20 === true && a.sim.moves20.length === 1 && a.sim.moves20[0].pref === 'JP-13'")).toBe(true);
   expect(await app(page, "a => { const c = a.world.cities.find((x) => x.name === '硫黄島市'); return a.sim.cities[c.id].pop <= c.capPop && a.sim.cities['C-JP-13'].pop > 100000; }")).toBe(true);   // the island city holds only what the island can; Tokyo still has its people
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
@@ -783,7 +789,7 @@ test("Stage 21: 国道1号は副首都側から描いても開通し、近くの
   await stroke(page, pts);
   expect(await app(page, "a => a.cerDraft.kokudo1.prev.ok")).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo1.prev.reversed === true")).toBe(true);
   expect(await page.textContent("#cer-status-kokudo1")).toContain("向き直し");
-  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
+  await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 120000 });
   expect(await app(page, "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 1); return !!r && r.edges.length > 3; }")).toBe(true);
   expect(await app(page, "a => { const ids = ['名古屋市', '横浜市', '岐阜市']; return ids.every((n) => { const c = a.world.cities.find((x) => x.name === n); return Object.values(a.sim.edges).some((e) => e.state === 'open' && (e.mode ?? 'road') === 'road' && e.cells.includes(c.cell)); }); }")).toBe(true);
   expect(errs).toEqual([]);
@@ -1009,12 +1015,14 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   await jump(2100); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
   expect(await app(page, "a => a.sim.e2200.n")).toBe(0); expect(await app(page, "a => a.sim.cp?.reloc ?? 0")).toBe(0);   // Stage 27: nothing is saved before or in the middle of the event
   await page.waitForTimeout(1500); expect(await page.evaluate(() => (window as any).__kfm.sim.cp?.reloc ?? 0)).toBe(0);
+  expect(await page.isVisible("#status")).toBe(false);   // Stage 31: the ordinary information line is put away while the event is open
   const bg0 = await app(page, "a => a.bg"); await page.click("#e22-bg"); expect(await app(page, "a => a.bg")).not.toBe(bg0); await page.waitForSelector("#e22-box");   // the map can be switched during the event; the sheet stays
   await page.selectOption("#e22-sel-palace", "JP-04"); await page.click("#e22-era-1"); await page.click("#e22-decide");
   expect(await app(page, "a => a.sim.e2200.state")).toBe("road0"); expect(await app(page, "a => a.sim.cp?.reloc ?? 0")).toBe(0);   // 国道0号 is still to be built or given up
   const palace = (await app(page, "a => { const w = a.world, p = a.sim.palace, c = w.cities.find((x) => x.pref === p.pref && x.kind === 'capital'); return { pref: p.pref, dx: Math.hypot(p.pos[0] - c.pos[0], p.pos[1] - c.pos[1]), marker: a.r.seatOverride ? Math.hypot(a.r.seatOverride.palace[0] - c.pos[0], a.r.seatOverride.palace[1] - c.pos[1]) : -1 }; }")) as { pref: string; dx: number; marker: number };
   expect(palace.pref).toBe("JP-04"); expect(palace.dx).toBeLessThan(1e-6); expect(palace.marker).toBeLessThan(1e-6);   // the palace really stands in the new prefecture (sim and map marker)
   await page.click("#road0-skip"); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.reloc === 1, null, { timeout: 90000 });
+  expect(await page.isVisible("#status")).toBe(true);   // (the event is over: the line is back)
   await menu(); await page.waitForSelector("#cp-2100-reloc"); expect(await page.textContent("#cp-2100-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2100-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
   expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.waitForSelector("#cp-2000-50y");
@@ -1221,4 +1229,55 @@ test("Stage 30A: 山脈ボタン→一覧と地図タップが同じ選択にな
   await page.waitForTimeout(800); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.rangeEdits?.akaishi")).toBe(0);
   expect(errs).toEqual([]);
+});
+
+test("Stage 31: 起動時の説明は1枚だけ。架空の世界線・49府県・保存の注意をまとめ、確認で閉じ、ゲーム中のタブには注意書きが残らない", async ({ page }) => {
+  const errs = watchErrors(page); await page.goto("/"); await page.waitForSelector("#intro-modal");
+  const t = (await page.textContent("#intro-modal")) ?? ""; expect(t).toContain("架空の世界線の日本"); expect(t).toContain("49府県"); expect(t).toContain("自動セーブポイント"); expect(t).not.toMatch(/北方|領有|実効支配/);
+  expect(await page.locator("#intro-modal").count()).toBe(1); const bb = await page.locator("#intro-ok").boundingBox(); expect(bb!.height).toBeGreaterThanOrEqual(44);   // a thumb-sized button
+  await page.click("#intro-ok"); expect(await page.locator("#intro-modal").count()).toBe(0);
+  await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  await page.evaluate(() => (window as any).__kfm.openSheet("menu")); await page.waitForSelector("#slot-1");
+  expect(await page.locator("#about-data, #cp-note").count()).toBe(0); expect(await page.textContent("#sheet-body")).not.toMatch(/領有|実効支配|このゲームについて/);
+  expect(await page.locator("#intro-modal").count()).toBe(0);   // never repeated on the ordinary screens
+  expect(errs).toEqual([]);
+});
+
+test("Stage 31: 初期設定は4段階+最終確認。戻っても設定は残り、前を直すと影響を受ける段階だけ要確認になり、最終確認から再編集でき、その間シミュレーションは動かない", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  const st = () => app(page, "a => [a.wizStage, !!a.sim, !!a.runner, a.wizValid(0), a.wizValid(1), a.wizValid(2), a.wizValid(3)]") as Promise<(number | boolean)[]>;
+  expect(await st()).toEqual([0, false, false, false, false, false, false]); expect(await page.textContent("#wiz-head")).toContain("1/4"); expect(await page.isDisabled("#wiz-back")).toBe(true);
+  expect(await page.isVisible("#sel-fuji")).toBe(true);   // stage 1: the terrain editor
+  await page.evaluate(() => (window as any).__kfm.setRangeFactor("kiso", 0.5)); await page.waitForFunction(() => !(window as any).__kfm.generating, null, { timeout: 90000 });
+  await page.click("#wiz-ok"); expect((await st())[0]).toBe(1); expect(await page.textContent("#wiz-head")).toContain("元号選択");
+  await page.click("#era-opt-1"); expect(await app(page, "a => a.firstEra")).toBe(1); await page.click("#wiz-ok");
+  expect(await page.textContent("#wiz-head")).toContain("首都"); await page.selectOption("#seat-sel-palace", "JP-04").catch(async () => { await page.click("#setup-tab-palace"); await page.selectOption("#seat-sel-palace", "JP-04"); });
+  expect(await app(page, "a => a.s.palace")).toBe("JP-04"); await page.click("#wiz-ok");
+  expect(await page.textContent("#wiz-head")).toContain("1号線"); const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市"); await page.click("#tool-cer-kokudo1"); await draw(page, tokyo, osaka);
+  await page.waitForFunction(() => (window as any).__kfm.cerReady(), null, { timeout: 60000 });
+  // back keeps everything chosen
+  await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.s.palace]")).toEqual([2, "JP-04"]); await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.firstEra]")).toEqual([1, 1]);
+  await page.click("#wiz-back"); expect(await app(page, "a => [a.wizStage, a.s.rangeEdits.kiso]")).toEqual([0, 0.5]); expect(await page.isDisabled("#wiz-back")).toBe(true);
+  expect((await st()).slice(0, 3)).toEqual([0, false, false]);
+  // forward again: the earlier confirmations still stand (only the road waits for its own)
+  for (let k = 0; k < 3; k++) await page.click("#wiz-ok"); expect((await st()).slice(3)).toEqual([true, true, true, false]); await page.click("#wiz-ok"); await page.waitForSelector("#wiz-review");
+  expect(await st()).toEqual([4, false, false, true, true, true, true]); expect(await page.isEnabled("#cer-go")).toBe(true);
+  // the review reopens any stage; a change to the era touches nothing else
+  await page.click("#wiz-edit-1"); expect(await page.textContent("#wiz-head")).toContain("最終確認から修正中"); await page.click("#era-opt-2"); await page.click("#wiz-ok");
+  expect(await app(page, "a => [a.wizStage, a.firstEra]")).toEqual([4, 2]); expect((await st()).slice(3)).toEqual([true, true, true, true]);
+  // a terrain change asks again for the road (which depends on it) and for nothing else; the start button waits
+  await page.click("#wiz-edit-0"); await page.evaluate(() => (window as any).__kfm.setRangeFactor("kiso", 0.8)); await page.click("#wiz-back"); expect((await app(page, "a => a.wizStage"))).toBe(4);
+  expect((await st()).slice(3)).toEqual([false, true, true, false]); expect(await page.isDisabled("#cer-go")).toBe(true); expect(await page.isVisible("#wiz-warn")).toBe(true);
+  await page.click("#wiz-edit-0"); await page.waitForFunction(() => !(window as any).__kfm.generating, null, { timeout: 90000 }); await page.click("#wiz-ok");
+  await page.click("#wiz-edit-3"); await page.waitForFunction(() => (window as any).__kfm.cerReady(), null, { timeout: 60000 }); await page.click("#wiz-ok");
+  expect((await st()).slice(3)).toEqual([true, true, true, true]); expect(await page.isEnabled("#cer-go")).toBe(true);
+  expect((await st()).slice(1, 3)).toEqual([false, false]);   // (through all of it: no simulation, no runner)
+  await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
+  expect(await page.locator("#wiz-nav").count()).toBe(0); expect(errs).toEqual([]);
+});
+
+test("Stage 31: 設定の操作ボタンはスマホで押しやすく、画面の下半分以内に収まる", async ({ page }) => {
+  await bootReal(page); const vh = page.viewportSize()!.height;
+  for (const n of [0, 1, 2, 3, 4]) { await wizTo(page, n); const r = await page.evaluate(() => { const b = (id: string) => document.getElementById(id)!.getBoundingClientRect(), tb = document.getElementById("toolbar")!.getBoundingClientRect(); return { back: b("wiz-back").height, ok: document.getElementById("wiz-ok") ? b("wiz-ok").height : 99, top: tb.top, w: b("wiz-back").width }; });
+    expect(r.back, "stage " + n).toBeGreaterThanOrEqual(44); expect(r.ok).toBeGreaterThanOrEqual(44); expect(r.w).toBeGreaterThan(80); expect(r.top, "toolbar top, stage " + n).toBeGreaterThan(vh * 0.35); }
 });

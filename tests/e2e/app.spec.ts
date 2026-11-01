@@ -240,7 +240,9 @@ test("long absence: catch-up is capped, reported, and never freezes the page", a
   await page.waitForFunction(() => !(window as any).__kfm.catching && (window as any).__kfm.sim.skippedMonths > 0, null, { timeout: 60000 });
   const r = await page.evaluate(() => { const s = (window as any).__kfm.sim; return { month: s.month, skipped: s.skippedMonths, ev: s.events.some((e: any) => e.kind === "skip") }; });
   expect(r.month).toBeGreaterThanOrEqual(360); expect(r.month).toBeLessThan(420); expect(r.skipped).toBeGreaterThan(0); expect(r.ev).toBe(true);
-  expect(await page.textContent("#status")).toContain("省略"); expect(errs).toEqual([]);
+  expect(await page.textContent("#status")).toMatch(/省略 約\d+(\.\d)?時間/);   // Stage 31: hours of real time, not simulated years
+  const wall = await page.evaluate(() => (window as any).__kfm.sim.skippedWallMs) as number; expect(wall).toBeGreaterThan(100 * 3600000); expect(wall).toBeLessThanOrEqual(7 * 24 * 3600000 + 60000);   // of the 7 real days away, all but the ~30 simulated years' worth
+  expect(await page.textContent("#status")).not.toMatch(/省略\d+年/); expect(errs).toEqual([]);
 });
 
 test("step 6 phone layout: toolbar fits, HUD readable, no page scroll", async ({ page }) => {
