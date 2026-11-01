@@ -145,3 +145,9 @@ body #sheet.mini h3 { display: none; }
 #toolbar .range-item { min-height:44px; text-align:left; padding:4px 8px; display:flex; flex-direction:column; justify-content:center; line-height:1.2; }
 #toolbar .range-item small { font-size:10px; opacity:.7; }
 #toolbar .range-item.on { outline:2px solid #ffd400; }
+/* Stage 31: the startup window and the setup wizard */
+#intro-modal { position:fixed; inset:0; z-index:30; background:#000b; display:flex; align-items:center; justify-content:center; padding:12px; touch-action:pan-y; }
+#intro-modal .intro-box { max-width:520px; max-height:88dvh; overflow-y:auto; background:#0b1b2b; border:2px solid var(--accent); border-radius:12px; padding:14px 16px; user-select:text; }
+#intro-modal h2 { margin:0 0 6px; font-size:18px; } #intro-modal h3 { margin:12px 0 4px; font-size:15px; } #intro-modal p { margin:4px 0; font-size:13px; line-height:1.5; }
+#intro-modal button { width:100%; margin-top:14px; min-height:48px; font-weight:700; }
+#status[hidden] { display:none; }

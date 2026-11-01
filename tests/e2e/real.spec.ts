@@ -10,7 +10,7 @@ async function draw(page: Page, from: [number, number], to: [number, number]) {
   await page.mouse.move(a[0], a[1]); await page.mouse.down(); await page.mouse.move(b[0], b[1], { steps: 14 }); await page.mouse.up();
 }
 async function bootReal(page: Page) {
-  await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(300);
+  await page.goto("/?nointro"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(300);
 }
 /** The first era is chosen from the 14 candidates of 1926; index 0/1/2 carry the balanced / road / rail stance. */
 /** Issue #20: the era and the seats live in their own sheet (⚙ 元号・首都), not in the terrain menu. */
@@ -760,7 +760,7 @@ test("Stage 20: 離島(硫黄島)を地図で首都に選べる。最寄りの�
   expect(errs).toEqual([]);
 });
 
-test("Stage 20: 尖閣・竹島・北方四島・硫黄島はどれも地図で選べ、領有の事実が表示され、島は表示される", async ({ page }) => {
+test("Stage 20: 尖閣・竹島・北方四島・硫黄島はどれも地図で選べ、領有の注意書きは出ず、島は表示される", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
   await openMapPick(page, "palace");
   expect(await app(page, "a => a.r.islets.length")).toBeGreaterThan(80);
@@ -769,7 +769,7 @@ test("Stage 20: 尖閣・竹島・北方四島・硫黄島はどれも地図で�
     await page.evaluate((q) => { const a = (window as any).__kfm, H = window.innerHeight; a.r.setView({ cx: q[0], cy: q[1] + (200 - H / 2) / 1.5, zoom: 1.5 }, true); }, p);
     const [x, y] = await screenOf(page, p); await page.mouse.click(x, y);
     expect(await app(page, "a => a.seatPick && a.seatPick.islet"), name).toBe(name); expect(await app(page, "a => a.seatPick.pref"), name).toBe(pref);
-    if (claim) expect(await page.textContent("#seat-map-hint"), name).toContain(claim);
+    expect(await page.textContent("#seat-map-hint"), name).not.toMatch(/領有|実効支配|争い/);   // Stage 31: no territorial note in the game
     await page.click("#seat-cancel");
   }
   expect(errs).toEqual([]);

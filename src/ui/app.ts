@@ -25,7 +25,7 @@ import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, valid
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
 import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, performRoad0, snapKmFor, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
-import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
+import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, skippedLabel, skippedWallMsOf, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
 import { displayName } from "../sim/straits";
 import { finishMigration } from "../sim/migrate";
@@ -221,8 +221,12 @@ export class App {
     } catch (e: any) { if (String(e?.message) !== "cancelled") this.toast("地形生成に失敗: " + e?.message); }
     finally { if (this.genTok === tok) { this.generating = false; this.render(); this.buildUI(); } }   // the busy state is always cleared, whatever happened
   }
+  /** Is a relocation event open (waiting for the choices, or for 国道0号)? */
+  relocOpen(): boolean { const st = this.sim?.e2200?.state as string | undefined; return st === "pending" || st === "road0"; }
   status() {
     const el = $("status"); el.replaceChildren();
+    // Stage 31: while a relocation event is open (choices, then 国道0号) the ordinary information line over the map is put away; it returns when the event closes
+    el.hidden = this.relocOpen();
     const add = (t: string, c = "") => el.append(h("span", { class: c }, t));
     const errs = this.issues.filter((i) => i.severity === "error" && STEPS.indexOf(i.step) <= Math.min(this.s.step, 3));
     if (this.building > 0) add(`1950年の道路網を生成中 ${Math.round(this.building * 100)}%`, "bad");
@@ -234,7 +238,7 @@ export class App {
       if (this.catching) add(this.catchInfo, "bad");
       if (this.behind) add("端末の処理が追いつかず、速度を自動で落としています", "bad");
       if (this.safeMode) add("安全モード", "bad");
-      if (this.sim.skippedMonths) add(`省略${Math.floor(this.sim.skippedMonths / 12)}年分`, "bad");
+      if (this.sim.skippedMonths) add(skippedLabel(this.sim), "bad");
     }
     if (this.generating) add(`地形生成中 ${Math.round(this.genProgress * 100)}%`);
     if (errs.length) add(`⚠ 不正 ${errs.length}件`, "bad");
@@ -497,7 +501,7 @@ export class App {
     if ((which === "capital" && pref === cur.sub) || (which === "sub" && pref === cur.capital)) { this.toast("首都と副首都は別の府県にしてください"); return false; }
     const inCity = world.cities.filter((c) => c.island === world.t.island[k] && Math.hypot(c.pos[0] - pt[0], c.pos[1] - pt[1]) <= 25).sort((p, q) => Math.hypot(p.pos[0] - pt[0], p.pos[1] - pt[1]) - Math.hypot(q.pos[0] - pt[0], q.pos[1] - pt[1]))[0];   // (a city of the game within 25 km is the place: the 県庁所在地 becomes that city)
     const np = inCity ? { name: inCity.name, place: inCity.name, km: Math.round(Math.hypot(inCity.pos[0] - pt[0], inCity.pos[1] - pt[1]) * 10) / 10 } : nearestPlace(pt, new Set(world.cities.map((c) => c.name)));
-    this.seatPick = { w: [pt[0], pt[1]], pref, ...(np ? { name: np.name, near: np.place, km: np.km } : {}), ...(isl ? { islet: isl.name, ...(isl.claim ? { claim: isl.claim } : {}) } : {}) }; this.r.seatPending = this.seatPick.w; this.buildToolbar(); this.render(); return true;
+    this.seatPick = { w: [pt[0], pt[1]], pref, ...(np ? { name: np.name, near: np.place, km: np.km } : {}), ...(isl ? { islet: isl.name } : {}) }; this.r.seatPending = this.seatPick.w; this.buildToolbar(); this.render(); return true;
   }
   confirmSeatPick(): boolean {
     if (this.e22Pick && this.e22 && this.seatPick) {   // Stage 22: a seat of the 2200 event, kept in the event's draft until 決める
@@ -689,8 +693,8 @@ export class App {
       this.catchInfo = `放置分を計算中 ${Math.floor((plan.months - (target - sim.month)) / 12)}/${Math.floor(plan.months / 12)}年`; this.status();
       await new Promise((r) => setTimeout(r, 0));
     }
-    run.settle(); if (sim.policy) sim.policy.away = false; noteSkipped(sim, plan.skipped); this.catching = false; this.catchInfo = ""; this.lastTick = performance.now(); this.acc = 0;
-    if (plan.skipped) this.toast(`放置が長いため${Math.floor(plan.skipped / 12)}年分の経過を省略しました`);
+    run.settle(); if (sim.policy) sim.policy.away = false; noteSkipped(sim, plan.skipped, skippedWallMsOf(elapsedMs, plan)); this.catching = false; this.catchInfo = ""; this.lastTick = performance.now(); this.acc = 0;
+    if (plan.skipped) this.toast(`放置が長いため、約${(skippedWallMsOf(elapsedMs, plan) / 3600000).toFixed(1)}時間分(実時間)の計算を省略しました`);
     this.renderRoads(); this.status(); this.persist();
   }
   onVisibility() {
@@ -788,7 +792,7 @@ export class App {
   private buildToolbarInner() {
     if (this.sim && this.e22Pick) {   // Stage 22: choosing a 2200 seat on the map (the same tap, hint and 決定 / 取り消し / 戻る as at the start)
       const tb0 = $("toolbar"); tb0.replaceChildren(); const p = this.seatPick, label = { capital: "首都", sub: "副首都", palace: "皇居" }[this.e22Pick];
-      tb0.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」` : ""}${p.claim ? `／${p.claim}` : ""}(まだ決まっていません)` : `2200年の${label}にしたい場所を地図の陸地でタップしてください`),
+      tb0.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」` : ""}(まだ決まっていません)` : `2200年の${label}にしたい場所を地図の陸地でタップしてください`),
         h("div", { class: "grp" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => this.cancelSeatPick() }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.endE22Map() }, "戻る"), this.bgSwitch("e22-pick-bg")));
       return;
     }
@@ -893,7 +897,7 @@ export class App {
       }
       if (this.seatMode === "map") {
         const p = this.seatPick;
-        panel.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」(最寄りの地名: ${p.near}${p.km ? ` ${p.km}km` : ""})` : ""} ${ll(p.w)}${p.claim ? `／${p.claim}(ゲーム内の府県は仮の設定)` : ""}(まだ決まっていません。地図をタップし直すと動かせます)` : `${label}にしたい場所を、地図の陸地でタップしてください(府県内ならどこでも。海は選べません)`));
+        panel.append(h("div", { class: "note", id: "seat-map-hint" }, p ? `候補: ${seatPrefName(p.pref)} ${p.name ? `「${p.name}」(最寄りの地名: ${p.near}${p.km ? ` ${p.km}km` : ""})` : ""} ${ll(p.w)}(まだ決まっていません。地図をタップし直すと動かせます)` : `${label}にしたい場所を、地図の陸地でタップしてください(府県内ならどこでも。海は選べません)`));
         panel.append(h("div", { class: "row2" }, h("button", { id: "seat-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmSeatPick() }, "決定"), h("button", { id: "seat-cancel", type: "button", onclick: () => { this.cancelSeatPick(); } }, "取り消し"), h("button", { id: "seat-back", type: "button", onclick: () => this.backToSeatList() }, "戻る")));
       }
       if ((which === "capital" && this.s.capitalPos) || (which === "sub" && this.s.subPos) || (which === "palace" && this.s.palacePos)) panel.append(h("div", { class: "note", id: "seat-current" }, `地図で指定: ${where(which)}`), h("button", { id: "seat-reset", type: "button", onclick: () => this.resetSeatPos(which) }, "県庁所在地に戻す"));
@@ -987,7 +991,7 @@ export class App {
   private buildHistory(body: HTMLElement) {
     body.append(h("h3", {}, "年表(新しい順)"));
     if (!this.sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
-    if (this.sim.skippedMonths) body.append(h("div", { class: "issue warn" }, `放置により合計${Math.floor(this.sim.skippedMonths / 12)}年${this.sim.skippedMonths % 12}か月分の経過を省略しています`));
+    if (this.sim.skippedMonths) body.append(h("div", { class: "issue warn" }, `${skippedLabel(this.sim)}(放置した実時間のうち、計算しきれず飛ばした分)`));
     for (const e of [...this.sim.events].reverse().slice(0, 80)) body.append(h("div", { class: "issue" }, `${ymLabel(this.sim.startYear, e.month)} ${e.text}`, h("br"), h("small", {}, `原因: ${e.cause}`)));
   }
   private buildRoadList(body: HTMLElement) {
@@ -1103,13 +1107,6 @@ export class App {
   }
   private async buildMenuInner(body: HTMLElement) {
     if (this.real && this.sim?.stage3) body.append(h("div", { class: "note", id: "reloc-diag" }, relocDiag(this.sim)));   // Stage 29: the schedule of the relocation events, and whether this game began with it
-    if (this.real) {
-      body.append(h("h3", {}, "このゲームについて(史実と架空の区別)"));
-      body.append(h("div", { class: "issue", id: "about-data" }, h("b", {}, "実在: "), "海岸線・標高・河川・府県・都市の位置(東京府、北海道は3県の設定)。鉄道・道路の通り道(Natural Earth)は初期網の参考。", h("br"),
-        h("b", {}, "再構成: "), "1950年の道路網・鉄道網。実在の路線台帳ではありません。", h("br"),
-        h("b", {}, "史実: "), "平成の世界線の国内の出来事(2026年まで)と、全世界線共通の国際事件。年表に【史実】と付きます。", h("br"),
-        h("b", {}, "架空: "), "修文・正化の国内の出来事、人口・需要・予算・事業者名・路線番号。【架空】と付きます。2027年以降は【予測モデル】です。"));
-    }
     body.append(h("h3", {}, "セーブ / ロード / 出力"));
     const pfx = this.real ? "s3:" : "", slots = [1, 2, 3, 4, 5].map((i) => `${pfx}slot${i}`), have = new Set(await listSlots()), metas = await Promise.all(slots.map((n) => (have.has(n) ? slotMeta(n) : Promise.resolve(null))));
     const NUM = ["①", "②", "③", "④", "⑤"];   // Stage 23: one line a slot -- number, the capital and sub-capital OF THAT SAVE, the year it was saved, 保存 / 読込
@@ -1135,7 +1132,6 @@ export class App {
   /** Stage 26: the 自動セーブポイント list -- year, 50-year or just-before-relocation, the seats it was saved with; 読込 continues the game from there. Kept apart from the numbered slots. */
   private async buildCheckpoints(body: HTMLElement) {
     const all = await listCheckpoints(idbCpStore), id = this.sim ? identityOf(this.sim) : null; body.append(h("h3", { id: "cp-title" }, "自動セーブポイント"));
-    body.append(h("small", { id: "cp-note" }, "50年ごと(2000年〜)と、遷都イベントの直後に自動で作られます。今の世界の分だけを表示します(最大8件・48MB、古いものから消えます)。別の世界は最大4つまで残ります。①〜⑤とは別です。"));
     const list = id ? all.filter((e) => inHistory(e, id)) : [], old = id ? all.filter((e) => !e.wid) : all.filter((e) => !e.wid);
     const mb = (e: CpEntry) => `${(e.bytes / 1048576).toFixed(1)}MB`;
     const row = (e: CpEntry, legacy: boolean) => {

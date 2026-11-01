@@ -8,7 +8,7 @@ test("perf29: x20 at several eras", async ({ page }) => {
   test.setTimeout(7200000);
   await page.addInitScript(() => { (window as any).__long = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) (window as any).__long.push(Math.round(e.duration)); }).observe({ type: "longtask", buffered: true }); } catch {} });
   const cdp = await page.context().newCDPSession(page); await cdp.send("Performance.enable");
-  await page.goto("/"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 300000 });
+  await page.goto("/?nointro"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 300000 });
   const cityPos = (n: string) => page.evaluate((x) => (window as any).__kfm.world.cities.find((c: any) => c.name === x).pos, n) as Promise<[number, number]>;
   const scr = (p: [number, number]) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p) as Promise<[number, number]>;
   await page.click("#setup-tab-era"); await page.click("#era-opt-0"); await page.click("#rw-close"); await page.click("#setup-close");

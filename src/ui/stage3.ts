@@ -6,7 +6,7 @@ import { buildMini, buildNumberList, modeBar, targetOfEdges, targetOfProject, ta
 import type { NumClass } from "../sim/numreg";
 import { DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey } from "../sim/eras";
 import { effectText } from "../sim/events";
-import { prefName, routeLabel } from "../sim/engine";
+import { prefName, routeLabel, skippedLabel } from "../sim/engine";
 import { numberHistory } from "../sim/ledger";
 import { CAND_1945, ERA_GROUPS, ERA_GROUP_LABEL, ERA_GROUP_NOTE, STANCE_LABEL, eraGroup, type EraCand } from "../sim/kaigen";
 import { potentialWeights } from "../sim/potential17";
@@ -74,7 +74,7 @@ export function buildTimeline(app: App, body: HTMLElement) {
   const row = h("div", { class: "row" });
   for (const k of Object.keys(FILTER_LABEL)) row.append(h("button", { id: "tl-" + k, class: ui3.tl === k ? "mode on" : "mode", "aria-pressed": ui3.tl === k ? "true" : "false", onclick: () => { ui3.tl = k; ui3.tlN = 60; app.buildSheet(); } }, FILTER_LABEL[k]));
   body.append(row, h("small", {}, "【史実】=実際の歴史／【架空】=この世界線だけの出来事／【予測モデル】=2027年以降の確率的な想定"));
-  if (sim.skippedMonths) body.append(h("div", { class: "issue warn" }, `放置により合計${Math.floor(sim.skippedMonths / 12)}年${sim.skippedMonths % 12}か月分の経過を省略しています`));
+  if (sim.skippedMonths) body.append(h("div", { class: "issue warn" }, `${skippedLabel(sim)}(放置した実時間のうち、計算しきれず飛ばした分)`));
   const f = KIND_FILTER[ui3.tl] ?? KIND_FILTER.all, list = [...sim.events].reverse().filter((e) => (ui3.tl === "rail" ? /鉄|線|電|事業者|国鉄/.test(e.text) : f(e.kind)));
   for (const e of list.slice(0, ui3.tlN)) body.append(h("div", { class: "issue" }, `${ym(sim, e.month)} ${e.text}`, h("br"), h("small", {}, `原因・理由: ${e.cause}`)));
   if (list.length > ui3.tlN) body.append(h("button", { id: "tl-more", onclick: () => { ui3.tlN += 60; app.buildSheet(); } }, `さらに表示(残り${list.length - ui3.tlN}件)`));
