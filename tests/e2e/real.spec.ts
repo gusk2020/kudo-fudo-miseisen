@@ -1281,3 +1281,61 @@ test("Stage 31: 設定の操作ボタンはスマホで押しやすく、画面�
   for (const n of [0, 1, 2, 3, 4]) { await wizTo(page, n); const r = await page.evaluate(() => { const b = (id: string) => document.getElementById(id)!.getBoundingClientRect(), tb = document.getElementById("toolbar")!.getBoundingClientRect(); return { back: b("wiz-back").height, ok: document.getElementById("wiz-ok") ? b("wiz-ok").height : 99, top: tb.top, w: b("wiz-back").width }; });
     expect(r.back, "stage " + n).toBeGreaterThanOrEqual(44); expect(r.ok).toBeGreaterThanOrEqual(44); expect(r.w).toBeGreaterThan(80); expect(r.top, "toolbar top, stage " + n).toBeGreaterThan(vh * 0.35); }
 });
+
+test("Stage 32: 全国表示に北方四島から沖縄(八重山・尖閣・大東まで)が収まり、画面内で移動・拡大できる", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page); await page.waitForFunction(() => (window as any).__kfm.fitDone === true, null, { timeout: 90000 });
+  const vp = page.viewportSize()!;
+  const r = await page.evaluate(() => { const a = (window as any).__kfm, out: Record<string, [number, number][]> = {}; for (const x of a.world.islets) { const g = x.islet.group; if (["北方四島", "歯舞群島", "八重山諸島", "宮古諸島", "沖縄諸島", "尖閣諸島", "大東諸島"].includes(g)) (out[g] ??= []).push(a.r.worldToScreen(x.pos)); } return out; }) as Record<string, [number, number][]>;
+  expect(Object.keys(r).length).toBe(7);
+  for (const [g, pts] of Object.entries(r)) for (const [x, y] of pts) { expect(x, g).toBeGreaterThanOrEqual(0); expect(x, g).toBeLessThanOrEqual(vp.width); expect(y, g).toBeGreaterThanOrEqual(60); expect(y, g).toBeLessThanOrEqual(vp.height - 20); }
+  const v0 = await app(page, "a => JSON.stringify(a.r.view)"); await page.mouse.move(200, 300); await page.mouse.down(); await page.mouse.move(150, 360, { steps: 6 }); await page.mouse.up(); await page.mouse.wheel(0, -400); await page.waitForTimeout(300);
+  expect(await app(page, "a => JSON.stringify(a.r.view)")).not.toBe(v0); await page.click("#btn-fit").catch(async () => { await page.evaluate(() => (window as any).__kfm.r.fit((window as any).__kfm.s)); });
+  expect(errs).toEqual([]);
+});
+
+test("Stage 32: 初期設定の首都を、府県選択→地図→海を押して補正→微調整→決定。府県名は位置から更新され、首都と副首都は別の府県、皇居は同じでもよい", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page); await wizTo(page, 2);
+  const city = (pref: string) => app(page, `a => a.world.cities.find((c) => c.pref === '${pref}' && c.kind === 'capital').pos`) as Promise<[number, number]>;
+  // choosing a prefecture brings the map to its capital city
+  await page.selectOption("#seat-sel-capital", "JP-23"); const nagoya = await city("JP-23"); const c1 = await app(page, "a => [a.r.view.cx, a.r.view.cy]") as number[]; expect(Math.hypot(c1[0] - nagoya[0], c1[1] - nagoya[1])).toBeLessThan(3);
+  expect(await app(page, "a => a.s.capital")).toBe("JP-23"); await page.click("#pref-map"); expect(await app(page, "a => a.seatMode")).toBe("map");
+  // a tap in the open sea goes to the nearest land of Japan and shows the corrected point
+  const tokyo = await city("JP-13"), sea: [number, number] = [tokyo[0] + 150, tokyo[1] - 40];
+  await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 1 }, true), tokyo); const [sx, sy] = await screenOf(page, sea); await page.mouse.click(sx, sy);
+  const pick = await app(page, "a => a.seatPick") as any; expect(pick).toBeTruthy(); expect(pick.snapped).toBeGreaterThan(0); expect(await page.textContent("#seat-map-hint")).toContain("補正");
+  const isLand = await app(page, `a => { const k = a.world.cellOf([${pick.w[0]}, ${pick.w[1]}]); return a.world.t.land[k] === 1; }`); expect(isLand).toBe(true);
+  expect(await page.textContent("#seat-target")).toContain("最終位置の府県");
+  // やり直し keeps the map mode; the tap can be repeated
+  await page.click("#seat-cancel"); expect(await app(page, "a => [a.seatPick, a.seatMode]")).toEqual([null, "map"]); await page.mouse.click(sx, sy); expect(await app(page, "a => !!a.seatPick")).toBe(true);
+  // 微調整: zoomed on the target, four arrows, one cell (5 km) per press
+  await page.click("#seat-fine"); expect(await page.isVisible("#seat-up")).toBe(true); expect(await page.isVisible("#seat-left")).toBe(true); expect(await app(page, "a => a.r.view.zoom")).toBeGreaterThanOrEqual(6);
+  const w0 = (await app(page, "a => a.seatPick.w")) as [number, number]; await page.click("#seat-up").catch(() => {}); const w1 = (await app(page, "a => a.seatPick.w")) as [number, number];
+  const moved = Math.hypot(w1[0] - w0[0], w1[1] - w0[1]); expect(moved === 0 || Math.abs(moved - 5) < 1.5).toBe(true);   // one cell north, or refused when that is sea
+  await page.click("#seat-confirm"); const fin = await app(page, "a => [a.s.capital, a.s.capitalPos]") as [string, [number, number]]; expect(fin[1]).toBeTruthy(); const prefAt = await app(page, `a => a.world.prefOf(a.world.cellOf([${fin[1][0]}, ${fin[1][1]}]))`); expect(fin[0]).toBe(prefAt);   // the prefecture is the one under the point
+  expect(await app(page, "a => a.seatPick")).toBeNull();
+  // capital and sub-capital are different prefectures: a tap in the sub-capital's prefecture is refused ...
+  const sub = ((await app(page, "a => a.s.subCapital")) as string | undefined) ?? "JP-27"; await page.click("#setup-tab-capital"); await page.click("#pref-map"); const osaka = await city(sub); await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 3 }, true), osaka);
+  const [ox, oy] = await screenOf(page, osaka); await page.mouse.click(ox, oy); expect(await app(page, "a => a.seatPick")).toBeNull();
+  // ... while the residence may stand in the capital's own prefecture
+  await page.click("#seat-back"); await page.click("#setup-tab-palace"); await page.click("#pref-map"); const cp = await app(page, "a => a.s.capitalPos") as [number, number]; await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 4 }, true), cp);
+  const [px, py] = await screenOf(page, cp); await page.mouse.click(px, py); expect(await app(page, "a => !!a.seatPick && a.seatPick.pref")).toBe(fin[0]); await page.click("#seat-confirm"); expect(await app(page, "a => a.s.palace")).toBe(fin[0]);
+  // the wizard still works: forward and back keep the seats
+  await page.click("#wiz-ok"); await page.click("#wiz-back"); expect(await app(page, "a => [a.s.capital, !!a.s.capitalPos, a.s.palace]")).toEqual([fin[0], true, fin[0]]);
+  expect(errs).toEqual([]);
+});
+
+test("Stage 32: 遷都イベントでも同じ操作(府県選択→地図→海を補正→微調整→決定)ができ、選んだ位置と府県が新しい首都として確定する", async ({ page }) => {
+  test.setTimeout(300000); const errs = watchErrors(page); await startReal(page);
+  const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "auto"; s.speed = 20; }, y);
+  await jump(2100); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box");
+  await page.selectOption("#e22-sel-capital", "JP-04"); const sendai = await app(page, "a => a.world.cities.find((c) => c.pref === 'JP-04' && c.kind === 'capital').pos") as [number, number];
+  await page.click("#e22-map-capital"); expect(await app(page, "a => a.e22Pick")).toBe("capital"); const c = await app(page, "a => [a.r.view.cx, a.r.view.cy]") as number[]; expect(Math.hypot(c[0] - sendai[0], c[1] - sendai[1])).toBeLessThan(3);   // the map is at the prefecture's capital
+  await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 1 }, true), sendai); const [sx, sy] = await screenOf(page, [sendai[0] + 150, sendai[1]]); await page.mouse.click(sx, sy);
+  const pick = await app(page, "a => a.seatPick") as any; expect(pick.snapped).toBeGreaterThan(0); expect(await page.isVisible("#seat-fine")).toBe(true); expect(await page.isVisible("#seat-cancel")).toBe(true);
+  await page.click("#seat-fine"); await page.click("#seat-right").catch(() => {}); await page.click("#seat-confirm");
+  const d = await app(page, "a => [a.e22.capital, a.e22.capitalPos, a.e22Pick]") as [string, [number, number], null]; expect(d[2]).toBeNull(); expect(d[1]).toBeTruthy();
+  expect(await app(page, `a => a.world.prefOf(a.world.cellOf([${d[1][0]}, ${d[1][1]}]))`)).toBe(d[0]);   // the prefecture follows the point
+  await page.waitForSelector("#e22-box"); expect(await page.textContent("#e22-seat-capital")).toContain("地図で指定");
+  await page.click("#e22-era-1"); await page.click("#e22-decide"); await page.click("#road0-skip"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "done", null, { timeout: 60000 });
+  expect(await app(page, "a => a.sim.capital")).toBe(d[0]); expect(errs).toEqual([]);
+});

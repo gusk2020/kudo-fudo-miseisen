@@ -108,9 +108,12 @@ export class Renderer {
     const { w, h } = this.size, z = this.view.zoom;
     this.root.scale.set(z); this.root.position.set(w / 2 - this.view.cx * z, h / 2 + this.view.cy * z);
   }
+  /** Stage 32: extra points the nationwide view must contain (set by the app from the world). */
+  fitExtra: Vec[] = [];
   fit(s: ProjectState) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const id of ISLAND_IDS) for (const p of worldParts(id, s.bodies[id])) for (const q of p) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+    for (const q of this.fitExtra) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }   // Stage 32: the far islands (Northern Territories, Okinawa) are inside the nationwide view
     const { w, h } = this.size;
     this.setView({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, zoom: Math.min(w / (x1 - x0 + 120), h / (y1 - y0 + 120)) }, true);
     this.rebuild();
