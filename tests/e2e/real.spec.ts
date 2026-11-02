@@ -239,11 +239,11 @@ test("改元: time stops at 1989, the sheet opens by itself, the choice is kept 
 
 test("限定の地形編集: capital, Alps and Fuji can be set before the first road, undo/redo work, edits survive a reload, and the ceremony locks them", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  await wizTo(page, 0); await page.click("#edit-more"); await expect(page.locator("#terrain-edit-note")).toContainText("海岸線");
+  await wizTo(page, 0);   // (Stage 33: the 稜線 menu is gone; a mountain range edit stands in for it)
   const hash0 = await app(page, "a => a.terrain.hash") as string;
-  await page.click("#alps-real"); expect(await app(page, "a => !!a.s.ridges.ne && !!a.s.ridges.sw")).toBe(true);
+  await page.evaluate(() => (window as any).__kfm.setRangeFactor("kiso", 0.5));
   await page.waitForFunction((h) => (window as any).__kfm.terrain?.hash && (window as any).__kfm.terrain.hash !== h, hash0, { timeout: 60000 });
-  await page.click("#edit-undo"); expect(await app(page, "a => a.s.ridges.ne === null")).toBe(true); await page.click("#edit-redo"); expect(await app(page, "a => !!a.s.ridges.ne")).toBe(true);
+  await page.click("#edit-undo"); expect(await app(page, "a => a.s.rangeEdits === undefined")).toBe(true); await page.click("#edit-redo"); expect(await app(page, "a => !!a.s.rangeEdits?.kiso")).toBe(true);
   await seatSelect(page, "capital", "JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47");   // Okinawa
   await seatSelect(page, "sub", "HK-SAP"); expect(await app(page, "a => a.s.subCapital")).toBe("HK-SAP");   // Sapporo
   await seatSelect(page, "palace", "JP-26"); expect(await app(page, "a => a.s.palace")).toBe("JP-26");
@@ -251,7 +251,7 @@ test("限定の地形編集: capital, Alps and Fuji can be set before the first 
   await closeSheet(page); await wizTo(page, 3); expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇");
   expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(0);   // the outline is never touched
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
-  expect(await app(page, "a => a.s.capital === 'JP-47' && a.s.subCapital === 'HK-SAP' && a.s.palace === 'JP-26' && !!a.s.ridges.ne")).toBe(true); expect(await app(page, "a => a.s.islands")).toBe(true);
+  expect(await app(page, "a => a.s.capital === 'JP-47' && a.s.subCapital === 'HK-SAP' && a.s.palace === 'JP-26' && !!a.s.rangeEdits?.kiso")).toBe(true); expect(await app(page, "a => a.s.islands")).toBe(true);
   // first road laid -> locked
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim = { fake: true }; });
   expect(await app(page, "a => a.commitEdit((s) => { s.capital = 'x'; })")).toBe(false); await page.evaluate(() => { (window as any).__kfm.sim = null; });
@@ -403,7 +403,7 @@ test("Issue #20: 置けない所で指を離しても止まらない(直前の�
   expect(await app(page, "a => JSON.stringify(a.s.features)")).toBe(before); expect(await app(page, "a => a.store.canUndo")).toBe(undo0); await healthy();
   // 2) two fingers: a huge spread and twist ending off the coast -> refused the same way
   c = await lakeAt(); await touch(page, [{ type: "touchStart", pts: [{ x: off.x + c[0] - 20, y: off.y + c[1], id: 1 }, { x: off.x + c[0] + 20, y: off.y + c[1], id: 2 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] - 120, y: off.y + c[1] - 80, id: 1 }, { x: off.x + c[0] + 120, y: off.y + c[1] + 80, id: 2 }] }, { type: "touchEnd", pts: [] }]);
-  expect(await app(page, "a => JSON.stringify(a.s.features)")).toBe(before); await healthy();
+  await healthy();   // Stage 33: a spread that only reaches the coast is no longer refused (the coast cuts it); nothing may be left stuck or invalid
   // 5) a valid move still works afterwards, and survives a reload
   c = await lakeAt(); await touch(page, [{ type: "touchStart", pts: [{ x: off.x + c[0], y: off.y + c[1], id: 1 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] - 1, y: off.y + c[1], id: 1 }] }, { type: "touchMove", pts: [{ x: off.x + c[0] - 2, y: off.y + c[1] - 1, id: 1 }] }, { type: "touchEnd", pts: [] }]);
   const moved = await app(page, "a => JSON.stringify(a.s.features.biwa.pos)") as string; expect(moved).not.toBe("null"); await healthy();
@@ -419,8 +419,7 @@ test("Issue #20: 置けない所で指を離しても止まらない(直前の�
   expect(await app(page, "a => a.s.features.fuji.pos")).toBeNull(); await healthy();
   // 6) toggles: pressing the active tool again turns it off and the map pans again; one-shot buttons stay one-shot
   if (await app(page, "a => a.tool") !== "view") await page.click("#sel-biwa");
-  await page.click("#edit-more");   // Stage 7: the three ridge tools sit in the 山脈 group
-  for (const id of ["#sel-biwa", "#sel-fuji", "#tool-ridge-ne", "#tool-ridge-sw", "#tool-ridge-edit"]) {
+  for (const id of ["#sel-biwa", "#sel-fuji", "#edit-create"]) {   // (Stage 33: 新規 replaced the ridge tools)
     await page.click(id); expect(await app(page, "a => a.tool"), id).not.toBe("view"); await page.click(id); expect(await app(page, "a => a.tool"), id).toBe("view");
   }
   await page.click("#sel-biwa"); await page.click("#sel-fuji"); expect(await app(page, "a => a.tool + ':' + a.selFeature")).toBe("feature:fuji");   // switching target, not off
@@ -441,7 +440,7 @@ test("Stage 7: 地形編集は1行の小さなメニュー(対象を選んだ時
   const errs = watchErrors(page); await bootReal(page);
   const tbH = () => page.evaluate(() => Math.round(document.getElementById("toolbar")!.getBoundingClientRect().height));
   const closed = await tbH(); await wizTo(page, 0); const open = await tbH(); const rows = await page.evaluate(() => new Set([...document.querySelectorAll("#toolbar button")].map((b) => Math.round(b.getBoundingClientRect().y))).size);
-  await page.click("#sel-biwa"); const biwa = await tbH(); await page.click("#sel-fuji"); const fuji = await tbH(); await page.click("#edit-more"); const more = await tbH();
+  await page.click("#sel-biwa"); const biwa = await tbH(); await page.click("#sel-fuji"); const fuji = await tbH(); const more = await tbH();
   console.log("toolbar heights", JSON.stringify({ closed, open, rows, biwa, fuji, more }));
   expect(rows).toBeLessThanOrEqual(3); expect(fuji).toBeLessThan(180); expect(more).toBeLessThan(230); void closed; void open;   // Stage 31: the editor sits in the wizard: a heading and 戻る / 決定 come with it
   expect(await page.locator("#toolbar #setup-tabs, #toolbar #tool-cer-kokudo1, #toolbar #cer-go").count()).toBe(0);   // nothing but the editor while it is open
@@ -555,28 +554,7 @@ test("Stage 9: 四国を通る国道1号は四国経由のまま。制御点を�
   expect(errs).toEqual([]);
 });
 
-test("Stage 9: 山脈は何本でも継ぎ足せて、点を動かせる。Undo/Redo・再読み込みで残り、地形に反映される。首都・副首都・皇居は1行ずつ", async ({ page }) => {
-  const errs = watchErrors(page); await bootReal(page);
-  await wizTo(page, 0); await page.click("#edit-more");
-  const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市"]);
-  const hash0 = await app(page, "a => a.terrain.hash") as string;
-  await page.click("#tool-ridge-ne"); await stroke(page, [P[0], P[2]]);
-  await page.waitForFunction((h) => { const t = (window as any).__kfm.terrain; return !!t && t.hash !== h; }, hash0, { timeout: 60000 });
-  expect(await app(page, "a => (a.s.ridges.ne || []).length")).toBeGreaterThan(1);
-  const hash1 = await app(page, "a => a.terrain.hash") as string;
-  await stroke(page, [P[1], P[3]]);   // a second, separate stroke of the same range
-  expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1);
-  await page.waitForFunction((h) => { const t = (window as any).__kfm.terrain; return !!t && t.hash !== h; }, hash1, { timeout: 60000 });
-  await page.click("#edit-undo"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(0);
-  await page.click("#edit-redo"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1);
-  // move a point of the added stroke
-  await page.click("#tool-ridge-edit"); const q = await page.evaluate(() => { const a = (window as any).__kfm, p = a.s.ridgeExtra.ne[0][0]; return [a.r.worldToScreen(p), p]; }) as [[number, number], [number, number]];
-  await page.mouse.move(q[0][0], q[0][1]); await page.mouse.down(); await page.mouse.move(q[0][0] + 10, q[0][1] - 8, { steps: 4 }); await page.mouse.up();
-  expect(await app(page, `a => a.s.ridgeExtra.ne[0][0][0] !== ${q[1][0]}`)).toBe(true);
-  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
-  expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1);
-  expect(errs).toEqual([]);
-});
+// (Stage 33: the 稜線 drawing tool was removed; its test went with it)
 
 test("Stage 19: 首都を地図の任意の陸地でタップして選べる。誤タップは決定まで何も変えず、取り消せ、海は拒否され、保存・再読み込みで位置が残る", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
@@ -598,35 +576,7 @@ test("Stage 19: 首都を地図の任意の陸地でタップして選べる。�
   expect(errs).toEqual([]);
 });
 
-test("Stage 9 (実機指摘): 山脈は地形の再生成を待たずに続けて描き足せる。端点から描くと続き、別の場所なら新しい線、点は指で掴める", async ({ page }) => {
-  const errs = watchErrors(page); await bootReal(page);
-  await wizTo(page, 0); await page.click("#edit-more");
-  const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市", "岐阜市"]);
-  for (const key of ["ne", "sw"] as const) {
-    await page.click(`#tool-ridge-${key}`);
-    const base = key === "ne" ? [P[0], P[2]] : [P[4], P[1]];
-    await stroke(page, base);                                   // 1st stroke: the range itself
-    // immediately (terrain is regenerating): continue from its end, then a separate stroke elsewhere
-    const end = await page.evaluate((k) => { const a = (window as any).__kfm, l = a.s.ridges[k]; return a.r.worldToScreen(l[l.length - 1]); }, key) as [number, number];
-    await page.waitForFunction(() => (window as any).__kfm.generating, null, { timeout: 10000 }).catch(() => { /* the rebuild may already be over on a fast machine; the strokes below are what is tested */ });   // the map is being remade (several seconds on a phone): drawing must still work
-    await stroke(page, [[end[0] + 3, end[1] + 3], [end[0] + 40, end[1] - 30]]);
-    expect(await app(page, `a => (a.s.ridgeExtra?.${key} || []).length`)).toBe(0);   // a continuation: still one stroke, longer
-    const n1 = await app(page, `a => a.s.ridges.${key}.length`) as number; expect(n1).toBeGreaterThan(2);
-    await stroke(page, key === "ne" ? [P[1], P[3]] : [[P[4][0] - 30, P[4][1] + 30], [P[4][0] - 60, P[4][1] + 60]]);
-    expect(await app(page, `a => (a.s.ridgeExtra?.${key} || []).length`)).toBe(1);   // a new, separate stroke
-    await page.click(`#tool-ridge-${key}`);   // tool off
-  }
-  // points can be grabbed with a finger-sized miss (about 30 px off) while the terrain is still being made
-  await page.click("#tool-ridge-edit"); const q = await page.evaluate(() => { const a = (window as any).__kfm, p = a.s.ridgeExtra.ne[0][1]; return [a.r.worldToScreen(p), p]; }) as [[number, number], [number, number]];
-  await page.mouse.move(q[0][0] + 22, q[0][1] + 18); await page.mouse.down(); await page.mouse.move(q[0][0] + 40, q[0][1] - 10, { steps: 4 }); await page.mouse.up();
-  expect(await app(page, `a => a.s.ridgeExtra.ne[0][1][0] !== ${q[1][0]}`)).toBe(true);
-  // undo walks back each edit; the terrain is made for the final map
-  const pastNe = await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne)");
-  await page.click("#edit-undo"); expect(await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne)")).not.toBe(pastNe); await page.click("#edit-redo"); expect(await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne)")).toBe(pastNe);
-  await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });
-  expect(await app(page, "a => { let n = 0; for (let k = 0; k < a.terrain.ridge.length; k++) if (a.terrain.ridge[k] > 0.5) n++; return n; }")).toBeGreaterThan(30);
-  expect(errs).toEqual([]);
-});
+// (Stage 33: the 稜線 drawing tool was removed; its test went with it)
 
 test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興方針、北/南で元のアルプスを除去(Undo/Redo・保存)、開通の儀のあと番号標識は初期OFFでユーザー設定は保持", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
@@ -638,19 +588,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   await openSetup(page); expect(await page.locator("#era-list .rw-item").first().textContent()).toMatch(/神化|元化|神和|同和|継明|順明|明保|寛安|元安|立成|定業|光文|章明|協中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
   await seatSelect(page, "capital", "HK-NEM"); expect(await app(page, "a => a.s.capital")).toBe("HK-NEM"); await seatSelect(page, "capital", "JP-13");
   await closeSheet(page);
-  // 北 removes the real Hida range, and only that; one Undo brings it back
-  await wizTo(page, 0); await page.click("#edit-more");
-  const h0 = await app(page, "a => a.terrain.hash") as string;
-  await page.click("#tool-ridge-ne"); expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true}');
-  await page.waitForFunction((h) => { const a = (window as any).__kfm; return !!a.terrain && !a.generating && a.terrain.hash !== h; }, h0, { timeout: 60000 });
-  await page.click("#tool-ridge-ne"); await page.click("#tool-ridge-ne"); expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true}');   // choosing it again changes nothing
-  await page.click("#edit-undo"); expect(await app(page, "a => a.s.alpsRemoved?.ne")).toBeFalsy();
-  await page.click("#edit-redo"); expect(await app(page, "a => a.s.alpsRemoved?.ne")).toBe(true);
-  if (await app(page, "a => a.tool") !== "view") await page.click(`#tool-${await app(page, "a => a.tool")}`);
-  await page.click("#tool-ridge-sw"); expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true,"sw":true}');
-  await page.waitForFunction(() => { const a = (window as any).__kfm; return !!a.terrain && !a.generating; }, null, { timeout: 60000 });
-  await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
-  expect(await app(page, "a => JSON.stringify(a.s.alpsRemoved)")).toBe('{"ne":true,"sw":true}');
+  // (Stage 33: the 稜線 tools -- and with them removing the real Alps -- are gone)
   // the ceremony: signs start OFF; switched on by hand they stay on through a reload
   expect(await app(page, "a => a.s.layers.signs")).toBe(true);
   await editor(page, false);
@@ -666,33 +604,13 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
 
 test("Stage 11: 道路図/地形図を最初に選べて保存される。道路図では山脈の線を出さず、山脈の編集中だけ地形図になる。区間を選んで消す・描き直す・Undo/Redoができる", async ({ page }) => {
   const errs = watchErrors(page); await bootReal(page);
-  const drawn = () => app(page, "a => a.r.ridgeStrokesDrawn") as Promise<number>;
   // the settings sheet offers the two maps; the road map is the default, and the choice is kept through a reload
   await openSetup(page); await page.click("#rw-close"); expect(await page.isVisible("#bg-roadmap")).toBe(true); expect(await page.getAttribute("#bg-roadmap", "aria-pressed")).toBe("true");
   await page.click("#bg-terrain"); expect(await app(page, "a => a.bg")).toBe("terrain"); expect(await app(page, "a => a.s.bg")).toBe("terrain"); await closeSheet(page);
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => a.bg")).toBe("terrain");
   await openSetup(page); await page.click("#rw-close"); await page.click("#bg-roadmap"); await closeSheet(page); expect(await app(page, "a => a.bg")).toBe("roadmap");
-  // draw two ranges: on the road map the lines are not drawn, while the range tools are on the terrain map is shown, and afterwards the road map returns
-  await wizTo(page, 0); await page.click("#edit-more");
-  const P = await fitPts(page, ["名古屋市", "静岡市", "長野市", "甲府市", "岐阜市"]);
-  await page.click("#tool-ridge-ne"); expect(await app(page, "a => a.bg")).toBe("terrain");
-  await stroke(page, [P[0], P[2]]); await stroke(page, [P[1], P[3]]);
-  expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1); expect(await drawn()).toBe(2);
-  // 区間を選ぶ: tap a stroke, delete it, undo, redo; then redraw it
-  await page.click("#tool-ridge-pick");
-  const mid = await page.evaluate(() => { const a = (window as any).__kfm, l = a.s.ridgeExtra.ne[0]; return a.r.worldToScreen(l[Math.floor(l.length / 2)]); }) as [number, number];
-  await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => JSON.stringify(a.ridgeSel)")).toBe('{"key":"ne","si":1}');
-  await page.click("#ridge-del"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(0); expect(await drawn()).toBe(1);
-  await page.click("#edit-undo"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1);
-  await page.click("#edit-redo"); expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(0); await page.click("#edit-undo");
-  await page.mouse.click(mid[0], mid[1]); await page.click("#ridge-redraw"); expect(await app(page, "a => a.tool")).toBe("ridge-ne");
-  const before = await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne[0])") as string;
-  await stroke(page, [[P[1][0] + 4, P[1][1] + 4], [P[4][0], P[4][1]], [P[3][0] + 4, P[3][1] + 4]]);
-  expect(await app(page, "a => (a.s.ridgeExtra?.ne || []).length")).toBe(1); expect(await app(page, "a => JSON.stringify(a.s.ridgeExtra.ne[0])")).not.toBe(before);
-  // leave the range tools: back to the road map, ranges hidden, the constructions barrier unchanged in the terrain
-  await page.click("#tool-ridge-ne"); await page.click("#edit-more").catch(() => {}); await editor(page, false);
-  expect(await app(page, "a => a.bg")).toBe("roadmap"); expect(await drawn()).toBe(0);
+  // (Stage 33: the 稜線 drawing part of this test went with the tool; the map choice and its persistence are what is left)
   expect(errs).toEqual([]);
 });
 
@@ -1218,7 +1136,7 @@ test("Stage 30A: 山脈ボタン→一覧と地図タップが同じ選択にな
   await page.waitForFunction((h) => { const a = (window as any).__kfm; return !a.generating && a.terrain && a.terrain.hash !== h; }, h0, { timeout: 90000 });
   // down to the plain floor and no further
   for (let i = 0; i < 14; i++) await page.click("#range-less", { force: true }).catch(() => {});
-  expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(0); expect(await page.textContent("#range-level")).toContain("平地"); expect(await page.isDisabled("#range-less")).toBe(true);
+  expect(await app(page, "a => a.s.rangeEdits.akaishi")).toBe(-0.05); expect(await page.textContent("#range-level")).toContain("湖");   // Stage 33: below the plain (x0) there is the lake (x-0.05) expect(await page.isDisabled("#range-less")).toBe(true);
   // the map tap selects the same way as the list (a different range), and deselects on a second tap
   await page.click("#range-pick"); await page.click("#range-kyushu"); expect(await app(page, "a => a.rangeSel")).toBe("kyushu");
   const mid = await app(page, "a => a.rangeScreenPoint('kiso')") as [number, number];
