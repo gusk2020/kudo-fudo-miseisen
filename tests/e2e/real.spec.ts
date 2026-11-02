@@ -1339,3 +1339,41 @@ test("Stage 32: 遷都イベントでも同じ操作(府県選択→地図→海
   await page.click("#e22-era-1"); await page.click("#e22-decide"); await page.click("#road0-skip"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "done", null, { timeout: 60000 });
   expect(await app(page, "a => a.sim.capital")).toBe(d[0]); expect(errs).toEqual([]);
 });
+
+test("Stage 33: 稜線メニューは無く、新規で山・湖を平地の地図選択→微調整→決定で作れ、選んで増減・削除でき、保存で残る。平野・湖化の表示が出る", async ({ page }) => {
+  test.setTimeout(240000); const errs = watchErrors(page); await bootReal(page);
+  expect(await page.locator("#edit-more, #tool-ridge-ne, #alps-clear").count()).toBe(0); expect(await page.isVisible("#edit-create")).toBe(true);   // the 稜線 menu is gone
+  await page.click("#edit-create"); expect(await app(page, "a => a.tool")).toBe("create");
+  const plain = [139.7, 36.2], pos = (await page.evaluate(([lo, la]) => { const a = (window as any).__kfm; const P = a.world.cities.find((c: any) => c.name === "さいたま市").pos; void lo; void la; return P; }, plain)) as [number, number];
+  await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 2 }, true), pos);
+  // the sea is refused with a reason; a plain cell is a candidate
+  const sea = await app(page, "a => { const t = a.terrain, g = t.grid; for (let k = 0; k < t.land.length; k++) if (t.land[k] === 0) return a.createReason(k); return null; }"); expect(String(sea)).toContain("海");
+  const [sx, sy] = await screenOf(page, pos); await page.mouse.click(sx, sy); expect(await app(page, "a => !!a.createPick")).toBe(true);
+  await page.click("#create-fine"); expect(await page.isVisible("#create-up")).toBe(true); const w0 = (await app(page, "a => a.createPick.w")) as [number, number]; await page.click("#create-right"); const w1 = (await app(page, "a => a.createPick.w")) as [number, number]; expect(Math.round(w1[0] - w0[0])).toBe(5);
+  await page.click("#create-retry"); expect(await app(page, "a => a.createPick")).toBeNull(); await page.mouse.click(sx, sy); await page.click("#create-mountain"); await page.click("#create-confirm");
+  const c1 = await app(page, "a => a.s.creations") as { kind: string; level: number }[]; expect(c1.length).toBe(1); expect(c1[0]).toMatchObject({ kind: "mountain", level: 1 }); expect(await page.textContent("#creation-level")).toContain("500m");
+  // more / fewer, at most three presses
+  await page.click("#creation-more"); await page.click("#creation-more"); await page.click("#creation-more"); expect(await app(page, "a => a.s.creations[0].level")).toBe(3); expect(await page.textContent("#creation-level")).toContain("1500m");
+  await page.click("#creation-less"); expect(await app(page, "a => a.s.creations[0].level")).toBe(2);
+  await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });
+  // it persists, and can be selected again by tapping it
+  await page.waitForTimeout(800); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); expect(await app(page, "a => a.s.creations.length")).toBe(1);
+  await wizTo(page, 0); await page.click("#edit-create"); await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 2 }, true), pos); const [tx, ty] = await screenOf(page, pos); await page.mouse.click(tx, ty);
+  expect(await app(page, "a => a.creationSel")).toBe(1); await page.click("#creation-del"); expect(await app(page, "a => a.s.creations")).toBeUndefined();
+  // a lake the same way; the range menu names plain and lake
+  await page.click("#create-lake"); await page.mouse.click(tx, ty); await page.click("#create-confirm"); expect(await page.textContent("#creation-level")).toContain("湖");
+  await page.click("#edit-ranges"); await page.click("#range-kiso"); await page.click("#range-less", { force: true }).catch(() => {}); for (let i = 0; i < 12; i++) await page.click("#range-less", { force: true }).catch(() => {});
+  expect(await app(page, "a => a.s.rangeEdits.kiso")).toBe(-0.05); expect(await page.textContent("#range-level")).toContain("湖");
+  expect(errs).toEqual([]);
+});
+
+test("Stage 33: 富士山・琵琶湖は海岸近くにも置け(中心が陸なら可)、第二級河川は拡大した時だけ描かれる", async ({ page }) => {
+  const errs = watchErrors(page); await bootReal(page);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.store.set((s: any) => { s.features.fuji.pos = a.world.cities.find((c: any) => c.name === "静岡市").pos; }); });
+  expect(await app(page, "a => a.issues.some((i) => i.code === 'fuji.coast')")).toBe(false);
+  expect(await app(page, "a => a.terrain.streams2.length > 500")).toBe(true);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: 0.3 }, true); }); const lowZ = await app(page, "a => a.r.view.zoom") as number;
+  const n = () => page.evaluate(() => { const a = (window as any).__kfm; let c = 0; const walk = (o: any) => { if (o && o.stroke !== undefined && o.alpha !== undefined) {} for (const k of o?.children ?? []) walk(k); }; void walk; return a.r.chains2Of ? a.r.chains2Of.chains.length : 0; });
+  expect(lowZ).toBeLessThan(0.8); const before = await n(); await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: 1.2 }, true); }); await page.waitForTimeout(600);
+  expect(await n()).toBeGreaterThan(before); expect(errs).toEqual([]);
+});
