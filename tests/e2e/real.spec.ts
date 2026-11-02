@@ -324,7 +324,7 @@ test("皇居: 49府県から選べ、首都と同じ府県でもよく、地図�
   await page.click("#sel-fuji"); await page.click("#fuji-higher"); expect(await app(page, "a => a.s.features.fuji.height")).toBeGreaterThan(1); await page.click("#fuji-narrower"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeLessThan(1);
   await page.click("#edit-undo"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeUndefined(); await page.click("#edit-redo"); expect(await app(page, "a => a.s.features.fuji.scale")).toBeLessThan(1);
   for (let i = 0; i < 12; i++) await page.click("#fuji-wider");   // widening is refused once the mountain would touch the coast: the map stays valid
-  expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error' && i.step === 'features').length")).toBe(0); expect(await app(page, "a => a.s.features.fuji.scale ?? 1")).toBeLessThanOrEqual(2);
+  expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error' && i.step === 'features').length")).toBe(0); expect(await app(page, "a => a.s.features.fuji.scale ?? 1")).toBeLessThanOrEqual(5);   // (Stage 33: no coast limit any more; only the 5x cap)
   await page.click("#sel-biwa"); await page.click("#biwa-smaller"); await page.click("#biwa-smaller"); await page.click("#biwa-smaller"); expect(await app(page, "a => a.s.features.biwa.scale")).toBeLessThan(1);
   await page.waitForFunction(() => !(window as any).__kfm.generating && (window as any).__kfm.terrain, null, { timeout: 60000 });
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
@@ -1145,7 +1145,7 @@ test("Stage 30A: 山脈ボタン→一覧と地図タップが同じ選択にな
   await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => a.rangeSel")).toBe(null);
   // persistence: the edit comes back after a reload
   await page.waitForTimeout(800); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
-  expect(await app(page, "a => a.s.rangeEdits?.akaishi")).toBe(0);
+  expect(await app(page, "a => a.s.rangeEdits?.akaishi")).toBe(-0.05);
   expect(errs).toEqual([]);
 });
 
