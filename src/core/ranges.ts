@@ -23,10 +23,15 @@ export const RANGES: RangeDef[] = [
   { id: "kyushu", name: "九州山地", block: "九州", island: "kyushu", line: [[131.40, 33.10], [131.30, 32.60], [131.00, 32.20]], core: 12, edge: 30 },
 ];
 /** The factor on a range's relief: 0 (worn to plain) .. 2 (twice as high), in steps of 0.1 -- additive, because a multiplicative step could never reach 0, the plain. (Fuji's height steps are ×1.1 within 0.5..1.3.) */
-export const RANGE_LIMITS: [number, number] = [0, 2];
+/** Stage 33: below the plain (0) there is one more state: the range turned into a lake (x-0.05). */
+export const RANGE_LAKE = -0.05;
+export const RANGE_LIMITS: [number, number] = [RANGE_LAKE, 2];
 export const RANGE_STEP = 0.1;
 export const RANGE_MAX_M = 4900;   // = Fuji's tallest (3776 m x 1.3): an amplified range never passes the highest ground the game already allows
-export const clampRange = (v: number) => Math.round(Math.max(RANGE_LIMITS[0], Math.min(RANGE_LIMITS[1], v)) * 10) / 10;
+export const clampRange = (v: number) => (v < RANGE_LAKE / 2 ? RANGE_LAKE : Math.round(Math.max(0, Math.min(RANGE_LIMITS[1], v)) * 10) / 10);
+/** One press up (+1) or down (-1): lake, plain, then 0.1 steps. */
+export const nextRange = (cur: number, dir: 1 | -1) => (dir > 0 ? (cur <= RANGE_LAKE ? 0 : clampRange(cur + RANGE_STEP)) : cur <= 0 ? RANGE_LAKE : cur <= RANGE_STEP + 1e-9 ? 0 : clampRange(cur - RANGE_STEP));
+export const rangeLabel = (m: number) => (m <= RANGE_LAKE ? "湖(×−0.05)" : m === 0 ? "平野(×0)" : `高さ×${m.toFixed(1)}`);
 export const rangeFactor = (edits: Record<string, number> | undefined, id: string) => (edits && Number.isFinite(edits[id]) ? clampRange(edits[id]) : 1);
 export const rangeById = (id: string) => RANGES.find((r) => r.id === id);
 /** Keeps only known ranges with a factor that differs from 1 (what is stored, hashed and saved). */

@@ -124,6 +124,8 @@ export class Renderer {
   featureSel: "biwa" | "fuji" | null = null;
   /** Stage 30A: the mountain range being edited -- its crest line and core half-width (world km); drawn with the same yellow outline as Fuji and Biwa */
   rangeSel: { pts: Vec[]; core: number } | null = null;
+  /** Stage 33: the cells of the selected new mountain / lake (yellow squares) and the candidate place being chosen */
+  creationSel: { cells: Vec[]; cell: number } | null = null; createPending: Vec | null = null;
   /** Stage 11: the stroke of a range picked with the 区間 tool (drawn highlighted). */
   ridgeSel: { key: "sw" | "ne"; si: number } | null = null;
   /** How many range strokes the last redraw put on the map (0 on the road map; for tests). */
@@ -188,6 +190,7 @@ export class Renderer {
     if (gmOn && LAKE_LIST.length && s.layers.lakes) {
       this.lakeG ??= buildLakeGraphics(); this.lakeG.small.visible = z >= 0.6; this.base.addChild(this.lakeG.big); this.base.addChild(this.lakeG.small);
     }
+    if (t && s.layers.lakes && t.freshLakeCells?.length) { const c = t.grid.cell; for (const k of t.freshLakeCells) { const x = t.grid.x0 + ((k % t.grid.nx) + 0.5) * c, y = t.grid.y0 + (((k / t.grid.nx) | 0) + 0.5) * c; lakes.rect(x - c / 2, -(y + c / 2), c, c).fill({ color: WATER.lake }); } }   // Stage 33: the lakes the player made (freshwater, cell by cell)
     this.base.addChild(lakes);
     if (gmOn && LAKE_LIST.length && s.layers.lakes && this.biwaUnmoved(s)) { if (this.biwaIsl && this.biwaIslBg !== this.bg) { this.biwaIsl.destroy(); this.biwaIsl = null; } this.biwaIslBg = this.bg; this.biwaIsl ??= buildBiwaIslands(this.bg === "roadmap" ? ROAD_LAND : 0x93b266, featureWorld(s, "biwa") as unknown as [number, number][]); this.base.addChild(this.biwaIsl); }
     if (showTerrain && t) this.drawHydro(t, s, px);
@@ -209,6 +212,8 @@ export class Renderer {
       h.circle(c[0], c[1], px(8)).stroke({ width: px(2.5), color: col }).fill({ color: 0xffffff, alpha: 0.5 });
       this.overlay.addChild(h);
     }
+    if (this.creationSel) { const h = new Graphics(), c = this.creationSel; for (const q of c.cells) h.rect(q[0] - c.cell / 2, -q[1] - c.cell / 2, c.cell, c.cell).fill({ color: 0xfff3a0, alpha: 0.45 }).stroke({ width: px(2), color: 0xffd400, alpha: 0.95 }); this.overlay.addChild(h); }
+    if (this.createPending) { const h = new Graphics(), q = this.createPending, r = px(11); h.circle(q[0], -q[1], r).stroke({ width: px(2), color: 0x00a8ff }); h.moveTo(q[0] - r * 1.6, -q[1]).lineTo(q[0] + r * 1.6, -q[1]).moveTo(q[0], -q[1] - r * 1.6).lineTo(q[0], -q[1] + r * 1.6).stroke({ width: px(2), color: 0x00a8ff }); this.overlay.addChild(h); }
     if (this.rangeSel && this.rangeSel.pts.length > 1) {   // Stage 30A: the selected range -- a yellow band as wide as its core (never thinner than a fingertip) with a solid crest line and edge lines, like Fuji's / Biwa's outline
       const rs = this.rangeSel, h = new Graphics(), cl = rs.pts.map(P), wd = 2 * Math.max(rs.core, px(11));
       const path = () => { h.moveTo(cl[0][0], cl[0][1]); for (const q of cl.slice(1)) h.lineTo(q[0], q[1]); };
@@ -234,6 +239,7 @@ export class Renderer {
     }
     if (s.layers.cities) this.drawCities(s, t, showTerrain, px); this.drawSeats(s, t, px);
   }
+  private chains2Of: { t: TerrainResult; chains: { pts: number[]; w: number }[] } | null = null;
   private keepOf: { t: TerrainResult; keep: boolean[] } | null = null; private chainsOf: { t: TerrainResult; chains: { pts: number[]; w: number }[] } | null = null;
   private hokb: { t: TerrainResult; a: number[] } | null = null;
   private hokkaidoBorders(t: TerrainResult): number[] {
@@ -250,6 +256,12 @@ export class Renderer {
       if (this.chainsOf?.t !== t) this.chainsOf = { t, chains: streamChains(t.streams, this.keepOf.keep).map((c) => ({ pts: smoothLine(c.pts), w: c.w })) };
       for (const c of this.chainsOf.chains) {
         const b = buckets[c.w < 1.5 ? 0 : c.w < 3 ? 1 : 2]; b.moveTo(c.pts[0], -c.pts[1]); for (let i = 2; i < c.pts.length; i += 2) b.lineTo(c.pts[i], -c.pts[i + 1]);
+      }
+      // Stage 33: second-class rivers -- thinner, lighter, and only from the closer views (the national view shows first-class rivers only)
+      if (t.streams2?.length && this.view.zoom >= 0.8) {
+        if (this.chains2Of?.t !== t) { const keep2 = streamKeep(t.streams2, 20); this.chains2Of = { t, chains: streamChains(t.streams2, keep2).map((c) => ({ pts: smoothLine(c.pts), w: c.w })) }; }
+        const g2 = new Graphics(); for (const c of this.chains2Of.chains) { g2.moveTo(c.pts[0], -c.pts[1]); for (let i = 2; i < c.pts.length; i += 2) g2.lineTo(c.pts[i], -c.pts[i + 1]); }
+        g2.stroke({ width: px(0.9), color: WATER.river, alpha: 0.65, cap: "round", join: "round" }); if (s.real && this.gm) g2.mask = this.gm.mask; this.base.addChild(g2);
       }
       const minBucket = this.view.zoom < 0.35 ? 2 : this.view.zoom < 0.8 ? 1 : 0;   // national view: only the big rivers
       buckets.forEach((b, n) => { if (n < minBucket) { b.destroy(); return; } b.stroke({ width: px(1 + n * 1.1), color: WATER.river, alpha: 0.95, cap: "round", join: "round" }); if (s.real && this.gm) b.mask = this.gm.mask; this.base.addChild(b); });
