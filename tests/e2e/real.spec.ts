@@ -1361,7 +1361,7 @@ test("Stage 33: 稜線メニューは無く、新規で山・湖を平地の地�
   await wizTo(page, 0); await page.click("#edit-create"); await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 2 }, true), pos); const [tx, ty] = await screenOf(page, pos); await page.mouse.click(tx, ty);
   expect(await app(page, "a => a.creationSel")).toBe(1); await page.click("#creation-del"); expect(await app(page, "a => a.s.creations")).toBeUndefined();
   // a lake the same way; the range menu names plain and lake
-  await page.click("#create-lake"); await page.mouse.click(tx, ty); await page.click("#create-confirm"); expect(await page.textContent("#creation-level")).toContain("湖");
+  await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); await page.click("#create-lake"); await page.mouse.click(tx, ty); await page.click("#create-confirm"); expect(await page.textContent("#creation-level")).toContain("湖");
   await page.click("#edit-ranges"); await page.click("#range-kiso"); await page.click("#range-less", { force: true }).catch(() => {}); for (let i = 0; i < 12; i++) await page.click("#range-less", { force: true }).catch(() => {});
   expect(await app(page, "a => a.s.rangeEdits.kiso")).toBe(-0.05); expect(await page.textContent("#range-level")).toContain("湖");
   expect(errs).toEqual([]);
@@ -1371,6 +1371,7 @@ test("Stage 33: 富士山・琵琶湖は海岸近くにも置け(中心が陸な
   const errs = watchErrors(page); await bootReal(page);
   await page.evaluate(() => { const a = (window as any).__kfm; a.store.set((s: any) => { s.features.fuji.pos = a.world.cities.find((c: any) => c.name === "静岡市").pos; }); });
   expect(await app(page, "a => a.issues.some((i) => i.code === 'fuji.coast')")).toBe(false);
+  await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });
   expect(await app(page, "a => a.terrain.streams2.length > 500")).toBe(true);
   await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: 0.3 }, true); }); const lowZ = await app(page, "a => a.r.view.zoom") as number;
   const n = () => page.evaluate(() => { const a = (window as any).__kfm; let c = 0; const walk = (o: any) => { if (o && o.stroke !== undefined && o.alpha !== undefined) {} for (const k of o?.children ?? []) walk(k); }; void walk; return a.r.chains2Of ? a.r.chains2Of.chains.length : 0; });
