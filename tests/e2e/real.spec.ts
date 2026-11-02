@@ -1373,8 +1373,8 @@ test("Stage 33: 富士山・琵琶湖は海岸近くにも置け(中心が陸な
   expect(await app(page, "a => a.issues.some((i) => i.code === 'fuji.coast')")).toBe(false);
   await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });
   expect(await app(page, "a => a.terrain.streams2.length > 500")).toBe(true);
-  await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: 0.3 }, true); }); const lowZ = await app(page, "a => a.r.view.zoom") as number;
+  await page.evaluate(() => { const a = (window as any).__kfm; a.setBg("terrain", false); a.r.setView({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: 0.3 }); }); await page.waitForTimeout(500); const lowZ = await app(page, "a => a.r.view.zoom") as number;
   const n = () => page.evaluate(() => { const a = (window as any).__kfm; let c = 0; const walk = (o: any) => { if (o && o.stroke !== undefined && o.alpha !== undefined) {} for (const k of o?.children ?? []) walk(k); }; void walk; return a.r.chains2Of ? a.r.chains2Of.chains.length : 0; });
-  expect(lowZ).toBeLessThan(0.8); const before = await n(); await page.evaluate(() => { const a = (window as any).__kfm; a.r.setView({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: 1.2 }, true); }); await page.waitForTimeout(600);
+  expect(lowZ).toBeLessThan(0.8); const before = await n(); await page.evaluate(() => { const a = (window as any).__kfm; a.setBg("terrain", false); a.r.setView({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: 1.2 }); }); await page.waitForTimeout(900);
   expect(await n()).toBeGreaterThan(before); expect(errs).toEqual([]);
 });
