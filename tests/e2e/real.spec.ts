@@ -259,6 +259,7 @@ test("限定の地形編集: capital, Alps and Fuji can be set before the first 
 });
 
 test("政策介入: 「点を使わず決定」が最初から並び、「この選択にする」は分野の直下、持ち点は繰り越される", async ({ page }) => {
+  test.setTimeout(300000);   // (the next window comes a decade of simulated time later: about 100 s at x20 in the software renderer, close to the default limit)
   const errs = watchErrors(page); await startReal(page, "heisei");
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "priority"; a.sim.speed = 20; });
   await page.waitForFunction(() => (window as any).__kfm.sim.policy.pending, null, { timeout: 60000 });
@@ -275,7 +276,7 @@ test("政策介入: 「点を使わず決定」が最初から並び、「この
   expect(await app(page, "a => a.sim.policy.pending")).toBeNull(); expect(await app(page, "a => a.sim.policy.points")).toBe(pointsBefore);   // the points stay in the pool
   expect(await app(page, "a => a.sim.policy.history.length")).toBe(histBefore + 1); expect(await app(page, "a => a.sim.policy.history[a.sim.policy.history.length - 1].none")).toBe(true);
   expect(await app(page, "a => a.sim.mods.filter((m) => m.kind === 'policy' && m.from === a.sim.policy.lastWindow).length")).toBe(0);   // nothing was adopted
-  await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((n) => (window as any).__kfm.sim.policy.pending || (window as any).__kfm.sim.policy.points > n, pointsBefore, { timeout: 90000 });   // time runs again
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((n) => (window as any).__kfm.sim.policy.pending || (window as any).__kfm.sim.policy.points > n, pointsBefore, { timeout: 240000 });   // time runs again
   expect(errs).toEqual([]);
 });
 
