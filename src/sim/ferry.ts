@@ -206,7 +206,7 @@ function lakeCrossingsOf(w: World, lake: number[], tag: string): LakeCrossing[] 
   const out: LakeCrossing[] = [], l = pick(u, null); if (l) out.push(l);
   const add = (c: LakeCrossing | null) => { if (c && c.km >= LAKE_MIN_KM && !out.some((o) => (o.portA === c.portA && o.portB === c.portB) || (o.portA === c.portB && o.portB === c.portA))) out.push(c); };
   // Stage 8: the narrows -- the shortest stretch of open water between two shores of the same land (where a lake is first bridged); listed before the wide crossings
-  if (lake.length >= 1) {   // Stage 33: a lake of any size can be crossed where it is at least one cell (5 km) wide -- the 3 km of the plan, as far as a 5 km grid can say it
+  if (lake.length >= LAKE_CROSS_CELLS || out.length === 0) {   // Stage 33: a small lake that already has its long route keeps just that one (its cap is one service); one without a long route can still be crossed at its narrows --  a lake of any size can be crossed where it is at least one cell (5 km) wide -- the 3 km of the plan, as far as a 5 km grid can say it
     let best: [number, number, number] | null = null;
     for (let x = 0; x < shore.length; x++) for (let y = x + 1; y < shore.length; y++) {
       const a = shore[x], b = shore[y]; if (w.lm[a] !== w.lm[b]) continue; const pa = w.cellPos(a), pb = w.cellPos(b), d = dist(pa, pb); if (d < LAKE_NARROW_KM[0] || d > LAKE_NARROW_KM[1] || (best && d >= best[2])) continue;

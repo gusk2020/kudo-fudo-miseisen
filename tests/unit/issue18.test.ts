@@ -52,7 +52,7 @@ describe("Issue #18: where a lake or a mountain may stand", () => {
   it("Okinawa takes a shrunk Fuji and a shrunk Biwa (the 0.5x floor is lifted only for a small landmass), but not full size", () => {
     const { w } = realWorld(true), okc: number[] = []; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === "JP-47") okc.push(k);
     const ok = (which: "biwa" | "fuji", sc: number) => { for (const k of okc) for (let dx = -2; dx <= 2; dx += 2) { const s = realState(); const p = w.cellPos(k); s.features[which].pos = [p[0] + dx, p[1]]; s.features[which].scale = sc; if (which === "fuji" ? true : true) { const v = validate(s).filter((i) => i.step === "features" && i.severity === "error" && i.code.startsWith(which)); if (!v.length) return true; } } return false; };
-    expect(ok("fuji", 0.2)).toBe(true); expect(ok("biwa", 0.2)).toBe(true); expect(ok("fuji", 1)).toBe(false); expect(ok("biwa", 1)).toBe(false);
+    expect(ok("fuji", 0.2)).toBe(true); expect(ok("biwa", 0.2)).toBe(true); expect(ok("fuji", 1)).toBe(true); expect(ok("biwa", 1)).toBe(true);   // Stage 33: only the CENTRE must be on land; the coast outranks the feature and cuts it
   });
   it("the default lower bound 0.5 holds on a big island, and the anchor decides the host (not the prefecture border)", () => {
     const s = realState(); s.features.biwa.scale = 0.3; const e = validate(s).filter((i) => i.code === "biwa.minscale"); expect(e.length).toBe(1);
@@ -61,8 +61,8 @@ describe("Issue #18: where a lake or a mountain may stand", () => {
   it("spilling into the sea or onto another island, or sitting on the coast, is refused", () => {
     const s = realState(), L = lands(s), sea = realToWorld("honshu", s.bodies.honshu, lonLatToReal(143.5, 35.0));
     expect(featureHost(L, poseAt(realState(), "biwa", sea, 0.5))).toBeNull();
-    const big = realState(); big.features.biwa.scale = 5; expect(validate(big).some((i) => i.code === "biwa.coast")).toBe(true);
-    const coast = realState(); coast.features.fuji.pos = realToWorld("honshu", coast.bodies.honshu, lonLatToReal(139.85, 34.99)); expect(validate(coast).some((i) => i.code === "fuji.coast")).toBe(true);
+    const big = realState(); big.features.biwa.scale = 5; expect(validate(big).some((i) => i.code === "biwa.coast")).toBe(false);   // Stage 33: no longer refused on the real map
+    const coast = realState(); coast.features.fuji.pos = realToWorld("honshu", coast.bodies.honshu, lonLatToReal(139.85, 34.99)); expect(validate(coast).some((i) => i.code === "fuji.coast")).toBe(false);   // Stage 33: allowed (cut at the shore)
   });
 });
 
