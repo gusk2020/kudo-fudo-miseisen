@@ -27,7 +27,7 @@ import { basePop } from "./roles";
 import { currentSites } from "./sites";
 import type { SimState } from "./types";
 import type { WCity, World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 import { AIR_ONTIME, RAIL_ACCESS_H, SEA_ONTIME } from "./demand";
 import { rand } from "./engine";
 

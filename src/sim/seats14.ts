@@ -18,7 +18,7 @@ import { basePop } from "./roles";
 import { siteCapacity } from "./land";
 import type { SimState } from "./types";
 import type { World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export const SEAT_SHARE_MAX = 0.6, SEAT_FLOW = 0.08, SUBURB_H = 1.3, SUBURB_TAU = 0.6, MIN_SUBURB_POP = 20000;
 /** A suburb stops taking people once it is this big against the seat (so one town does not swallow the flow: the people spread over the towns of the plain). */

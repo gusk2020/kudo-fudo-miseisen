@@ -15,7 +15,8 @@
  *              any real city (SITE_REF_KM2) is squeezed -- fewer people at the start and a lower ceiling, the rest settle on the better land nearby.
  * Nothing here knows a place name: every number is read from the cell grid.
  */
-import { MTN_RIDGE_MIN, mountainBarrier, worldMemo, type World, type WCity } from "./world";
+import { MTN_RIDGE_MIN, mountainBarrier, type World, type WCity } from "./world";
+import { worldMemo } from "./worldMemo";
 import { techAt, TUNNEL_KM, facilityCostMult, type TechState } from "./tech";
 import type { Mode } from "./types";
 

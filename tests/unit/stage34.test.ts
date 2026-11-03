@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyG34, cellUnits, rateUnits, reclaimReport, stepReclaim, type G34Input, type Rec34, type TerrainLike } from "../../src/sim/reclaim34";
-import { resetWorldCaches, type World } from "../../src/sim/world";
+import type { World } from "../../src/sim/world";
+import { resetWorldCaches } from "../../src/sim/worldMemo";
 import type { SimState } from "../../src/sim/types";
 import type { SeatMove } from "../../src/sim/seatmove20";
 import { validateSimAgainstWorld } from "../../src/core/save2";

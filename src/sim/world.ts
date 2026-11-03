@@ -31,10 +31,6 @@ export interface World {
   /** Stage 34: the land was made with the enlargement / reclamation log (own copies of the land arrays, so growing them never touches the shared terrain). `g34new` = what building decided newly. */
   g34?: true; g34new?: G34Input; g34grown?: { key: string; role: string; from: number; to: number; cells: number }[];
 }
-/** Stage 34: every memo keyed on a World is made here, so the land changing under a running game (reclamation) can drop them all at once. */
-const MEMOS: WeakMap<World, unknown>[] = [];
-export function worldMemo<V>(): WeakMap<World, V> { const m = new WeakMap<World, V>(); MEMOS.push(m as WeakMap<World, unknown>); return m; }
-export function resetWorldCaches(w: World) { for (const m of MEMOS) m.delete(w); }
 export const POP_1950_SCALE = 0.32; // reference (modern) population -> 1950 level; a synthetic scaling, not a statistic
 
 /**

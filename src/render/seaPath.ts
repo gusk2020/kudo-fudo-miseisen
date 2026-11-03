@@ -5,7 +5,8 @@
  */
 import { MinHeap } from "../core/heap";
 import type { Vec } from "../core/types";
-import { worldMemo, type World } from "../sim/world";
+import type { World } from "../sim/world";
+import { worldMemo } from "../sim/worldMemo";
 
 const shoreMemo = worldMemo<Uint8Array>(), pathMemo = worldMemo<Map<string, Vec[]>>();
 /** Cells of water: distance (in cells, capped at 6) to the nearest land. */

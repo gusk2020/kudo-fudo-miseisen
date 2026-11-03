@@ -7,7 +7,8 @@
  *  Land is never joined to another land mass: a cell is added only if every land cell around it (all 8 neighbours) already belongs to the mass it grows.
  *  Everything that changed the land is recorded in an ordered log; a world is rebuilt from the terrain plus that log, so the same log always gives the same land. */
 import type { Vec } from "../core/types";
-import { resetWorldCaches, type World } from "./world";
+import type { World } from "./world";
+import { resetWorldCaches } from "./worldMemo";
 import type { SimState } from "./types";
 import { homeCity, subCity } from "./ceremony";
 import { DEFAULT_CAPITAL, DEFAULT_SUB } from "../core/seat";

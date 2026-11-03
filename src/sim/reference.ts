@@ -5,7 +5,7 @@
  */
 import REF from "../data/reference-lines.json";
 import type { World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export interface RefGrids {
   rail: Uint8Array;        // 0 none, 1 within a cell of a real line, 2 on a real line

@@ -14,7 +14,7 @@
 import { basePop } from "./roles";
 import { dist } from "../core/geom";
 import type { WCity, World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 import type { Mode, SimState } from "./types";
 import type { Vec } from "../core/types";
 

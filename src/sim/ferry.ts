@@ -20,7 +20,7 @@ import { createProject } from "./planning";
 import { techAt } from "./tech";
 import { modeOf, type Mode, type SimEdge, type SimState } from "./types";
 import type { World, WCity } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 
 /** The longest single crossing a ferry service will run. Okinawa to Kyushu is the longest the data needs (about 640 km). */
 export const MAX_FERRY_KM = 760;

@@ -30,7 +30,7 @@ import { newEdgeDefaults, newId, pushHist } from "./network";
 import { techAt } from "./tech";
 import { modeOf, type Mode, type SimEdge, type SimProject, type SimState } from "./types";
 import type { World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export const CROSSING_TAG = "【海峡連絡】";
 /** At most this many crossing projects of one mode at once; and a pair is not tried again within COOLING_YEARS of an abandoned attempt. */

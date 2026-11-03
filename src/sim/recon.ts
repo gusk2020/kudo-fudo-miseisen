@@ -18,7 +18,7 @@ import { homeCity, subCity } from "./ceremony";
 import type { Recon } from "./kaigen";
 import type { SimState } from "./types";
 import type { World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export const RECON_LABEL = { pacific: "太平洋側重視", japansea: "日本海側重視", neutral: "海側は中立", concentrate: "一極集中", disperse: "地方分散" } as const;
 export const RECON_GROWTH = 0.0035, RECON_INDUSTRY = 0.08, RECON_SHARE = 0.25, RECON_PLAN = 0.25, CORE_KM = 150, SUB_CORE = 0.7;

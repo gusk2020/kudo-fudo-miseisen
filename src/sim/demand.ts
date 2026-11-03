@@ -10,7 +10,7 @@ import { airportMap, hubDemand, JET_YEAR, type HubTotals } from "./hubs";
 import { MinHeap } from "../core/heap";
 import { modeOf, type Mode, type Standard, type Surface, type SimEdge, type SimState } from "./types";
 import type { World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 import { realToLonLat } from "../core/data";
 
 export const KFLOW = 1.5e-3, KVIL = 0.04, KLOC = 0.02;

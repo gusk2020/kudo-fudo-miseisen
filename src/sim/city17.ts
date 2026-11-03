@@ -13,7 +13,7 @@ import { basePop } from "./roles";
 import type { Analysis } from "./demand";
 import type { SimState } from "./types";
 import type { World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export const LATENT_START = 0.1;     // a candidate starts with this share of its census size; the rest stays in the capital until the conditions bring it out
 export const CITY_RATE = 0.1;       // share of the gap to its target a place closes in a year

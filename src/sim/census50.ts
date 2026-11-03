@@ -12,7 +12,7 @@
  * start, not a statistic). Older games never read this: they carry no `roles.p15`.
  */
 import type { WCity, World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 
 const T: Record<string, [number, number]> = {
   HK: [4296, 0.43], "JP-02": [1283, 0.27], "JP-03": [1347, 0.22], "JP-04": [1663, 0.33], "JP-05": [1309, 0.22], "JP-06": [1357, 0.22], "JP-07": [2062, 0.24],

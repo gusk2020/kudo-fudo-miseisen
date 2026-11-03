@@ -29,7 +29,8 @@ import { buildIndex, layPath } from "./network";
 import { hubAppetite18, hubThreshold18 } from "./policy18";
 import { goodsPull, paxPull } from "./sites";
 import { modeOf, type AirportState, type HubRoute, type HubsState, type PortState, type SimState } from "./types";
-import { pathfind, worldMemo, type World } from "./world";
+import { pathfind, type World } from "./world";
+import { worldMemo } from "./worldMemo";
 
 type Key = [number, number][];
 const at = (k: Key, y: number) => { if (y <= k[0][0]) return k[0][1]; for (let i = 1; i < k.length; i++) if (y <= k[i][0]) { const [a, va] = k[i - 1], [b, vb] = k[i]; return va + ((vb - va) * (y - a)) / (b - a); } return k[k.length - 1][1]; };

@@ -17,7 +17,7 @@ import { stanceAt } from "./kaigen";
 import { setEdgeState } from "./network";
 import { modeOf, type SimEdge, type SimState } from "./types";
 import type { WCity, World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export const OCEAN_TAG = "外洋航路", ISLAND_TAG = "離島航路";
 export const OCEAN_MIN_KM = 250, OCEAN_FROM = 1960, OCEAN_IDLE_YEARS = 6, OCEAN_REST_YEARS = 15, OCEAN_MAX_RESTS = 2, ISLAND_NEIGHBOUR_KM = 120;

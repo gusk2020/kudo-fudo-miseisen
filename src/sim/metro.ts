@@ -20,7 +20,7 @@ import { H_TUNNEL, hardnessAt, slopeOf } from "./land";
 import { modeOf } from "./types";
 import type { SimState } from "./types";
 import type { World } from "./world";
-import { worldMemo } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export const AREA_K = 800, AREA_POW = 0.8, PLAIN_F = 1.5, LOW_F = 1, HIGH_F = 0.5, PLAIN_M = 120, PLAIN_SLOPE = 4, LOW_M = 500, MAX_H = 1.5;
 /** Stage 15: a town within SAT_H_15 hours of a city 1.5x its size is its satellite in a Stage 15 game (a commute of an hour and a half by the network as it is). */
