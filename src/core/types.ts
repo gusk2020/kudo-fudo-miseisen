@@ -31,6 +31,8 @@ export interface ProjectState {
   alpsRemoved?: { ne?: true; sw?: true };
   /** Stage 30A: relief factor per major mountain range (src/core/ranges.ts); only ranges that differ from 1 are stored. Absent = every range as the DEM has it */
   rangeEdits?: Record<string, number>;
+  /** Stage 33: mountains and lakes made on plain ground (src/core/creations.ts); absent = none */
+  creations?: import("./creations").Creation[];
   /** Stage 10: the layers the player has switched by hand (their choice is never overridden by a later default, e.g. signs OFF after the ceremony). */
   layersSet?: string[];
   /** Stage 11: which map is shown, the road map or the terrain map -- chosen in the settings, kept with the game (a display choice: not part of the map hash). */

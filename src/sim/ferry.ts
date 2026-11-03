@@ -176,10 +176,19 @@ export const LAKE_EXTRA_CELLS = 40, LAKE_BRIDGE_TAG = "【湖上橋】", LAKE_PO
 export const maxLakeRoutes = (cells: number) => Math.max(1, Math.min(4, 1 + Math.floor(cells / 20)));
 export const LAKE_TAG = "【湖】", LAKE_MIN_CELLS = 4, LAKE_CROSS_CELLS = 20, LAKE_MIN_KM = 12, LAKE_PORT_COST_PER_KM = 0.004, LAKE_SNAP_KM = 20, LAKE_CROSS_LOAD = 0.5, LAKE_CROSS_YEAR = 1965;
 export const isLakeFerry = (e: SimEdge) => e.facility === "ferry" && (e.facilityName ?? "").startsWith(`ferry:${LAKE_TAG}`);
-export interface LakeCrossing { id: "long" | "narrow" | "cross" | "cross2" | "cross3"; portA: number; portB: number; km: number; nameA: string; nameB: string }
+export interface LakeCrossing { tag?: string; id: "long" | "narrow" | "cross" | "cross2" | "cross3"; portA: number; portB: number; km: number; nameA: string; nameB: string }
 /** The ferry routes the lake allows (pure function of the map). `long` follows the lake's long axis; `cross` (big lakes only) its short one. */
 export function lakeCrossings(w: World): LakeCrossing[] {
-  const lake: number[] = []; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 2) lake.push(k); if (lake.length < LAKE_MIN_CELLS) return [];
+  // Stage 33: every lake is judged on its own (Lake Biwa, then the lakes the player made, biggest first); a game with one lake behaves exactly as before
+  const all: number[] = []; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 2) all.push(k); if (!all.length) return [];
+  const seen = new Set<number>(), comps: number[][] = [];
+  for (const k0 of all) { if (seen.has(k0)) continue; const comp: number[] = [], st = [k0]; seen.add(k0); while (st.length) { const c = st.pop()!; comp.push(c); const i = c % w.nx, j = (c / w.nx) | 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= w.nx || b >= w.ny) continue; const q = b * w.nx + a; if (w.t.land[q] === 2 && !seen.has(q)) { seen.add(q); st.push(q); } } } comps.push(comp); }
+  comps.sort((p, q) => q.length - p.length || Math.min(...p) - Math.min(...q));
+  const out: LakeCrossing[] = []; comps.forEach((lake, n) => { for (const c of lakeCrossingsOf(w, lake, n === 0 ? "" : `湖${n + 1}`)) out.push(c); }); return out;
+}
+/** The crossings of ONE lake (its cells). `tag` tells a second lake's routes apart from the first's. */
+function lakeCrossingsOf(w: World, lake: number[], tag: string): LakeCrossing[] {
+  if (!lake.length) return [];
   const N8: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]], shore: number[] = [], seen = new Set<number>();
   for (const k of lake) { const i = k % w.nx, j = (k / w.nx) | 0; for (const [di, dj] of N8) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= w.nx || b >= w.ny) continue; const q = b * w.nx + a; if (w.t.land[q] === 1 && w.lm[q] > 0 && !seen.has(q)) { seen.add(q); shore.push(q); } } }
   if (shore.length < 2) return [];
@@ -192,19 +201,19 @@ export function lakeCrossings(w: World): LakeCrossing[] {
     const cand = near ? shore.filter((k) => Math.abs(proj(k, other) - at) < w.cell * (at ? 1.6 : 3)) : shore;
     if (cand.length < 2) return null; let lo = cand[0], hi = cand[0]; for (const k of cand) { if (proj(k, axis) < proj(lo, axis)) lo = k; if (proj(k, axis) > proj(hi, axis)) hi = k; }
     if (w.lm[lo] !== w.lm[hi]) return null; const km = Math.round(dist(w.cellPos(lo), w.cellPos(hi)) * 10) / 10; if (km < LAKE_MIN_KM) return null;
-    const na = town(lo), nb = town(hi); return { id, portA: lo, portB: hi, km, nameA: na, nameB: nb === na ? `${nb}対岸` : nb };
+    const na = town(lo), nb = town(hi); return { id, portA: lo, portB: hi, km, nameA: na, nameB: nb === na ? `${nb}対岸` : nb, ...(tag ? { tag } : {}) };
   };
   const out: LakeCrossing[] = [], l = pick(u, null); if (l) out.push(l);
   const add = (c: LakeCrossing | null) => { if (c && c.km >= LAKE_MIN_KM && !out.some((o) => (o.portA === c.portA && o.portB === c.portB) || (o.portA === c.portB && o.portB === c.portA))) out.push(c); };
   // Stage 8: the narrows -- the shortest stretch of open water between two shores of the same land (where a lake is first bridged); listed before the wide crossings
-  if (lake.length >= LAKE_CROSS_CELLS) {
+  if (lake.length >= LAKE_CROSS_CELLS || out.length === 0) {   // Stage 33: a small lake that already has its long route keeps just that one (its cap is one service); one without a long route can still be crossed at its narrows --  a lake of any size can be crossed where it is at least one cell (5 km) wide -- the 3 km of the plan, as far as a 5 km grid can say it
     let best: [number, number, number] | null = null;
     for (let x = 0; x < shore.length; x++) for (let y = x + 1; y < shore.length; y++) {
       const a = shore[x], b = shore[y]; if (w.lm[a] !== w.lm[b]) continue; const pa = w.cellPos(a), pb = w.cellPos(b), d = dist(pa, pb); if (d < LAKE_NARROW_KM[0] || d > LAKE_NARROW_KM[1] || (best && d >= best[2])) continue;
       let wet = 0; const S = 12; for (let k = 1; k < S; k++) { const c = w.cellOf([pa[0] + ((pb[0] - pa[0]) * k) / S, pa[1] + ((pb[1] - pa[1]) * k) / S]); if (c >= 0 && w.t.land[c] === 2) wet++; }
-      if (wet >= 0.7 * (S - 1)) best = [a, b, d];
+      if (wet >= (lake.length >= LAKE_CROSS_CELLS ? 0.7 * (S - 1) : 2)) best = [a, b, d];
     }
-    if (best) { const na = town(best[0]), nb = town(best[1]); out.push({ id: "narrow", portA: best[0], portB: best[1], km: Math.round(best[2] * 10) / 10, nameA: na, nameB: nb === na ? `${nb}対岸` : nb }); }
+    if (best) { const na = town(best[0]), nb = town(best[1]); out.push({ id: "narrow", portA: best[0], portB: best[1], km: Math.round(best[2] * 10) / 10, nameA: na, nameB: nb === na ? `${nb}対岸` : nb, ...(tag ? { tag } : {}) }); }
   }
   if (lake.length >= LAKE_CROSS_CELLS) add(pick(n, [0, 0]));
   // Stage 8: a big lake has room for more crossings, a quarter of the way along its length from each end (a small one never gets them)
@@ -222,7 +231,7 @@ export function makeLakeBridgeAt(sim: SimState, w: World, ca: { cell: number; po
 }
 /** What the port works cost (budget units, a rough proportional figure). */
 export const lakePortCost = (c: LakeCrossing) => Math.round((0.05 + LAKE_PORT_COST_PER_KM * c.km) * 1000) / 1000;
-export const lakeFerryName = (c: LakeCrossing) => `ferry:${LAKE_TAG}${c.nameA}港〜${c.nameB}港湖上フェリー${c.id === "long" ? "" : "(横断)"}`;
+export const lakeFerryName = (c: LakeCrossing) => `ferry:${LAKE_TAG}${c.nameA}港〜${c.nameB}港湖上フェリー${c.id === "long" ? "" : "(横断)"}${c.tag ? `【${c.tag}】` : ""}`;
 export const lakeEdge = (sim: SimState, c: LakeCrossing): SimEdge | null => Object.values(sim.edges).find((e) => isLakeFerry(e) && e.facilityName === lakeFerryName(c)) ?? null;
 /** A port is useful only if roads reach it: share a road that already passes within LAKE_SNAP_KM, else lay a rural access road to the nearest road (or city). Returns the cell the port ends up at. */
 export function connectPort(sim: SimState, w: World, cell: number, known?: ReturnType<typeof buildIndex>): number {

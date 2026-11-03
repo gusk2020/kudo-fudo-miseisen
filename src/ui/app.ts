@@ -20,8 +20,9 @@ import { TerrainClient } from "../core/terrainClient";
 import { GeoMap } from "../core/geoid";
 import { STEPS, STEP_LABELS, type IslandId, type Issue, type Op, type Place, type StepId, type Vec } from "../core/types";
 import { clampOp } from "../core/warp";
+import { MAX_CREATIONS, PLAIN_MAX_M, clampLevel, creationCells, creationDiameterKm, creationFootprint, creationHeightM, excludedSite, type Creation, type CreationKind } from "../core/creations";
 import { isSeatCell, nearestLandCell, seatConflict, stepSeat, type Dir } from "../core/placement";
-import { RANGES, RANGE_LIMITS, RANGE_STEP, clampRange, rangeAt, rangeById, rangeFactor, rangeWorldLine } from "../core/ranges";
+import { RANGES, RANGE_LIMITS, RANGE_STEP, clampRange, nextRange, rangeLabel, rangeAt, rangeById, rangeFactor, rangeWorldLine } from "../core/ranges";
 import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
@@ -44,7 +45,7 @@ import { fitView, hlBounds, type HlTarget } from "./lines23";
 import { closeRadio, showRadio } from "./radioWin";
 import { CAND_1945 } from "../sim/kaigen";
 
-type Tool = "view" | "range" | "seatpick" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "ridge-pick" | "cer-kokudo1" | "cer-fudo1" | "cer-kokudo0" | "pick" | "why";
+type Tool = "view" | "range" | "create" | "seatpick" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "ridge-pick" | "cer-kokudo1" | "cer-fudo1" | "cer-kokudo0" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const pathLen = (p: Vec[]) => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; };
 export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, any> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -65,7 +66,7 @@ function toControlPoints(pts: Vec[]): Vec[] {
 }
 /** Stage 11: set a feature's two sizes (x along its own axis, y along the other); equal sizes are stored as the single `scale`, and 1 x 1 as nothing at all, exactly as older saves. */
 export function setFeatureSize(f: { scale?: number; scaleY?: number }, kx: number, ky: number) { if (kx === 1 && ky === 1) { delete f.scale; delete f.scaleY; return; } f.scale = kx; if (ky === kx) delete f.scaleY; else f.scaleY = ky; }
-const stateKey = (s: Store["state"]) => JSON.stringify([s.seed, s.bodies, s.features, s.ridges, s.ridgeExtra ?? null, s.islands ? 1 : 0, ...(s.alpsRemoved ? [s.alpsRemoved] : []), ...(s.rangeEdits ? [s.rangeEdits] : [])]);
+const stateKey = (s: Store["state"]) => JSON.stringify([s.seed, s.bodies, s.features, s.ridges, s.ridgeExtra ?? null, s.islands ? 1 : 0, ...(s.alpsRemoved ? [s.alpsRemoved] : []), ...(s.rangeEdits ? [s.rangeEdits] : []), ...(s.creations ? [s.creations] : [])]);
 /** Stage 11: the four range tools: draw north / south, move points, select a stroke (区間). */
 const isRidgeTool = (t: string) => t === "ridge-ne" || t === "ridge-sw" || t === "ridge-edit" || t === "ridge-pick";
 /** Stage 11: remove one stroke of a range (0 = the first: the next one takes its place). */
@@ -164,7 +165,7 @@ export class App {
   }
   render() { if (!isRidgeTool(this.tool) && this.bgBeforeRidge) { const b0 = this.bgBeforeRidge; this.bgBeforeRidge = null; this.bg = b0; this.r.setBg(b0); }   // leaving the range tools by any route puts the map back
     if (this.real && this.s.bg && this.s.bg !== this.bg && !this.bgBeforeRidge) { this.bg = this.s.bg; this.r.setBg(this.bg); }   // a loaded game brings its own map choice
-    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.rangeSel = this.tool === "range" && this.rangeSel && this.editable() ? (() => { const d = rangeById(this.rangeSel!); return d ? { pts: rangeWorldLine(this.s, d), core: d.core } : null; })() : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = this.activeSeats(), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.seatOverride = this.sim?.e2200 && w0 ? this.seatPoints(w0) : null; this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim, shaped: !!x.islet.shape, tiny: (x.islet.shapeAreaKm2 ?? x.islet.area) < 1 })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
+    this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.rangeSel = this.tool === "range" && this.rangeSel && this.editable() ? (() => { const d = rangeById(this.rangeSel!); return d ? { pts: rangeWorldLine(this.s, d), core: d.core } : null; })() : null; this.r.creationSel = this.tool === "create" ? this.creationOutline() : null; this.r.createPending = this.tool === "create" && this.createPick ? this.createPick.w : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = this.activeSeats(), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.seatOverride = this.sim?.e2200 && w0 ? this.seatPoints(w0) : null; this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim, shaped: !!x.islet.shape, tiny: (x.islet.shapeAreaKm2 ?? x.islet.area) < 1 })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
@@ -218,7 +219,7 @@ export class App {
     try {
       const res = await this.client.generate(JSON.parse(JSON.stringify(this.s)), (p) => { this.genProgress = p; this.status(); });
       if (stateKey(this.s) !== key) return;
-      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.updateFitExtra(); this.attachPendingSim(); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.restoreCer();
+      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.updateFitExtra(); this.noteCreations(); this.attachPendingSim(); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.restoreCer();
     } catch (e: any) { if (String(e?.message) !== "cancelled") this.toast("地形生成に失敗: " + e?.message); }
     finally { if (this.genTok === tok) { this.generating = false; this.render(); this.buildUI(); } }   // the busy state is always cleared, whatever happened
   }
@@ -262,7 +263,7 @@ export class App {
   private bodyForTool(): IslandId { return this.s.step === 1 ? "honshu" : this.activeBody; }
   // Stage 9 (Pixel 7a report): drawing a range starts a terrain rebuild that takes seconds on a phone; the range tools must keep working meanwhile (each new
   // edit simply restarts the rebuild), or the next stroke turns into a pan of the map and seems to do nothing
-  private editable() { const ridgeTool = isRidgeTool(this.tool); return this.tool !== "view" && (!this.generating || ridgeTool || this.tool === "range") && !this.catching && (this.s.step === 6 || !this.store.locked); }
+  private editable() { const ridgeTool = isRidgeTool(this.tool); return this.tool !== "view" && (!this.generating || ridgeTool || this.tool === "range" || this.tool === "create") && !this.catching && (this.s.step === 6 || !this.store.locked); }
   handler() {
     return {
       active: () => this.editable(),
@@ -323,6 +324,7 @@ export class App {
     }
     if (t === "seatpick") { this.grab = { t, w }; return true; }
     if (t === "range") { this.grab = { t: "rangepick", w }; return true; }
+    if (t === "create") { this.grab = { t: "createpick", w }; return true; }
     if (t === "pick" || t === "why") { this.grab = { t, w }; return true; }
     if (t === "pull" || t === "bulge" || t === "dent" || t === "move") {
       const id = this.bodyForTool(), bs = s.bodies[id];
@@ -363,7 +365,7 @@ export class App {
     const g = this.grab; if (!g) return;
     if (g.t === "cer-kokudo1" || g.t === "cer-fudo1" || g.t === "cer-kokudo0") { if (dist(g.pts[g.pts.length - 1], w) >= 8 / this.r.view.zoom) { g.pts.push(w); this.cerLive = g.pts; this.renderRoads(); } return; }
     if (g.t === "cer-move") { g.strokes[g.si][g.i] = w; g.moved = true; const d = this.cerDraft[g.kind as CerKind]; if (d) { d.strokes = g.strokes; d.pts = d.strokes.flat(); } this.renderRoads(); return; }
-    if (g.t === "pick" || g.t === "why" || g.t === "seatpick" || g.t === "rangepick") { g.w = w; return; }
+    if (g.t === "pick" || g.t === "why" || g.t === "seatpick" || g.t === "rangepick" || g.t === "createpick") { g.w = w; return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
       const scl = g.place0.scale, r = this.brushKm / scl;
       let op: Op;
@@ -388,6 +390,7 @@ export class App {
     if (g.t === "cer-move") { if (g.moved) this.cerCommit(g.kind, g.strokes, g.before); else this.renderRoads(); return; }
     if (g.t === "seatpick") { this.tapSeat(g.w); return; }
     if (g.t === "rangepick") { this.pickRangeAt(g.w); return; }
+    if (g.t === "createpick") { this.tapCreate(g.w); return; }
     if (g.t === "pick") { this.pickScenery(g.w); return; }
     if (g.t === "why") { this.whyAt(g.w); return; }
     if (g.t === "pull" || g.t === "bulge" || g.t === "dent") {
@@ -448,6 +451,89 @@ export class App {
     if (validate(cand).some((i) => i.severity === "error" && i.step === "features")) { this.toast(which === "biwa" ? "琵琶湖が海岸に近づきすぎるため、これ以上大きくできません" : "富士山が海岸に近づきすぎるため、これ以上大きくできません"); return false; }
     return this.commitEdit((s) => { setFeatureSize(s.features[which], nx, ny); if (which === "fuji" && s.features.fuji.height === undefined) { if (s.features.fuji.scale === undefined) delete s.features.fuji.auto; else s.features.fuji.auto = true; } });
   }
+  // ---- Stage 33: new mountains and lakes on plain ground (500 m / 5 km a press, at most three presses), with the Stage 32 way of choosing a place: tap, 決定 / 微調整 / やり直し ----
+  /** What the last terrain said about each creation (key -> status): a notice is shown when it CHANGES, the first terrain after a load only fills this in (the notes row shows the standing state from the terrain itself). */
+  private creationStatus = new Map<string, string>(); private creationPrimed = false;
+  creationNotes() { return (this.terrain?.creationReport ?? []).filter((r) => r.status !== "ok"); }
+  private noteCreations() {
+    const rep = this.terrain?.creationReport ?? [], first = !this.creationPrimed; this.creationPrimed = true;
+    for (const r of rep) { const was = this.creationStatus.get(r.key) ?? "ok"; this.creationStatus.set(r.key, r.status); if (first || r.status === was || r.status === "ok") continue; this.toast(this.creationMessage(r)); }
+    for (const k of [...this.creationStatus.keys()]) if (!rep.some((r) => r.key === k)) this.creationStatus.delete(k);
+    this.buildToolbar();
+  }
+  creationMessage(r: { label: string; wanted: number; cells: number; status: string }): string {
+    return r.status === "gone-biwa" ? `琵琶湖との接触により${r.label}が消滅しました` : r.status === "gone-sea" ? `海岸に近すぎて${r.label}は残りませんでした(海との間に陸地が1マス必要です)` : `${r.label}は海岸に近いため${r.wanted}マスから${r.cells}マスに縮小しました`;
+  }
+  /** Clears what the terrain says is gone: created ones are deleted, a range turned into a lake goes back to plain. */
+  clearGoneCreations() {
+    const gone = this.creationNotes().filter((r) => r.status.startsWith("gone")); if (!gone.length) return;
+    this.commitEdit((st) => { const ids = new Set(gone.filter((r) => r.key.startsWith("c:")).map((r) => Number(r.key.slice(2)))); const l = (st.creations ?? []).filter((c) => !ids.has(c.id)); if (l.length) st.creations = l; else delete st.creations;
+      for (const r of gone) if (r.key.startsWith("r:") && st.rangeEdits) { const id = r.key.slice(2); st.rangeEdits = { ...st.rangeEdits, [id]: 0 }; } });
+  }
+  createKind: CreationKind = "mountain"; creationSel: number | null = null; createPick: { k: number; w: Vec } | null = null;
+  private creationGrid() { const g = this.terrain?.grid; return g ? { nx: g.nx, ny: g.ny, cell: g.cell, x0: g.x0, y0: g.y0 } : null; }
+  private creationCells(c: Creation) { const g = this.creationGrid(); return g ? creationFootprint(g, c, this.s.seed >>> 0) : []; }
+  /** Why the cell is not a place to start a mountain / lake (null = it is): sea, lake, high ground, a former Fuji / Biwa site, a flattened range, or an existing creation. */
+  createReason(k: number): string | null {
+    const t = this.terrain, g = this.creationGrid(); if (!t || !g || k < 0) return "地形を作り直し中です";
+    if (t.land[k] !== 1) return t.land[k] === 2 ? "湖の上には作れません" : "海の上には作れません(陸の平地だけ)";
+    if (t.elev[k] > PLAIN_MAX_M) return "平地ではありません(標高が高すぎます)";
+    const p: Vec = [g.x0 + ((k % g.nx) + 0.5) * g.cell, g.y0 + (((k / g.nx) | 0) + 0.5) * g.cell], ex = excludedSite(this.s, p); if (ex) return ex;
+    if ((this.s.creations ?? []).some((c) => this.creationCells(c).some((f) => f.k === k))) return "すでに作ったものの上です(選んで変えられます)";
+    if ((this.s.creations ?? []).length >= MAX_CREATIONS) return `作れるのは${MAX_CREATIONS}個までです`;
+    return null;
+  }
+  creationAtCell(k: number): Creation | null { for (const c of this.s.creations ?? []) if (this.creationCells(c).some((f) => f.k === k)) return c; return null; }
+  creationOutline(): { cells: Vec[]; cell: number } | null {
+    const g = this.creationGrid(), c = (this.s.creations ?? []).find((x) => x.id === this.creationSel); if (!g || !c) return null;
+    return { cell: g.cell, cells: this.creationCells(c).map((f) => [g.x0 + ((f.k % g.nx) + 0.5) * g.cell, g.y0 + (((f.k / g.nx) | 0) + 0.5) * g.cell] as Vec) };
+  }
+  tapCreate(w: Vec): boolean {
+    const t = this.terrain, g = this.creationGrid(); if (!t || !g) return false; const i = Math.floor((w[0] - g.x0) / g.cell), j = Math.floor((w[1] - g.y0) / g.cell); if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) { this.toast("地図の外です"); return false; }
+    const k = j * g.nx + i, hit = this.creationAtCell(k);
+    if (hit) { this.creationSel = hit.id; this.createPick = null; this.buildToolbar(); this.render(); return true; }
+    const why = this.createReason(k); if (why) { this.toast(why); return false; }
+    this.creationSel = null; this.createPick = { k, w: [g.x0 + (i + 0.5) * g.cell, g.y0 + (j + 0.5) * g.cell] }; this.createFine = false; this.buildToolbar(); this.render(); return true;
+  }
+  createFine = false;
+  stepCreate(dir: Dir): boolean {
+    const p = this.createPick, g = this.creationGrid(); if (!p || !g) return false;
+    const k = p.k + (dir === "right" ? 1 : dir === "left" ? -1 : dir === "up" ? g.nx : -g.nx), why = (dir === "right" && p.k % g.nx === g.nx - 1) || (dir === "left" && p.k % g.nx === 0) ? "地図の外です" : this.createReason(k);
+    if (why) { this.toast(why); return false; }
+    this.createPick = { k, w: [g.x0 + ((k % g.nx) + 0.5) * g.cell, g.y0 + (((k / g.nx) | 0) + 0.5) * g.cell] }; this.r.setView({ cx: this.createPick.w[0], cy: this.createPick.w[1], zoom: this.r.view.zoom }, true); this.buildToolbar(); this.render(); return true;
+  }
+  confirmCreate(): boolean {
+    const p = this.createPick; if (!p) return false; const id = Math.max(0, ...(this.s.creations ?? []).map((c) => c.id)) + 1;
+    const ok = this.commitEdit((s) => { s.creations = [...(s.creations ?? []), { id, kind: this.createKind, pos: p.w, level: 1 }]; });
+    if (ok) { this.creationSel = id; this.createPick = null; this.createFine = false; this.buildToolbar(); this.render(); } return ok;
+  }
+  /** One press more (+1) or fewer (-1) on the selected creation, between one and three. */
+  stepCreation(dir: 1 | -1): boolean {
+    const c = (this.s.creations ?? []).find((x) => x.id === this.creationSel); if (!c) return false; const next = clampLevel(c.level + dir);
+    if (next === c.level) { this.toast(dir > 0 ? "これ以上は大きくできません(最大3回)" : "これ以上は小さくできません(なくすには「なくす」)"); return false; }
+    return this.commitEdit((s) => { s.creations = (s.creations ?? []).map((x) => (x.id === c.id ? { ...x, level: next } : x)); });
+  }
+  deleteCreation(): boolean {
+    const id = this.creationSel; if (id === null) return false; this.creationSel = null;
+    return this.commitEdit((s) => { const l = (s.creations ?? []).filter((x) => x.id !== id); if (l.length) s.creations = l; else delete s.creations; });
+  }
+  private createPanel(): HTMLElement[] {
+    const out: HTMLElement[] = [], cell = this.terrain?.grid.cell ?? 5, sel = (this.s.creations ?? []).find((x) => x.id === this.creationSel);
+    out.push(h("div", { class: "grp", id: "create-kind" }, this.tbtn("山", this.createKind === "mountain", () => { this.createKind = "mountain"; this.buildToolbar(); }, "create-mountain", false), this.tbtn("湖", this.createKind === "lake", () => { this.createKind = "lake"; this.buildToolbar(); }, "create-lake", false),
+      h("small", { class: "tag", id: "create-note" }, `平地の中心をタップ。1回で${this.createKind === "mountain" ? "標高+500m(最大1500m)" : "直径+5km(最大15km)"}`)));
+    if (sel) {
+      const rep = this.terrain?.creationReport?.find((x) => x.key === `c:${sel.id}`), n = rep ? rep.cells : creationCells(sel.kind, sel.level, cell), d = creationDiameterKm(sel.kind, sel.level), txt = sel.kind === "mountain" ? `山 ${creationHeightM(sel.level)}m` : `湖 直径${d}km`;
+      out.push(h("div", { class: "grp", id: "creation-row" }, h("button", { id: "creation-less", type: "button", "aria-label": "小さく", onclick: () => this.stepCreation(-1) }, "−"), h("small", { class: "tag", id: "creation-level" }, `${txt}(実効${n}マス・約${n * cell * cell}km²${rep && rep.cells < rep.wanted ? `。海岸のため${rep.wanted}マスから縮小` : ""}${rep?.status === "gone-biwa" ? "。琵琶湖との接触で消滅" : ""})`), h("button", { id: "creation-more", type: "button", "aria-label": "大きく", onclick: () => this.stepCreation(1) }, "＋"), h("button", { id: "creation-del", type: "button", onclick: () => this.deleteCreation() }, "なくす")));
+      return out;
+    }
+    const p = this.createPick, fine = this.createFine && !!p;
+    out.push(h("div", { class: "note", id: "create-hint" }, p ? `${this.createKind === "mountain" ? "山" : "湖"}を作る場所の候補(まだ決まっていません)` : "作りたい場所を、地図の平地でタップしてください(海・湖・高地・もとの富士山と琵琶湖の跡・平らにした山脈の跡は不可)"));
+    if (fine) { const d = (dir: Dir, id: string, t: string) => h("button", { id, type: "button", onclick: () => this.stepCreate(dir) }, t); out.push(h("div", { class: "seat-arrows", id: "create-arrows" }, d("up", "create-up", "▲"), d("left", "create-left", "◀"), d("right", "create-right", "▶"), d("down", "create-down", "▼"))); }
+    out.push(h("div", { class: "grp", id: "create-actions" }, h("button", { id: "create-confirm", type: "button", disabled: p ? null : "", onclick: () => this.confirmCreate() }, "決定"),
+      h("button", { id: "create-fine", type: "button", disabled: p ? null : "", class: fine ? "mode on" : "mode", onclick: () => { if (!this.createPick) return; this.createFine = true; this.r.setView({ cx: this.createPick.w[0], cy: this.createPick.w[1], zoom: Math.max(this.r.view.zoom, 6) }, true); this.buildToolbar(); } }, "微調整"),
+      h("button", { id: "create-retry", type: "button", onclick: () => { this.createPick = null; this.createFine = false; this.buildToolbar(); this.render(); } }, "やり直し")));
+    return out;
+  }
   /** Stage 30A: choose a range (null = none); the list and the map both come here, so they always agree. */
   selectRange(id: string | null) { this.rangeSel = id; this.rangeListOpen = false; this.buildToolbar(); this.render(); }
   /** screen position of a range's crest midpoint (for tests and for centring) */
@@ -455,8 +541,8 @@ export class App {
   pickRangeAt(w: Vec) { const r = rangeAt(this.s, w, 14 / this.r.view.zoom); if (r) this.selectRange(this.rangeSel === r.id ? null : r.id); else if (this.rangeSel) this.selectRange(null); }
   /** Raise or wear down the selected range by one step (the same one-edit-one-undo path as Fuji). The floor is the plain: a range at 0 has nothing left to lose. */
   stepRange(dir: 1 | -1): boolean {
-    const id = this.rangeSel; if (!id) return false; const cur = rangeFactor(this.s.rangeEdits, id), next = clampRange(cur + dir * RANGE_STEP);
-    if (next === cur) { this.toast(dir > 0 ? "これ以上は高くできません" : "これ以上は低くできません(平地相当まで下げました)"); return false; }
+    const id = this.rangeSel; if (!id) return false; const cur = rangeFactor(this.s.rangeEdits, id), next = nextRange(cur, dir);
+    if (next === cur) { this.toast(dir > 0 ? "これ以上は高くできません" : "これ以上は下げられません(湖になっています)"); return false; }
     return this.setRangeFactor(id, next);
   }
   setRangeFactor(id: string, v: number): boolean { return this.commitEdit((s) => { const e = { ...(s.rangeEdits ?? {}) }; if (v === 1) delete e[id]; else e[id] = v; if (Object.keys(e).length) s.rangeEdits = e; else delete s.rangeEdits; }); }
@@ -824,6 +910,7 @@ export class App {
   private setTool(t: Tool) {
     if (this.setupTab && t !== "seatpick") { this.setupTab = null; this.seatMode = null; this.seatPick = null; this.r.seatPending = null; }   // choosing another tool folds the setup panel away
     this.tool = this.tool === t ? "view" : t; this.pending = null;
+    if (this.tool !== "create") { this.createPick = null; this.createFine = false; this.creationSel = null; }
     if (this.tool !== "ridge-pick") this.ridgeSel = null; if (this.ridgeRedraw && !(this.tool === (this.ridgeRedraw.key === "ne" ? "ridge-ne" : "ridge-sw"))) this.ridgeRedraw = null;
     // Stage 11: the drawn ranges are shown on the terrain map only; editing them from the road map switches to the terrain map for the duration and switches back afterwards
     if (isRidgeTool(this.tool) && this.bg === "roadmap") { this.bgBeforeRidge = "roadmap"; this.setBg("terrain", false); this.toast("山脈の編集は地形図で行います(終わると道路図に戻ります)"); }
@@ -844,7 +931,7 @@ export class App {
       return;
     }
     const tb = $("toolbar"); tb.replaceChildren(); tb.classList.remove("compact"); const st = this.stepId;
-    const TOOL_NAMES: Record<Tool, string> = { range: "山脈: 一覧か地図で選んで、増強・減衰", seatpick: "首都・副首都・皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", "cer-kokudo0": "国道0号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす", "ridge-pick": "山脈の区間を選ぶ" };
+    const TOOL_NAMES: Record<Tool, string> = { create: "新規: 平地に山か湖を作る", range: "山脈: 一覧か地図で選んで、増強・減衰", seatpick: "首都・副首都・皇居の位置: 地図をタップ", "cer-kokudo1": "国道1号を描く", "cer-fudo1": "府道1号を描く", "cer-kokudo0": "国道0号を描く", pick: "風景JSON: 地点を選ぶ", why: "なぜ変化したか: 道路をタップ", view: "表示(パン・ズームのみ)", pull: "引っ張る", bulge: "膨らます", dent: "凹ます", move: "移動", feature: "琵琶湖/富士山の移動", "ridge-sw": "南西の山脈を描く", "ridge-ne": "北東の山脈を描く", "ridge-edit": "山脈の点を動かす", "ridge-pick": "山脈の区間を選ぶ" };
     if (this.store.locked && (st === "honshu" || st === "islands" || st === "features")) {
       tb.append(h("div", { id: "lock-banner", role: "status" }, "🔒 地図は最終確定済みのためロック中(閲覧のみ)"), h("button", { id: "unlock-map", type: "button", onclick: () => this.unlockMap() }, "ロックを解除して編集"));
       return;
@@ -882,10 +969,9 @@ export class App {
     const featOn = (f: "biwa" | "fuji") => this.tool === "feature" && this.selFeature === f;
     const featBtn = (f: "biwa" | "fuji", label: string) => this.tbtn(label, featOn(f), () => { if (featOn(f)) this.setTool("feature"); else { this.selFeature = f; this.tool = "feature"; this.pending = null; this.buildToolbar(); this.render(); } }, "sel-" + f, false);
     const tool = (t: Tool, l: string) => this.tbtn(l, this.tool === t, () => this.setTool(t), "tool-" + t, false);
-    const ridgeOn = isRidgeTool(this.tool), ridges = this.editMore || ridgeOn;
     tb.append(h("div", { class: "grp", id: "edit-tools" }, toggle, featBtn("biwa", "琵琶湖"), featBtn("fuji", "富士山"),
       this.tbtn("山脈", this.tool === "range", () => { if (this.tool === "range") this.setTool("range"); else { this.setTool("range"); this.rangeListOpen = !this.rangeSel; this.buildToolbar(); } }, "edit-ranges", false),
-      h("button", { id: "edit-more", type: "button", title: "山脈の稜線を自分で描く道具", "aria-pressed": ridges ? "true" : "false", class: ridges ? "mode on" : "mode", onclick: () => { if (ridges) { this.editMore = false; if (ridgeOn) this.tool = "view"; } else this.editMore = true; this.buildToolbar(); this.render(); } }, "稜線"),
+      this.tbtn("新規", this.tool === "create", () => { if (this.tool === "create") this.setTool("create"); else { this.setTool("create"); } }, "edit-create", false),
       this.bgSwitch("edit-bg"),
       h("button", { id: "edit-undo", type: "button", "aria-label": "元に戻す", disabled: !this.store.canUndo, onclick: () => this.undoEdit() }, "↶"), h("button", { id: "edit-redo", type: "button", "aria-label": "やり直す", disabled: !this.store.canRedo, onclick: () => this.redoEdit() }, "↷")));
     if (this.tool === "feature") {
@@ -901,13 +987,8 @@ export class App {
     // Stage 30A: the 道路図/地形図 switch works while editing too -- it changes only the background, so a selected Fuji / Biwa / range, its outline and its settings stay exactly as they are
     if (this.tool === "range") tb.append(h("div", { class: "grp", id: "edit-range-row" }, ...this.rangeControls()));
     if (this.tool === "range" && this.rangeListOpen) tb.append(this.rangeList());
-    if (ridges) tb.append(h("div", { class: "grp", id: "edit-more-row" }, tool("ridge-ne", "北"), tool("ridge-sw", "南"), tool("ridge-edit", "点"), tool("ridge-pick", "区間"), h("button", { id: "alps-real", type: "button", onclick: () => this.realAlps() }, "実アルプス"), h("button", { id: "alps-clear", type: "button", onclick: () => this.clearRanges() }, "消去"), h("small", { class: "tag", id: "terrain-edit-note" }, "海岸線は固定")));
-    if (ridgeOn) {
-      // Stage 11: the same three operations as for the 国道1号 -- 描く (北・南) / 点を動かす (点) / 区間を選ぶ (区間: 消す・描き直す); ↶ ↷ above undo every one of them
-      const sel = this.ridgeSel, selTxt = sel ? `${sel.key === "ne" ? "北" : "南"}の山脈 区間${sel.si + 1}` : "";
-      tb.append(h("div", { class: "note", id: "ridge-hint" }, this.tool === "ridge-edit" ? "点をつかんで動かします(線の上の白丸)" : this.tool === "ridge-pick" ? (sel ? `${selTxt}を選択中` : "線をタップして区間を選びます") : this.ridgeRedraw ? "選んだ区間を描き直してください。端が前の線につながります" : "大きい丸(線の端)から描くと続き、ほかの場所から描くと新しい線を足します。地形の作り直し中でも続けて描けます"));
-      if (this.tool === "ridge-pick" && sel) tb.append(h("div", { class: "grp", id: "ridge-sel-row" }, h("button", { id: "ridge-del", type: "button", onclick: () => this.ridgeDeleteSel() }, `区間${sel.si + 1}を消す`), h("button", { id: "ridge-redraw", type: "button", onclick: () => this.ridgeRedrawSel() }, "描き直す")));
-    }
+    if (this.tool === "create") tb.append(...this.createPanel());
+    { const notes = this.creationNotes(); if (notes.length) tb.append(h("div", { class: "grp", id: "terrain-notes", role: "status" }, h("small", { class: "tag", id: "terrain-notes-text" }, "⚠ " + notes.map((r) => this.creationMessage(r)).join(" / ")), ...(notes.some((r) => r.status.startsWith("gone")) ? [h("button", { id: "notes-clear", type: "button", onclick: () => this.clearGoneCreations() }, "片付ける")] : []))); }
     const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
   }
   /** Stage 30A: [list ▾] [−] ×1.0 [＋] [標準] for the selected range. */
@@ -915,7 +996,7 @@ export class App {
     const id = this.rangeSel, d = id ? rangeById(id) : null, m = id ? rangeFactor(this.s.rangeEdits, id) : 1;
     const pick = h("button", { id: "range-pick", type: "button", class: "mode", "aria-expanded": this.rangeListOpen ? "true" : "false", onclick: () => { this.rangeListOpen = !this.rangeListOpen; this.buildToolbar(); } }, `${d ? d.name : "山脈を選ぶ"} ▾`);
     if (!d) return [pick, h("small", { class: "tag", id: "range-hint" }, "一覧か地図でタップ")];
-    return [pick, h("button", { id: "range-less", type: "button", "aria-label": "減衰(低く)", disabled: m <= RANGE_LIMITS[0], onclick: () => this.stepRange(-1) }, "減衰"), h("small", { class: "tag", id: "range-level" }, m === RANGE_LIMITS[0] ? "平地" : `高さ×${m.toFixed(1)}`), h("button", { id: "range-more", type: "button", "aria-label": "増強(高く)", disabled: m >= RANGE_LIMITS[1], onclick: () => this.stepRange(1) }, "増強"), h("button", { id: "range-reset", type: "button", disabled: m === 1, onclick: () => this.setRangeFactor(d.id, 1) }, "標準")];
+    return [pick, h("button", { id: "range-less", type: "button", "aria-label": "減衰(低く)", disabled: m <= RANGE_LIMITS[0], onclick: () => this.stepRange(-1) }, "減衰"), h("small", { class: "tag", id: "range-level" }, rangeLabel(m)), h("button", { id: "range-more", type: "button", "aria-label": "増強(高く)", disabled: m >= RANGE_LIMITS[1], onclick: () => this.stepRange(1) }, "増強"), h("button", { id: "range-reset", type: "button", disabled: m === 1, onclick: () => this.setRangeFactor(d.id, 1) }, "標準")];
   }
   private rangeList(): HTMLElement {
     const box = h("div", { id: "range-list", class: "range-list", role: "listbox" });
@@ -953,7 +1034,7 @@ export class App {
   private posOf(which: "capital" | "sub" | "palace") { return which === "capital" ? this.s.capitalPos : which === "sub" ? this.s.subPos : this.s.palacePos; }
   unlockMap() {
     if (this.sim && !confirm("地図の編集を再開すると、作成済みの道路とシミュレーションは消えます。よろしいですか?")) return;
-    this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.wizReset(); this.pin = null; this.store.unlock(); this.persist(); this.toast("ロックを解除しました");
+    this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.wizReset(); this.creationPrimed = false; this.creationStatus.clear(); this.pin = null; this.store.unlock(); this.persist(); this.toast("ロックを解除しました");
   }
   // ---- Stage 31: the setup as four stages and a final review (terrain -> era -> seats -> 国道1号 -> review). Each stage reuses the controls the setup always had; the wizard decides which are on screen, keeps
   // what was chosen (it all lives in the game state, so going back loses nothing), and re-asks only what a change really affects: every confirmed stage remembers a signature of what it depends on. ----
@@ -1257,7 +1338,7 @@ export class App {
     if (l.sim) { l.sim.lastWallMs = 0;
       // Stage 30A: a load restores the world and timeline it was saved in; if that timeline already holds a later checkpoint, the game goes on as a new branch (a save from before Stage 30A becomes a world of its own)
       let br = false; try { br = assignBranch(l.sim, await listCheckpoints(idbCpStore)); } catch { ensureIdentity(l.sim); } if (br) l.problems = [...l.problems, "別の分岐として続けます"]; }
-    this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.saveAfterAttach = !!l.sim; this.r.fit(l.map);
+    this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.creationPrimed = false; this.creationStatus.clear(); this.pendingSim = l.sim; this.saveAfterAttach = !!l.sim; this.r.fit(l.map);
     if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
     this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
     if (this.terrain && this.pendingSim) this.attachPendingSim();   // Stage 26: the same map (a checkpoint, or a slot of this very map) needs no new terrain, so nothing else would ever attach the loaded game

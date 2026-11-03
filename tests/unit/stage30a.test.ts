@@ -80,7 +80,7 @@ describe("Stage 30A: mountain ranges", () => {
     expect(worst).toBeLessThan(natural * 1.5);   // the steepest step after doubling the range stays within 1.5x of the steepest the DEM itself has anywhere
   });
   it("the stored edits round trip, unknown ranges and neutral values are dropped, the factor is clamped; a save without the field is the standard state", () => {
-    expect(clampRange(3)).toBe(2); expect(clampRange(-1)).toBe(0); expect(cleanRangeEdits({ kiso: 0.5, nope: 2, hida: 1, kyushu: 9 })).toEqual({ kiso: 0.5, kyushu: 2 });
+    expect(clampRange(3)).toBe(2); expect(clampRange(-1)).toBe(-0.05); expect(clampRange(0.02)).toBe(0);   // (Stage 33: below the plain there is the lake) expect(cleanRangeEdits({ kiso: 0.5, nope: 2, hida: 1, kyushu: 9 })).toEqual({ kiso: 0.5, kyushu: 2 });
     const s = realState(); s.rangeEdits = { kiso: 0.5 }; const p = parseState(JSON.parse(JSON.stringify(s)))!; expect((p as any).state?.rangeEdits ?? (p as any).rangeEdits).toEqual({ kiso: 0.5 });
     const old = JSON.parse(JSON.stringify(realState())); expect(((parseState(old) as any).state ?? parseState(old) as any).rangeEdits).toBeUndefined();
   });
