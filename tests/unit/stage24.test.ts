@@ -16,7 +16,7 @@ const MOVE = { era: 1, stance: "heisei" as const, coast: "neutral" as const, foc
 
 describe("Stage 24: the 2200 event", () => {
   it("time waits for 国道0号 (drawn, or given up) after the choice; giving it up is recorded; a fast-forward stops there too", () => {
-    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "auto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
+    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "idleAuto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
     stepMonth(sim, w); expect(sim.e2200?.state).toBe("pending"); apply2200(sim, MOVE); expect(sim.e2200?.state).toBe("road0"); expect(waiting2200(sim)).toBe(true);
     const m = sim.month; for (let i = 0; i < 6; i++) stepMonth(sim, w); advance(sim, w, 30); expect(sim.month).toBe(m);
     close2200(sim); expect(sim.e2200?.state).toBe("done"); expect(sim.e2200?.skipped).toBe(true); expect(waiting2200(sim)).toBe(false); stepMonth(sim, w); if (sim.policy?.pending) { sim.policy.pending = null; } expect(sim.month).toBeGreaterThanOrEqual(m);

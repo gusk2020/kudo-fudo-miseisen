@@ -72,7 +72,7 @@ describe("Stage 25: the 150-year relocation event", () => {
     for (const c of r.w.cities) expect(sim.cities[c.id].pop).toBeGreaterThanOrEqual(2000 - 1);
   }, 3600000);
   it("it does not fire twice after a save and load, a fast-forward cannot skip it, a jump past the date still gets it once", () => {
-    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "auto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
+    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "idleAuto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
     expect(nextYear2200(sim)).toBe(2200); advance(sim, w, 24); expect(sim.e2200?.state).toBe("pending"); expect(sim.e2200?.n).toBe(0); expect(waiting2200(sim)).toBe(true);
     const back = sanitizeSim(JSON.parse(JSON.stringify(sim))).sim!; expect(back.e2200?.state).toBe("pending"); expect(eventsOpened(back)).toBe(1);
     apply2200(sim, pick(0)); close2200(sim); const m = sim.month; expect(due2200(sim)).toBe(false); expect(nextYear2200(sim)).toBe(2350);

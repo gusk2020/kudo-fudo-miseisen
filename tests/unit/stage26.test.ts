@@ -111,7 +111,7 @@ describe("Stage 26: a checkpoint is a complete save; the game goes on from it ex
     expect((sim as unknown as { snaps?: unknown }).snaps).toBeUndefined();
   }, 600000);
   it("Stage 27: a checkpoint taken after the 2200 event restores into the world with its choices made: no event asks again, seats, palace, era history and 国道0号 are as they were", async () => {
-    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.month = (E2200_YEAR - sim.startYear) * 12; sim.policy!.mode = "auto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
+    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.month = (E2200_YEAR - sim.startYear) * 12; sim.policy!.mode = "idleAuto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
     expect(checkpointDue(sim)).toBeNull(); stepMonth(sim, w); expect(sim.e2200?.state).toBe("pending"); expect(checkpointDue(sim)).toBeNull();
     apply2200(sim, { era: 1, stance: "heisei", coast: "neutral", focus: "concentrate", capital: "JP-40", sub: "JP-04", palace: "JP-04" }, false, (p) => w.cities.find((c) => c.pref === p && c.kind === "capital")?.pos ?? null); expect(checkpointDue(sim)).toBeNull();   // road0 is still open
     close2200(sim); const d = checkpointDue(sim)!; expect(d).toEqual({ kind: "reloc", year: 2200, n: 1 }); markCheckpoint(sim, d); const json = JSON.stringify(makeSave(realState(1), sim));
