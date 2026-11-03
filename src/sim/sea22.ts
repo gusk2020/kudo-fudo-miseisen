@@ -17,6 +17,7 @@ import { stanceAt } from "./kaigen";
 import { setEdgeState } from "./network";
 import { modeOf, type SimEdge, type SimState } from "./types";
 import type { WCity, World } from "./world";
+import { worldMemo } from "./world";
 
 export const OCEAN_TAG = "外洋航路", ISLAND_TAG = "離島航路";
 export const OCEAN_MIN_KM = 250, OCEAN_FROM = 1960, OCEAN_IDLE_YEARS = 6, OCEAN_REST_YEARS = 15, OCEAN_MAX_RESTS = 2, ISLAND_NEIGHBOUR_KM = 120;
@@ -32,7 +33,7 @@ export function seaPolicy(stance: string): { perYear: number; cap: number; islan
 const PORT_POP = 100000;
 // ---- distance over the sea: a 3x3-coarse grid of the world's cells (a coarse cell is water when any of its cells is sea, so narrow straits -- Akashi, Kanmon -- stay open), Dijkstra over it ----
 interface SeaGrid { cx: number; cy: number; water: Uint8Array }
-const seaMemo = new WeakMap<World, SeaGrid>();
+const seaMemo = worldMemo<SeaGrid>();
 function seaGrid(w: World): SeaGrid {
   let g = seaMemo.get(w); if (g) return g; const cx = Math.ceil(w.nx / SEA_F), cy = Math.ceil(w.ny / SEA_F), water = new Uint8Array(cx * cy);
   for (let k = 0; k < w.N; k++) if (w.t.land[k] === 0) water[(Math.floor(((k / w.nx) | 0) / SEA_F) * cx) + Math.floor((k % w.nx) / SEA_F)] = 1;
@@ -64,11 +65,11 @@ function reach(w: World, g: SeaGrid, d: Float64Array, cell: number): { km: numbe
 }
 /** Km over the sea between two ports (Infinity: the sea does not join them). `field` may hold the search from `a` already (many pairs share one port). */
 export function seaKm(w: World, a: number, b: number, field?: Float64Array): number { return reach(w, seaGrid(w), field ?? sweep(w, [a]).d, b).km; }
-const nearMemo = new WeakMap<World, { d: Float64Array; who: Int32Array }>();
+const nearMemo = worldMemo<{ d: Float64Array; who: Int32Array }>();
 /** For every coarse sea cell, the nearest of `ports` by sea (one search from all of them). */
 function nearestPortField(w: World, ports: WCity[]) { let r = nearMemo.get(w); if (!r) { r = sweep(w, ports.map((c) => c.cell)); nearMemo.set(w, r); } return r; }
 interface Cand { a: WCity; b: WCity; km: number; base: number }   // km: over the sea
-const candMemo = new WeakMap<World, Cand[]>();
+const candMemo = worldMemo<Cand[]>();
 /** The pairs of port cities an ocean route could join (domestic, OCEAN_MIN_KM .. maxFerryKm, by straight distance; the drawing follows the sea). */
 export function oceanCandidates(w: World): Cand[] { const g = oceanCandidatesGen(w); for (;;) { const r = g.next(); if (r.done) return r.value; } }
 /** The same, a few sea searches at a time (the first year of ocean routes would otherwise be one long task on a phone). */
@@ -90,7 +91,7 @@ export function* oceanCandidatesGen(w: World): Generator<void, Cand[]> {
   out.sort((p, q) => q.base - p.base || (p.a.id + p.b.id < q.a.id + q.b.id ? -1 : 1)); candMemo.set(w, out); return out;
 }
 /** Each inhabited island's lifeline: to the nearest port city on another land mass (a bigger land), and to its nearest inhabited neighbour of the same group. */
-const linkMemo = new WeakMap<World, ReturnType<typeof islandLinks>>();
+const linkMemo = worldMemo<ReturnType<typeof islandLinks>>();
 export function islandLinks(w: World): { cell: number; name: string; pop: number; km: number; to: { cell: number; pos: [number, number]; name: string; city?: WCity }; kind: "hub" | "next" }[] {
   const hit = linkMemo.get(w); if (hit) return hit;
   const out: ReturnType<typeof islandLinks> = []; const isl = (w.islets ?? []).filter((s) => !s.existing && (s.islet.pop ?? 0) > 0 && s.cells.length), hubs = w.cities.filter((c) => c.coastal && c.island > 0 && c.island < ISLET_ISLAND_BASE);

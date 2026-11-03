@@ -15,7 +15,7 @@
  *              any real city (SITE_REF_KM2) is squeezed -- fewer people at the start and a lower ceiling, the rest settle on the better land nearby.
  * Nothing here knows a place name: every number is read from the cell grid.
  */
-import { MTN_RIDGE_MIN, mountainBarrier, type World, type WCity } from "./world";
+import { MTN_RIDGE_MIN, mountainBarrier, worldMemo, type World, type WCity } from "./world";
 import { techAt, TUNNEL_KM, facilityCostMult, type TechState } from "./tech";
 import type { Mode } from "./types";
 
@@ -64,7 +64,7 @@ export function upkeepMult(w: World, e: { cells: number[]; facility?: string }):
 
 // ---- the sites of cities ----
 /** Slope in percent, the steepest of the four neighbours. */
-const slopeMemo = new WeakMap<World, Float32Array>();
+const slopeMemo = worldMemo<Float32Array>();
 /** Memoised per world (the terrain never changes within a game). */
 export function slopeOf(w: World): Float32Array { let m = slopeMemo.get(w); if (!m) { m = slopeField(w); slopeMemo.set(w, m); } return m; }
 function slopeField(w: World): Float32Array {
@@ -85,7 +85,7 @@ export function suitability(slopePct: number, elevM: number, barrier: number, el
 const SITE_RADIUS_CELLS = 4;
 /** Share of the land around a city (cells within SITE_RADIUS_CELLS) that can be built on, weighted by suitability. A small island of flat ground scores 1: the sea is not the terrain's doing. */
 export const SITE_REF = 0.3;   // the poorest real sites (basin cities between mountain ranges) score about this, so only a site worse than any real city's is squeezed
-const siteMemo = new WeakMap<World, Map<string, number>>();
+const siteMemo = worldMemo<Map<string, number>>();
 export function siteQuality(w: World, c: WCity): number {
   let m = siteMemo.get(w); if (!m) {
     m = new Map(); const sl = slopeField(w), { nx, ny, t } = w, R = SITE_RADIUS_CELLS;

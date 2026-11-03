@@ -5,6 +5,7 @@
  */
 import REF from "../data/reference-lines.json";
 import type { World } from "./world";
+import { worldMemo } from "./world";
 
 export interface RefGrids {
   rail: Uint8Array;        // 0 none, 1 within a cell of a real line, 2 on a real line
@@ -12,7 +13,7 @@ export interface RefGrids {
   railElectric: Uint8Array; // 1 where the reference marks the line electrified (used for a 1950-ish standard)
   railMulti: Uint8Array;    // 1 where the reference marks multiple tracks
 }
-const cache = new WeakMap<World, RefGrids>();
+const cache = worldMemo<RefGrids>();
 type Line = { pts: [number, number][]; electric?: number | null; tracks?: number | null };
 
 function raster(w: World, lines: Line[], grid: Uint8Array, extra?: (l: Line, k: number) => void) {

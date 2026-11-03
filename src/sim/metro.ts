@@ -20,6 +20,7 @@ import { H_TUNNEL, hardnessAt, slopeOf } from "./land";
 import { modeOf } from "./types";
 import type { SimState } from "./types";
 import type { World } from "./world";
+import { worldMemo } from "./world";
 
 export const AREA_K = 800, AREA_POW = 0.8, PLAIN_F = 1.5, LOW_F = 1, HIGH_F = 0.5, PLAIN_M = 120, PLAIN_SLOPE = 4, LOW_M = 500, MAX_H = 1.5;
 /** Stage 15: a town within SAT_H_15 hours of a city 1.5x its size is its satellite in a Stage 15 game (a commute of an hour and a half by the network as it is). */
@@ -33,7 +34,7 @@ export function terrainFactor(w: World, k: number): number {
   const m = w.elevM(k); if (m > LOW_M || hardnessAt(w, k) >= H_TUNNEL) return HIGH_F;
   return m <= PLAIN_M && slopeOf(w)[k] <= PLAIN_SLOPE ? PLAIN_F : LOW_F;
 }
-const factorMemo = new WeakMap<World, Float32Array>();
+const factorMemo = worldMemo<Float32Array>();
 /** The terrain factor of every land cell (0 = not land), once per world: the terrain never changes within a game. */
 function factorsOf(w: World): Float32Array { let f = factorMemo.get(w); if (!f) { f = new Float32Array(w.N); for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1) f[k] = terrainFactor(w, k); factorMemo.set(w, f); } return f; }
 export const metroBudgetKm2 = (pop: number, industry: number) => AREA_K * Math.pow(pop / 1e6, AREA_POW) * (0.7 + 0.6 * industry);

@@ -27,6 +27,7 @@ import { basePop } from "./roles";
 import { currentSites } from "./sites";
 import type { SimState } from "./types";
 import type { WCity, World } from "./world";
+import { worldMemo } from "./world";
 import { AIR_ONTIME, RAIL_ACCESS_H, SEA_ONTIME } from "./demand";
 import { rand } from "./engine";
 
@@ -57,7 +58,7 @@ const TOURW_Y: [number, number][] = [[1950, 0.5], [2000, 1], [2050, 1.7], [2110,
 const AGG_Y: [number, number][] = [[1950, 1.2], [1990, 1], [2020, 0.6], [2060, 0.3], [2110, 0.2]];
 /** How much a low, sea-facing site counts against a city as the sea rises and storms get worse (zero until about 2000). */
 const CLIM_Y: [number, number][] = [[1950, 0], [2000, 0.1], [2040, 0.6], [2110, 1.6]];
-const exposureMemo = new WeakMap<World, Map<string, number>>();
+const exposureMemo = worldMemo<Map<string, number>>();
 /** 0..1: the share of the land around a city that lies below 10 m and within a few cells of the sea (the ground a rising sea and a storm surge reach first). */
 export function exposure(w: World, c: WCity): number {
   let m = exposureMemo.get(w); if (!m) { m = new Map(); exposureMemo.set(w, m); } const hit = m.get(c.id); if (hit !== undefined) return hit;

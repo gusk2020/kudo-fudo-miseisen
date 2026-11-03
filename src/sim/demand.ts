@@ -10,6 +10,7 @@ import { airportMap, hubDemand, JET_YEAR, type HubTotals } from "./hubs";
 import { MinHeap } from "../core/heap";
 import { modeOf, type Mode, type Standard, type Surface, type SimEdge, type SimState } from "./types";
 import type { World } from "./world";
+import { worldMemo } from "./world";
 import { realToLonLat } from "../core/data";
 
 export const KFLOW = 1.5e-3, KVIL = 0.04, KLOC = 0.02;
@@ -77,7 +78,7 @@ export function railShare(tRoad: number, tRail: number, carBias: number, railBia
  * sea, the sea more than the air, and forecasting and bigger ships claw some of it back over the decades. Games from Stage 12 on only (1 elsewhere).
  */
 export const AIR_ONTIME = 0.93, SEA_ONTIME = 0.85;
-const exposureMemo = new WeakMap<World, Float64Array>();
+const exposureMemo = worldMemo<Float64Array>();
 const exposureLat = (w: World, i: number) => { let m = exposureMemo.get(w); if (!m) { m = new Float64Array(w.cities.length).fill(-1); exposureMemo.set(w, m); } return m[i] >= 0 ? m[i] : (m[i] = Math.max(0, Math.min(1, (realToLonLat(w.cities[i].pos as [number, number])[1] - 34) / 8))); };
 export function weatherFactor(sim: SimState, w: World, mode: "air" | "sea", i: number, j: number): number {
   if (!sim.econ) return 1; const y = sim.startYear + Math.floor(sim.month / 12), base = mode === "air" ? AIR_ONTIME : SEA_ONTIME, gain = 1 - 0.3 * Math.max(0, Math.min(1, (y - 1950) / 100));

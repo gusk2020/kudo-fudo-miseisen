@@ -140,6 +140,7 @@ export interface SimState {
   pop15?: true;               // Stage 15: the cities start from the 1950 census (census50.ts) and the reconstruction policy also adds a priority to the corridors (recon.ts RECON_ADD). Absent = older games
   seats14?: true;             // Stage 14: the seats of government head the city order, and a seat's people live partly in the suburbs round it (seats14.ts). Absent = older games
   econ?: true;                // Stage 12: the land-based city economy (land.ts, econ.ts). Absent = older games, which keep the rules they were made with
+  rec34?: import("./reclaim34").Rec34;   // Stage 34: island enlargement and reclamation (reclaim34.ts): the log of every cell added to the land, and each seat's budget. Absent = older games
   roles?: RoleState;          // Stage 10: who carries whose regional role (roles.ts). Absent = older games (they keep the bonus they were created with)
 }
 /** Stage 10: `prof[p] = q` -- prefecture p carries prefecture q's role mass (only the changed ones); the two clusters; the prefecture with Kyoto's cultural role. */

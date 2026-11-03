@@ -29,7 +29,7 @@ import { buildIndex, layPath } from "./network";
 import { hubAppetite18, hubThreshold18 } from "./policy18";
 import { goodsPull, paxPull } from "./sites";
 import { modeOf, type AirportState, type HubRoute, type HubsState, type PortState, type SimState } from "./types";
-import { pathfind, type World } from "./world";
+import { pathfind, worldMemo, type World } from "./world";
 
 type Key = [number, number][];
 const at = (k: Key, y: number) => { if (y <= k[0][0]) return k[0][1]; for (let i = 1; i < k.length; i++) if (y <= k[i][0]) { const [a, va] = k[i - 1], [b, vb] = k[i]; return va + ((vb - va) * (y - a)) / (b - a); } return k[k.length - 1][1]; };
@@ -71,7 +71,7 @@ const runwayCap = (m: number) => { let c = RUNWAY_CAP[0][1]; for (const [r, v] o
 export const intlCapable = (a: AirportState, y: number) => a.until === undefined && (a.kind === "hub" || (a.runwayM >= 2500 && y >= 1975));
 
 // ---- geometry ----
-const faceMemo = new WeakMap<World, Map<number, Vec>>();
+const faceMemo = worldMemo<Map<number, Vec>>();
 /** Which way a coastal cell faces the open sea: the mean direction to the sea cells within ~50 km (lakes do not count). */
 export function facing(w: World, cell: number): Vec {
   let m = faceMemo.get(w); if (!m) { m = new Map(); faceMemo.set(w, m); } const hit = m.get(cell); if (hit) return hit;
@@ -82,7 +82,7 @@ export function facing(w: World, cell: number): Vec {
 export const affinity = (face: Vec, d: Foreign) => 0.35 + 0.65 * Math.max(0, face[0] * d.dir[0] + face[1] * d.dir[1]);
 /** Destination split of one port's foreign trade. */
 export function portSplit(w: World, cell: number, y: number): number[] { const f = facing(w, cell), s = foreignShares(y), v = FOREIGN.map((d, i) => s[i] * affinity(f, d)), t = v.reduce((a, b) => a + b, 0) || 1; return v.map((x) => x / t); }
-const idxMemo = new WeakMap<World, Map<string, number>>();
+const idxMemo = worldMemo<Map<string, number>>();
 export const cityIndex = (w: World) => { let m = idxMemo.get(w); if (!m) { m = new Map(w.cities.map((c, i) => [c.id, i])); idxMemo.set(w, m); } return m; };
 
 // ---- demand (called from the analysis; pure) ----

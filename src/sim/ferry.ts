@@ -20,6 +20,7 @@ import { createProject } from "./planning";
 import { techAt } from "./tech";
 import { modeOf, type Mode, type SimEdge, type SimState } from "./types";
 import type { World, WCity } from "./world";
+import { worldMemo } from "./world";
 
 /** The longest single crossing a ferry service will run. Okinawa to Kyushu is the longest the data needs (about 640 km). */
 export const MAX_FERRY_KM = 760;
@@ -31,7 +32,7 @@ export const SHORT_STRAIT_KM = 120;
 export const FERRY_SPEED_KMH = 28, FERRY_WAIT_H = 0.7;
 
 export interface Crossing { la: number; lb: number; a: WCity; b: WCity; km: number; gapKm: number }
-const cache = new WeakMap<World, { ports: Map<string, Crossing | null>; gaps: Map<string, number> }>();
+const cache = worldMemo<{ ports: Map<string, Crossing | null>; gaps: Map<string, number> }>();
 const memo = (w: World) => { let m = cache.get(w); if (!m) { m = { ports: new Map(), gaps: new Map() }; cache.set(w, m); } return m; };
 export const lmOfCity = (w: World, c: WCity) => w.lm[c.cell];
 export const citiesOf = (w: World, lm: number) => w.cities.filter((c) => w.lm[c.cell] === lm);
@@ -308,7 +309,7 @@ export const BAY_FIRST = 12, BAY_PER_YEAR = 4, BAY_YEARS = 10;
 export const MAIN_ISLAND_CELLS = 300;
 /** The shortest sea crossing between each two main islands, between the two ISLANDS' MAIN land masses (the biggest piece of each, by the grid's island and mass ids, never by name): a headland the
  * 5 km grid has cut off from its island carries no road, so a crossing that ends on it would join nothing. */
-const mainMemo = new WeakMap<World, ReturnType<typeof waterLinks>>();
+const mainMemo = worldMemo<ReturnType<typeof waterLinks>>();
 /** The narrowest strait between each two main islands, once per world: it is a pure function of the terrain, and the all-pairs search below is the costliest thing the yearly step could repeat. */
 export function mainStraitLinks(w: World, links: ReturnType<typeof waterLinks>): ReturnType<typeof waterLinks> {
   let m = mainMemo.get(w); if (!m) { m = mainStraitLinksRaw(w, links); mainMemo.set(w, m); } return m;

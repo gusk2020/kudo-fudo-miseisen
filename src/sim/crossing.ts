@@ -30,6 +30,7 @@ import { newEdgeDefaults, newId, pushHist } from "./network";
 import { techAt } from "./tech";
 import { modeOf, type Mode, type SimEdge, type SimProject, type SimState } from "./types";
 import type { World } from "./world";
+import { worldMemo } from "./world";
 
 export const CROSSING_TAG = "【海峡連絡】";
 /** At most this many crossing projects of one mode at once; and a pair is not tried again within COOLING_YEARS of an abandoned attempt. */
@@ -75,7 +76,7 @@ export function chooseStructure(sim: SimState, gapKm: number, km: number, mode: 
 export interface Port { cell: number; pos: Vec; name: string }
 export interface Corridor { ferry: SimEdge; a: Port; b: Port; span: number; km: number; kind: "strait" | "bay" | "lake" }
 const portOf = (w: World, cell: number, other?: number): Port => { const c = w.cityByCell.get(cell); return c ? { cell, pos: c.pos, name: c.name } : { cell, pos: w.cellPos(cell), name: other === undefined ? nearTown(w, cell) + "岸" : shoreNames(w, cell, other)[0] }; };
-const spanMemo = new WeakMap<World, Map<string, number>>();
+const spanMemo = worldMemo<Map<string, number>>();
 /** The narrowest open water between the two shores THIS corridor joins: the nearest pair of coast cells among those within SPAN_REACH_KM of its two ports (km). A straight line between two port
  * cities is not the strait -- Aomori to Hakodate is 100 km, the Tsugaru strait between their coasts is a quarter of that. */
 export const SPAN_REACH_KM = 60;
@@ -134,7 +135,7 @@ export function corridorTaken(sim: SimState, w: World, c: Corridor, mode: Mode, 
 /** People living on a land mass: its cities and its villages. */
 /** Everybody on one island (by the grid's island id): a headland the grid cuts off from its island is still part of it. */
 /** A crossing between two MAIN islands (the grid's island ids with at least MAIN_ISLAND_CELLS land cells each): the national links (Honshu-Kyushu-Shikoku-Hokkaido). */
-const mainMemo = new WeakMap<World, Map<number, number>>();
+const mainMemo = worldMemo<Map<number, number>>();
 export function isStrategic(w: World, c: Corridor): boolean {
   let m = mainMemo.get(w); if (!m) { m = new Map(); for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1) m.set(w.t.island[k], (m.get(w.t.island[k]) ?? 0) + 1); mainMemo.set(w, m); }
   const i = w.t.island[c.a.cell], j = w.t.island[c.b.cell]; return i !== j && (m.get(i) ?? 0) >= MAIN_ISLAND_CELLS && (m.get(j) ?? 0) >= MAIN_ISLAND_CELLS;

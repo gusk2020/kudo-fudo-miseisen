@@ -1,3 +1,4 @@
+import type { RecLog } from "../sim/reclaim34";
 import { buildIndex } from "../sim/network";
 import { RELOC_FIRST } from "../sim/kaigen";
 import { LAKE_LIST } from "../render/lakes";
@@ -189,13 +190,21 @@ export class App {
   /** Stage 20: a running or loaded game keeps the grid it was started with (an older game has no islets); a game not yet started takes the islands. */
   /** Stage 20: the seat points that make a new 県庁所在地 (a game under way keeps the ones it started with; an older game has none). */
   private movesWanted(): SeatMove[] { const sim = this.sim ?? this.pendingSim; if (sim) return (sim.isl20 ? sim.moves20 : undefined) ?? []; return this.real ? movesOfSettings(seatsOf(this.s), this.s) : []; }
+  /** Stage 34: a game carries the enlargement / reclamation log (a new game on the real map starts one; an older game has none and keeps its land). */
+  private g34Wanted(): { log: RecLog[]; done: string[] } | false { const sim = this.sim ?? this.pendingSim; if (sim) return sim.rec34 ? { log: [...sim.rec34.log], done: [...sim.rec34.done] } : false; return this.real ? { log: [], done: [] } : false; }
   private isletsWanted(): 0 | 1 | 2 { const sim = this.sim ?? this.pendingSim; return sim ? (sim.isl22 ? 2 : sim.isl20 ? 1 : 0) : this.real ? 2 : 0; }   // Stage 22: a new game gets the real outlines; a Stage 20 game keeps its ellipses
   ensureWorld(): World | null {
     if (!this.terrain) return null; const ids = this.townIdsWanted(), isl = this.isletsWanted(), mv = this.movesWanted(), key = (ids ? ids.join(",") : "") + (isl ? "+isl" + isl : "") + (mv.length ? "+" + JSON.stringify(mv) : "");
-    if (this.worldRef !== this.terrain || this.worldKey !== key) { this.world = buildWorld(this.terrain, this.s.seed, ids, isl || false, mv); this.world.barrier = !!this.real; this.worldRef = this.terrain; this.worldKey = key; }
+    const g34 = this.g34Wanted(), key2 = key + (g34 ? "+g34" : "");
+    if (this.worldRef !== this.terrain || this.worldKey !== key2) {
+      this.world = buildWorld(this.terrain, this.s.seed, ids, isl || false, mv, g34); this.world.barrier = !!this.real; this.worldRef = this.terrain; this.worldKey = key2;
+      const rs = this.sim ?? this.pendingSim, add = this.world.g34new; if (rs?.rec34 && add) { rs.rec34.log.push(...add.log); rs.rec34.done.push(...add.done); }   // Stage 34: a seat added after the start (a move) enlarged its island: remembered in the game, so a reload gives the same land
+    }
     return this.world;
   }
+  private recShown = 0;
   renderRoads() {
+    { const n = this.sim?.rec34?.log.length ?? 0; if (n !== this.recShown) { this.recShown = n; this.render(); } }   // Stage 34: new land shows at once
     { const co = !this.sim || !!this.sim.pot17; if (this.r.capitalsOnly !== co) { this.r.capitalsOnly = co; this.render(); } }   // Stage 18: the base map names only the capitals in a Stage 17 game
     const w0 = this.world, cerTool = this.tool === "cer-kokudo1" || this.tool === "cer-fudo1" || this.tool === "cer-kokudo0", cer = (["kokudo1", "fudo1", "kokudo0"] as CerKind[]).map((k) => this.cerDraft[k]).filter(Boolean).map((d) => ({ strokes: d!.strokes, handles: cerTool && this.cerMode !== "draw", sel: cerTool ? this.cerSel : null, pts: d!.pts, path: d!.prev.path, ok: d!.prev.ok, segs: (d!.prev as NatPreview).segments && w0 ? (d!.prev as NatPreview).segments.map((sg) => ({ pts: sg.cells.map((c) => w0.cellPos(c)), ferry: sg.ferry })) : undefined }));
     if (this.cerLive) cer.push({ strokes: [this.cerLive], handles: false, sel: null, pts: this.cerLive, path: undefined as any, ok: true, segs: undefined });

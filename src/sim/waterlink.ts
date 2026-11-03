@@ -14,13 +14,14 @@
 import { basePop } from "./roles";
 import { dist } from "../core/geom";
 import type { WCity, World } from "./world";
+import { worldMemo } from "./world";
 import type { Mode, SimState } from "./types";
 import type { Vec } from "../core/types";
 
 export const MAX_RAY_KM = 70, MAX_STRAIT_KM = 45, LAND_RATIO = 2.2, MIN_SAVING_KM = 25, MIN_CROSS_KM = 6, DEDUPE_KM = 22, DIRECTIONS = 16;
 export interface WaterLink { id: string; a: number; b: number; kind: "sea" | "lake"; km: number; landKm: number | null; lmA: number; lmB: number; nameA: string; nameB: string; saving: number }
 
-const memo = new WeakMap<World, WaterLink[]>();
+const memo = worldMemo<WaterLink[]>();
 const town = (w: World, k: number, avoid?: string): { name: string; c: WCity } => {
   let best: WCity = w.cities[0], bd = Infinity; const p = w.cellPos(k);
   for (const c of w.cities) { const d = dist(c.pos, p); if (c.name !== avoid && d < bd) { bd = d; best = c; } }
@@ -89,7 +90,7 @@ export function waterLinks(w: World): WaterLink[] {
 
 /** People within SHORE_REACH_KM of either end of a crossing, each counted ONCE, on the shore they are nearer to: cities and villages. Returns [shore a, shore b]. */
 export const SHORE_REACH_KM = 70, RURAL_RADIUS_CELLS = 5, RURAL_PER_KM2 = 45;
-const ruralMemo = new WeakMap<World, Map<number, number>>();
+const ruralMemo = worldMemo<Map<number, number>>();
 /** The people of the countryside round a shore cell who live in no city or village the model names (1950 figure): the land within RURAL_RADIUS_CELLS times RURAL_PER_KM2. A headland
  * has half the land of an inland town, so it has half the people. */
 export function ruralBase(w: World, cell: number): number {
@@ -127,7 +128,7 @@ function sidePopsRaw(sim: SimState, w: World, ca: number, cb: number, stamp = ""
  * crossing saves over the way by land (the detour in km; 100 km saved counts in full, up to 1.5x), in vehicles (or riders) a day. A rail tunnel sees RAIL_FROM_ROAD of the road's.
  */
 export const VIRTUAL_K = 3e-7, VIRTUAL_SAVING_KM = 100, VIRTUAL_SAVING_MAX = 1.5, RAIL_FROM_ROAD = 0.8, ROAD_REF = 3000, RAIL_REF = 6000;
-const landMemo = new WeakMap<World, Map<string, number | null>>();
+const landMemo = worldMemo<Map<string, number | null>>();
 export function landDetourKm(w: World, a: number, b: number): number | null {
   let m = landMemo.get(w); if (!m) { m = new Map(); landMemo.set(w, m); } const key = a < b ? `${a}:${b}` : `${b}:${a}`; if (m.has(key)) return m.get(key)!;
   const km = landDistanceKm(w, a, b, 400); m.set(key, km); return km;

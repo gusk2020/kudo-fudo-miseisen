@@ -212,6 +212,8 @@ export class Renderer {
       h.circle(c[0], c[1], px(8)).stroke({ width: px(2.5), color: col }).fill({ color: 0xffffff, alpha: 0.5 });
       this.overlay.addChild(h);
     }
+    { const ra = this.roadArgs, log = ra?.sim?.rec34?.log;   // Stage 34: land added to an island (sand) or reclaimed from the sea (paler sand), drawn as the grid cells they are
+      if (ra?.w && log && log.length) { const h = new Graphics(), c = ra.w.cell; for (const e of log) { const q = ra.w.cellPos(e.k); h.rect(q[0] - c / 2, -q[1] - c / 2, c, c).fill({ color: e.kind === "grow" ? 0xd2b977 : 0xe6d7a6, alpha: 0.92 }).stroke({ width: px(1), color: 0xa08a50, alpha: 0.8 }); } this.overlay.addChild(h); } }
     if (this.creationSel) { const h = new Graphics(), c = this.creationSel; for (const q of c.cells) h.rect(q[0] - c.cell / 2, -q[1] - c.cell / 2, c.cell, c.cell).fill({ color: 0xfff3a0, alpha: 0.45 }).stroke({ width: px(2), color: 0xffd400, alpha: 0.95 }); this.overlay.addChild(h); }
     if (this.createPending) { const h = new Graphics(), q = this.createPending, r = px(11); h.circle(q[0], -q[1], r).stroke({ width: px(2), color: 0x00a8ff }); h.moveTo(q[0] - r * 1.6, -q[1]).lineTo(q[0] + r * 1.6, -q[1]).moveTo(q[0], -q[1] - r * 1.6).lineTo(q[0], -q[1] + r * 1.6).stroke({ width: px(2), color: 0x00a8ff }); this.overlay.addChild(h); }
     if (this.rangeSel && this.rangeSel.pts.length > 1) {   // Stage 30A: the selected range -- a yellow band as wide as its core (never thinner than a fingertip) with a solid crest line and edge lines, like Fuji's / Biwa's outline
