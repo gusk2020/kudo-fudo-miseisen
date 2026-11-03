@@ -5,7 +5,7 @@
  */
 import { stepReclaim } from "./reclaim34";
 import { isIslandRoute, isOcean, reviewSea22Gen } from "./sea22";
-import { due2200, open2200, waiting2200 } from "./event2200";
+import { due2200, open2200, skip2200, unattended, waiting2200 } from "./event2200";
 import { REBUILD_CLOCK_SLOW, cycleGrowthRate, cycleOf, rebuildDrive, reviveRule } from "./cycle27";
 import { newTier23, reviewTiers } from "./tier23";
 import { newNumReg, syncNumbers } from "./numreg";
@@ -590,7 +590,7 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
 export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
   if (sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) return;   // waiting for the player at a policy window or an era change: time does not move
   if (sim.month % 12 === 0) {
-    if (due2200(sim)) { open2200(sim); return; }   // Stage 22 / 23: time stops here in every mode (auto and away included) until the player chooses -- 現状維持 too is a choice
+    if (due2200(sim)) { if (unattended(sim)) skip2200(sim); else { open2200(sim); return; } }   // Stage 22 / 23: time stops here in every mode (auto and away included) until the player chooses -- 現状維持 too is a choice
     if (kaigenDue(sim.kaigen, yearOf(sim))) { startKaigen(sim, yearOf(sim)); if (sim.kaigen!.pending) return; }
     if (windowDue(sim, yearOf(sim))) { openWindow(sim, w, yearOf(sim)); if (sim.policy!.pending) return; }
     yield* yearlyGen(sim, w);

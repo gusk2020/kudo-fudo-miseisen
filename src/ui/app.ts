@@ -3,7 +3,7 @@ import { buildIndex } from "../sim/network";
 import { RELOC_FIRST } from "../sim/kaigen";
 import { LAKE_LIST } from "../render/lakes";
 import { adoptRelocSchedule, adoptWorld, relocDiag, apply2200, close2200, placePalace, waiting2200, type Choice2200 } from "../sim/event2200";
-import { buildE2200, e22Draft } from "./e2200";
+import { buildE2200, buildRwReview, e22Draft } from "./e2200";
 import { nearestPlace } from "../core/gazetteer";
 import { movesOfSettings, type SeatMove } from "../sim/seatmove20";
 import { realToWorld, worldToPostOps, worldParts } from "../core/body";
@@ -673,12 +673,42 @@ export class App {
   /** 決める / 今のまま: applied to the game; a seat put on the map rebuilds the world with the new 県庁所在地 (people come from the old one, a little) and the runner goes on with it. */
   decideE2200(keep: boolean) {
     const sim = this.sim; if (!sim || sim.e2200?.state !== "pending") return; this.runner?.settle();
+    if (!keep && this.e22) { this.rwSnap = JSON.stringify(sim); this.rwDraft = JSON.parse(JSON.stringify(this.e22)); void putRaw(this.saveKey + ":relocsnap", { n: sim.e2200.n, year: sim.e2200.year, json: this.rwSnap, draft: this.rwDraft }); }   // (Stage 35: kept apart from the game's own save, so 戻る works even after a reload)
     const ch = keep ? null : this.e22 ?? null, w0 = this.world, moved = apply2200(sim, ch, false, (pref) => w0?.cities.find((c) => c.pref === pref && c.kind === "capital")?.pos ?? null); this.e22 = null; closeRadio();
     if (moved) { const w = this.ensureWorld(); if (w) { adoptWorld(sim, w); if (this.runner) this.runner.w = w; if (ch && !ch.palacePos) placePalace(sim, w); } }   // (Stage 27: the world was rebuilt: the palace follows its prefecture's new 県庁所在地)
-    this.sheet = null; this.buildSheet(); if ((sim.e2200?.state as string) === "road0") this.toast("国道0号を描けます(新首都と新副首都を結ぶ。既存の道・旧道・廃道を優先して使います)");
+    this.sheet = null; this.rwStage = (sim.e2200?.state as string) === "road0" ? 2 : 0; this.rwSkip = false; this.buildSheet(); if ((sim.e2200?.state as string) === "road0") this.toast("国道0号を描けます(新首都と新副首都を結ぶ。既存の道・旧道・廃道を優先して使います)");
     this.renderRoads(); this.render(); this.buildUI(); void this.persist(true);
     if ((sim.e2200?.state as string) === "done") void this.takeCheckpoint();   // (Stage 29: 今のまま ends the event here: the save after it is taken now, not when the clock next starts a year)
   }
+  // ---- Stage 35: the relocation as a wizard (era/policy -> seats -> 国道0号 -> final review). The seats stage applies the choices (the road is drawn between the NEW seats), after saving a snapshot of the game as it was; 戻る from the road
+  // puts that snapshot back, so nothing is lost and nothing half-applied remains. The clock stays stopped until 確定して再開. ----
+  rwStage = 0; rwSkip = false; rwSnap: string | null = null; rwDraft: Choice2200 | null = null;
+  rwSync() { const st = this.sim?.e2200?.state as string | undefined; if (st === "pending" && this.rwStage > 1) this.rwStage = 0; else if (st === "road0" && this.rwStage < 2) this.rwStage = 2; }   // (a reload mid-wizard: the choices before the seats stage were never applied, so that part starts again; the road stage resumes where it was)
+  rwNext() { this.rwStage = 1; this.buildSheet(); }
+  rwSkipRoad() { this.rwSkip = true; this.rwReview(true); }
+  rwReview(skipped = false) {
+    if (this.sim?.e2200?.state !== "road0") return; const d0 = this.cerDraft.kokudo0; if (!skipped && !d0?.prev.ok) { this.toast("国道0号を描いて✓が付いてから進んでください"); return; }
+    if (!skipped) this.rwSkip = false; this.rwStage = 3; this.tool = "view"; this.sheet = "rwreview"; this.buildSheet(); this.buildUI(); this.render();
+  }
+  async rwBack() {
+    const st = this.sim?.e2200?.state as string | undefined;
+    if (st === "pending") { this.rwStage = Math.max(0, this.rwStage - 1); this.buildSheet(); return; }
+    if (st !== "road0") return;
+    if (this.rwStage >= 3) { this.rwStage = 2; this.sheet = null; this.buildSheet(); this.buildUI(); this.render(); return; }
+    await this.rwRollback();
+  }
+  /** Puts the game back as it was when the seats were decided (before the choices were applied); the draft choices are kept for editing. */
+  private async rwRollback() {
+    const sim = this.sim; if (!sim || sim.e2200?.state !== "road0") return; let json = this.rwSnap, draft = this.rwDraft;
+    if (!json) { const raw = await getRaw(this.saveKey + ":relocsnap"); try { const j = raw ? JSON.parse(raw) : null; if (j && j.n === sim.e2200.n && j.year === sim.e2200.year && typeof j.json === "string") { json = j.json; draft = j.draft ?? null; } } catch { /* no snapshot */ } }
+    if (!json) { this.toast("この状態からは遷都の選び直しができません(国道0号を作るか、見送って確定してください)"); return; }
+    this.runner?.settle(); const back = JSON.parse(json) as SimState; if (back.e2200?.state !== "pending") { this.toast("遷都の選び直しができませんでした"); return; }
+    this.sim = back; this.e22 = draft; delete this.cerDraft.kokudo0; this.rwSkip = false; this.rwStage = 1; this.e22Pick = null; const w = this.ensureWorld();
+    if (w && this.runner) this.runner = new SimRunner(back, w);
+    this.sheet = "e2200"; this.tool = "view"; this.buildSheet(); this.renderRoads(); this.render(); this.buildUI(); void this.persist(true);
+  }
+  /** 確定して再開: 国道0号 is opened (or given up), the event closes, the game is saved, and the clock may run again. */
+  rwConfirm() { const skip = this.rwSkip || !this.cerDraft.kokudo0?.prev.ok; this.openRoad0(skip); if ((this.sim?.e2200?.state as string) === "done") { this.rwStage = 0; this.rwSkip = false; this.rwSnap = null; this.sheet = null; this.buildSheet(); this.buildUI(); } }
   /** Stage 22: 開通の儀 of 国道0号 (or none). */
   openRoad0(skip = false) {
     const sim = this.sim, w = this.world; if (!sim || !w || sim.e2200?.state !== "road0") return;
@@ -790,6 +820,7 @@ export class App {
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
     if (run && !run.gate) run.gate = (sm) => checkpointDue(sm) !== null;   // Stage 26: the clock stops at a year boundary that owes a checkpoint
+    this.rwSync();
     if (sim?.e2200?.state === "pending" && this.sheet !== "e2200" && !this.e22Pick && !document.getElementById("rw-root")) { this.sheet = "e2200"; this.buildSheet(); this.status(); this.toast(`${sim.e2200.year}年: 遷都と復興の時です(時間は止まっています)`); this.road0Told = false; }
     else if (sim?.e2200?.state === "road0" && !this.road0Told) { this.road0Told = true; this.toast("国道0号を描いて開通させるか、見送るかを選んでください(時間は止まっています)"); }   // Stage 24: choosing the era and seats is not the end of the event
     else if (sim?.kaigen?.pending && this.sheet !== "kaigen") { this.sheet = "kaigen"; this.buildSheet(); this.toast("改元の時です。元号を選んでください(時間は止まっています)"); }
@@ -1138,7 +1169,8 @@ export class App {
     tb.append(sp);
     if (this.sim.e2200?.state === "road0") {   // Stage 22: 国道0号 -- drawn like 国道1号, either way round; opened by its own ceremony
       const d0 = this.cerDraft.kokudo0, nat0 = d0?.prev as NatPreview | undefined, g0 = h("div", { class: "grp", id: "road0-row" });
-      g0.append(this.tbtn("国道0号を描く" + (d0 ? (d0.prev.ok ? " 済" : " 要修正") : ""), this.tool === "cer-kokudo0", () => this.setTool("cer-kokudo0"), "tool-cer-kokudo0"), h("button", { id: "road0-go", type: "button", disabled: d0?.prev.ok ? null : "", onclick: () => this.openRoad0(false) }, "開通の儀(国道0号)"), h("button", { id: "road0-skip", type: "button", onclick: () => this.openRoad0(true) }, "国道0号はつくらない"));
+      g0.append(this.tbtn("国道0号を描く" + (d0 ? (d0.prev.ok ? " 済" : " 要修正") : ""), this.tool === "cer-kokudo0", () => this.setTool("cer-kokudo0"), "tool-cer-kokudo0"), h("button", { id: "road0-skip", type: "button", onclick: () => this.rwSkipRoad() }, "国道0号はつくらない"));
+      if (this.rwStage < 3) tb.append(h("div", { class: "grp", id: "rw-nav" }, h("span", { id: "rw-head", class: "note", role: "status", "aria-live": "polite" }, "遷都 3/4  国道0号"), h("button", { id: "rw-back", type: "button", onclick: () => this.rwBack() }, "‹ 戻る"), h("button", { id: "rw-review", type: "button", class: "mode on", disabled: d0?.prev.ok ? null : "", onclick: () => this.rwReview() }, "最終確認 ›")));   // (the review sheet has its own 戻る / 確定)
       if (d0) g0.append(h("button", { id: "road0-undo", type: "button", disabled: !d0.past.length, onclick: () => this.cerUndo("kokudo0") }, "↶"), h("button", { id: "road0-restart", type: "button", onclick: () => this.cerRestart("kokudo0") }, "描き直す"));
       tb.append(g0); if (d0) tb.append(h("div", { id: "cer-status-kokudo0", class: "note " + (d0.prev.ok ? "okc" : "badc") }, d0.prev.ok ? `✓ 国道0号: 約${d0.prev.lengthKm}km${nat0?.ferries?.length ? `／フェリー${nat0.ferries.length}本` : ""}${nat0?.through?.length ? `／経由: ${nat0.through.map((n) => n.replace(/市$/, "")).join("・")}` : ""}(既存の道・旧道・廃道を優先して転用)` : `✗ ${d0.prev.reasons[0] ?? "経路を作れません"}`));
     }
@@ -1182,6 +1214,7 @@ export class App {
     else if (this.sheet === "policy") buildPolicy(this, body);
     else if (this.sheet === "kaigen") buildKaigen(this, body);
     else if (this.sheet === "e2200") buildE2200(this, body);
+    else if (this.sheet === "rwreview") buildRwReview(this, body);
   }
   private buildHistory(body: HTMLElement) {
     body.append(h("h3", {}, "年表(新しい順)"));
