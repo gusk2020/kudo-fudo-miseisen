@@ -219,7 +219,7 @@ export class App {
     try {
       const res = await this.client.generate(JSON.parse(JSON.stringify(this.s)), (p) => { this.genProgress = p; this.status(); });
       if (stateKey(this.s) !== key) return;
-      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.updateFitExtra(); this.attachPendingSim(); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.restoreCer();
+      this.terrain = res; this.terrainKey = key; this.ensureWorld(); this.updateFitExtra(); this.noteCreations(); this.attachPendingSim(); for (const k of ["kokudo1", "fudo1"] as CerKind[]) if (this.cerDraft[k]) this.replanCer(k); this.restoreCer();
     } catch (e: any) { if (String(e?.message) !== "cancelled") this.toast("地形生成に失敗: " + e?.message); }
     finally { if (this.genTok === tok) { this.generating = false; this.render(); this.buildUI(); } }   // the busy state is always cleared, whatever happened
   }
@@ -452,6 +452,24 @@ export class App {
     return this.commitEdit((s) => { setFeatureSize(s.features[which], nx, ny); if (which === "fuji" && s.features.fuji.height === undefined) { if (s.features.fuji.scale === undefined) delete s.features.fuji.auto; else s.features.fuji.auto = true; } });
   }
   // ---- Stage 33: new mountains and lakes on plain ground (500 m / 5 km a press, at most three presses), with the Stage 32 way of choosing a place: tap, 決定 / 微調整 / やり直し ----
+  /** What the last terrain said about each creation (key -> status): a notice is shown when it CHANGES, the first terrain after a load only fills this in (the notes row shows the standing state from the terrain itself). */
+  private creationStatus = new Map<string, string>(); private creationPrimed = false;
+  creationNotes() { return (this.terrain?.creationReport ?? []).filter((r) => r.status !== "ok"); }
+  private noteCreations() {
+    const rep = this.terrain?.creationReport ?? [], first = !this.creationPrimed; this.creationPrimed = true;
+    for (const r of rep) { const was = this.creationStatus.get(r.key) ?? "ok"; this.creationStatus.set(r.key, r.status); if (first || r.status === was || r.status === "ok") continue; this.toast(this.creationMessage(r)); }
+    for (const k of [...this.creationStatus.keys()]) if (!rep.some((r) => r.key === k)) this.creationStatus.delete(k);
+    this.buildToolbar();
+  }
+  creationMessage(r: { label: string; wanted: number; cells: number; status: string }): string {
+    return r.status === "gone-biwa" ? `琵琶湖との接触により${r.label}が消滅しました` : r.status === "gone-sea" ? `海岸に近すぎて${r.label}は残りませんでした(海との間に陸地が1マス必要です)` : `${r.label}は海岸に近いため${r.wanted}マスから${r.cells}マスに縮小しました`;
+  }
+  /** Clears what the terrain says is gone: created ones are deleted, a range turned into a lake goes back to plain. */
+  clearGoneCreations() {
+    const gone = this.creationNotes().filter((r) => r.status.startsWith("gone")); if (!gone.length) return;
+    this.commitEdit((st) => { const ids = new Set(gone.filter((r) => r.key.startsWith("c:")).map((r) => Number(r.key.slice(2)))); const l = (st.creations ?? []).filter((c) => !ids.has(c.id)); if (l.length) st.creations = l; else delete st.creations;
+      for (const r of gone) if (r.key.startsWith("r:") && st.rangeEdits) { const id = r.key.slice(2); st.rangeEdits = { ...st.rangeEdits, [id]: 0 }; } });
+  }
   createKind: CreationKind = "mountain"; creationSel: number | null = null; createPick: { k: number; w: Vec } | null = null;
   private creationGrid() { const g = this.terrain?.grid; return g ? { nx: g.nx, ny: g.ny, cell: g.cell, x0: g.x0, y0: g.y0 } : null; }
   private creationCells(c: Creation) { const g = this.creationGrid(); return g ? creationFootprint(g, c, this.s.seed >>> 0) : []; }
@@ -504,8 +522,8 @@ export class App {
     out.push(h("div", { class: "grp", id: "create-kind" }, this.tbtn("山", this.createKind === "mountain", () => { this.createKind = "mountain"; this.buildToolbar(); }, "create-mountain", false), this.tbtn("湖", this.createKind === "lake", () => { this.createKind = "lake"; this.buildToolbar(); }, "create-lake", false),
       h("small", { class: "tag", id: "create-note" }, `平地の中心をタップ。1回で${this.createKind === "mountain" ? "標高+500m(最大1500m)" : "直径+5km(最大15km)"}`)));
     if (sel) {
-      const n = creationCells(sel.kind, sel.level, cell), d = creationDiameterKm(sel.kind, sel.level), txt = sel.kind === "mountain" ? `山 ${creationHeightM(sel.level)}m` : `湖 直径${d}km`;
-      out.push(h("div", { class: "grp", id: "creation-row" }, h("button", { id: "creation-less", type: "button", "aria-label": "小さく", onclick: () => this.stepCreation(-1) }, "−"), h("small", { class: "tag", id: "creation-level" }, `${txt}(${n}マス・約${n * cell * cell}km²)`), h("button", { id: "creation-more", type: "button", "aria-label": "大きく", onclick: () => this.stepCreation(1) }, "＋"), h("button", { id: "creation-del", type: "button", onclick: () => this.deleteCreation() }, "なくす")));
+      const rep = this.terrain?.creationReport?.find((x) => x.key === `c:${sel.id}`), n = rep ? rep.cells : creationCells(sel.kind, sel.level, cell), d = creationDiameterKm(sel.kind, sel.level), txt = sel.kind === "mountain" ? `山 ${creationHeightM(sel.level)}m` : `湖 直径${d}km`;
+      out.push(h("div", { class: "grp", id: "creation-row" }, h("button", { id: "creation-less", type: "button", "aria-label": "小さく", onclick: () => this.stepCreation(-1) }, "−"), h("small", { class: "tag", id: "creation-level" }, `${txt}(実効${n}マス・約${n * cell * cell}km²${rep && rep.cells < rep.wanted ? `。海岸のため${rep.wanted}マスから縮小` : ""}${rep?.status === "gone-biwa" ? "。琵琶湖との接触で消滅" : ""})`), h("button", { id: "creation-more", type: "button", "aria-label": "大きく", onclick: () => this.stepCreation(1) }, "＋"), h("button", { id: "creation-del", type: "button", onclick: () => this.deleteCreation() }, "なくす")));
       return out;
     }
     const p = this.createPick, fine = this.createFine && !!p;
@@ -970,6 +988,7 @@ export class App {
     if (this.tool === "range") tb.append(h("div", { class: "grp", id: "edit-range-row" }, ...this.rangeControls()));
     if (this.tool === "range" && this.rangeListOpen) tb.append(this.rangeList());
     if (this.tool === "create") tb.append(...this.createPanel());
+    { const notes = this.creationNotes(); if (notes.length) tb.append(h("div", { class: "grp", id: "terrain-notes", role: "status" }, h("small", { class: "tag", id: "terrain-notes-text" }, "⚠ " + notes.map((r) => this.creationMessage(r)).join(" / ")), ...(notes.some((r) => r.status.startsWith("gone")) ? [h("button", { id: "notes-clear", type: "button", onclick: () => this.clearGoneCreations() }, "片付ける")] : []))); }
     const errs = this.issues.filter((i) => i.severity === "error" && (i.step === "features")); if (errs.length) tb.append(h("div", { class: "note badc", id: "edit-errors" }, errs.slice(0, 2).map((e) => e.msg).join(" / ")));
   }
   /** Stage 30A: [list ▾] [−] ×1.0 [＋] [標準] for the selected range. */
@@ -1015,7 +1034,7 @@ export class App {
   private posOf(which: "capital" | "sub" | "palace") { return which === "capital" ? this.s.capitalPos : which === "sub" ? this.s.subPos : this.s.palacePos; }
   unlockMap() {
     if (this.sim && !confirm("地図の編集を再開すると、作成済みの道路とシミュレーションは消えます。よろしいですか?")) return;
-    this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.wizReset(); this.pin = null; this.store.unlock(); this.persist(); this.toast("ロックを解除しました");
+    this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.wizReset(); this.creationPrimed = false; this.creationStatus.clear(); this.pin = null; this.store.unlock(); this.persist(); this.toast("ロックを解除しました");
   }
   // ---- Stage 31: the setup as four stages and a final review (terrain -> era -> seats -> 国道1号 -> review). Each stage reuses the controls the setup always had; the wizard decides which are on screen, keeps
   // what was chosen (it all lives in the game state, so going back loses nothing), and re-asks only what a change really affects: every confirmed stage remembers a signature of what it depends on. ----
@@ -1319,7 +1338,7 @@ export class App {
     if (l.sim) { l.sim.lastWallMs = 0;
       // Stage 30A: a load restores the world and timeline it was saved in; if that timeline already holds a later checkpoint, the game goes on as a new branch (a save from before Stage 30A becomes a world of its own)
       let br = false; try { br = assignBranch(l.sim, await listCheckpoints(idbCpStore)); } catch { ensureIdentity(l.sim); } if (br) l.problems = [...l.problems, "別の分岐として続けます"]; }
-    this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.pendingSim = l.sim; this.saveAfterAttach = !!l.sim; this.r.fit(l.map);
+    this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.creationPrimed = false; this.creationStatus.clear(); this.pendingSim = l.sim; this.saveAfterAttach = !!l.sim; this.r.fit(l.map);
     if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
     this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
     if (this.terrain && this.pendingSim) this.attachPendingSim();   // Stage 26: the same map (a checkpoint, or a slot of this very map) needs no new terrain, so nothing else would ever attach the loaded game

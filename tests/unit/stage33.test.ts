@@ -92,4 +92,29 @@ describe("Stage 33: freshwater crossings", () => {
   });
 });
 
+describe("Stage 33 (fix): creations beside the coast, and what is reported", () => {
+  const { nx, ny, x0, y0 } = base.t.grid, cp = (k: number): [number, number] => [x0 + ((k % nx) + 0.5) * 5, y0 + (((k / nx) | 0) + 0.5) * 5];
+  const seaWithin = (k: number, r: number) => { const i = k % nx, j = (k / nx) | 0; for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= nx || b >= ny || base.t.land[b * nx + a] === 0) return true; } return false; };
+  const plainAt = (want: "touching" | "two") => { for (let k = 0; k < base.t.land.length; k++) { if (base.t.land[k] !== 1 || base.t.elev[k] > 250) continue; if (want === "touching" ? seaWithin(k, 1) : !seaWithin(k, 1) && seaWithin(k, 2)) { const [x, y] = cp(k); if (x > 100 && !seaWithin(k, 0)) return k; } } return -1; };
+  it("a lake whose centre is one cell from the coast is accepted; its sea side is left out, the sea is not changed, and the report says what is left", () => {
+    const k = plainAt("two"); expect(k).toBeGreaterThan(0);
+    const { t } = gen((st) => { st.creations = [{ id: 1, kind: "lake", pos: cp(k), level: 3 }]; }); const r = t.creationReport!.find((x) => x.key === "c:1")!;
+    expect(r.wanted).toBe(7); expect(r.cells).toBeLessThanOrEqual(r.wanted); expect(["ok", "shrunk-sea", "gone-sea"]).toContain(r.status);
+    for (let q = 0; q < t.land.length; q++) { if (base.t.land[q] === 0) expect(t.land[q]).toBe(0); if (t.land[q] === 2 && base.t.land[q] !== 2) expect(touchesSea(t, q)).toBe(false); }
+    expect(t.land.reduce((n, v) => n + (v === 2 ? 1 : 0), 0) - lakeCount(base.t)).toBe(r.cells);   // the effective area is what is on the map
+  });
+  it("a lake whose centre touches the sea is accepted by the terrain but leaves nothing (gone-sea, reported); a mountain there is cut at the coast and keeps its centre", () => {
+    const k = plainAt("touching"); expect(k).toBeGreaterThan(0);
+    const lake = gen((st) => { st.creations = [{ id: 1, kind: "lake", pos: cp(k), level: 1 }]; }); expect(lake.t.creationReport!.find((x) => x.key === "c:1")!.status).toBe("gone-sea"); expect(lakeCount(lake.t)).toBe(lakeCount(base.t));
+    const mt = gen((st) => { st.creations = [{ id: 2, kind: "mountain", pos: cp(k), level: 3 }]; }), m = mt.t.creationReport!.find((x) => x.key === "c:2")!;
+    expect(m.cells).toBeGreaterThan(0); expect(m.cells).toBeLessThanOrEqual(7); expect(mt.t.elev[k]).toBeGreaterThan(base.t.elev[k] + 1000);
+    for (let q = 0; q < mt.t.land.length; q++) if (base.t.land[q] === 0) { expect(mt.t.land[q]).toBe(0); expect(mt.t.elev[q]).toBe(base.t.elev[q]); }
+  });
+  it("a lake that touches Lake Biwa is reported as gone because of Biwa, and nothing else changes", () => {
+    const { t } = gen((st) => { st.creations = [{ id: 1, kind: "lake", pos: W(135.95, 35.2), level: 3 }]; }); const r = t.creationReport!.find((x) => x.key === "c:1")!;
+    expect(r.status).toBe("gone-biwa"); expect(r.cells).toBe(0); expect(lakeCount(t)).toBe(lakeCount(base.t));
+    const far = gen((st) => { st.creations = [{ id: 1, kind: "lake", pos: W(139.7, 36.2), level: 3 }]; }); expect(far.t.creationReport!.find((x) => x.key === "c:1")!.status).toBe("ok"); expect(base.t.creationReport).toEqual([]);
+  });
+});
+
 function realToWorldPos(s: ReturnType<typeof realState>, real: [number, number]): [number, number] { return realToWorld("honshu", s.bodies.honshu, real); }

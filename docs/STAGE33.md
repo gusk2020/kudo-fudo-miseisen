@@ -12,3 +12,12 @@
 - **Freshwater crossings**: lakes are now judged one by one (Biwa first, then the player's lakes by size); a lake's routes carry a 【湖n】 tag. Effective minimum: a lake cell is 5 km of water (10 km between shore-cell centres); the plan's 3 km cannot be told apart on this grid. A small lake that already has its long route keeps one service (its cap); one without can still be crossed at its narrows. Biwa-only games keep exactly the crossings they had.
 - **Performance**: terrain build 0.49–0.59 s with no creations, 0.57–0.67 s with twelve; `lakeCrossings` 1.7–2.2 ms. The simulation's monthly loop is untouched (×20 not re-measured separately).
 - **Limits**: the lake form of a range is 5–7 km wide, the new lake's drawn shape is cell squares (visual freshwater only, no hydrology); creations are not allowed beside the sea or on high ground; a lake that touches Biwa is removed silently (it simply does not appear). Stage 34 (island enlargement, reclamation) and 35 (relocation skip) are not started.
+
+## 修正(海岸の平野・琵琶湖接触の通知)
+
+- 山・湖は、中心が編集可能な平野なら、輪郭が海岸に掛かっていても作れる(海岸までの距離では拒否しない)。海・湖・高地・禁止跡地の中心は従来どおり不可。
+- 山は海岸で切れ、海を陸・山にしない。湖は海との間に陸を最低1マス残し、海側のマスは落とす(湖と海はつながらない)。
+- 面積・直径は5kmグリッド上の近似。縮んだ場合は実効マス数・面積を選択行に表示する。
+- 琵琶湖に触れた湖は従来どおり消える。地形生成が `creationReport`(key,label,wanted,cells,status)を返し、画面はそれだけを元に
+  「琵琶湖との接触により湖が消滅しました」等をトースト＋地形タブの注記行(片付ける)で表示する。
+  通知は地形から導くため、設定・再編集・保存/復元で必ず地形と一致する。通知は操作を妨げない。

@@ -1297,3 +1297,27 @@ test("Stage 33: 富士山・琵琶湖は海岸近くにも置け(中心が陸な
   expect(lowZ).toBeLessThan(0.8); const before = await n(); await page.evaluate(() => { const a = (window as any).__kfm; a.setBg("terrain", false); a.r.setView({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: 1.2 }); }); await page.waitForTimeout(900);
   expect(await n()).toBeGreaterThan(before); expect(errs).toEqual([]);
 });
+
+test("Stage 33(修正): 海岸の平野でも山・湖を作れ(海は変わらない)、琵琶湖に触れた湖は消えて理由が通知され、再読み込み後も通知と地形が一致し、片付けられる", async ({ page }) => {
+  test.setTimeout(300000); const errs = watchErrors(page); await bootReal(page); await wizTo(page, 0); await page.click("#edit-create");
+  const ready = () => page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });
+  const findCell = (kind: "coast" | "biwa") => page.evaluate((kd) => { const a = (window as any).__kfm, t = a.terrain, { nx, ny } = t.grid; for (let k = 0; k < t.land.length; k++) { if (t.land[k] !== 1 || a.createReason(k) !== null) continue; const i = k % nx, j = (k / nx) | 0; for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = i + di, y = j + dj; if (x < 0 || y < 0 || x >= nx || y >= ny) continue; const v = t.land[y * nx + x]; if ((kd === "coast" && v === 0) || (kd === "biwa" && v === 2)) { const g = t.grid; return [g.x0 + (i + 0.5) * g.cell, g.y0 + (j + 0.5) * g.cell]; } } } return null; }, kind) as Promise<[number, number] | null>;
+  // 1) beside the sea: the centre is accepted whatever the distance to the coast; the sea is never changed
+  const coast = await findCell("coast"); expect(coast).toBeTruthy();
+  const seaBefore = await app(page, "a => a.terrain.land.reduce((n, v) => n + (v === 0 ? 1 : 0), 0)") as number;
+  expect(await app(page, `a => a.tapCreate([${coast![0]}, ${coast![1]}])`)).toBe(true); await page.click("#create-confirm"); await ready();
+  expect(await app(page, "a => a.terrain.land.reduce((n, v) => n + (v === 0 ? 1 : 0), 0)")).toBe(seaBefore);
+  expect((await app(page, "a => a.terrain.creationReport[0].status")) as string).toMatch(/gone-sea|shrunk-sea|ok/); await page.click("#creation-del"); await ready();
+  // 2) a lake that touches Lake Biwa disappears and says why
+  await page.click("#create-lake"); const next = await findCell("biwa"); expect(next).toBeTruthy();
+  expect(await app(page, `a => a.tapCreate([${next![0]}, ${next![1]}])`)).toBe(true); await page.click("#create-confirm"); await ready();
+  expect(await app(page, "a => a.terrain.creationReport.map((r) => r.status)")).toContain("gone-biwa");
+  await expect(page.locator("#toast")).toContainText("琵琶湖との接触により"); await expect(page.locator("#terrain-notes-text")).toContainText("琵琶湖との接触により");
+  expect(await app(page, "a => a.terrain.freshLakeCells.length")).toBe(0);   // the note and the terrain agree: no lake
+  // 3) the same after a reload (saved and restored)
+  await page.waitForTimeout(800); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await ready(); await wizTo(page, 0);
+  await expect(page.locator("#terrain-notes-text")).toContainText("琵琶湖との接触により"); expect(await app(page, "a => a.s.creations.length")).toBe(1);
+  // 4) the note can be cleared, which removes the vanished lake
+  await page.click("#notes-clear"); await ready(); expect(await app(page, "a => a.s.creations")).toBeUndefined(); expect(await page.locator("#terrain-notes").count()).toBe(0);
+  expect(errs).toEqual([]);
+});

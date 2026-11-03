@@ -11,6 +11,8 @@ import { featureScales, featureWorld, FUJI_RADIUS_KM, fujiHeightFactor } from ".
 import type { IslandId, ProjectState, Vec } from "./types";
 import { ISLAND_IDS } from "./types";
 
+/** "ok"; "shrunk-sea" (cells beside the sea or off the land were left out); "gone-sea" (nothing could stay: the sea is too near); "gone-biwa" (it touched Lake Biwa, which wins) */
+export interface CreationReport { key: string; label: string; wanted: number; cells: number; status: "ok" | "shrunk-sea" | "gone-sea" | "gone-biwa" }
 export interface RiverInfo { id: string; mouth: Vec; lengthKm: number; path: Vec[]; accCells: number }
 export interface CityOut { id: string; name: string; kind: string; pref: string | null; pos: Vec; moved: boolean; elevM: number; prefIndex: number }
 export interface TerrainResult {
@@ -27,6 +29,8 @@ export interface TerrainResult {
   streams2?: Float32Array;
   /** Stage 33: cells of the lakes the player made */
   freshLakeCells?: number[];
+  /** Stage 33: what became of each mountain / lake the player made (and of each range turned into a lake): its effective cells, or why it is gone */
+  creationReport?: CreationReport[];
   borders: Float32Array;   // x1,y1,x2,y2 per segment
   rivers: RiverInfo[];
   cities: CityOut[];
@@ -194,7 +198,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
 
   // ---- Stage 30A: the major ranges the player has raised or worn down. Only the RELIEF above the plain-equivalent ground (the same 2 m + 0.4 per km inland floor the land is built on) is scaled, by a weight that is 1 on the
   // crest zone and falls off smoothly to 0 at the range's edge -- so the original ridges, valleys and noise stay, the join with the surroundings is continuous, and nothing goes below sea level or the plain. Untouched ranges cost nothing.
-  const rangeMask = new Float32Array(N), freshLakes: number[][] = [];
+  const rangeMask = new Float32Array(N), freshLakes: { key: string; label: string; cells: number[] }[] = [], creationReport: CreationReport[] = [];
   for (const r of RANGES) {
     const m0 = rangeFactor(s.rangeEdits, r.id); if (m0 === 1) continue; const m = Math.max(0, m0), turnToLake = m0 < 0, lakeCells: number[] = [];   // (Stage 33: x-0.05 = the range worn flat and its core turned into a lake)
     const pts = rangeWorldLine(s, r);
@@ -208,16 +212,17 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
         const f = 1 + (m - 1) * w, ne = Math.max(plain, Math.min(Math.max(e, RANGE_MAX_M), plain + (e - plain) * f));   // (an amplified summit stops at RANGE_MAX_M; ground already higher than that is left as it is)
         elev[k] = e > RANGE_MAX_M && f > 1 ? e : ne; if (m > 1 && w > rangeMask[k]) rangeMask[k] = w * Math.min(1, (m - 1) * 4);
       }
-    if (turnToLake) { for (let j = Math.max(0, Math.floor((by0 - r.core - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((by1 + r.core - y0) / cell)); j++) for (let i = Math.max(0, Math.floor((bx0 - r.core - x0) / cell)); i <= Math.min(nx - 1, Math.ceil((bx1 + r.core - x0) / cell)); i++) { const k = j * nx + i; if (land[k] !== 1) continue; const p: Vec = [cx(i), cy(j)]; let d = Infinity; for (let q = 0; q + 1 < pts.length; q++) d = Math.min(d, pointSegDist(p, pts[q], pts[q + 1])); if (d < r.core * 0.6) lakeCells.push(k); } freshLakes.push(lakeCells); }
+    if (turnToLake) { for (let j = Math.max(0, Math.floor((by0 - r.core - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((by1 + r.core - y0) / cell)); j++) for (let i = Math.max(0, Math.floor((bx0 - r.core - x0) / cell)); i <= Math.min(nx - 1, Math.ceil((bx1 + r.core - x0) / cell)); i++) { const k = j * nx + i; if (land[k] !== 1) continue; const p: Vec = [cx(i), cy(j)]; let d = Infinity; for (let q = 0; q + 1 < pts.length; q++) d = Math.min(d, pointSegDist(p, pts[q], pts[q + 1])); if (d < r.core * 0.6) lakeCells.push(k); } freshLakes.push({ key: `r:${r.id}`, label: r.name, cells: lakeCells }); }
   }
 
   // ---- Stage 33: mountains the player created on plain ground (500 m a press, at most 1500 m) and the lakes (kept for after Lake Biwa: Biwa wins every contact) ----
   const grid = { nx, ny, cell, x0, y0 }, creations: Creation[] = s.creations ?? [];
   for (const c of creations) {
     const fp = creationFootprint(grid, c, seed); if (!fp.length) continue;
-    if (c.kind === "lake") { freshLakes.push(fp.map((f) => f.k)); continue; }
+    if (c.kind === "lake") { freshLakes.push({ key: `c:${c.id}`, label: "新しい湖", cells: fp.map((f) => f.k) }); continue; }
     const H = creationHeightM(Math.min(CREATION_MAX_LEVEL, c.level));
-    for (const { k, d } of fp) { if (land[k] !== 1) continue; const e = elev[k] + H * (1 - 0.6 * d); elev[k] = Math.min(RANGE_MAX_M, e); if (e > rangeMask[k] * 0) rangeMask[k] = Math.max(rangeMask[k], 1 - 0.5 * d); }   // (land only: the sea outranks a new mountain)
+    let onLand = 0; for (const { k, d } of fp) { if (land[k] !== 1) continue; onLand++; const e = elev[k] + H * (1 - 0.6 * d); elev[k] = Math.min(RANGE_MAX_M, e); if (e > rangeMask[k] * 0) rangeMask[k] = Math.max(rangeMask[k], 1 - 0.5 * d); }   // (land only: the sea outranks a new mountain)
+    creationReport.push({ key: `c:${c.id}`, label: "新しい山", wanted: fp.length, cells: onLand, status: onLand >= fp.length ? "ok" : onLand > 0 ? "shrunk-sea" : "gone-sea" });
   }
 
   // ---- hand-drawn ridges ----
@@ -297,12 +302,14 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   // Stage 33: the lakes the player made (new lakes, and mountain ranges turned into lakes). Each is judged whole: the sea and the Biwa rules below; a lake cell next to the sea stays land (an inland lake never joins the sea),
   // and a lake that touches Lake Biwa (or lies on it) disappears entirely -- Biwa takes precedence over every other lake.
   const freshLakeCells: number[] = [];
-  for (const set of freshLakes) {
+  for (const fl of freshLakes) {
+    const set = fl.cells, wanted = set.length;
     const keep = set.filter((k) => { if (land[k] !== 1) return false; const i = k % nx, j = (k / nx) | 0; for (const [di, dj] of N8) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= nx || b >= ny || land[b * nx + a] === 0) return false; } return true; });
-    if (!keep.length) continue;
-    if (keep.some((k) => { if (biwaCells.has(k)) return true; const i = k % nx, j = (k / nx) | 0; return N8.some(([di, dj]) => { const a = i + di, b = j + dj; return a >= 0 && b >= 0 && a < nx && b < ny && biwaCells.has(b * nx + a); }); })) continue;
+    if (!keep.length) { creationReport.push({ key: fl.key, label: fl.label, wanted, cells: 0, status: "gone-sea" }); continue; }
+    if (keep.some((k) => { if (biwaCells.has(k)) return true; const i = k % nx, j = (k / nx) | 0; return N8.some(([di, dj]) => { const a = i + di, b = j + dj; return a >= 0 && b >= 0 && a < nx && b < ny && biwaCells.has(b * nx + a); }); })) { creationReport.push({ key: fl.key, label: fl.label, wanted, cells: 0, status: "gone-biwa" }); continue; }
     let lvl = Infinity; for (const k of keep) { const i = k % nx, j = (k / nx) | 0; for (const [di, dj] of N8) { const a = i + di, b = j + dj; if (a >= 0 && b >= 0 && a < nx && b < ny && land[b * nx + a] === 1 && !keep.includes(b * nx + a)) lvl = Math.min(lvl, elev[b * nx + a]); } }
     if (!isFinite(lvl)) lvl = 60; for (const k of keep) { land[k] = 2; elev[k] = Math.max(2, lvl - 1); freshLakeCells.push(k); }
+    creationReport.push({ key: fl.key, label: fl.label, wanted, cells: keep.length, status: keep.length >= wanted ? "ok" : "shrunk-sea" });
   }
 
   // ---- hydrology: priority flood gives a drainage tree that never climbs ----
@@ -467,7 +474,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   progress(1, "完了");
   return {
     grid: { x0, y0, cell, nx, ny }, land, island, elev, pref, plains, ridge, barrier, streams: Float32Array.from(streamSeg), streams2: Float32Array.from(streamSeg2), borders: Float32Array.from(borders),
-    rivers, cities, towns, freshLakeCells, prefOrder: prefs.map((p) => p.id), stats, warnings, hash,
+    rivers, cities, towns, freshLakeCells, creationReport, prefOrder: prefs.map((p) => p.id), stats, warnings, hash,
   };
 }
 export { rotv as _rot };
