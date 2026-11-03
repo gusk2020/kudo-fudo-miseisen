@@ -12,6 +12,7 @@
  * start, not a statistic). Older games never read this: they carry no `roles.p15`.
  */
 import type { WCity, World } from "./world";
+import { worldMemo } from "./worldMemo";
 
 const T: Record<string, [number, number]> = {
   HK: [4296, 0.43], "JP-02": [1283, 0.27], "JP-03": [1347, 0.22], "JP-04": [1663, 0.33], "JP-05": [1309, 0.22], "JP-06": [1357, 0.22], "JP-07": [2062, 0.24],
@@ -23,7 +24,7 @@ const T: Record<string, [number, number]> = {
   "JP-43": [1827, 0.25], "JP-44": [1253, 0.28], "JP-45": [1091, 0.24], "JP-46": [1804, 0.22], "JP-47": [698, 0.3],
 };
 const key = (pref: string | null) => (pref && pref.startsWith("HK-") ? "HK" : pref);
-const memo = new WeakMap<World, Map<string, number>>();
+const memo = worldMemo<Map<string, number>>();
 /** Each city's starting population under the census rule (cities of a prefecture without a census row keep their map-data figure). */
 export const LISTED_CAP = 2.5;   // a prefecture carries at most this many times the map's own figure for its listed cities: the map lists only ~60 cities, and a prefecture with one listed city (Hyogo: Kobe) would otherwise put its whole urban population into it
 export function censusPops(w: World): Map<string, number> {

@@ -18,6 +18,7 @@ import { homeCity, subCity } from "./ceremony";
 import type { Recon } from "./kaigen";
 import type { SimState } from "./types";
 import type { World } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export const RECON_LABEL = { pacific: "太平洋側重視", japansea: "日本海側重視", neutral: "海側は中立", concentrate: "一極集中", disperse: "地方分散" } as const;
 export const RECON_GROWTH = 0.0035, RECON_INDUSTRY = 0.08, RECON_SHARE = 0.25, RECON_PLAN = 0.25, CORE_KM = 150, SUB_CORE = 0.7;
@@ -47,7 +48,7 @@ function inPoly(poly: [number, number][], x: number, y: number): boolean { const
 export function seaClass(w: World, k: number): 0 | 1 | 2 {
   if (w.t.land[k] !== 0) return 0; const [lon, lat] = realToLonLat(w.cellPos(k)); if (inPoly(OKHOTSK, lon, lat)) return 0; return inPoly(JAPAN_SEA, lon, lat) ? 1 : 2;
 }
-const sideMemo = new WeakMap<World, Map<string, number>>();
+const sideMemo = worldMemo<Map<string, number>>();
 const CAP_CELLS = 80;
 /** -1 (on the Sea of Japan) .. +1 (on the Pacific side), from the distances to the nearest sea of each kind; inland cities in between. Computed once per world
  * (two breadth-first sweeps over the grid with typed arrays: about a tenth of a second on a phone). */

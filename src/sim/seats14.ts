@@ -18,6 +18,7 @@ import { basePop } from "./roles";
 import { siteCapacity } from "./land";
 import type { SimState } from "./types";
 import type { World } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export const SEAT_SHARE_MAX = 0.6, SEAT_FLOW = 0.08, SUBURB_H = 1.3, SUBURB_TAU = 0.6, MIN_SUBURB_POP = 20000;
 /** A suburb stops taking people once it is this big against the seat (so one town does not swallow the flow: the people spread over the towns of the plain). */
@@ -26,7 +27,7 @@ export const SEAT_MARGIN = 0.98, SHED_MAX = 0.08, SHED_H = 1.6, MOVE_SHED_MAX = 
 /** Stage 15 (phone check: the satellites formed but were small and few): in a Stage 15 game the seat holds less of its own commuter belt, sends more of the excess each year, lets a suburb grow bigger against it,
  * and the towns of the prefectures NEXT to the seat's own are reached however far the road is (a prefecture line is a line on the map, not a wall) and take a larger share. */
 export const SEAT_SHARE_MAX_15 = 0.5, SEAT_FLOW_15 = 0.12, SUBURB_MAX_RATIO_15 = 0.42, ADJ_BONUS = 1.8, ADJ_H_CAP = 1.5;   // (a town of the next prefecture counts as at most this far away for how much it takes)
-const adjMemo = new WeakMap<World, Map<string, Set<string>>>();
+const adjMemo = worldMemo<Map<string, Set<string>>>();
 /** Which prefectures touch which (an edge of cells), once per world. */
 export function prefAdjacency(w: World): Map<string, Set<string>> {
   let m = adjMemo.get(w); if (m) return m; m = new Map();

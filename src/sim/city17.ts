@@ -13,6 +13,7 @@ import { basePop } from "./roles";
 import type { Analysis } from "./demand";
 import type { SimState } from "./types";
 import type { World } from "./world";
+import { worldMemo } from "./worldMemo";
 
 export const LATENT_START = 0.1;     // a candidate starts with this share of its census size; the rest stays in the capital until the conditions bring it out
 export const CITY_RATE = 0.1;       // share of the gap to its target a place closes in a year
@@ -24,7 +25,7 @@ export const isCapitalCity = (c: { kind: string }) => c.kind === "capital";
 export const HOLDER_MIN_CAP = 1_000_000;
 export const smallSeat = (c: { kind: string; capPop?: number }) => c.kind === "capital" && c.capPop !== undefined && c.capPop < HOLDER_MIN_CAP;
 /** The city that holds a prefecture's city people (index in w.cities): its capital, or -- when that is a small-island seat -- the former capital. */
-const holdMemo = new WeakMap<World, Map<string, number>>();
+const holdMemo = worldMemo<Map<string, number>>();
 export function prefHolders(w: World): Map<string, number> {
   let m = holdMemo.get(w); if (m) return m; m = new Map();
   w.cities.forEach((c, i) => { if (c.pref && isCapitalCity(c)) m!.set(c.pref, i); });

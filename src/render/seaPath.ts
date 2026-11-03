@@ -6,8 +6,9 @@
 import { MinHeap } from "../core/heap";
 import type { Vec } from "../core/types";
 import type { World } from "../sim/world";
+import { worldMemo } from "../sim/worldMemo";
 
-const shoreMemo = new WeakMap<World, Uint8Array>(), pathMemo = new WeakMap<World, Map<string, Vec[]>>();
+const shoreMemo = worldMemo<Uint8Array>(), pathMemo = worldMemo<Map<string, Vec[]>>();
 /** Cells of water: distance (in cells, capped at 6) to the nearest land. */
 function shoreDist(w: World): Uint8Array {
   const hit = shoreMemo.get(w); if (hit) return hit;
