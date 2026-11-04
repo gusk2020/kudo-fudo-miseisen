@@ -83,7 +83,7 @@ test("Pixel 7a-size touch: the relocation wizard (back, snapshot, mid-wizard rel
   await tap(page, "#e22-decide"); expect(await app(page, "a => a.sim.e2200.state")).toBe("road0");
   // back WITHOUT a snapshot (the stored copy is deleted and the memory copy is lost): it says so, stays on the road stage, and nothing is half-applied
   { const key = (await app(page, "a => a.saveKey")) as string;
-    await page.evaluate((k) => new Promise<void>((res, rej) => { const r = indexedDB.open("kfm-stage1", 1); r.onsuccess = () => { const db = r.result, t = db.transaction("saves", "readwrite"); t.objectStore("saves").delete(k + ":relocsnap"); t.oncomplete = () => { db.close(); res(); }; t.onerror = () => rej(t.error); }; r.onerror = () => rej(r.error); }), key);
+    await page.evaluate((k) => new Promise<void>(async (res, rej) => { const name = (await indexedDB.databases()).map((d) => d.name!).find((n) => n.startsWith("kfm-stage1"))!;   /* (a namespaced playtest build names its database kfm-stage1-<ns>) */ const r = indexedDB.open(name, 1); r.onsuccess = () => { const db = r.result, t = db.transaction("saves", "readwrite"); t.objectStore("saves").delete(k + ":relocsnap"); t.oncomplete = () => { db.close(); res(); }; t.onerror = () => rej(t.error); }; r.onerror = () => rej(r.error); }), key);
     await page.evaluate(() => { (window as any).__kfm.rwSnap = null; });
     await tap(page, "#rw-back"); await page.waitForTimeout(500);
     expect(await app(page, "a => [a.sim.e2200.state, a.sim.capital, a.rwStage]")).toEqual(["road0", "JP-27", 2]); expect(await page.isVisible("#toast")).toBe(true); expect(await page.textContent("#toast")).toContain("選び直し"); }
