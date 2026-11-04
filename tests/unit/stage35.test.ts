@@ -8,8 +8,8 @@ import type { SimState } from "../../src/sim/types";
 import { loadDem } from "./helpers";
 
 const s = realState(), t = generateTerrain(s, loadDem()), ids = townsForSeats(t, ["JP-13", "JP-27"]);
-function game(first = 2200) {
-  const w: World = buildWorld(t, s.seed, ids, 2, [], { log: [], done: [] }), sim = createSim(w, "m", t.hash, 5, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27", relocFirst: first });
+function game(first: number | null = 2200) {
+  const w: World = buildWorld(t, s.seed, ids, 2, [], { log: [], done: [] }), sim = createSim(w, "m", t.hash, 5, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27", ...(first ? { relocFirst: first } : {}) });
   return { w, sim };
 }
 /** Puts the clock at a month just before a year boundary without running 250 years: the sim stays as the 1950 game it is. */
@@ -90,4 +90,51 @@ describe("Stage 35: a manual relocation carries Stage 34 over", () => {
     expect(news.length).toBeGreaterThan(0); for (const n of news) expect(n.start).toBe(y + 0 === n.start ? n.start : y);
     expect(sim.rec34!.log.length).toBeGreaterThanOrEqual(before + 1);
   }, 240000);
+});
+
+import { relocFirstOf, relocYear } from "../../src/sim/kaigen";
+import { adoptRelocSchedule, originOf } from "../../src/sim/event2200";
+import { sanitizeSim } from "../../src/core/save2";
+
+describe("Stage 35: the origin is each game's own start year (start + 150 x n), never a fixed 2100 / 2200", () => {
+  it("the boundaries of several start years", () => {
+    for (const [start, want] of [[1950, [2100, 2250, 2400]], [2000, [2150, 2300, 2450]], [2050, [2200, 2350, 2500]]] as const) {
+      expect([1, 2, 3].map((n) => start + 150 * n)).toEqual(want); expect([0, 1, 2].map((n) => relocYear(n, relocFirstOf(start)))).toEqual(want);
+      const sim = { startYear: start, e2200: undefined, e2200hist: undefined, relocSkipped: undefined } as any; expect(nextYear2200(sim)).toBe(want[0]);   // no recorded origin: the start year says it
+      sim.e2200 = { year: want[0], n: 0, sched: want[0], state: "done" }; expect(nextYear2200(sim)).toBe(want[1]); sim.e2200hist = [sim.e2200]; sim.e2200 = { year: want[1], n: 1, sched: want[1], state: "done" }; expect(nextYear2200(sim)).toBe(want[2]);
+    }
+  });
+  it("a new game records its first boundary as its own start year + 150 (1950 -> 2100) and keeps it through a save, a load and a relocation", () => {
+    const { w, sim } = game(null); expect(sim.startYear).toBe(1950); expect(sim.relocFirst).toBe(2100); expect(sim.relocOrigin).toBe("new"); expect(originOf(sim)).toBe(2100);
+    const back = sanitizeSim(JSON.parse(JSON.stringify(sim))).sim!; expect([back.startYear, back.relocFirst]).toEqual([1950, 2100]);
+    setMode(sim, "priority"); eveOf(sim, 2100); cross(sim, w, 3); expect(sim.e2200?.sched).toBe(2100); apply2200(sim, null); close2200(sim);
+    expect([sim.startYear, sim.relocFirst, nextYear2200(sim)]).toEqual([1950, 2100, 2250]);   // the relocation moved nothing but the next slot
+    const again = sanitizeSim(JSON.parse(JSON.stringify(sim))).sim!; expect([again.startYear, again.relocFirst, nextYear2200(again), due2200(again)]).toEqual([1950, 2100, 2250, false]);
+  });
+  it("the same rule for other start years: a game that starts in 2000 or 2050 is due 150 years later, whatever the calendar says", () => {
+    for (const [start, first] of [[2000, 2150], [2050, 2200]] as const) {
+      const { sim } = game(first); sim.startYear = start; expect(nextYear2200(sim)).toBe(first);
+      sim.month = (first - 1 - start) * 12; expect(due2200(sim)).toBe(false); sim.month = (first - start) * 12; expect(due2200(sim)).toBe(true); expect(yearOf(sim)).toBe(first);
+    }
+  });
+  it("fully unattended skips keep the origin; manual again waits for the next boundary counted from the start year (start 2000 -> 2150 skipped, 2300 next)", () => {
+    const { w, sim } = game(2150); sim.startYear = 2000; setMode(sim, "auto"); sim.kaigen!.next = 9000;
+    sim.month = (2149 - 2000) * 12 + 11; cross(sim, w, 3); expect(sim.relocSkipped).toEqual([2150]); expect(sim.relocFirst).toBe(2150); expect(nextYear2200(sim)).toBe(2300);
+    setMode(sim, "priority"); cross(sim, w, 12); expect(sim.e2200).toBeUndefined();   // no catch-up of 2150
+    const back = JSON.parse(JSON.stringify(sim)) as SimState; expect([back.startYear, back.relocFirst, back.relocSkipped, nextYear2200(back), due2200(back)]).toEqual([2000, 2150, [2150], 2300, false]);
+    sim.month = (2299 - 2000) * 12 + 11; cross(sim, w, 3); expect(sim.e2200?.state).toBe("pending"); expect(sim.e2200?.sched).toBe(2300);
+  });
+  it("no double firing on the boundary: loading, switching mode and stepping the same month again open or skip it exactly once", () => {
+    const { w, sim } = game(2100); setMode(sim, "priority"); eveOf(sim, 2100); cross(sim, w, 1); expect(sim.e2200).toBeUndefined();
+    const copy = JSON.parse(JSON.stringify(sim)) as SimState; setMode(copy, "auto"); copy.kaigen!.next = 9000; cross(copy, w, 2); expect(copy.relocSkipped).toEqual([2100]); expect(copy.e2200).toBeUndefined();
+    cross(copy, w, 2); expect(copy.relocSkipped).toEqual([2100]);   // once
+    cross(sim, w, 2); expect(sim.e2200?.state).toBe("pending"); const hist = sim.e2200hist?.length ?? 0; const reload = JSON.parse(JSON.stringify(sim)) as SimState; expect(reload.e2200?.state).toBe("pending"); cross(reload, w, 5);
+    expect([reload.e2200?.state, reload.e2200hist?.length ?? 0, reload.relocSkipped]).toEqual(["pending", hist, undefined]);
+  });
+  it("an older save without a recorded origin takes it from its own history on load: events -> its first boundary; none -> start + 150 with passed boundaries recorded as skipped", () => {
+    const mk = (o: object) => ({ stage3: true, kaigen: {}, startYear: 2000, month: 0, ...o }) as any;
+    const noEvents = mk({ month: (2320 - 2000) * 12 }); expect(adoptRelocSchedule(noEvents)).toBe(true); expect([noEvents.relocFirst, noEvents.relocSkipped, nextYear2200(noEvents)]).toEqual([2150, [2150, 2300], 2450]);
+    const withEvents = mk({ month: (2400 - 2000) * 12, e2200: { year: 2300, n: 1, sched: 2300, state: "done" }, e2200hist: [{ year: 2150, n: 0, sched: 2150 }] }); expect(adoptRelocSchedule(withEvents)).toBe(true); expect([withEvents.relocFirst, nextYear2200(withEvents)]).toEqual([2150, 2450]);
+    expect(due2200(noEvents)).toBe(false);
+  });
 });

@@ -1,6 +1,5 @@
 import type { RecLog } from "../sim/reclaim34";
 import { buildIndex } from "../sim/network";
-import { RELOC_FIRST } from "../sim/kaigen";
 import { LAKE_LIST } from "../render/lakes";
 import { adoptRelocSchedule, adoptWorld, relocDiag, apply2200, close2200, placePalace, waiting2200, type Choice2200 } from "../sim/event2200";
 import { buildE2200, buildRwReview, e22Draft } from "./e2200";
@@ -784,7 +783,7 @@ export class App {
     const seats = seatsOf(this.s), palacePos = palaceWorld(this.s);
     this.building = 0.01; this.status(); this.buildUI();
     // the 1950 network is generated in slices (a single long task froze phones); the UI shows progress and stays responsive
-    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, relocFirst: RELOC_FIRST, firstEra: this.firstEra, capital: seats.capital, subCapital: seats.sub, palace: { pref: seats.palace, pos: palacePos ?? [0, 0] }, ...(this.s.capitalPos ? { capitalPos: this.s.capitalPos } : {}), ...(this.s.subPos ? { subPos: this.s.subPos } : {}), ...(w.moveSpec ? { moves: w.moveSpec } : {}) } : {}); let sim: SimState | null = null;
+    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra, capital: seats.capital, subCapital: seats.sub, palace: { pref: seats.palace, pos: palacePos ?? [0, 0] }, ...(this.s.capitalPos ? { capitalPos: this.s.capitalPos } : {}), ...(this.s.subPos ? { subPos: this.s.subPos } : {}), ...(w.moveSpec ? { moves: w.moveSpec } : {}) } : {}); let sim: SimState | null = null;
     while (!sim) {
       const t0 = performance.now();
       while (performance.now() - t0 < 10) { const r = gen.next(); if (r.done) { sim = r.value; break; } this.building = Math.max(this.building, r.value); }

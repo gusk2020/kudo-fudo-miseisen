@@ -39,7 +39,7 @@ import { reconGrowth, reconIndustry, reconMeanCore, reconOf, reconShare } from "
 import { DEFAULT_CAPITAL, DEFAULT_SUB, DEFAULT_PALACE, prefOfSeat } from "../core/seat";
 import { realToLonLat } from "../core/data";
 import type { Vec } from "../core/types";
-import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, stanceAt } from "./kaigen";
+import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, relocFirstOf, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
 import { ERA, FU_PREFS, GRADE_LABEL, GRADE_MODE, KIND_LABEL, NICK_LABEL, SIM_VERSION, modeOf, monthToYM, setActiveEra, setActiveTimeline, ymLabel, type Grade, type RouteEdgeRef, type Settlement, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
@@ -102,7 +102,7 @@ export function projectTimeMult(sim: SimState, p: SimProject): number {
 }
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
-export interface SimOpts { /** Stage 28: the year of the first relocation (a new game passes 2100; absent = the older 2200 schedule) */ relocFirst?: number; moves?: SeatMove[]; capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
+export interface SimOpts { /** Stage 28: the year of the first relocation (absent = the game's own start year + 150) */ relocFirst?: number; moves?: SeatMove[]; capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 /** Stage 19: the exact lon/lat of the seats put on the map (world = real for the real map); undefined when every seat stands at its 県庁所在地, so such a game orders the prefectures exactly as before. */
 function seatLL(sim: SimState, w: World): { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } | undefined {
   const ll = (p: Vec) => realToLonLat(p) as [number, number], o: { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } = {};
@@ -114,12 +114,13 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   w.barrier = !!opts.stage3;   // Stage 9: the mountain barrier is part of the real-map game
   w.land12 = !!(opts.stage3 && opts.firstEra !== undefined);   // Stage 12: every game started from the era timeline (Stage 10 onward flow) uses the land model
   const firstCand = opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
+  const startYear = 1950;   // (a game's own start year: the relocation origin is derived from it, so there is one place that says 1950)
   const sim: SimState = {
-    schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear: 1950, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
+    schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
     next: { node: 0, edge: 0, route: 0, project: 0, event: 0 }, nodes: {}, edges: {}, routes: {}, projects: {}, cities: {}, settlements: {}, links: [], regionShare: {},
     macro: { mood: 0, budgetBu: 0, maintCoverage: 1 }, routeCounters: {}, events: [], stats: [], skippedMonths: 0, lastWallMs: 0, ceremonyDone: false,
     operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0) } : {}), ...(opts.stage3 && (firstCand || opts.techK !== undefined) ? { tech: { k: opts.techK ?? TECH_K, ...(firstCand && opts.waterK !== 0 ? { wk: opts.waterK ?? WATER_K } : {}) } } : {}),
-    ...(opts.relocFirst ? { relocFirst: opts.relocFirst, relocOrigin: "new" as const } : {}),
+    ...(opts.relocFirst || (opts.stage3 && firstCand) ? { relocFirst: opts.relocFirst || relocFirstOf(startYear), relocOrigin: "new" as const } : {}),   // Stage 35: the origin is the game's own start year + 150 (an explicit one is kept as given)
     ...(prefOfSeat(opts.capital) && prefOfSeat(opts.capital) !== DEFAULT_CAPITAL ? { capital: prefOfSeat(opts.capital)! } : {}), ...(prefOfSeat(opts.subCapital) ? { subCapital: prefOfSeat(opts.subCapital)! } : {}), ...(opts.palace ? { palace: opts.palace } : {}), ...(opts.capitalPos ? { capitalPos: opts.capitalPos } : {}), ...(opts.subPos ? { subPos: opts.subPos } : {}),
     ...(firstCand ? { crossings: true as const } : {}),
   };

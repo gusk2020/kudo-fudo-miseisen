@@ -11,7 +11,7 @@ import { defaultState } from "../../src/core/state";
 import { realWorld } from "./simhelp";
 import type { Vec } from "../../src/core/types";
 
-const toEve = () => { const r = run14({ seed: 5, until: 1952, islets: true }); const sim = r.sim; sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "priority"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null; return { ...r, sim }; };
+const toEve = () => { const r = run14({ seed: 5, until: 1952, islets: true }); const sim = r.sim; sim.relocFirst = 2200; sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "priority"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null; return { ...r, sim }; };
 const line = (a: Vec, b: Vec, n = 20): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
 
 describe("Stage 22: the 2200 event", () => {

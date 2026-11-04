@@ -19,11 +19,11 @@ describe("Stage 29: 保存は読み戻して確認できてから成功にする
 });
 describe("Stage 29: 遷都予定の診断と旧セーブの移行", () => {
   const sim = (o: object) => ({ stage3: true, kaigen: {}, startYear: 1950, month: 0, ...o }) as any;
-  it("2100年未満で遷都の履歴がない旧ゲームだけが 2100 起点に移る", () => {
-    const a = sim({ month: (2060 - 1950) * 12 }); expect(adoptRelocSchedule(a)).toBe(true); expect([a.relocFirst, a.relocOrigin]).toEqual([2100, "migrated"]); expect(relocDiag(a)).toContain("次は2100年");
-    const past = sim({ month: (2150 - 1950) * 12 }); expect(adoptRelocSchedule(past)).toBe(false); expect(past.relocFirst).toBeUndefined(); expect(relocDiag(past)).toContain("次は2200年");
-    const had = sim({ month: (2060 - 1950) * 12, e2200: { year: 2200, state: "done", n: 0 } }); expect(adoptRelocSchedule(had)).toBe(false);
-    const hist = sim({ month: (2060 - 1950) * 12, e2200hist: [{ year: 2200 }] }); expect(adoptRelocSchedule(hist)).toBe(false);
+  it("起点のない旧ゲームは読込時に自分の履歴から起点を決める(固定の年は使わない)", () => {
+    const a = sim({ month: (2060 - 1950) * 12 }); expect(adoptRelocSchedule(a)).toBe(true); expect([a.relocFirst, a.relocOrigin, a.relocSkipped]).toEqual([2100, "migrated", undefined]); expect(relocDiag(a)).toContain("次は2100年");
+    const past = sim({ month: (2150 - 1950) * 12 }); expect(adoptRelocSchedule(past)).toBe(true); expect([past.relocFirst, past.relocSkipped]).toEqual([2100, [2100]]); expect(relocDiag(past)).toContain("次は2250年");   // 2100 is behind it: recorded as skipped, never made up
+    const had = sim({ month: (2060 - 1950) * 12, e2200: { year: 2200, state: "done", n: 0 } }); expect(adoptRelocSchedule(had)).toBe(true); expect(had.relocFirst).toBe(2200);   // the history's own first boundary
+    const hist = sim({ month: (2060 - 1950) * 12, e2200hist: [{ year: 2200, n: 0, sched: 2200 }] }); expect(adoptRelocSchedule(hist)).toBe(true); expect(hist.relocFirst).toBe(2200);
     const fresh = sim({ month: (2060 - 1950) * 12, relocFirst: 2100, relocOrigin: "new" }); expect(adoptRelocSchedule(fresh)).toBe(false); expect(relocDiag(fresh)).toContain("新しいゲーム");
   });
 });
