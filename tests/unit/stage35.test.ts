@@ -138,3 +138,25 @@ describe("Stage 35: the origin is each game's own start year (start + 150 x n), 
     expect(due2200(noEvents)).toBe(false);
   });
 });
+
+describe("Stage 35 audit: a real seat move that lands on the same grid cell restarts that seat's reclamation (concern 1)", () => {
+  /** a run of the first years with the real world; then a relocation that names the same prefecture and a point inside the same 5 km cell */
+  const run = (choose: (sim: SimState, w: World) => Parameters<typeof apply2200>[1]) => {
+    const { w, sim } = game(1956); setMode(sim, "priority"); cross(sim, w, 12 * 8); expect(sim.rec34!.sites.every((x) => x.active)).toBe(true);
+    const cap0 = sim.rec34!.sites.find((x) => x.role === "capital")!, before = { start: cap0.start, filled: cap0.filled };
+    cross(sim, w, 36); expect(sim.e2200?.state).toBe("pending"); const y = sim.e2200!.year;
+    apply2200(sim, choose(sim, w)); close2200(sim); cross(sim, w, 24);   // two years on: the site list reflects the move
+    return { sim, w, y, before };
+  };
+  const same = (sim: SimState, w: World) => { const c = w.cities.find((x) => x.pref === (sim.capital ?? "JP-13") && x.kind === "capital")!; return { era: 0, stance: "heisei" as const, coast: "neutral" as const, focus: "concentrate" as const, capital: c.pref!, capitalPos: [c.pos[0] + 0.4, c.pos[1] + 0.4] as [number, number] }; };
+  it("choosing the capital's own city again with a point on the map is a move: the old site stops, a new one starts from zero", () => {
+    const { sim, y } = run(same); const caps = sim.rec34!.sites.filter((x) => x.role === "capital");
+    expect(caps.filter((x) => !x.active)).toHaveLength(1); const now = caps.find((x) => x.active)!; expect(now.start).toBeGreaterThanOrEqual(y); expect(now.filled).toBeLessThanOrEqual(1);
+  });
+  it("現状維持 (nothing chosen) keeps the running schedule: no new site", () => {
+    const { sim, before } = run(() => null); const caps = sim.rec34!.sites.filter((x) => x.role === "capital"); expect(caps).toHaveLength(1); expect(caps[0].start).toBe(before.start); expect(caps[0].filled).toBeGreaterThanOrEqual(before.filled);
+  });
+  it("a relocation that does not move the capital (only the era) keeps the capital's schedule", () => {
+    const { sim, before } = run((s, w) => ({ ...same(s, w), capitalPos: undefined }) as never); const caps = sim.rec34!.sites.filter((x) => x.role === "capital"); expect(caps).toHaveLength(1); expect(caps[0].start).toBe(before.start);
+  });
+});

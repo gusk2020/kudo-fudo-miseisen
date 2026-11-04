@@ -22,7 +22,8 @@ export const COASTAL_CELLS = 2;                    // a seat is coastal when ope
 export const RECLAIMED_ELEV_M = 4;
 
 export interface RecLog { k: number; kind: "grow" | "fill"; y: number; site?: number }
-export interface RecSite { role: "capital" | "sub"; cell: number; start: number; last: number; accU: number; active: boolean; coastal: boolean; filled: number; blocked: number }
+/** `epoch`: how many relocation events had moved this role when the site began. A move that lands on the same grid cell is still a move (the 5 km cell is coarser than the point the player chose), so the cell alone cannot tell it. */
+export interface RecSite { role: "capital" | "sub"; epoch?: number; cell: number; start: number; last: number; accU: number; active: boolean; coastal: boolean; filled: number; blocked: number }
 export interface Rec34 { sites: RecSite[]; log: RecLog[]; done: string[] }
 export interface G34Input { log: RecLog[]; done: string[] }
 
@@ -77,6 +78,8 @@ export function applyG34<T extends TerrainLike>(t: T, input: G34Input, moves: Se
   return { t: { ...t, land: a.land, island: a.island, pref: a.pref, plains: a.plains, elev: a.elev }, add, grown };
 }
 
+/** The relocation events (finished or open) that moved this role: kept (現状維持) events and events that left the seat alone do not count. */
+export const movesOf = (sim: SimState, role: "capital" | "sub"): number => [...(sim.e2200hist ?? []), ...(sim.e2200 ? [sim.e2200] : [])].filter((e) => e.moved?.includes(role)).length;
 const seatCellOf = (sim: SimState, w: World, role: "capital" | "sub"): number => {
   const cap = sim.capital ?? DEFAULT_CAPITAL;
   const c = role === "capital" ? homeCity(w, cap) : subCity(w, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB));
@@ -89,8 +92,9 @@ export function stepReclaim(sim: SimState, w: World, y: number): number[] {
   const rec = sim.rec34; if (!rec || !w.g34) return [];
   for (const role of ["capital", "sub"] as const) {
     const cell = seatCellOf(sim, w, role); if (cell < 0) continue; const cur = rec.sites.find((s) => s.role === role && s.active);
-    if (cur && cur.cell === cell) continue; if (cur) cur.active = false;
-    rec.sites.push({ role, cell, start: y, last: y, accU: 0, active: true, coastal: isCoastal(w, cell), filled: 0, blocked: 0 });
+    const ep = movesOf(sim, role); if (cur && cur.epoch === undefined) cur.epoch = ep;   // (a site saved before epochs existed is taken to be current)
+    if (cur && cur.cell === cell && cur.epoch === ep) continue; if (cur) cur.active = false;
+    rec.sites.push({ role, epoch: ep, cell, start: y, last: y, accU: 0, active: true, coastal: isCoastal(w, cell), filled: 0, blocked: 0 });
   }
   const a: Arrays = { land: w.t.land, island: w.t.island, pref: w.t.pref, plains: w.t.plains, elev: w.t.elev, nx: w.nx, ny: w.ny }, added: number[] = [], CU = cellUnits(w.cell);
   rec.sites.forEach((s, si) => {

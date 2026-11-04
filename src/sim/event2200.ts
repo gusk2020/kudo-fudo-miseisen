@@ -6,6 +6,7 @@
  * Then a new 国道0号 may be drawn between the new capital and sub-capital, laid along existing, old and abandoned roads where it can (ceremony.ts).
  * Nothing is removed: the old seats stay as cities with their people, and people move only through the yearly settling (no one is moved in a day). The game waits for the player in EVERY mode (Stage 23: 完全自動 and an absent player included); keeping everything as it is (現状維持) is a choice the player makes with its own button, never a default. The event is recorded in `sim.e2200` and never fires twice; a game that jumps past 2200 still gets it at the first year boundary after.
  */
+import { DEFAULT_CAPITAL, DEFAULT_SUB } from "../core/seat";
 import { RELOC_STEP, eraKey, relocFirstOf, futureInterval, relocGroup, relocYear, usedKeys, type RelocGroup, type Recon } from "./kaigen";
 import { composeDials, type EraKey } from "./eras";
 import { setActiveTimeline, type SimState } from "./types";
@@ -57,11 +58,11 @@ export function apply2200(sim: SimState, ch: Choice2200 | null, auto = false, se
   k.pending = null; k.next = y + futureInterval(sim.seed, k.nextIdx); k.nextIdx++;
   k.recon = { coast: ch.coast, focus: ch.focus, since: y };
   // seats: prefecture ids; a point on the map becomes that prefecture's 県庁所在地 (as at the start); a seat with no point stands at its prefecture's 県庁所在地
-  const moved: string[] = [];
+  const moved: string[] = [], capNow = sim.capital ?? DEFAULT_CAPITAL, subNow = sim.subCapital ?? (capNow === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB);   // (the seats as they stand: a default is a prefecture too, so choosing it again with no point is not a move)
   const set = (role: "capital" | "sub" | "palace", pref: string | undefined, pos: Vec | undefined) => {
     if (!pref) return;
-    if (role === "capital") { if (sim.capital !== pref || pos) moved.push(role); sim.capital = pref; if (pos) sim.capitalPos = pos; else delete sim.capitalPos; }
-    else if (role === "sub") { if (sim.subCapital !== pref || pos) moved.push(role); sim.subCapital = pref; if (pos) sim.subPos = pos; else delete sim.subPos; }
+    if (role === "capital") { if (capNow !== pref || pos) moved.push(role); sim.capital = pref; if (pos) sim.capitalPos = pos; else delete sim.capitalPos; }
+    else if (role === "sub") { if (subNow !== pref || pos) moved.push(role); sim.subCapital = pref; if (pos) sim.subPos = pos; else delete sim.subPos; }
     else { if (sim.palace?.pref !== pref || pos) moved.push(role); const same = sim.palace?.pref === pref; sim.palace = { pref, pos: pos ?? (same ? sim.palace!.pos : seatPos?.(pref) ?? sim.palace?.pos ?? [0, 0]) }; }   // Stage 27: a palace moved to another prefecture stands at THAT prefecture's 県庁所在地 (it used to keep the old coordinates: the name changed, the place did not)
     if (pos && sim.isl20 && !(sim.moves20 ?? []).some((m) => m.pref === pref && Math.hypot(m.pos[0] - pos[0], m.pos[1] - pos[1]) < 0.5)) { const list = (sim.moves20 ??= []).filter((m) => !(m.pref === pref && (m as { since?: number }).since === y)); list.push({ pref, pos: [pos[0], pos[1]], by: role, since: y } as (typeof list)[number]); sim.moves20 = list; }
   };
