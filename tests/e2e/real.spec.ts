@@ -926,11 +926,13 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   test.setTimeout(400000); await page.setViewportSize({ width: 360, height: 740 }); page.on("dialog", (d) => void d.accept());
   const errs = watchErrors(page); await startReal(page);
   const menu = () => page.evaluate(() => { const a = (window as any).__kfm; if (a.sheet !== "menu") a.openSheet("menu"); else a.buildSheet(); });   // (openSheet on the open sheet would close it)
+  /* the checkpoint list is read from IndexedDB when the menu is built, and the save itself is written a moment after `cp.reloc` is set: so the menu is rebuilt until the row is there */
+  const menuHas = (sel: string) => expect.poll(async () => { await menu(); await page.waitForTimeout(400); return page.locator(sel).count(); }, { timeout: 90000 }).toBeGreaterThan(0);
   await menu(); await page.waitForSelector("#slot-1"); await page.click("#slot-1 .slot-save"); await page.waitForTimeout(600);
   const slot1 = await page.textContent("#slot-1 .slot-text");
   const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = yy >= 2100 ? "idleAuto" : "auto"; s.speed = 20; }, y);
   await jump(2000); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.y50 === 2000, null, { timeout: 90000 });
-  await menu(); await page.waitForSelector("#cp-2000-50y", { timeout: 20000 });
+  await menuHas("#cp-2000-50y");
   const m = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m, { timeout: 60000 });   // the clock went on after the checkpoint
   await jump(2100); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
   expect(await app(page, "a => a.sim.e2200.n")).toBe(0); expect(await app(page, "a => a.sim.cp?.reloc ?? 0")).toBe(0);   // Stage 27: nothing is saved before or in the middle of the event
@@ -944,15 +946,16 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.waitForFunction(() => (window as any).__kfm.sim.cp?.reloc === 1, null, { timeout: 90000 });
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; a.sim.policy.pending = null; if (a.sheet === "policy") { a.sheet = null; a.buildSheet(); } });   // (the 2100 policy window that opened under 放置中のみ自動 is closed here: left open, its sheet would keep replacing the menu)
   expect(await page.isVisible("#status")).toBe(true);   // (the event is over: the line is back)
-  await menu(); await page.waitForSelector("#cp-2100-reloc"); expect(await page.textContent("#cp-2100-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2100-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
+  await menuHas("#cp-2100-reloc"); expect(await page.textContent("#cp-2100-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2100-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
   expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
-  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.waitForSelector("#cp-2000-50y");
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menuHas("#cp-2100-reloc"); await menuHas("#cp-2000-50y");
   // the checkpoint taken after the 2200 event: loading it gives the world with the choices made, and nothing is asked again
-  await menu(); await page.waitForSelector("#cp-2100-reloc"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2100-reloc .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
+  await menuHas("#cp-2100-reloc"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2100-reloc .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n, a.sim.palace.pref, a.sim.cp.reloc]")).toEqual(["done", 0, "JP-04", 1]);
   const m2 = (await app(page, "a => a.sim.month")) as number; await page.evaluate(() => { (window as any).__kfm.sim.policy.pending = null; (window as any).__kfm.sim.policy.mode = "auto"; (window as any).__kfm.sim.speed = 20; });   /* (the checkpoint was taken with the 2100 policy window open: it is closed here so the clock can run) */ await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m2, { timeout: 60000 }); expect(await app(page, "a => a.sim.e2200.state")).toBe("done");   // it plays on; no event opens again
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; }); await menuHas("#cp-2000-50y");   /* (the clock is stopped and the menu opened again: a sheet that a passing policy window put on screen must not be what the click waits on) */
   await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2000-50y .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.startYear + Math.floor(a.sim.month / 12) <= 2001 && !a.sim.e2200")).toBe(true);   // (a game from the 2000 checkpoint, before the relocation event)
-  expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menu(); await page.waitForSelector("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
+  expect(await app(page, "a => a.sim.cp.y50")).toBe(2000); await menuHas("#cp-2000-50y"); expect(await page.locator("#cp-2000-50y").count()).toBe(1);   // loading did not make another
   expect(await page.locator("#cp-2100-reloc").count()).toBe(0);   // Stage 30A: going back to 2000 starts a new timeline: the old future (the 2100 save) is no longer in this game's list, and nothing was deleted
   expect(errs).toEqual([]);
 });
@@ -1072,7 +1075,7 @@ test("Stage 29: 2050年のセーブポイントを2079年で読み込むと2050�
   await jump(2079); await page.waitForTimeout(1500); await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; }); expect(await year()).toBeGreaterThanOrEqual(2079);
   // an hour has passed since the save: the old code simulated up to 30 years on top of the loaded game
   await page.evaluate(() => { const d0 = Date.now; (Date as any).now = () => d0() + 3600 * 1000; });
-  await menu(); await page.waitForSelector("#cp-2050-50y"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2050-50y .cp-load"); const h = await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old ? { m: a.sim.month, e: Object.keys(a.sim.edges).length } : false; }, null, { timeout: 90000 }), got = (await h.jsonValue()) as { m: number; e: number };
+  await expect.poll(async () => { await menu(); await page.waitForTimeout(400); return page.locator("#cp-2050-50y").count(); }, { timeout: 90000 }).toBeGreaterThan(0); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2050-50y .cp-load"); const h = await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old ? { m: a.sim.month, e: Object.keys(a.sim.edges).length } : false; }, null, { timeout: 90000 }), got = (await h.jsonValue()) as { m: number; e: number };
   expect(got.m - snap.m).toBeGreaterThanOrEqual(0); expect(got.m - snap.m).toBeLessThanOrEqual(12); expect(got.e - snap.e).toBeGreaterThanOrEqual(0); expect(got.e - snap.e).toBeLessThanOrEqual(25);   // the state that was saved: the saved game keeps running (×20), so a few months (and the roads they open) may pass by the time it is read -- never the thirty years the old catch-up added
   await page.waitForTimeout(1500); const after = (await app(page, "a => ({ m: a.sim.month })")) as { m: number }; expect(await year()).toBeLessThanOrEqual(2051); expect(after.m - snap.m).toBeLessThan(24);   // and a time away has not carried it on
   // it plays on from there, a save and a reload keep it, and no event opens twice
