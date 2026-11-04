@@ -14,7 +14,7 @@ class MemStore implements CpStore {
   async keys() { return [...this.m.keys()]; }
 }
 const ent = (year: number, kind: "50y" | "reloc", bytes = 1000, savedAt = year): CpEntry => ({ key: `${CP_PREFIX}${year}:${kind}`, year, kind, bytes, gz: false, savedAt, capital: "東京府", sub: "大阪府" });
-const stub = (year: number, extra: Record<string, unknown> = {}) => ({ ceremonyDone: true, month: (year - 1950) * 12, startYear: 1950, stage3: true, kaigen: { eras: [] }, ...extra }) as never;
+const stub = (year: number, extra: Record<string, unknown> = {}) => ({ ceremonyDone: true, month: (year - 1950) * 12, startYear: 1950, relocFirst: 2200, stage3: true, kaigen: { eras: [] }, ...extra }) as never;
 
 describe("Stage 26: when a checkpoint is due", () => {
   it("every 50 years from 2000, once each; a jump past the mark still gets it once; nothing before the ceremony or off a year boundary", () => {
@@ -111,7 +111,7 @@ describe("Stage 26: a checkpoint is a complete save; the game goes on from it ex
     expect((sim as unknown as { snaps?: unknown }).snaps).toBeUndefined();
   }, 600000);
   it("Stage 27: a checkpoint taken after the 2200 event restores into the world with its choices made: no event asks again, seats, palace, era history and 国道0号 are as they were", async () => {
-    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.month = (E2200_YEAR - sim.startYear) * 12; sim.policy!.mode = "auto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
+    const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r; sim.relocFirst = 2200; sim.month = (E2200_YEAR - sim.startYear) * 12; sim.policy!.mode = "idleAuto"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
     expect(checkpointDue(sim)).toBeNull(); stepMonth(sim, w); expect(sim.e2200?.state).toBe("pending"); expect(checkpointDue(sim)).toBeNull();
     apply2200(sim, { era: 1, stance: "heisei", coast: "neutral", focus: "concentrate", capital: "JP-40", sub: "JP-04", palace: "JP-04" }, false, (p) => w.cities.find((c) => c.pref === p && c.kind === "capital")?.pos ?? null); expect(checkpointDue(sim)).toBeNull();   // road0 is still open
     close2200(sim); const d = checkpointDue(sim)!; expect(d).toEqual({ kind: "reloc", year: 2200, n: 1 }); markCheckpoint(sim, d); const json = JSON.stringify(makeSave(realState(1), sim));
@@ -122,7 +122,7 @@ describe("Stage 26: a checkpoint is a complete save; the game goes on from it ex
   }, 600000);
   it("Stage 27: the palace follows its prefecture; a point on the map wins; an old save that kept the old coordinates is put right", () => {
     const r = run14({ seed: 5, until: 1952, islets: true }), { sim, w } = r, seatOf = (p: string) => w.cities.find((c) => c.pref === p && c.kind === "capital")!.pos;
-    sim.palace = { pref: "JP-13", pos: seatOf("JP-13") }; sim.month = (E2200_YEAR - sim.startYear) * 12; sim.kaigen!.next = 2230; stepMonth(sim, w); const before = sim.palace.pos.slice();
+    sim.palace = { pref: "JP-13", pos: seatOf("JP-13") }; sim.relocFirst = 2200; sim.month = (E2200_YEAR - sim.startYear) * 12; sim.kaigen!.next = 2230; stepMonth(sim, w); const before = sim.palace.pos.slice();
     apply2200(sim, { era: 0, stance: "heisei", coast: "neutral", focus: "concentrate", palace: "JP-04" }, false, seatOf); expect(sim.palace!.pref).toBe("JP-04"); expect(sim.palace!.pos).toEqual(seatOf("JP-04")); expect(sim.palace!.pos).not.toEqual(before);
     sim.palace = { pref: "JP-04", pos: before as [number, number] }; expect(placePalace(sim, w, true)).toBe(true); expect(sim.palace.pos).toEqual(seatOf("JP-04")); expect(placePalace(sim, w, true)).toBe(false);   // (repair of the old bug; then nothing more to do)
     const pt: [number, number] = [seatOf("JP-04")[0] + 3, seatOf("JP-04")[1] + 2]; sim.palace = { pref: "JP-04", pos: pt }; expect(placePalace(sim, w, true)).toBe(false); expect(sim.palace.pos).toEqual(pt);   // a point the player chose inside the prefecture stays

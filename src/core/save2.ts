@@ -80,7 +80,8 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.numreg !== undefined && !(isRec(raw.numreg) && isRec(raw.numreg.next) && isRec(raw.numreg.list) && ["road", "hwy", "rail", "hsr", "sea", "air"].every((k) => Array.isArray(raw.numreg.list[k]) && Number.isInteger(raw.numreg.next[k])))) delete raw.numreg;   // Stage 23: a register that is not whole is started again (estimated)
   if (raw.tier23 !== undefined && !(isRec(raw.tier23) && isRec(raw.tier23.zones) && isRec(raw.tier23.hist) && isRec(raw.tier23.cnt))) delete raw.tier23;   // Stage 23
   if (raw.isl22 !== undefined && raw.isl22 !== true) delete raw.isl22;
-  if (raw.relocFirst !== undefined && !(Number.isInteger(raw.relocFirst) && raw.relocFirst >= 2000 && raw.relocFirst <= 2300)) delete raw.relocFirst;   // Stage 28 (absent = an older game, which keeps the 2200 schedule)
+  if (raw.relocFirst !== undefined && !(Number.isInteger(raw.relocFirst) && raw.relocFirst >= 1950 && raw.relocFirst <= 3500)) delete raw.relocFirst;   // Stage 28 (absent = an older game: it takes its origin from its own history when loaded, adoptRelocSchedule)
+  if (raw.relocSkipped !== undefined && !(Array.isArray(raw.relocSkipped) && raw.relocSkipped.every((y: unknown) => Number.isInteger(y)))) delete raw.relocSkipped;   // Stage 35
   if (raw.relocOrigin !== undefined && raw.relocOrigin !== "new" && raw.relocOrigin !== "migrated") delete raw.relocOrigin;   // Stage 29
   { const okId = (x: any) => typeof x === "string" && /^[a-z0-9]{3,40}$/.test(x);   // Stage 30A: world / timeline identity (all three or nothing)
     if (!(okId(raw.wid) && okId(raw.tl))) { delete raw.wid; delete raw.tl; delete raw.anc; }

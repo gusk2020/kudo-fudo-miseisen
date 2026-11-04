@@ -11,7 +11,7 @@ import { defaultState } from "../../src/core/state";
 import { realWorld } from "./simhelp";
 import type { Vec } from "../../src/core/types";
 
-const toEve = () => { const r = run14({ seed: 5, until: 1952, islets: true }); const sim = r.sim; sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "priority"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null; return { ...r, sim }; };
+const toEve = () => { const r = run14({ seed: 5, until: 1952, islets: true }); const sim = r.sim; sim.relocFirst = 2200; sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "priority"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null; return { ...r, sim }; };
 const line = (a: Vec, b: Vec, n = 20): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
 
 describe("Stage 22: the 2200 event", () => {
@@ -28,8 +28,8 @@ describe("Stage 22: the 2200 event", () => {
     expect(sim.kaigen!.eras.filter((e) => e.name === CAND_2200[1].name)).toHaveLength(1);
     expect(sim.pot17!.hist.some((x) => x.y === 2201 || x.y === 2200)).toBe(true);   // the development order is redrawn from the new seats
   }, 300000);
-  it("Stage 23: in every mode (手動・半自動・完全自動, away too) time stops at 2200 until the player chooses; 現状維持 is its own choice", () => {
-    for (const mode of ["auto", "idleAuto", "priority"] as const) {
+  it("Stage 23: in 手動 and 半自動 (away too) time stops at 2200 until the player chooses; 現状維持 is its own choice", () => {
+    for (const mode of ["idleAuto", "priority"] as const) {   // Stage 35: 完全自動 ("auto") skips the relocation instead (stage35.test.ts); 手動 and 半自動 still stop
       const { sim, w } = toEve(); sim.policy!.mode = mode; if (sim.policy) sim.policy.away = true; const cap = sim.capital, era = sim.kaigen!.eras.length;
       stepMonth(sim, w); expect(sim.e2200?.state, mode).toBe("pending"); const m = sim.month;
       for (let i = 0; i < 30; i++) stepMonth(sim, w); expect(sim.month, mode).toBe(m); expect(sim.e2200?.state, mode).toBe("pending");   // nothing resolves it by itself

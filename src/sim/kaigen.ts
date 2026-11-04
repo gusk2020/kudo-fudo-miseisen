@@ -186,8 +186,11 @@ export function stanceAt(sim: { era: string; kaigen?: KaigenState }, year: numbe
  * always minus every name used since. A group that has run low is topped up -- first from real past Japanese eras that this game never used, then (only when those are gone) from names made up by the game
  * and labelled as such, never passed off as history.
  */
-/** Stage 28: a new game puts its first relocation in 2100 (150 years after the 1950 start); a game made before that (no `relocFirst` in its save) keeps 2200, so its history is never re-timed. */
-export const RELOC_FIRST_LEGACY = 2200, RELOC_FIRST = 2100, RELOC_STEP = 150, RELOC_MIN = 3, RELOC_TARGET = 5;
+/** Stage 35: relocations stand at gameStartYear + 150 x n (n = 1, 2, 3, ...) -- the origin is each game's OWN start year, never a fixed 2100 or 2200 (1950 -> 2100, 2250, 2400; 2000 -> 2150, 2300, 2450; 2050 -> 2200, 2350, 2500).
+ *  A game records its first boundary (`relocFirst`) when it is made, so saving, loading and relocating can never move the origin. `RELOC_FIRST_LEGACY` is only the default of the pure helper `relocYear` for callers that
+ *  name no origin (unit tests of the cadence itself); the simulation never uses it. */
+export const RELOC_FIRST_LEGACY = 2200, RELOC_STEP = 150, RELOC_MIN = 3, RELOC_TARGET = 5;
+export const relocFirstOf = (startYear: number) => startYear + RELOC_STEP;
 export const relocYear = (n: number, first: number = RELOC_FIRST_LEGACY) => first + RELOC_STEP * n;
 export interface RelocCand { name: string; yomi?: string; real: boolean; note: string; origin: "inherit" | "history" | "fiction" }
 export interface RelocGroup { n: number; year: number; base: string; cands: RelocCand[]; chosen?: string }
