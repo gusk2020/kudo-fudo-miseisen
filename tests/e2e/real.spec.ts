@@ -762,7 +762,7 @@ test("Stage 22: 2100年の遷都・改元・復興方針を選び、国道0号�
   await page.click("#tool-cer-kokudo0");
   const pts = await fitPts(page, ["東京", "大阪市", "福岡市"]); await stroke(page, pts);
   expect(await app(page, "a => a.cerDraft.kokudo0.prev.ok")).toBe(true); expect(await app(page, "a => a.cerDraft.kokudo0.prev.reversed === true")).toBe(true);
-  await page.click("#rw-review"); await page.click("#rw-confirm"); await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; });   // Stage 35: the road, then the final review, then 確定して再開
+  await page.click("#rw-review"); await page.click("#rw-confirm"); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; a.sim.policy.pending = null; if (a.sheet === "policy") { a.sheet = null; a.buildSheet(); } });   /* (a policy window that opened under 放置中のみ自動 is closed: left open, its sheet keeps replacing the menu) */   // Stage 35: the road, then the final review, then 確定して再開
   expect(await app(page, "a => { const r = Object.values(a.sim.routes).find((x) => x.grade === 'national' && x.number === 0); return !!r && a.sim.e2200.state === 'done' && a.sim.e2200.road0.reusedKm > a.sim.e2200.road0.newKm; }")).toBe(true);
   expect(await app(page, "a => Object.values(a.sim.routes).some((x) => x.grade === 'national' && x.number === 1 && x.active)")).toBe(true);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
@@ -780,7 +780,7 @@ test("Stage 23: 完全自動でも2100年で必ず止まり、選ぶまで進ま
   const m = await app(page, "a => a.sim.month"); await page.waitForTimeout(2500); expect(await app(page, "a => a.sim.month")).toBe(m); expect(await app(page, "a => a.sim.e2200.state")).toBe("pending");   // ×20 and 完全自動: still waiting
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   await page.waitForSelector("#e22-box", { timeout: 20000 }); expect(await app(page, "a => a.sim.e2200.state")).toBe("pending");   // a save keeps the event open
-  await page.click("#e22-keep"); expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.kept === true, a.sim.e2200.auto === undefined]")).toEqual(["done", true, true]); await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; });
+  await page.click("#e22-keep"); expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.kept === true, a.sim.e2200.auto === undefined]")).toEqual(["done", true, true]); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; a.sim.policy.pending = null; if (a.sheet === "policy") { a.sheet = null; a.buildSheet(); } });
   // save slots: one line each
   await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = null; a.openSheet("menu"); }); await page.waitForSelector("#slot-1");
   await page.locator("#slot-2 .slot-save").click(); await page.waitForFunction(() => /\d{4}年/.test(document.getElementById("slot-2")?.textContent ?? ""), null, { timeout: 15000 });
@@ -829,7 +829,7 @@ test("Stage 24: 2100年は改元・遷都を決めても国道0号を描くか�
   expect(await app(page, "a => { const p = a.seatPoints(a.world), c = a.world.cities.find((x) => x.pref === 'JP-40' && x.kind === 'capital' && !x.former); return !!a.r.seatOverride && !!c && Math.hypot(a.r.seatOverride.capital[0] - c.pos[0], a.r.seatOverride.capital[1] - c.pos[1]) < 1e-6 && Math.hypot(p.sub[0] - a.r.seatOverride.sub[0], p.sub[1] - a.r.seatOverride.sub[1]) < 1e-6; }")).toBe(true);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.sim.e2200.state")).toBe("road0");   // a save keeps it waiting
-  await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; }); expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.skipped === true]")).toEqual(["done", true]);
+  await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; a.sim.policy.pending = null; if (a.sheet === "policy") { a.sheet = null; a.buildSheet(); } });   /* (a policy window that opened under 放置中のみ自動 is closed: left open, its sheet keeps replacing the menu) */ expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.skipped === true]")).toEqual(["done", true]);
   await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForFunction((m0) => (window as any).__kfm.sim.month > (m0 as number), m, { timeout: 60000 });
   expect(errs).toEqual([]);
 });
@@ -878,7 +878,7 @@ test("Stage 25: 150年後の2250年にも遷都と改元。元号は使った名
   const jump = (y: number) => page.evaluate((yy) => { const a = (window as any).__kfm, s = a.sim; a.runner.settle(); s.month = (yy - s.startYear) * 12; s.kaigen.next = yy + 40; s.kaigen.pending = null; s.policy.pending = null; s.policy.mode = "idleAuto"; s.speed = 20; }, y);
   await jump(2100); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box");
   await page.click("#e22-era-1"); await page.click("#e22-next"); await page.selectOption("#e22-sel-capital", "JP-40"); await page.selectOption("#e22-sel-sub", "JP-13"); await page.click("#e22-decide");
-  const first = (await app(page, "a => a.sim.kaigen.eras[a.sim.kaigen.eras.length - 1].name")) as string; await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; });
+  const first = (await app(page, "a => a.sim.kaigen.eras[a.sim.kaigen.eras.length - 1].name")) as string; await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; a.sim.policy.pending = null; if (a.sheet === "policy") { a.sheet = null; a.buildSheet(); } });   /* (a policy window that opened under 放置中のみ自動 is closed: left open, its sheet keeps replacing the menu) */
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n]")).toEqual(["done", 0]);
   await jump(2250); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.n === 1 && (window as any).__kfm.sim.e2200.state === "pending", null, { timeout: 60000 }); await page.waitForSelector("#e22-box");
   const m = (await app(page, "a => a.sim.month")) as number; await page.waitForTimeout(2000); expect(await app(page, "a => a.sim.month")).toBe(m);   // ×20 and 完全自動: stopped
@@ -890,7 +890,7 @@ test("Stage 25: 150年後の2250年にも遷都と改元。元号は使った名
   const names = (await app(page, "a => a.sim.kaigen.eras.map((e) => e.name)")) as string[]; expect(new Set(names).size).toBe(names.length);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.e2200.n, a.sim.e2200hist.length]")).toEqual(["road0", 1, 1]);
-  await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; }); await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForTimeout(2500);
+  await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; a.sim.policy.pending = null; if (a.sheet === "policy") { a.sheet = null; a.buildSheet(); } });   /* (a policy window that opened under 放置中のみ自動 is closed: left open, its sheet keeps replacing the menu) */ await page.evaluate(() => { (window as any).__kfm.sim.speed = 20; }); await page.waitForTimeout(2500);
   expect(await app(page, "a => [a.sim.e2200.n, a.sim.e2200hist.length, a.sim.e2200.state]")).toEqual([1, 1, "done"]);   // no second firing
   expect(errs).toEqual([]);
 });
@@ -968,7 +968,7 @@ test("Stage 28: 遷都後のセーブを読み込んでも首都・副首都・�
   const event = async (y: number, cap: string, sub: string, pal: string, era: number) => {
     await jump(y); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
     await page.click("#e22-era-" + era); await page.click("#e22-next"); await page.selectOption("#e22-sel-capital", cap); await page.selectOption("#e22-sel-sub", sub); await page.selectOption("#e22-sel-palace", pal); await page.click("#e22-decide");
-    await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; }); await page.waitForFunction(() => (window as any).__kfm.sim.e2200.state === "done");
+    await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; a.sim.policy.pending = null; if (a.sheet === "policy") { a.sheet = null; a.buildSheet(); } });   /* (a policy window that opened under 放置中のみ自動 is closed: left open, its sheet keeps replacing the menu) */ await page.waitForFunction(() => (window as any).__kfm.sim.e2200.state === "done");
   };
   const loadSlot = async (n: number) => { await menu(); await page.waitForSelector("#slot-" + n); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click(`#slot-${n} .slot-load`); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 }); };
   await event(2100, "JP-23", "JP-40", "JP-04", 1);
@@ -1258,7 +1258,7 @@ test("Stage 32: 遷都イベントでも同じ操作(府県選択→地図→海
   const d = await app(page, "a => [a.e22.capital, a.e22.capitalPos, a.e22Pick]") as [string, [number, number], null]; expect(d[2]).toBeNull(); expect(d[1]).toBeTruthy();
   expect(await app(page, `a => a.world.prefOf(a.world.cellOf([${d[1][0]}, ${d[1][1]}]))`)).toBe(d[0]);   // the prefecture follows the point
   await page.waitForSelector("#e22-box"); expect(await page.textContent("#e22-seat-capital")).toContain("地図で指定");
-  await page.click("#e22-decide"); await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; }); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "done", null, { timeout: 60000 });
+  await page.click("#e22-decide"); await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; a.sim.policy.pending = null; if (a.sheet === "policy") { a.sheet = null; a.buildSheet(); } });   /* (a policy window that opened under 放置中のみ自動 is closed: left open, its sheet keeps replacing the menu) */ await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "done", null, { timeout: 60000 });
   expect(await app(page, "a => a.sim.capital")).toBe(d[0]); expect(errs).toEqual([]);
 });
 
@@ -1347,7 +1347,7 @@ test("Stage 35: 遷都ウィザード(元号→座席→国道0号→最終確�
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => [a.sim.e2200.state, a.rwStage, a.sim.capital]")).toEqual(["road0", 2, "JP-27"]); expect(await app(page, "a => [a.sim.startYear, a.sim.relocFirst]")).toEqual([1950, 2100]);   /* the origin survives the reload */ const mm = (await app(page, "a => a.sim.month")) as number; await page.waitForTimeout(1500); expect(await app(page, "a => a.sim.month")).toBe(mm);
   await page.click("#road0-skip"); expect(await page.isVisible("#rw-confirm")).toBe(true); expect(await app(page, "a => a.sim.e2200.state")).toBe("road0"); await page.waitForTimeout(800); expect(await app(page, "a => a.sim.month")).toBe(mm);   // the review does not resume the game
-  await page.click("#rw-back"); expect(await app(page, "a => a.rwStage")).toBe(2); await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { (window as any).__kfm.sim.policy.mode = "auto"; });
+  await page.click("#rw-back"); expect(await app(page, "a => a.rwStage")).toBe(2); await page.click("#road0-skip"); await page.click("#rw-confirm"); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.policy.mode = "auto"; a.sim.policy.pending = null; if (a.sheet === "policy") { a.sheet = null; a.buildSheet(); } });   /* (a policy window that opened under 放置中のみ自動 is closed: left open, its sheet keeps replacing the menu) */
   await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "done", null, { timeout: 60000 }); expect(await page.isVisible("#status")).toBe(true);
   // ---- fully unattended: the next boundary (2250) is skipped whole
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "priority"; a.ffYears(1); });   // (one year on: the new seats' reclamation sites exist now)
