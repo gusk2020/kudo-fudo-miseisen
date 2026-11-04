@@ -178,7 +178,10 @@ export class App {
     }
     if (this.runner) this.runner.hold = false;
     this.lastSaved = performance.now();
-    if (!this.prevCopied) { this.prevCopied = true; void getRaw(this.saveKey).then((raw) => { if (raw) { try { return putRaw(this.saveKey + ":prev", JSON.parse(raw)); } catch { return putRaw(this.saveKey + ":prev", { raw }); } } }).catch(() => { /* ignore */ }); }
+    if (!this.prevCopied) { this.prevCopied = true;
+      // Stage 35 audit: the first time a save written by an OLDER version (a game without the Stage 34 reclamation log) is about to be overwritten, its original text is kept for good under its own key. Never overwritten, never deleted: the way back if a newer version ever misbehaves.
+      void getRaw(this.saveKey).then(async (raw) => { if (!raw) return; try { const j = JSON.parse(raw), sv = j?.save ?? j; if (sv?.sim && sv.sim.stage3 && !sv.sim.rec34 && !(await getRaw(this.saveKey + ":pre-s35"))) await putRaw(this.saveKey + ":pre-s35", j); }   /* (the record is { savedAt, save: { sim, map, ... } }) */ catch { /* not a save we understand: leave it */ } }).catch(() => { /* ignore */ });
+      void getRaw(this.saveKey).then((raw) => { if (raw) { try { return putRaw(this.saveKey + ":prev", JSON.parse(raw)); } catch { return putRaw(this.saveKey + ":prev", { raw }); } } }).catch(() => { /* ignore */ }); }
     if (this.saveLocked && !this.sim && !this.pendingSim) return Promise.resolve(false);
     if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now();
     if (this.real && this.sim && performance.now() - this.lastBackup > 120000) { this.lastBackup = performance.now(); void saveGame(this.saveKey + ":backup", makeSave(this.s, this.sim)); }   /* a second copy every two minutes; a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
