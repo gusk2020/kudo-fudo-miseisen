@@ -1,3 +1,4 @@
+import { lsKey } from "../core/ns";
 import type { RecLog } from "../sim/reclaim34";
 import { buildIndex } from "../sim/network";
 import { LAKE_LIST } from "../render/lakes";
@@ -108,10 +109,10 @@ export class App {
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
     const a = new App(); a.real = real; a.r = await Renderer.create(host);
-    if (real) { a.store.replace(realState()); document.body.classList.add("real"); try { if (localStorage.getItem("kfm.bg") !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
-      try { const u = JSON.parse(localStorage.getItem("kfm.ui") || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; a.legendShown = u.legendShown === true; a.legendSide = u.legendSide === "left" ? "left" : "right"; } catch { /* ignore */ } a.lite = localStorage.getItem("kfm.lite") === "1"; } catch { /* ignore */ } }
+    if (real) { a.store.replace(realState()); document.body.classList.add("real"); try { if (localStorage.getItem(lsKey("bg")) !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
+      try { const u = JSON.parse(localStorage.getItem(lsKey("ui")) || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; a.legendShown = u.legendShown === true; a.legendSide = u.legendSide === "left" ? "left" : "right"; } catch { /* ignore */ } a.lite = localStorage.getItem(lsKey("lite")) === "1"; } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
-    try { a.safeMode = !!localStorage.getItem("kfm.run"); localStorage.setItem("kfm.run", String(Date.now())); } catch { /* storage may be blocked */ }
+    try { a.safeMode = !!localStorage.getItem(lsKey("run")); localStorage.setItem(lsKey("run"), String(Date.now())); } catch { /* storage may be blocked */ }
     a.r.onContextLost = () => a.toast("画面の描画が一時的に失われました。復帰を待っています…"); a.r.onContextRestored = () => { a.render(); a.toast("描画が復帰しました"); };
     let saved = await loadGame(a.saveKey), restoredFromBackup = false;
     if (!saved && real) {
@@ -166,7 +167,7 @@ export class App {
   render() { if (!isRidgeTool(this.tool) && this.bgBeforeRidge) { const b0 = this.bgBeforeRidge; this.bgBeforeRidge = null; this.bg = b0; this.r.setBg(b0); }   // leaving the range tools by any route puts the map back
     if (this.real && this.s.bg && this.s.bg !== this.bg && !this.bgBeforeRidge) { this.bg = this.s.bg; this.r.setBg(this.bg); }   // a loaded game brings its own map choice
     this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.rangeSel = this.tool === "range" && this.rangeSel && this.editable() ? (() => { const d = rangeById(this.rangeSel!); return d ? { pts: rangeWorldLine(this.s, d), core: d.core } : null; })() : null; this.r.creationSel = this.tool === "create" ? this.creationOutline() : null; this.r.createPending = this.tool === "create" && this.createPick ? this.createPick.w : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = this.activeSeats(), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.seatOverride = this.sim?.e2200 && w0 ? this.seatPoints(w0) : null; this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim, shaped: !!x.islet.shape, tiny: (x.islet.shapeAreaKm2 ?? x.islet.area) < 1 })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
-  markClean() { try { localStorage.removeItem("kfm.run"); } catch { /* ignore */ } }
+  markClean() { try { localStorage.removeItem(lsKey("run")); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
   persist(force = false): Promise<boolean> {
     // Saves only between months. While the clock is busy, wait for a gap (one retry timer at a time, never a growing pile of them);
@@ -765,11 +766,11 @@ export class App {
   cerRedo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.redo.length) return; d.past.push(d.strokes); d.strokes = d.redo.pop()!; this.cerSel = null; this.replanCer(kind); this.renderRoads(); this.buildUI(); }
   cerRestart(kind: CerKind) { delete this.cerDraft[kind]; this.cerSel = null; this.cerRedraw = null; this.saveCer(); this.renderRoads(); this.buildUI(); }
   /** A ceremony in progress survives a reload (strokes only; the preview is recomputed from them). */
-  saveCer() { try { const o: Record<string, { strokes: Vec[][]; past: Vec[][][]; future: Vec[][][] }> = {}; for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const d = this.cerDraft[k]; if (d) o[k] = { strokes: d.strokes, past: d.past.slice(-30), future: d.redo.slice(-30) }; } if (Object.keys(o).length) localStorage.setItem("kfm.cer", JSON.stringify(o)); else localStorage.removeItem("kfm.cer"); } catch { /* ignore */ } }
+  saveCer() { try { const o: Record<string, { strokes: Vec[][]; past: Vec[][][]; future: Vec[][][] }> = {}; for (const k of ["kokudo1", "fudo1"] as CerKind[]) { const d = this.cerDraft[k]; if (d) o[k] = { strokes: d.strokes, past: d.past.slice(-30), future: d.redo.slice(-30) }; } if (Object.keys(o).length) localStorage.setItem(lsKey("cer"), JSON.stringify(o)); else localStorage.removeItem(lsKey("cer")); } catch { /* ignore */ } }
   private restoreCer() {
     if (this.sim || Object.keys(this.cerDraft).length) return; const w = this.ensureWorld(); if (!w) return;
     try {
-      const o = JSON.parse(localStorage.getItem("kfm.cer") || "{}"), okPt = (p: unknown) => Array.isArray(p) && p.length === 2 && p.every((x) => typeof x === "number" && Number.isFinite(x)), okS = (s: unknown): s is Vec[] => Array.isArray(s) && s.length >= 2 && s.length < 5000 && s.every(okPt);
+      const o = JSON.parse(localStorage.getItem(lsKey("cer")) || "{}"), okPt = (p: unknown) => Array.isArray(p) && p.length === 2 && p.every((x) => typeof x === "number" && Number.isFinite(x)), okS = (s: unknown): s is Vec[] => Array.isArray(s) && s.length >= 2 && s.length < 5000 && s.every(okPt);
       for (const k of (this.real ? ["kokudo1"] : ["kokudo1", "fudo1"]) as CerKind[]) { const e = o[k]; if (!e || !Array.isArray(e.strokes)) continue; const strokes = e.strokes.filter(okS), snaps = (x: unknown) => (Array.isArray(x) ? x : []).filter((sn: unknown) => Array.isArray(sn) && sn.every(okS)) as Vec[][][];
         // older drafts kept a redo list of single strokes; each becomes one future snapshot (the strokes plus it)
         const legacy: Vec[][] = Array.isArray(e.redo) ? e.redo.filter(okS) : [], redo = Array.isArray(e.future) ? snaps(e.future) : legacy.map((_: Vec[], i: number) => [...strokes, ...legacy.slice(i).reverse()]), past = snaps(e.past);
@@ -872,7 +873,7 @@ export class App {
   }
   onVisibility() {
     if (document.hidden) { this.hiddenAt = Date.now(); this.persist(true); this.markClean(); return; }
-    try { localStorage.setItem("kfm.run", String(Date.now())); } catch { /* ignore */ }
+    try { localStorage.setItem(lsKey("run"), String(Date.now())); } catch { /* ignore */ }
     if (this.sim && this.hiddenAt) { const away = Date.now() - this.hiddenAt; this.hiddenAt = 0; void this.catchUp(away); }
   }
   /** Tap a road: show what it is and why it changed (designation, nickname, standard, demand split, old/new road, history). */
@@ -899,12 +900,12 @@ export class App {
     if (this.real) this.buildRealDock(); else document.querySelectorAll<HTMLButtonElement>("#dock [data-sheet]").forEach((b) => (b.onclick = () => this.openSheet(b.dataset.sheet!)));
     $("sheet-close").onclick = () => this.openSheet(null);
   }
-  setLite(on: boolean) { this.lite = on; this.slowTicks = 0; try { localStorage.setItem("kfm.lite", on ? "1" : "0"); } catch { /* ignore */ } this.renderRoads(); this.buildSheet(); }
-  saveUi() { try { localStorage.setItem("kfm.ui", JSON.stringify({ hide: [...this.hide], names: this.names, legendOpen: this.legendOpen, legendShown: this.legendShown, legendSide: this.legendSide })); } catch { /* ignore */ } }
+  setLite(on: boolean) { this.lite = on; this.slowTicks = 0; try { localStorage.setItem(lsKey("lite"), on ? "1" : "0"); } catch { /* ignore */ } this.renderRoads(); this.buildSheet(); }
+  saveUi() { try { localStorage.setItem(lsKey("ui"), JSON.stringify({ hide: [...this.hide], names: this.names, legendOpen: this.legendOpen, legendShown: this.legendShown, legendSide: this.legendSide })); } catch { /* ignore */ } }
   /** Legend filters are display-only: they never touch the simulation. */
   toggleHide(key: string) { if (this.hide.has(key)) this.hide.delete(key); else this.hide.add(key); this.saveUi(); this.renderRoads(); this.buildSheet(); }
   /** Stage 11: which map is shown -- the road map or the terrain map -- is chosen in the settings, kept with the game (`bg`), and restored on load. `keep` = false for the temporary switch while a range is edited. */
-  setBg(bg: "terrain" | "roadmap", keep = true) { this.bg = bg; if (keep) { try { localStorage.setItem("kfm.bg", bg); } catch { /* ignore */ } if (this.s.bg !== bg) this.store.set((s) => { s.bg = bg; }); } this.r.setBg(bg); this.buildToolbar(); }
+  setBg(bg: "terrain" | "roadmap", keep = true) { this.bg = bg; if (keep) { try { localStorage.setItem(lsKey("bg"), bg); } catch { /* ignore */ } if (this.s.bg !== bg) this.store.set((s) => { s.bg = bg; }); } this.r.setBg(bg); this.buildToolbar(); }
   /** Stage 3 dock: the observation tools get their own buttons (the old dock's 検証/取消/やり直し make no sense on a fixed real map). */
   private buildRealDock() {
     const dock = $("dock"), fit = $("btn-fit");   // the old buttons stay in the DOM (other code reads them) but are hidden

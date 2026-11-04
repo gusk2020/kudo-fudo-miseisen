@@ -1,3 +1,4 @@
+import { dbName } from "./ns";
 /** Save format v2: { map, sim } with integrity checks. v1 (map only) is migrated, never rejected. Nothing here throws. */
 import { validMetro } from "../sim/metro";
 import { STANCES } from "../sim/kaigen";
@@ -146,7 +147,7 @@ export function parseSave(input: unknown): ParsedSave {
 export function exportGame(save: GameSave, extra?: Record<string, unknown>): string { return JSON.stringify({ ...save, savedAt: Date.now(), ...extra }, null, 1); }
 
 // ---- IndexedDB (best effort) ----
-const DB = "kfm-stage1", STORE = "saves";
+const DB = dbName("kfm-stage1"), STORE = "saves";
 function open(): Promise<IDBDatabase> {
   return new Promise((res, rej) => { if (typeof indexedDB === "undefined") return rej(new Error("no indexedDB")); const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore(STORE); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 }

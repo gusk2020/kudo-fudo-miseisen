@@ -1,0 +1,29 @@
+# TEMPLATE ONLY -- not under .github/workflows, so GitHub does not run it.
+# It is meant to be copied into a SEPARATE playtest repository (see docs/PLAYTEST_PUBLISHING_PROPOSAL.md) and never into this one.
+name: Playtest Pages
+on:
+  workflow_dispatch:          # run by hand only; nothing deploys by itself
+permissions: { contents: read, pages: write, id-token: write }
+concurrency: { group: pages, cancel-in-progress: true }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build
+        env:
+          BASE_PATH: "/REPLACE_WITH_THE_PLAYTEST_REPO_NAME/"   # a project site is served under /<repo>/
+          VITE_SAVE_NS: playtest                                 # own IndexedDB / localStorage names: a playtest never touches the real game's saves
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: dist }
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: { name: github-pages, url: "${{ steps.d.outputs.page_url }}" }
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4

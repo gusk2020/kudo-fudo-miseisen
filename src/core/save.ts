@@ -1,3 +1,4 @@
+import { dbName } from "./ns";
 import { cleanCreations } from "./creations";
 import { cleanRangeEdits } from "./ranges";
 import { prefOfSeat } from "./seat";
@@ -80,7 +81,7 @@ export function exportJson(state: ProjectState, extra?: Record<string, unknown>)
 }
 
 // ---- IndexedDB (best effort: private mode or quota errors must never stop the app) ----
-const DB = "kfm-stage1", STORE = "saves";
+const DB = dbName("kfm-stage1"), STORE = "saves";
 function open(): Promise<IDBDatabase> {
   return new Promise((res, rej) => {
     if (typeof indexedDB === "undefined") return rej(new Error("no indexedDB"));
