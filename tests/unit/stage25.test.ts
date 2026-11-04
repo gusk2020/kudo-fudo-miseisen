@@ -59,7 +59,7 @@ describe("Stage 25: the 150-year relocation event", () => {
   it("fires at 2200, 2350, 2500, 2650, 2800; every one stops the game; each is recorded in order; ranks stay 1-49 with no duplicate; the nation keeps its people", () => {
     const prefs = ["JP-40", "HK-SAP", "JP-27", "JP-47", "JP-13"], subs = ["JP-04", "JP-15", "JP-23", "JP-20", "JP-14"], opened: number[] = [], taken: string[] = [];
     let total0 = 0; const before: number[] = [], after: number[] = [];
-    const r = run14({ seed: 5, until: 2801, islets: true, choose: (n, sm) => { opened.push(n); before[n] = Object.values(sm.cities).reduce((a, c) => a + c.pop, 0); return pick(n, { era: n % 3, stance: (["shubun", "shoka", "kairo", "kuuro", "heisei"] as const)[n], capital: prefs[n], sub: subs[n], palace: prefs[n] }); },
+    const r = run14({ seed: 5, until: 2801, islets: true, relocFirst: 2200, choose: (n, sm) => { opened.push(n); before[n] = Object.values(sm.cities).reduce((a, c) => a + c.pop, 0); return pick(n, { era: n % 3, stance: (["shubun", "shoka", "kairo", "kuuro", "heisei"] as const)[n], capital: prefs[n], sub: subs[n], palace: prefs[n] }); },
       applied: (n, sm) => { after[n] = Object.values(sm.cities).reduce((a, c) => a + c.pop, 0); },
       hook: (sim, w, y) => { if (y === 2150) total0 = Object.values(sim.cities).reduce((a, c) => a + c.pop, 0); if (sim.e2200) { const nm = sim.kaigen!.eras.map((e) => e.name); if (new Set(nm).size !== nm.length) taken.push(`dup@${y}`); } } });
     const { sim } = r; expect(opened).toEqual([0, 1, 2, 3, 4]); const all = [...(sim.e2200hist ?? []), sim.e2200!]; expect(all.map((e) => e.n)).toEqual([0, 1, 2, 3, 4]); expect(all.map((e) => e.sched)).toEqual([2200, 2350, 2500, 2650, 2800]);
@@ -82,7 +82,7 @@ describe("Stage 25: the 150-year relocation event", () => {
     expect(groupOf2200(sim)!.cands.length).toBeGreaterThan(5);   // the second event offers the game-start group
   }, 1200000);
   it("a save made before the repeat existed (one finished event, no history, no groups) loads and goes on to 2350", () => {
-    const r = run14({ seed: 5, until: 2202, islets: true, e2200: pick(0, { capital: "JP-40", sub: "JP-04", palace: "JP-40" }) as never }), s = JSON.parse(JSON.stringify(r.sim)); delete s.e2200hist; delete s.kaigen.reloc;
+    const r = run14({ seed: 5, until: 2202, islets: true, relocFirst: 2200, e2200: pick(0, { capital: "JP-40", sub: "JP-04", palace: "JP-40" }) as never }), s = JSON.parse(JSON.stringify(r.sim)); delete s.e2200hist; delete s.kaigen.reloc;
     const back = sanitizeSim(s).sim!; expect(back.e2200?.state).toBe("done"); expect(nextYear2200(back)).toBe(2350);
     back.e2200 = back.e2200!; back.month = (2350 - back.startYear) * 12; back.kaigen!.pending = null; back.kaigen!.next = 9999; open2200(back); const g = groupOf2200(back)!; expect(g.cands.map((c) => c.name)).not.toContain(back.e2200.era);
     expect(E2200_YEAR).toBe(2200);

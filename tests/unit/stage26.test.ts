@@ -14,7 +14,7 @@ class MemStore implements CpStore {
   async keys() { return [...this.m.keys()]; }
 }
 const ent = (year: number, kind: "50y" | "reloc", bytes = 1000, savedAt = year): CpEntry => ({ key: `${CP_PREFIX}${year}:${kind}`, year, kind, bytes, gz: false, savedAt, capital: "東京府", sub: "大阪府" });
-const stub = (year: number, extra: Record<string, unknown> = {}) => ({ ceremonyDone: true, month: (year - 1950) * 12, startYear: 1950, stage3: true, kaigen: { eras: [] }, ...extra }) as never;
+const stub = (year: number, extra: Record<string, unknown> = {}) => ({ ceremonyDone: true, month: (year - 1950) * 12, startYear: 1950, relocFirst: 2200, stage3: true, kaigen: { eras: [] }, ...extra }) as never;
 
 describe("Stage 26: when a checkpoint is due", () => {
   it("every 50 years from 2000, once each; a jump past the mark still gets it once; nothing before the ceremony or off a year boundary", () => {
