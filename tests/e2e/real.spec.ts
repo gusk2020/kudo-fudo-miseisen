@@ -948,6 +948,7 @@ test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①
   expect(await page.isVisible("#status")).toBe(true);   // (the event is over: the line is back)
   await menuHas("#cp-2100-reloc"); expect(await page.textContent("#cp-2100-reloc")).toContain("遷都の直後"); expect(await page.locator("#cp-2100-50y").count()).toBe(0);   // 2200 is also a 50-year mark: one save, taken after the event
   expect(await page.textContent("#slot-1 .slot-text")).toBe(slot1);   // the numbered slot is untouched
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); });   /* the game is written before the reload: a slower machine would otherwise reload an older save, whose checkpoint list is filtered by another identity */
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await menuHas("#cp-2100-reloc"); await menuHas("#cp-2000-50y");
   // the checkpoint taken after the 2200 event: loading it gives the world with the choices made, and nothing is asked again
   await menuHas("#cp-2100-reloc"); await page.evaluate(() => { (window as any).__kfm.sim.__old = true; }); await page.click("#cp-2100-reloc .cp-load"); await page.waitForFunction(() => { const a = (window as any).__kfm; return a.sim && !a.sim.__old; }, null, { timeout: 90000 });
