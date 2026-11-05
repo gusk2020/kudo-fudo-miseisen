@@ -114,7 +114,7 @@ describe("Stage 11: Lake Biwa and Mt. Fuji take two independent sizes, never she
     const oldS = defaultState(); oldS.features.biwa.scale = 1.5; expect(parseState(JSON.parse(JSON.stringify(oldS))).state.features.biwa.scaleY).toBeUndefined(); expect(mapStateHash(oldS)).toBe(mapStateHash(parseState(JSON.parse(JSON.stringify(oldS))).state));
   });
   it("an anisotropic Biwa or Fuji that would touch the coast is refused by the same map check as before", () => {
-    const s = defaultState(); s.real = true; s.features.biwa.scale = 5; s.features.biwa.scaleY = 5; expect(validate(s).some((i) => i.code === "biwa.coast")).toBe(false);   // Stage 33: the coast no longer refuses it (the terrain cuts it, keeping a land cell)
+    const s = defaultState(); s.real = true; s.features.biwa.scale = 5; s.features.biwa.scaleY = 5; expect(validate(s).some((i) => i.code === "biwa.coast")).toBe(true);   // playtest fix: refused again (the whole outline must be on land)
     const t = defaultState(); t.real = true; t.features.biwa.scale = 1.2; t.features.biwa.scaleY = 1; expect(validate(t).some((i) => i.severity === "error" && i.step === "features")).toBe(false);
   });
 });
