@@ -45,6 +45,8 @@ import { buildLegendStrip } from "./legend24";
 import { fitView, hlBounds, type HlTarget } from "./lines23";
 import { closeRadio, showRadio } from "./radioWin";
 import { CAND_1945 } from "../sim/kaigen";
+/** the farthest a tap on the sea may be moved to land (km): a narrow peninsula or an island edge off the grid is reached, a far coast is not */
+const SEAT_SNAP_MAX_KM = 30;
 
 type Tool = "view" | "range" | "create" | "seatpick" | "pull" | "bulge" | "dent" | "move" | "feature" | "ridge-sw" | "ridge-ne" | "ridge-edit" | "ridge-pick" | "cer-kokudo1" | "cer-fudo1" | "cer-kokudo0" | "pick" | "why";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -602,7 +604,7 @@ export class App {
     }
     if (isl && offIsl) { this.toast(`${isl.name}には定住する人がいないため、県庁所在地には選べません`); return false; }   // Stage 22 (drawn on the map, not part of the simulated land)
     // Stage 32: a tap that is not on land (open sea, a lake) goes to the nearest land of ALL Japan (straight line), whatever the prefecture; the corrected point is the one shown, confirmed and stored
-    let snapped: number | undefined; if (!isl && !isSeatCell(world, k)) { const n = nearestLandCell(world, w); if (n) { k = n.k; pt = n.pos; snapped = Math.round(n.km * 10) / 10; } }
+    let snapped: number | undefined; if (!isl && !isSeatCell(world, k)) { const n = nearestLandCell(world, w); if (n && n.km > SEAT_SNAP_MAX_KM) { this.toast(`近く(${SEAT_SNAP_MAX_KM}km以内)に選べる陸地がありません。陸地の近くをタップしてください`); return false; } if (n) { k = n.k; pt = n.pos; snapped = Math.round(n.km * 10) / 10; } }   /* (a tap far from any land is refused, never silently moved to a distant coast) */
     return this.setSeatPick(world, which, k, pt, isl?.name, snapped);
   }
   /** Builds the candidate for cell `k` / point `pt` (prefecture from the land under it, the nearest place name) and shows it; false (with the reason) when the place is not allowed. */
