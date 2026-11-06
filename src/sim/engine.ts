@@ -600,7 +600,7 @@ export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
 }
 /** An era change is due: open it; if nobody is there to choose (or the setting says so) the first candidate (the real one for 1989/2019, else fewest strokes) is taken. */
 export function startKaigen(sim: SimState, year: number) {
-  const k = sim.kaigen!; openKaigen(k, year); const pol = sim.policy, auto = !!pol && (pol.mode === "auto" || (pol.mode === "idleAuto" && pol.away));
+  const k = sim.kaigen!; openKaigen(k, year); const pol = sim.policy, auto = !!pol && (pol.mode === "auto" || pol.mode === "autoReloc" || (pol.mode === "idleAuto" && pol.away));
   if (auto) { settleKaigen(sim, 0, true); return; }
   ev(sim, "kaigen", `${year}年: 改元の時を迎えた(候補${k.pending!.cands.length}案)`, "元号を選んでください。時間は止まっています", {});
 }

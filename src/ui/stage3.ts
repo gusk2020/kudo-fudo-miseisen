@@ -170,7 +170,7 @@ export function buildPolicy(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "政策介入(10年ごと)")); const sim = app.sim, pol = sim?.policy; if (!sim || !pol) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
   body.append(h("div", { class: "issue", id: "pol-points" }, `共通の持ち点: ${pol.points}点(毎回+${POINTS_PER_WINDOW}点。使わなかった分は全額繰り越し、無制限)`, h("br"), h("small", {}, "同じ政策に点を足すほど効果は逓減します(1点目が最も効き、10点目はごくわずか)。")));
   const modes = h("div", { class: "row" }); body.append(h("small", {}, "放置したとき"), modes);
-  for (const m of ["priority", "idleAuto", "auto"] as PolicyMode[]) modes.append(h("button", { id: "polmode-" + m, class: pol.mode === m ? "mode on" : "mode", "aria-pressed": pol.mode === m ? "true" : "false", onclick: () => { pol.mode = m; app.persist(); app.buildSheet(); } }, `${pol.mode === m ? "✓ " : ""}${POLICY_MODE_LABEL[m]}`));
+  for (const m of ["priority", "idleAuto", "auto", "autoReloc"] as PolicyMode[]) modes.append(h("button", { id: "polmode-" + m, class: pol.mode === m ? "mode on" : "mode", "aria-pressed": pol.mode === m ? "true" : "false", onclick: () => { pol.mode = m; app.persist(); app.buildSheet(); } }, `${pol.mode === m ? "✓ " : ""}${POLICY_MODE_LABEL[m]}`));
   const next = (Math.floor((sim.startYear + Math.floor(sim.month / 12) - sim.startYear) / 10) + 1) * 10 + sim.startYear;
   if (!pol.pending) body.append(h("div", { class: "issue" }, `次の介入の機会: ${next}年`)); 
   else {

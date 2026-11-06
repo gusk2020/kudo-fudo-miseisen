@@ -15,7 +15,7 @@ function game(first: number | null = 2200) {
 /** Puts the clock at a month just before a year boundary without running 250 years: the sim stays as the 1950 game it is. */
 const eveOf = (sim: SimState, year: number) => { sim.month = (year - sim.startYear) * 12 - 1; };
 const cross = (sim: SimState, w: World, months = 2) => { for (let i = 0; i < months; i++) stepMonth(sim, w); };
-const setMode = (sim: SimState, m: "priority" | "idleAuto" | "auto", away = false) => { sim.policy!.mode = m; sim.policy!.away = away; };
+const setMode = (sim: SimState, m: "priority" | "idleAuto" | "auto" | "autoReloc", away = false) => { sim.policy!.mode = m; sim.policy!.away = away; };
 
 describe("Stage 35: the fixed schedule", () => {
   it("a game with the 2200 start is due in 2200, 2350, 2500, ... (150 years), and not before", () => {
@@ -28,6 +28,14 @@ describe("Stage 35: the fixed schedule", () => {
     cross(sim, w, 3); expect(sim.e2200?.state).toBe("pending"); expect(sim.e2200?.sched).toBe(2200); expect(waiting2200(sim)).toBe(true);
     const m = sim.month; cross(sim, w, 5); expect(sim.month).toBe(m);   // stopped
     expect(sim.relocSkipped).toBeUndefined();
+  });
+});
+
+describe("Stage 36: 遷都のみ手動 (autoReloc)", () => {
+  it("遷都のイベントは開いて時間が止まり、跳ばされない(常に自動との違い)", () => {
+    const { w, sim } = game(2200); setMode(sim, "autoReloc"); sim.kaigen!.next = 3000; expect(unattended(sim)).toBe(false); eveOf(sim, 2200); cross(sim, w, 3);
+    expect(sim.e2200?.state).toBe("pending"); expect(waiting2200(sim)).toBe(true); expect(sim.relocSkipped).toBeUndefined();
+    const m = sim.month; cross(sim, w, 5); expect(sim.month).toBe(m);
   });
 });
 

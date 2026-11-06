@@ -23,8 +23,8 @@ import type { World } from "./world";
 export type Domain = "politics" | "economy" | "opinion";
 export const DOMAIN_LABEL: Record<Domain, string> = { politics: "政治", economy: "経済", opinion: "世論" };
 export const POINTS_PER_WINDOW = 8, ADOPT_BAR = 0.55, MAX_ADOPT = 2, BOOST_MAX = 1.1, BOOST_SCALE = 5;
-export type PolicyMode = "priority" | "idleAuto" | "auto";
-export const POLICY_MODE_LABEL: Record<PolicyMode, string> = { priority: "介入優先(時間を止めて待つ)", idleAuto: "放置中のみ自動", auto: "常に自動" };
+export type PolicyMode = "priority" | "idleAuto" | "auto" | "autoReloc";
+export const POLICY_MODE_LABEL: Record<PolicyMode, string> = { priority: "介入優先(時間を止めて待つ)", idleAuto: "放置中のみ自動", auto: "常に自動", autoReloc: "遷都のみ手動" };
 
 export interface Env { roadCong: number; railCong: number; ruralDecay: number; jnrWeak: number; growth: number; carDep: number; mood: number; maint: number; privatized: boolean }
 interface Policy { id: string; domain: Domain; label: string; desc: string; d: Partial<Dials>; base(e: Env): number; block?(e: Env, era: string): string | null; after?(sim: SimState, w: World, y: number): void }
@@ -80,7 +80,7 @@ export function windowDue(sim: SimState, y: number): boolean { return !!sim.stag
 export function openWindow(sim: SimState, w: World, y: number): void {
   const pol = sim.policy!; if (pol.pending) return;
   pol.points += POINTS_PER_WINDOW; pol.lastWindow = y;
-  const auto = pol.mode === "auto" || (pol.mode === "idleAuto" && pol.away);
+  const auto = pol.mode === "auto" || pol.mode === "autoReloc" || (pol.mode === "idleAuto" && pol.away);   // (遷都のみ手動: everything but the relocation event is decided automatically)
   if (!auto) { pol.pending = { year: y, domain: null }; ev(sim, "policy", `${y}年: 政策介入の機会(持ち点${pol.points}点)`, "10年ごとの政策介入。時間を止めて、介入する分野を選べます", {}); return; }
   autoResolve(sim, w);
 }

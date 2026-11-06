@@ -60,7 +60,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (!isRec(raw.dials)) raw.dials = composeDials({ era: raw.era, mods: raw.mods }, monthYear(raw));
   raw.mods = (raw.mods as unknown[]).filter((m: any) => isRec(m) && typeof m.id === "string" && fin(m.from) && fin(m.until) && isRec(m.d) && Object.values(m.d).every(fin));
   if (!DIAL_KEYS.every((k) => fin(raw.dials[k]))) raw.dials = composeDials({ era: raw.era, mods: raw.mods }, monthYear(raw));
-  if (raw.stage3 === true && !(isRec(raw.policy) && fin(raw.policy.points) && Array.isArray(raw.policy.history) && ["priority", "idleAuto", "auto"].includes(raw.policy.mode) && (raw.policy.pending === null || (isRec(raw.policy.pending) && Number.isInteger(raw.policy.pending.year))))) raw.policy = defaultPolicy(); if (raw.stage3 !== true) { delete raw.stage3; delete raw.policy; }
+  if (raw.stage3 === true && !(isRec(raw.policy) && fin(raw.policy.points) && Array.isArray(raw.policy.history) && ["priority", "idleAuto", "auto", "autoReloc"].includes(raw.policy.mode) && (raw.policy.pending === null || (isRec(raw.policy.pending) && Number.isInteger(raw.policy.pending.year))))) raw.policy = defaultPolicy(); if (raw.stage3 !== true) { delete raw.stage3; delete raw.policy; }
   if (raw.tech !== undefined && !(isRec(raw.tech) && fin(raw.tech.k) && raw.tech.k >= 1 && raw.tech.k <= 4)) delete raw.tech;
   if (isRec(raw.tech) && raw.tech.wk !== undefined && !(fin(raw.tech.wk) && raw.tech.wk >= 1 && raw.tech.wk <= 6)) delete raw.tech.wk;   // Stage 13
   // Issue #13: the era timeline is kept only if it is well formed; otherwise the game simply continues as a single-era game (never refused)
