@@ -11,13 +11,13 @@ import { run14 } from "../study/lib14";
 describe("Stage 17 B: from rank to weight", () => {
   const d = potentialData(realWorld(true).w.t), order = potentialOrder({ capital: "JP-13", sub: "JP-27", palace: "JP-13", mode: "concentrate", seed: 7 }, d), W = potentialWeights(order);
   it("the 49 weights average exactly 1, fall with rank, stay above the floor, and differ little from the 20th rank down", () => {
-    const v = order.map((p) => W[p]); expect(v.reduce((a, b) => a + b, 0)).toBeCloseTo(49, 9);
-    for (let i = 1; i < 49; i++) expect(v[i]).toBeLessThan(v[i - 1]); expect(v[48]).toBeGreaterThan(0.25); expect(v[48]).toBeGreaterThan(POT_FLOOR * 0.6);
-    expect(v[0] / v[48]).toBeGreaterThan(4); expect(v[19] / v[48]).toBeLessThan(1.25); expect(v[0] - v[9]).toBeGreaterThan(3 * (v[19] - v[48]));
+    const v = order.map((p) => W[p]); expect(v.reduce((a, b) => a + b, 0)).toBeCloseTo(PREF_IDS.length, 9);
+    for (let i = 1; i < PREF_IDS.length; i++) expect(v[i]).toBeLessThan(v[i - 1]); expect(v[PREF_IDS.length - 1]).toBeGreaterThan(0.25); expect(v[PREF_IDS.length - 1]).toBeGreaterThan(POT_FLOOR * 0.6);
+    expect(v[0] / v[PREF_IDS.length - 1]).toBeGreaterThan(4); expect(v[19] / v[PREF_IDS.length - 1]).toBeLessThan(1.25); expect(v[0] - v[9]).toBeGreaterThan(3 * (v[19] - v[PREF_IDS.length - 1]));
   });
   it("the total is the same for 集中 and 分散 and for any seats; the same inputs give the same weights", () => {
     const a = potentialWeights(potentialOrder({ capital: "JP-17", sub: "JP-27", palace: "JP-26", mode: "disperse", seed: 3 }, d)), s = (o: Record<string, number>) => Object.values(o).reduce((x, y) => x + y, 0);
-    expect(s(a)).toBeCloseTo(49, 9); expect(s(W)).toBeCloseTo(49, 9); expect(potentialWeights(order)).toEqual(W); expect(Object.keys(W).sort()).toEqual([...PREF_IDS].sort());
+    expect(s(a)).toBeCloseTo(PREF_IDS.length, 9); expect(s(W)).toBeCloseTo(PREF_IDS.length, 9); expect(potentialWeights(order)).toEqual(W); expect(Object.keys(W).sort()).toEqual([...PREF_IDS].sort());
   });
 });
 
@@ -26,9 +26,9 @@ describe("Stage 17 C/D/E: a game from the 49 capitals", () => {
   const mk = (o: object = {}) => createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27", ...o });
   const a = mk(), old = mk({ pot17: false });
   it("a new game carries the potentials; every capital is shown and nothing else; an older world-with-towns game has none", () => {
-    expect(a.pot17).toBeDefined(); expect(a.pot17!.order.length).toBe(49); expect(new Set(a.pot17!.order).size).toBe(49); expect(old.pot17).toBeUndefined();
-    const shown = w.cities.filter((c) => isShown(a, c.id)); expect(shown.length).toBe(49); expect(shown.every((c) => c.kind === "capital")).toBe(true);
-    expect(w.cities.filter((c) => c.kind === "capital").length).toBe(49);
+    expect(a.pot17).toBeDefined(); expect(a.pot17!.order.length).toBe(PREF_IDS.length); expect(new Set(a.pot17!.order).size).toBe(PREF_IDS.length); expect(old.pot17).toBeUndefined();
+    const shown = w.cities.filter((c) => isShown(a, c.id)); expect(shown.length).toBe(PREF_IDS.length); expect(shown.every((c) => c.kind === "capital")).toBe(true);
+    expect(w.cities.filter((c) => c.kind === "capital").length).toBe(PREF_IDS.length);
   });
   it("registering places moves nobody: each prefecture starts with the same people as before, the candidates holding only a share of their size", () => {
     const sum = (s: typeof a, pref: string) => w.cities.filter((c) => c.pref === pref).reduce((t, c) => t + s.cities[c.id].pop, 0);
@@ -62,7 +62,7 @@ describe("Stage 17: a game 1950-1991, 集中 and 分散", () => {
   it("a new era re-orders the prefectures (history kept) and the weights in force glide, they do not jump", () => {
     const p = con.sim.pot17!; expect(p.hist.length).toBeGreaterThanOrEqual(2); expect(p.hist[1].y).toBeGreaterThanOrEqual(1989); expect(p.hist[0].order.slice(0, 3)).toEqual(p.hist[1].order.slice(0, 3));
     const t = potentialWeights(p.order), moved = PREF_IDS.filter((q) => Math.abs((p.cur[q] ?? 1) - t[q]) > 1e-6); expect(moved.length).toBeGreaterThan(0);
-    expect(PREF_IDS.reduce((s, q) => s + p.cur[q], 0)).toBeCloseTo(49, 6);
+    expect(PREF_IDS.reduce((s, q) => s + p.cur[q], 0)).toBeCloseTo(PREF_IDS.length, 6);
     expect(potentialDataOf(con.w.t)).toBeDefined();
   });
 }, 900000);

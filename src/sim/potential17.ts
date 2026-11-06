@@ -74,7 +74,7 @@ export const potentialRanks = (inp: PotentialInput, d: PotentialData): Record<st
  */
 export type CoastSide = "japansea" | "pacific" | "both" | "inland";
 export const PREF_COAST: Record<string, CoastSide> = {
-  "HK-SAP": "both", "HK-HAK": "both", "HK-NEM": "pacific",
+  "HK-SAP": "both", "HK-HAK": "both", "HK-NEM": "pacific", KRF: "both",
   "JP-02": "both", "JP-03": "pacific", "JP-04": "pacific", "JP-05": "japansea", "JP-06": "japansea", "JP-07": "pacific",
   "JP-08": "pacific", "JP-09": "inland", "JP-10": "inland", "JP-11": "inland", "JP-12": "pacific", "JP-13": "pacific", "JP-14": "pacific",
   "JP-15": "japansea", "JP-16": "japansea", "JP-17": "japansea", "JP-18": "japansea", "JP-19": "inland", "JP-20": "inland", "JP-21": "inland", "JP-22": "pacific", "JP-23": "pacific",
@@ -106,7 +106,7 @@ export function coastBoost(order: string[], from: number, side: "japansea" | "pa
  * a prefecture at the bottom is slower, not unable to grow). Normalised so the 49 weights average exactly 1 (the national total of development power is the same whatever the order).
  * Compared in docs/STAGE17_POTENTIAL.md with a linear, a power (Zipf) and a logistic curve.
  */
-export const POT_FLOOR = 0.35, POT_DECAY = 6, POT_N = 49;
+export const POT_FLOOR = 0.35, POT_DECAY = 6, POT_N = PREF_IDS.length;   // (Stage 36: 50 with 樺太県)
 const rawWeight = (rank: number) => POT_FLOOR + (1 - POT_FLOOR) * 2.5 * Math.exp(-(rank - 1) / POT_DECAY);
 export function potentialWeights(order: string[]): Record<string, number> {
   const raw = order.map((_, i) => rawWeight(i + 1)), mean = raw.reduce((a, b) => a + b, 0) / raw.length;

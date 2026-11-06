@@ -251,7 +251,7 @@ export function buildCityEconomy(app: App, sim: SimState, body: HTMLElement, yea
     const P = sim.pot17, W = potentialWeights(P.order), nm = (id: string) => prefName(id), cityName = (id: string) => w.cityById.get(id)?.name ?? id;
     body.append(h("div", { id: "pot17" }, h("b", {}, "府県の発展ポテンシャル順位(人口の順位ではなく、発展しやすさ。上位ほど強く、中位以下の差はわずか)"),
       h("div", { class: "issue", id: "pot17-top" }, "上位: " + P.order.slice(0, 12).map((p, i) => `${i + 1}${nm(p)}`).join(" ")),
-      h("small", {}, `重み(平均1): 1位${W[P.order[0]].toFixed(2)}・7位${W[P.order[6]].toFixed(2)}・25位${W[P.order[24]].toFixed(2)}・49位${W[P.order[48]].toFixed(2)}。今効いている重みは順位替えのあと年々なだらかに動く`),
+      h("small", {}, `重み(平均1): 1位${W[P.order[0]].toFixed(2)}・7位${W[P.order[6]].toFixed(2)}・25位${W[P.order[24]].toFixed(2)}・${P.order.length}位${W[P.order[P.order.length - 1]].toFixed(2)}。今効いている重みは順位替えのあと年々なだらかに動く`),
       ...P.hist.map((x) => h("div", { class: "issue" }, `${x.y}年 ${x.why}: 1〜6位 ${x.order.slice(0, 6).map(nm).join("・")}`))));
     const born = Object.entries(P.shown).filter(([id]) => !(w.cityById.get(id)?.kind === "capital")).sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]) || (a[0] < b[0] ? -1 : 1));
     body.append(h("div", { id: "city17" }, h("b", {}, `都市の誕生(県庁所在地のほか${born.filter(([, v]) => v > 0).length}市が都市として現れ、${born.filter(([, v]) => v < 0).length}市が表示を外れた)`),

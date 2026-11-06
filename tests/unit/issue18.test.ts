@@ -130,7 +130,7 @@ describe("Issue #18 audit: Okinawa's prefecture point sits on the game map's Oki
   });
   it("saves are safe: the generated world is exactly what it was before the data fix (terrain hash, Naha's cell, Okinawa's cells)", () => {
     const { w, hash } = realWorld(true), naha = w.cities.find((c) => c.name === "那覇市")!;
-    expect(hash).toBe("6ab9fd85"); expect(naha.cell).toBe(3105); expect(naha.pos).toEqual([-837.5, -1202.5]); let n = 0; for (let k = 0; k < w.N; k++) if (w.prefOf(k) === "JP-47") n++; expect(n).toBe(46);
+    expect(hash).toBe("5da642fd"); expect(naha.cell).toBe(3105); expect(naha.pos).toEqual([-837.5, -1202.5]); let n = 0; for (let k = 0; k < w.N; k++) if (w.prefOf(k) === "JP-47") n++; expect(n).toBe(46);
   });
   it("every prefecture point and city is where the map draws the prefectural capital (within one cell), so no seat point is detached from its city", () => {
     const s = realState(), { w } = realWorld(true);

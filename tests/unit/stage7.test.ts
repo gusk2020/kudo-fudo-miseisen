@@ -21,7 +21,8 @@ describe("Stage 7: village trips are split between train and car", () => {
 
 describe("Stage 7: loss-making lines are given up by their operator", () => {
   const thin = (sim: SimState, w: World, op: string) => {
-    const r = Object.values(sim.routes).filter((x) => x.active && modeOf(x) === "rail" && x.edges.every((e) => sim.edges[e.edgeId]?.standard !== "highgrade")).sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+    const live = Object.values(sim.routes).filter((x) => x.active && modeOf(x) === "rail"), shared = (x: (typeof live)[number]) => x.edges.some((e) => live.some((o) => o !== x && o.edges.some((q) => q.edgeId === e.edgeId)));
+    const r = live.filter((x) => x.edges.every((e) => sim.edges[e.edgeId]?.standard !== "highgrade") && !shared(x)).sort((a, b) => (a.id < b.id ? -1 : 1))[0];   // (a line of its own: an edge another route also runs on is not closed with it)
     if (!sim.operators[op]) sim.operators[op] = { id: op, name: "テスト鉄道", kind: op === "jnr" ? "jnr" : "private", since: 1950, note: "" };
     r.op = op; for (const x of r.edges) { const e = sim.edges[x.edgeId]; e.op = op; } void w; return r;
   };

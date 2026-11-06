@@ -1,3 +1,4 @@
+import { PREF_IDS } from "../../src/core/seat";
 import { describe, expect, test } from "vitest";
 import { JAPAN } from "../../src/core/data";
 import { axisFrame } from "../../src/core/constraints";
@@ -25,9 +26,9 @@ describe("terrain generation", () => {
     expect(seaPositive).toBe(0); expect(landMax).toBeGreaterThan(2500);
   });
   test("49 prefectures all present, every land cell assigned (up to a few orphans)", () => {
-    expect(t.stats.prefCount).toBe(49);
+    expect(t.stats.prefCount).toBe(PREF_IDS.length);
     const seen = new Set<number>(); let orphan = 0; for (let k = 0; k < t.land.length; k++) if (t.land[k]) { if (t.pref[k]) seen.add(t.pref[k]); else orphan++; }
-    expect(seen.size).toBe(49); expect(orphan).toBeLessThan(20);
+    expect(seen.size).toBe(PREF_IDS.length); expect(orphan).toBeLessThan(20);
     expect(t.prefOrder).toEqual(JAPAN.prefectures.map((p) => p.id));
   });
   test("prefectures never span two islands", () => {
@@ -51,6 +52,6 @@ describe("terrain generation", () => {
   });
   test("a deformed Honshu still generates a coherent map", () => {
     const d = ready(); d.bodies.honshu.ops.push({ t: "pull", c: [0, 0], d: [50, 40], r: 180 }, { t: "bulge", c: [150, 100], r: 120, k: -0.3 }); d.bodies.honshu.place.rot = 0.2;
-    const r = generateTerrain(d, dem); expect(r.stats.landCells).toBeGreaterThan(8000); expect(r.stats.prefCount).toBe(49);
+    const r = generateTerrain(d, dem); expect(r.stats.landCells).toBeGreaterThan(8000); expect(r.stats.prefCount).toBe(PREF_IDS.length);
   });
 }, 120000);

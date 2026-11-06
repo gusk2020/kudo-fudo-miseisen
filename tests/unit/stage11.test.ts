@@ -59,7 +59,7 @@ describe("Stage 11: a moved or stretched Mt. Fuji is a barrier all the way down 
     const ring = (r: number) => { let m = 0; for (let q = 0; q < 24; q++) { const a = (q / 24) * Math.PI * 2, c = moved.w.cellOf(realToWorld("honshu", moved.s.bodies.honshu, lonLatToReal(here[0] + (Math.cos(a) * r) / 91, here[1] + (Math.sin(a) * r) / 111))); if (c >= 0) m = Math.max(m, moved.t.barrier[c]); } return m; };
     expect(ring(15)).toBeGreaterThan(0.2); expect(ring(30)).toBeGreaterThan(0.05);            // the foot, well down the slope
     expect(plain.t.barrier.reduce((m, v) => (v > m ? v : m), 0)).toBe(0);                                              // the untouched Fuji: no barrier at all (the real Tokaido skirts it)
-    expect(plain.t.hash).toBe("6ab9fd85");                                                     // the terrain of an older save is bit-for-bit what it was
+    expect(plain.t.hash).toBe("5da642fd");                                                     // the terrain of an older save is bit-for-bit what it was
   });
   it("a road or railway across the moved Fuji goes round it or pays for it; the same crossing on the untouched plain is free", () => {
     const a = city(moved.w, "水戸市").cell, b = city(moved.w, "千葉市").cell; moved.w.barrier = true; plain.w.barrier = true;

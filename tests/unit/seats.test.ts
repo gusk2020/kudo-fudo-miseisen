@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JAPAN } from "../../src/core/data";
+import { EXTRA, JAPAN } from "../../src/core/data";
 import { mapStateHash } from "../../src/core/save2";
 import { parseState } from "../../src/core/save";
 import { PALACE_LINKS, PREF_IDS, palaceWorld, prefOfSeat, seatsOf, seatsValid } from "../../src/core/seat";
@@ -84,8 +84,8 @@ describe("Issue #20: prefectures are listed north to south", () => {
   it("all 49, Hokkaido's three first and Okinawa last, by the latitude of each 県庁所在地 (not by code)", async () => {
     const { PREF_IDS_NS } = await import("../../src/core/seat");
     expect(PREF_IDS_NS).toHaveLength(50); expect(new Set(PREF_IDS_NS)).toEqual(new Set(PREF_IDS));
-    expect(PREF_IDS_NS.slice(0, 3).every((x) => x.startsWith("HK-"))).toBe(true); expect(PREF_IDS_NS[48]).toBe("JP-47");
-    const lat = (id: string) => JAPAN.cities.find((c) => c.pref === id && c.kind === "capital")!.pos[1];
+    expect(PREF_IDS_NS.slice(0, 4).every((x) => x.startsWith("HK-") || x === "KRF")).toBe(true); expect(PREF_IDS_NS[PREF_IDS_NS.length - 1]).toBe("JP-47");   // (Stage 36: 樺太県 lies north of the three Hokkaido prefectures)
+    const lat = (id: string) => [...JAPAN.cities, ...EXTRA.cities].find((c) => c.pref === id && c.kind === "capital")!.pos[1];
     for (let i = 1; i < 50; i++) expect(lat(PREF_IDS_NS[i]), PREF_IDS_NS[i]).toBeLessThanOrEqual(lat(PREF_IDS_NS[i - 1]));
     expect(PREF_IDS_NS).not.toEqual([...PREF_IDS].sort());
   });

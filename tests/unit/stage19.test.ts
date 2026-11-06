@@ -15,7 +15,7 @@ describe("Stage 19: a seat put at a point of the map", () => {
   it("the order uses the seat's prefecture for ranks and the real point for the centre of the three seats", () => {
     const plain = potentialOrder(base, D), same = potentialOrder({ ...base, at: { capital: D.points["JP-13"], sub: D.points["JP-27"], palace: D.points["JP-13"] } }, D), far = potentialOrder({ ...base, at: { capital: [141.5, 43.5] } }, D);
     expect(same).toEqual(plain);   // the 県庁所在地 gives exactly the old order
-    expect(far.slice(0, 3)).toEqual(plain.slice(0, 3)); expect(new Set(far).size).toBe(49); expect([...far].sort()).toEqual([...PREF_IDS].sort()); expect(far.slice(3, 6)).not.toEqual(plain.slice(3, 6));   // a far point moves the centre
+    expect(far.slice(0, 3)).toEqual(plain.slice(0, 3)); expect(new Set(far).size).toBe(PREF_IDS.length); expect([...far].sort()).toEqual([...PREF_IDS].sort()); expect(far.slice(3, 6)).not.toEqual(plain.slice(3, 6));   // a far point moves the centre
     expect(potentialOrder({ ...base, at: { capital: [141.5, 43.5] } }, D)).toEqual(far);   // same inputs, same order
   });
   const mk = (o: object) => createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27", ...o });

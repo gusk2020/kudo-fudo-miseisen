@@ -46,7 +46,7 @@ describe("Stage 18: the coast correction of the potential order", () => {
   it("a permutation of the 49; the fixed part is untouched; only the random part moves; every favoured-coast prefecture there rises two places (or to the head of the part)", () => {
     for (const [capital, sub, palace] of seatsets) for (const mode of ["concentrate", "disperse"] as const) for (const seed of [1, 7, 23]) for (const coast of ["japansea", "pacific"] as const) {
       const base = potentialOrder({ capital, sub, palace, mode, seed }, D), got = potentialOrder({ capital, sub, palace, mode, seed, coast }, D), from = mode === "concentrate" ? 16 : 10;
-      expect(got.length).toBe(49); expect(new Set(got).size).toBe(49); expect([...got].sort()).toEqual([...PREF_IDS].sort());
+      expect(got.length).toBe(PREF_IDS.length); expect(new Set(got).size).toBe(PREF_IDS.length); expect([...got].sort()).toEqual([...PREF_IDS].sort());
       expect(got.slice(0, from)).toEqual(base.slice(0, from));
       const fav = base.slice(from).filter((p) => side(p) === coast), tail = base.slice(from);
       for (const p of fav) { const was = tail.indexOf(p), now = got.slice(from).indexOf(p); expect(now).toBeLessThanOrEqual(was); expect(now).toBeGreaterThanOrEqual(Math.max(0, was - 2)); }
@@ -67,23 +67,23 @@ describe("Stage 18: the coast correction of the potential order", () => {
     expect(moved(base, js).length).toBeGreaterThan(0); expect(moved(base, pac).length).toBeGreaterThan(0); expect(js).not.toEqual(pac);
     for (const [p, from, to] of moved(base, js)) if (side(p) === "japansea") expect(to).toBeLessThan(from);
   });
-  it("the weights from the final order still sum to 49", () => { const o = potentialOrder({ capital: "JP-13", sub: "JP-27", palace: "JP-13", mode: "disperse", seed: 3, coast: "japansea" }, D), W = potentialWeights(o); expect(Object.values(W).reduce((a, b) => a + b, 0)).toBeCloseTo(49, 9); });
+  it("the weights from the final order still sum to 49", () => { const o = potentialOrder({ capital: "JP-13", sub: "JP-27", palace: "JP-13", mode: "disperse", seed: 3, coast: "japansea" }, D), W = potentialWeights(o); expect(Object.values(W).reduce((a, b) => a + b, 0)).toBeCloseTo(PREF_IDS.length, 9); });
 });
 
 describe("Stage 18: a game 1950-1991 (a new era at 1989)", () => {
   const g = run14({ seed: 7, firstEra: 1, until: 1991 });   // era 1 = 日本海側重視 + 一極集中
   it("the order carries the correction, the fixed ranks are those of the plain order, and an older Stage 17 record is not corrected", () => {
-    const p = g.sim.pot17!; expect(p.c18).toBe(true); expect(p.hist[0].why).toContain("日本海側"); expect(p.order.length).toBe(49); expect(new Set(p.order).size).toBe(49);
+    const p = g.sim.pot17!; expect(p.c18).toBe(true); expect(p.hist[0].why).toContain("日本海側"); expect(p.order.length).toBe(PREF_IDS.length); expect(new Set(p.order).size).toBe(PREF_IDS.length);
     const plain = potentialOrder({ capital: "JP-13", sub: "JP-27", palace: "JP-13", mode: "concentrate", seed: 7 }, D); expect(p.hist[0].order.slice(0, 16)).toEqual(plain.slice(0, 16));
     const old = createSim(w, "m", hash, 7, { stage3: true, firstEra: 1, techK: 2, subCapital: "JP-27", coast18: false }); expect(old.pot17!.c18).toBeUndefined(); expect(old.pot17!.order).toEqual(plain);
   });
   it("a new era re-orders with the same rules; saving and loading keeps the record and the same inputs give the same order", () => {
     const p = g.sim.pot17!; expect(p.hist.length).toBeGreaterThanOrEqual(2); const back = sanitizeSim(JSON.parse(JSON.stringify(g.sim))).sim!.pot17!; expect(back.order).toEqual(p.order); expect(back.c18).toBe(true);
     const copy = { ...back, hist: [], order: [] as string[] }; reassignPotential(copy as never, g.w.t, { capital: "JP-13", sub: "JP-27", palace: "JP-13" }, "concentrate", g.sim.seed, g.sim.kaigen!.eras.length, 1989, "x", "japansea"); expect(copy.order).toEqual(p.order);
-    expect(PREF_IDS.reduce((s, q) => s + p.cur[q], 0)).toBeCloseTo(49, 6);   // the weights in force still sum to 49 and glide (Stage 17)
+    expect(PREF_IDS.reduce((s, q) => s + p.cur[q], 0)).toBeCloseTo(PREF_IDS.length, 6);   // the weights in force still sum to 49 and glide (Stage 17)
   });
   it("labels: the base map names the capitals only; the places that grew into cities are in the shown list", () => {
-    const shown = g.w.cities.filter((c) => (g.sim.pot17!.shown[c.id] ?? 0) > 0), caps = shown.filter((c) => c.kind === "capital"); expect(caps.length).toBe(49); expect(shown.length).toBeGreaterThan(49);
+    const shown = g.w.cities.filter((c) => (g.sim.pot17!.shown[c.id] ?? 0) > 0), caps = shown.filter((c) => c.kind === "capital"); expect(caps.length).toBe(PREF_IDS.length); expect(shown.length).toBeGreaterThan(49);
     const kanto = g.w.cities.filter((c) => c.kind !== "capital" && c.pref && ["JP-11", "JP-12", "JP-14", "JP-13"].includes(c.pref)); expect(kanto.length).toBeGreaterThan(3);
     for (const c of kanto) { const s = g.sim.pot17!.shown[c.id]; expect(s === undefined || Math.abs(s) > 1950).toBe(true); }   // none was shown from the first day
   });

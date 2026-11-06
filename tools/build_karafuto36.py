@@ -30,9 +30,10 @@ islets = json.load(open('src/data/islets.json')); have = {s['id'] for s in islet
 for n, (kid, name, lon, lat, pref, area) in enumerate(KURILS):
     sid = f"IS-2{n:02d}"
     if sid in have: continue
-    cand = [(area_km2(r), r) for r in polys if math.hypot(cen(r)[0]-lon, cen(r)[1]-lat) < 0.7]
+    cand = [(area_km2(r), r) for r in polys if math.hypot(cen(r)[0]-lon, cen(r)[1]-lat) < 0.6]
     if not cand: raise SystemExit(f"no Natural Earth polygon near {name}")
-    a, r = max(cand, key=lambda t: t[0]); sh = [[round(q[0], 4), round(q[1], 4)] for q in dp([q[:2] for q in r], 0.004)]
+    a, r = min([t for t in cand if t[0] > 5], key=lambda t: math.hypot(cen(t[1])[0]-lon, cen(t[1])[1]-lat)); rr = [q[:2] for q in r[:-1]]; mm = max(range(len(rr)), key=lambda i: math.hypot(rr[i][0]-rr[0][0], rr[i][1]-rr[0][1]))   # a closed ring is simplified as two open halves
+    sh = [[round(q[0], 4), round(q[1], 4)] for q in dp(rr[:mm+1], 0.004)[:-1] + dp(rr[mm:] + [rr[0]], 0.004)[:-1]]; sh.append(sh[0])
     xs, ys = [q[0] for q in sh], [q[1] for q in sh]; c = cen(sh)
     islets['islets'].append({"name": name, "group": "千島列島(北部)", "pref": pref, "lon": lon, "lat": lat, "area": area, "elev": 300, "len": round((max(ys)-min(ys))*KY, 1), "wid": round((max(xs)-min(xs))*KX, 1), "bear": 0,
                              "pop": 0, "id": sid, "shape": sh, "shapeAreaKm2": round(a, 1), "c": [round(c[0], 4), round(c[1], 4)], "since": 36, "provisional": True})
