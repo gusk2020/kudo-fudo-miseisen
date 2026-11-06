@@ -17,9 +17,9 @@ const drawn = (w: ReturnType<typeof realWorld>["w"], from: string, to: string): 
 
 describe("capital, sub-capital and palace: three independent seats among the 49 prefectures", () => {
   it("all 49 prefectures can be chosen -- the three Hokkaido prefectures and Okinawa included -- and each has a 県庁所在地", () => {
-    const { w } = realWorld(true); expect(PREF_IDS.length).toBe(49); expect(PREF_IDS).toContain("JP-47"); expect(PREF_IDS.filter((p) => p.startsWith("HK-")).length).toBe(3);
+    const { w } = realWorld(true); expect(PREF_IDS.length).toBe(50); expect(PREF_IDS).toContain("JP-47"); expect(PREF_IDS.filter((p) => p.startsWith("HK-")).length).toBe(3);
     for (const p of PREF_IDS) { expect(seatCity(w, p), p).not.toBeNull(); expect(homeCity(w, p)!.pref).toBe(p); expect(subCity(w, p)!.pref).toBe(p); }
-    expect(JAPAN.prefectures.length).toBe(49);
+    expect(JAPAN.prefectures.length).toBe(50);
   });
   it("defaults are Tokyo / Osaka / Tokyo; the three are read independently; a legacy city id still means its prefecture", () => {
     expect(seatsOf(defaultState())).toEqual({ capital: "JP-13", sub: "JP-27", palace: "JP-13" });
@@ -83,10 +83,10 @@ describe("国道1号 from the capital to the sub-capital, ferries across the str
 describe("Issue #20: prefectures are listed north to south", () => {
   it("all 49, Hokkaido's three first and Okinawa last, by the latitude of each 県庁所在地 (not by code)", async () => {
     const { PREF_IDS_NS } = await import("../../src/core/seat");
-    expect(PREF_IDS_NS).toHaveLength(49); expect(new Set(PREF_IDS_NS)).toEqual(new Set(PREF_IDS));
+    expect(PREF_IDS_NS).toHaveLength(50); expect(new Set(PREF_IDS_NS)).toEqual(new Set(PREF_IDS));
     expect(PREF_IDS_NS.slice(0, 3).every((x) => x.startsWith("HK-"))).toBe(true); expect(PREF_IDS_NS[48]).toBe("JP-47");
     const lat = (id: string) => JAPAN.cities.find((c) => c.pref === id && c.kind === "capital")!.pos[1];
-    for (let i = 1; i < 49; i++) expect(lat(PREF_IDS_NS[i]), PREF_IDS_NS[i]).toBeLessThanOrEqual(lat(PREF_IDS_NS[i - 1]));
+    for (let i = 1; i < 50; i++) expect(lat(PREF_IDS_NS[i]), PREF_IDS_NS[i]).toBeLessThanOrEqual(lat(PREF_IDS_NS[i - 1]));
     expect(PREF_IDS_NS).not.toEqual([...PREF_IDS].sort());
   });
 });

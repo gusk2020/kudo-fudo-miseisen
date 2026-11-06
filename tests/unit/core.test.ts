@@ -20,7 +20,7 @@ function withRidges(s: ProjectState): ProjectState {
 
 describe("data", () => {
   test("49 prefectures, Hokkaido split in 3, Tokyo is a Fu", () => {
-    expect(JAPAN.prefectures).toHaveLength(49);
+    expect(JAPAN.prefectures).toHaveLength(50);
     expect(JAPAN.prefectures.filter((p) => p.island === "hokkaido").map((p) => p.name).sort()).toEqual(["函館県", "根室県", "札幌県"].sort());
     expect(JAPAN.prefectures.find((p) => p.id === "JP-13")?.name).toBe("東京府");
     expect(JAPAN.prefectures.some((p) => p.name === "北海道")).toBe(false);

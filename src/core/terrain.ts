@@ -37,7 +37,7 @@ export interface TerrainResult {
   /** Stage 16: the provincial towns, placed like the cities but kept OUT of the terrain hash and of `cities`: only a world built with towns (games made from Stage 16 on) adds them. */
   towns?: CityOut[];
   /** Stage 20: the small and far islands a world made from Stage 20 on carries (src/sim/islands20.ts); never part of the terrain hash. */
-  islets?: import("../sim/islands20").IsletCell[]; isletVersion?: 1 | 2;
+  islets?: import("../sim/islands20").IsletCell[]; isletVersion?: 1 | 2 | 3;
   prefOrder: string[];
   stats: Record<string, number>;
   warnings: string[];
@@ -49,8 +49,12 @@ export const RIVER_AREA_KM2 = 2200;
 /** Stage 33: the drainage area from which a second-class river is drawn. */
 export const RIVER_AREA2_KM2 = 550;
 
+/** Stage 36: where the committed DEM does not reach (南樺太 north of its top row, the Kurils east of it) the height is a PROVISIONAL gameplay terrain (smooth noise, 20..420 m): not survey data. Replace by a GEBCO re-cut (see docs/PLAN_1800.md). */
+export const demCovers = (lon: number, lat: number): boolean => { const m = JAPAN.dem; return lat <= m.lat0 && lat >= m.lat0 - (m.h - 1) * m.dLat && lon >= m.lon0 && lon <= m.lon0 + (m.w - 1) * m.dLon; };
+export const provisionalElev = (real: Vec): number => 20 + 400 * fbm(36, real[0] / 70, real[1] / 70, 4);
 export function sampleDem(dem: Int16Array, real: Vec): number {
   const m = JAPAN.dem, [lon, lat] = realToLonLat(real);
+  if (!demCovers(lon, lat)) return provisionalElev(real);
   const fx = (lon - m.lon0) / m.dLon, fy = (m.lat0 - lat) / m.dLat;
   const x0 = Math.max(0, Math.min(m.w - 2, Math.floor(fx))), y0 = Math.max(0, Math.min(m.h - 2, Math.floor(fy)));
   const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
@@ -119,6 +123,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   // Issue #13: the extra islands share the real-km frame (world = real, since no body is placed or deformed); they take island numbers after the four bodies
   const extras = s.islands ? EXTRA_IDS.map((id, i) => ({ id, idx: ISLAND_IDS.length + 1 + i, polys: EXTRA.islands[id].parts })) : [];
   let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+  for (const b of extras.filter((e) => e.id === "karafuto")) for (const p of b.polys) for (const q of p) { bx0 = Math.min(bx0, q[0]); bx1 = Math.max(bx1, q[0]); by0 = Math.min(by0, q[1]); by1 = Math.max(by1, q[1]); }   // (Stage 36: the grid reaches 樺太 -- the one added island outside the four bodies' frame)
   for (const b of parts) for (const p of b.polys) for (const q of p) { bx0 = Math.min(bx0, q[0]); bx1 = Math.max(bx1, q[0]); by0 = Math.min(by0, q[1]); by1 = Math.max(by1, q[1]); }
   const pad = 40;
   const cell = Math.max(5, Math.ceil((Math.max(bx1 - bx0, by1 - by0) + 2 * pad) / GRID_MAX));
@@ -406,7 +411,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   const mult = new Float64Array(prefs.length);
   const seedMoved: number[] = [];
   prefs.forEach((p, n) => {
-    const w = realToWorld(bodyOf(p.island), s.bodies[bodyOf(p.island)], p.seed);
+    const w = p.island === "karafuto" ? p.seed : realToWorld(bodyOf(p.island), s.bodies[bodyOf(p.island)], p.seed);   // (樺太県 stands on an added island: world = real km)
     const k = seedCell(w);
     mult[n] = Math.pow(meanW / p.weight, 0.7);
     if (k < 0) { warnings.push(`${p.name}の県庁位置が陸地に置けません`); return; }

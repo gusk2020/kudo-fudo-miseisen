@@ -37,7 +37,7 @@ describe("Issue #18: limits and the Fuji elevation link", () => {
 describe("Issue #18: where a lake or a mountain may stand", () => {
   const s0 = realState();
   it("every one of the 49 prefectures has an anchor where a small Biwa and a small Fuji fit (Hokkaido's three and Okinawa included)", () => {
-    expect(PREF_IDS.length).toBe(49); const L = lands(s0), { w } = realWorld(true);
+    expect(PREF_IDS.length).toBe(50); const L = lands(s0), { w } = realWorld(true);
     for (const pref of PREF_IDS) {
       const cells: number[] = []; for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && w.prefOf(k) === pref) cells.push(k); expect(cells.length, pref).toBeGreaterThan(0);
       let okB = false, okF = false;

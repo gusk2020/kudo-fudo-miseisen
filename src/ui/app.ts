@@ -195,7 +195,7 @@ export class App {
   private movesWanted(): SeatMove[] { const sim = this.sim ?? this.pendingSim; if (sim) return (sim.isl20 ? sim.moves20 : undefined) ?? []; return this.real ? movesOfSettings(seatsOf(this.s), this.s) : []; }
   /** Stage 34: a game carries the enlargement / reclamation log (a new game on the real map starts one; an older game has none and keeps its land). */
   private g34Wanted(): { log: RecLog[]; done: string[] } | false { const sim = this.sim ?? this.pendingSim; if (sim) return sim.rec34 ? { log: [...sim.rec34.log], done: [...sim.rec34.done] } : false; return this.real ? { log: [], done: [] } : false; }
-  private isletsWanted(): 0 | 1 | 2 { const sim = this.sim ?? this.pendingSim; return sim ? (sim.isl22 ? 2 : sim.isl20 ? 1 : 0) : this.real ? 2 : 0; }   // Stage 22: a new game gets the real outlines; a Stage 20 game keeps its ellipses
+  private isletsWanted(): 0 | 1 | 2 | 3 { const sim = this.sim ?? this.pendingSim; return sim ? (sim.isl36 ? 3 : sim.isl22 ? 2 : sim.isl20 ? 1 : 0) : this.real ? 3 : 0; }   // Stage 22: a new game gets the real outlines; a Stage 20 game keeps its ellipses
   ensureWorld(): World | null {
     if (!this.terrain) return null; const ids = this.townIdsWanted(), isl = this.isletsWanted(), mv = this.movesWanted(), key = (ids ? ids.join(",") : "") + (isl ? "+isl" + isl : "") + (mv.length ? "+" + JSON.stringify(mv) : "");
     const g34 = this.g34Wanted(), key2 = key + (g34 ? "+g34" : "");

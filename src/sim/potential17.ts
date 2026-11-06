@@ -2,7 +2,7 @@
  * Stage 17 (step A): the development-potential rank (1..49) of every prefecture, from the three seats of government. A pure function: nothing in the
  * simulation reads it yet (population, industry, traffic and city birth are not connected). The rank is a potential, not a forced population order.
  */
-import { JAPAN, realToLonLat } from "../core/data";
+import { EXTRA, JAPAN, realToLonLat } from "../core/data";
 import { mulberry32 } from "../core/rng";
 import { PREF_IDS } from "../core/seat";
 import type { TerrainResult } from "../core/terrain";
@@ -29,7 +29,7 @@ export const borderKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|
 
 /** The prefecture capitals' lon/lat (from the data) and the shared border lengths (from the prefecture grid of a terrain: one unit per shared cell edge). */
 export function potentialData(t?: TerrainResult): PotentialData {
-  const points: PotentialData["points"] = {}; for (const c of JAPAN.cities) if (c.kind === "capital" && c.pref && PREF_IDS.includes(c.pref)) { const [lo, la] = realToLonLat(c.pos); points[c.pref] = [lo, la]; }
+  const points: PotentialData["points"] = {}; for (const c of [...JAPAN.cities, ...EXTRA.cities]) if (c.kind === "capital" && c.pref && PREF_IDS.includes(c.pref)) { const [lo, la] = realToLonLat(c.pos); points[c.pref] = [lo, la]; }
   const borders: PotentialData["borders"] = {};
   if (t) { const { nx, ny } = t.grid, at = (k: number) => (t.land[k] === 1 && t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null);
     for (let k = 0; k < nx * ny; k++) { const a = at(k); if (!a) continue; for (const n of [(k % nx) + 1 < nx ? k + 1 : -1, k + nx < nx * ny ? k + nx : -1]) { if (n < 0) continue; const b = at(n); if (b && b !== a) { const key = borderKey(a, b); borders[key] = (borders[key] ?? 0) + 1; } } } }

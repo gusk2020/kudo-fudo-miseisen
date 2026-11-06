@@ -5,9 +5,9 @@
  * (the sea routes of the time ran from them). A distance tie (within 1 km) goes to 北海道. The coordinates are approximate public geographic positions (a gameplay assumption, not a survey).
  * Fictional alternate history: not a claim about who governed these islands.
  */
-export type KurilPref = "JP-01" | "KARAFUTO";
+export type KurilPref = "HK-NEM" | "KRF";   // (根室県 = the Hokkaido prefecture whose coast the chain is reached from; 樺太県)
 export interface KurilIsland { id: string; name: string; lat: number; lon: number }
-export const KURIL_ANCHORS = { "JP-01": { name: "根室(納沙布岬)", lat: 43.386, lon: 145.817 }, KARAFUTO: { name: "大泊(コルサコフ)", lat: 46.633, lon: 142.75 } } as const;
+export const KURIL_ANCHORS = { "HK-NEM": { name: "根室(納沙布岬)", lat: 43.386, lon: 145.817 }, KRF: { name: "大泊(コルサコフ)", lat: 46.633, lon: 142.75 } } as const;
 /** From the south (Habomai) to the north (Shumshu): the chain this world includes ("占守島まで"). */
 export const KURIL_ISLANDS: readonly KurilIsland[] = [
   { id: "habomai", name: "歯舞群島", lat: 43.45, lon: 146.2 }, { id: "shikotan", name: "色丹島", lat: 43.8, lon: 146.75 }, { id: "kunashir", name: "国後島", lat: 44.1, lon: 146.1 },
@@ -20,6 +20,6 @@ export const kmBetween = (a: { lat: number; lon: number }, b: { lat: number; lon
   return 6371 * 2 * Math.asin(Math.sqrt(h));
 };
 export function kurilPrefOf(i: { lat: number; lon: number }): KurilPref {
-  const h = kmBetween(i, KURIL_ANCHORS["JP-01"]), k = kmBetween(i, KURIL_ANCHORS.KARAFUTO); return k < h - 1 ? "KARAFUTO" : "JP-01";
+  const h = kmBetween(i, KURIL_ANCHORS["HK-NEM"]), k = kmBetween(i, KURIL_ANCHORS.KRF); return k < h - 1 ? "KRF" : "HK-NEM";
 }
 export const KURIL_MEMBERSHIP: Readonly<Record<string, KurilPref>> = Object.freeze(Object.fromEntries(KURIL_ISLANDS.map((i) => [i.id, kurilPrefOf(i)])));

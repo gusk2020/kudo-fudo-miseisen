@@ -81,6 +81,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.numreg !== undefined && !(isRec(raw.numreg) && isRec(raw.numreg.next) && isRec(raw.numreg.list) && ["road", "hwy", "rail", "hsr", "sea", "air"].every((k) => Array.isArray(raw.numreg.list[k]) && Number.isInteger(raw.numreg.next[k])))) delete raw.numreg;   // Stage 23: a register that is not whole is started again (estimated)
   if (raw.tier23 !== undefined && !(isRec(raw.tier23) && isRec(raw.tier23.zones) && isRec(raw.tier23.hist) && isRec(raw.tier23.cnt))) delete raw.tier23;   // Stage 23
   if (raw.isl22 !== undefined && raw.isl22 !== true) delete raw.isl22;
+  if (raw.isl36 !== undefined && raw.isl36 !== true) delete raw.isl36;
   if (raw.relocFirst !== undefined && !(Number.isInteger(raw.relocFirst) && raw.relocFirst >= 1950 && raw.relocFirst <= 3500)) delete raw.relocFirst;   // Stage 28 (absent = an older game: it takes its origin from its own history when loaded, adoptRelocSchedule)
   if (raw.relocSkipped !== undefined && !(Array.isArray(raw.relocSkipped) && raw.relocSkipped.every((y: unknown) => Number.isInteger(y)))) delete raw.relocSkipped;   // Stage 35
   if (raw.relocOrigin !== undefined && raw.relocOrigin !== "new" && raw.relocOrigin !== "migrated") delete raw.relocOrigin;   // Stage 29
@@ -121,7 +122,7 @@ export function validateSimAgainstWorld(sim: SimState, w: World, terrainHash: st
   for (const n of Object.values(sim.nodes)) if (n.cell >= w.N) return "ノードが地形の外にあります";
   if ((sim.towns16 ?? []).join(",") !== (w.townIds ?? []).join(",")) return "都市データの種類(町の有無)が保存時と一致しません";   // Stage 16
   if (JSON.stringify(sim.moves20 ?? null) !== JSON.stringify(w.moveSpec ?? null)) return "県庁所在地の移転が保存時と一致しません";   // Stage 20
-  if ((sim.isl22 ? 2 : sim.isl20 ? 1 : 0) !== (w.islets ? w.t.isletVersion ?? 1 : 0)) return "島のデータの版(Stage 20の楕円か実際の輪郭か)が保存時と一致しません";   // Stage 22
+  if ((sim.isl36 ? 3 : sim.isl22 ? 2 : sim.isl20 ? 1 : 0) !== (w.islets ? w.t.isletVersion ?? 1 : 0)) return "島のデータの版(Stage 20の楕円か実際の輪郭か)が保存時と一致しません";   // Stage 22
   if (!!sim.isl20 !== !!w.islets) return "島のデータの種類(離島の有無)が保存時と一致しません";   // Stage 20
   if (!!sim.rec34 !== !!w.g34) return "埋め立て・島拡大のデータ(Stage 34)が保存時と一致しません";   // Stage 34
   for (const e of sim.rec34?.log ?? []) if (e.k >= w.N || w.t.land[e.k] !== 1) return "埋め立て済みの土地が地形と一致しません";

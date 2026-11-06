@@ -134,6 +134,7 @@ export interface SimState {
   e2200?: import("./event2200").E2200;   // Stage 22: the 2200 event (遷都・改元・復興方針・国道0号). Absent = not yet (or an older game before 2200)   // Stage 20: the seat points that made a new 県庁所在地 (the world is built with them). Absent = the Stage 19 meaning of a seat point
   numreg?: import("./numreg").NumReg;   // Stage 23: the route NUMBER register (numreg.ts): six classes, numbers never reused. Absent = an older save: started (marked estimated) at its next yearly step
   tier23?: import("./tier23").Tier23;   // Stage 23: 政令特区 / 政令指定都市 and their wards (tier23.ts). Absent = an older game (no tiers)
+  isl36?: true;               // Stage 36: the world also carries 南鳥島 and 沖ノ鳥島 on the grid (isl22 is set with it)
   isl22?: true;               // Stage 22: the islands are their real outlines (and 南鳥島・沖ノ鳥島 are on the map); absent with isl20 = the Stage 20 ellipses
   sea22?: true;               // Stage 22: domestic ocean routes and island lifelines (sea22.ts). Absent = the older sea model
   isl20?: true;               // Stage 20: the world carries the small and far islands (src/data/islets.json; the grid is widened). Absent = the older grid
