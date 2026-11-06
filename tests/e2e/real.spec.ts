@@ -67,11 +67,11 @@ test("era choice, 開通の儀 and a running 1950 world with railways; the old f
   expect(await page.textContent("#status")).toContain("神和");
   expect(await app(page, "a => Object.values(a.sim.routes).filter(r => r.grade === 'national' && r.number === 1).length")).toBe(1);
   // Stage 17: a new game starts from the 49 prefectural capitals, with a development order of the 49 prefectures
-  expect(await app(page, "a => a.sim.pot17.order.length === 49 && Object.values(a.sim.pot17.shown).length === 49")).toBe(true);
+  expect(await app(page, "a => a.sim.pot17.order.length === 50 && Object.values(a.sim.pot17.shown).length === 50")).toBe(true);
   // Stage 16: a new game runs on the world with the provincial towns of its two seats' prefectures, and the sim says which
   expect(await app(page, "a => a.sim.towns16 && a.sim.towns16.length")).toBeGreaterThan(10);
   // Stage 18: the base map names the 49 capitals and nothing else at the start (no Kawasaki, Saitama-area towns ... from the first day)
-  expect(await app(page, "a => a.r.capitalsOnly")).toBe(true); expect(await app(page, "a => { const caps = new Set(a.world.cities.filter((c) => c.kind === 'capital').map((c) => c.name)), t = a.r.labels.children.map((x) => x.text).filter((x) => x && !/首都|皇居/.test(x)); return t.length <= 49 && t.every((x) => caps.has(x)); }")).toBe(true);
+  expect(await app(page, "a => a.r.capitalsOnly")).toBe(true); expect(await app(page, "a => { const caps = new Set(a.world.cities.filter((c) => c.kind === 'capital').map((c) => c.name)), t = a.r.labels.children.map((x) => x.text).filter((x) => x && !/首都|皇居/.test(x)); return t.length <= 50 && t.every((x) => caps.has(x)); }")).toBe(true);
   expect(await app(page, "a => a.world.townIds.join() === a.sim.towns16.join() && a.world.cities.filter(c => c.kind === 'town').length === a.sim.towns16.length")).toBe(true);
   expect(errs).toEqual([]);
 });
@@ -247,7 +247,7 @@ test("限定の地形編集: capital, Alps and Fuji can be set before the first 
   await seatSelect(page, "capital", "JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47");   // Okinawa
   await seatSelect(page, "sub", "HK-SAP"); expect(await app(page, "a => a.s.subCapital")).toBe("HK-SAP");   // Sapporo
   await seatSelect(page, "palace", "JP-26"); expect(await app(page, "a => a.s.palace")).toBe("JP-26");
-  await openSeat(page, "capital"); expect(await page.locator("#seat-sel-capital option").count()).toBe(49); await openSeat(page, "sub"); expect(await page.locator("#seat-sel-sub option[value=JP-47]").evaluate((o: HTMLOptionElement) => o.disabled)).toBe(true);   // the capital cannot be chosen again as the sub-capital
+  await openSeat(page, "capital"); expect(await page.locator("#seat-sel-capital option").count()).toBe(50); await openSeat(page, "sub"); expect(await page.locator("#seat-sel-sub option[value=JP-47]").evaluate((o: HTMLOptionElement) => o.disabled)).toBe(true);   // the capital cannot be chosen again as the sub-capital
   await closeSheet(page); await wizTo(page, 3); expect(await page.textContent("#tool-cer-kokudo1")).toContain("那覇");
   expect(await app(page, "a => a.s.finalized")).toBe(true); expect(await app(page, "a => a.s.bodies.honshu.ops.length")).toBe(0);   // the outline is never touched
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
@@ -433,7 +433,7 @@ test("Issue #20: 置けない所で指を離しても止まらない(直前の�
   expect(await page.locator("#toolbar #setup-tabs").count()).toBe(0);
   const tbH = await page.evaluate(() => document.getElementById("toolbar")!.getBoundingClientRect().height), vh = await page.evaluate(() => innerHeight); expect(tbH).toBeLessThan(vh * 0.45);
   await openSeat(page, "capital"); const ids = await page.locator("#seat-sel-capital option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-  expect(ids).toHaveLength(49); expect(ids.slice(0, 3).every((x) => x.startsWith("HK-"))).toBe(true); expect(ids[ids.length - 1]).toBe("JP-47");
+  expect(ids).toHaveLength(50); expect(ids.slice(0, 3).every((x) => x.startsWith("HK-"))).toBe(true); expect(ids[ids.length - 1]).toBe("JP-47");
   expect(errs).toEqual([]);
 });
 
@@ -585,7 +585,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   await openSeat(page, "capital");
   const groups = await page.evaluate(() => [...document.querySelectorAll("#seat-sel-capital optgroup")].map((g) => ({ l: g.getAttribute("label")!, ids: [...g.querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value) })));
   expect(groups.map((g) => g.l)).toEqual(["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州", "沖縄"]);
-  expect(groups.flatMap((g) => g.ids)).toHaveLength(49); expect([...groups[0].ids].sort()).toEqual(["HK-HAK", "HK-NEM", "HK-SAP"]); expect(groups[3].ids).toContain("JP-15"); expect(groups[5].ids).toContain("JP-31");
+  expect(groups.flatMap((g) => g.ids)).toHaveLength(50); expect([...groups[0].ids].sort()).toEqual(["HK-HAK", "HK-NEM", "HK-SAP"]); expect(groups[3].ids).toContain("JP-15"); expect(groups[5].ids).toContain("JP-31");
   await openSetup(page); expect(await page.locator("#era-list .rw-item").first().textContent()).toMatch(/神化|元化|神和|同和|継明|順明|明保|寛安|元安|立成|定業|光文|章明|協中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
   await seatSelect(page, "capital", "HK-NEM"); expect(await app(page, "a => a.s.capital")).toBe("HK-NEM"); await seatSelect(page, "capital", "JP-13");
   await closeSheet(page);
@@ -1158,7 +1158,7 @@ test("Stage 30A: 山脈ボタン→一覧と地図タップが同じ選択にな
 
 test("Stage 31: 起動時の説明は1枚だけ。架空の世界線・49府県・保存の注意をまとめ、確認で閉じ、ゲーム中のタブには注意書きが残らない", async ({ page }) => {
   const errs = watchErrors(page); await page.goto("/"); await page.waitForSelector("#intro-modal");
-  const t = (await page.textContent("#intro-modal")) ?? ""; expect(t).toContain("架空の世界線の日本"); expect(t).toContain("49府県"); expect(t).toContain("自動セーブポイント"); expect(t).not.toMatch(/北方|領有|実効支配/);
+  const t = (await page.textContent("#intro-modal")) ?? ""; expect(t).toContain("架空の世界線の日本"); expect(t).toContain("50府県"); expect(t).toContain("自動セーブポイント"); expect(t).not.toMatch(/北方|領有|実効支配/);
   expect(await page.locator("#intro-modal").count()).toBe(1); const bb = await page.locator("#intro-ok").boundingBox(); expect(bb!.height).toBeGreaterThanOrEqual(44);   // a thumb-sized button
   await page.click("#intro-ok"); expect(await page.locator("#intro-modal").count()).toBe(0);
   await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });

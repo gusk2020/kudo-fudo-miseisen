@@ -27,9 +27,9 @@ describe("Stage 31: skipped time is real time", () => {
   });
 });
 describe("Stage 31: the startup window", () => {
-  it("says it is a fictional-world Japan with 49 prefectures, carries the save cautions, and has no territorial note", () => {
+  it("says it is a fictional-world Japan with 50 prefectures, carries the save cautions, and has no territorial note", () => {
     const text = INTRO_SECTIONS.flatMap((s) => [s.title, ...s.lines]).join("\n");
-    expect(text).toContain("架空の世界線の日本"); expect(text).toContain("49府県"); expect(text).toMatch(/自動セーブポイント/); expect(text).toMatch(/JSONエクスポート/);
+    expect(text).toContain("架空の世界線の日本"); expect(text).toContain("50府県"); expect(text).toMatch(/自動セーブポイント/); expect(text).toMatch(/JSONエクスポート/);
     expect(text).not.toMatch(/北方|領有|実効支配|竹島|尖閣/);
   });
 });

@@ -52,7 +52,7 @@ test("full flow: place islands, features, generate terrain, finalize, export", a
   await page.click("#suggest"); await page.click("#btn-next");
   expect(await app(page, "a => a.s.step")).toBe(4);
   await page.waitForFunction(() => (window as any).__kfm.terrain, null, { timeout: 60000 });
-  expect(await app(page, "a => a.terrain.stats.prefCount")).toBe(49);
+  expect(await app(page, "a => a.terrain.stats.prefCount")).toBe(50);
   await page.screenshot({ path: "test-results/terrain.png" });
   await page.click("#btn-next"); await page.click('#dock [data-sheet="menu"]');
   await page.click("#finalize"); expect(await app(page, "a => a.s.finalized")).toBe(true);
