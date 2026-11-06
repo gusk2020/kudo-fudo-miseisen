@@ -585,7 +585,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   await openSeat(page, "capital");
   const groups = await page.evaluate(() => [...document.querySelectorAll("#seat-sel-capital optgroup")].map((g) => ({ l: g.getAttribute("label")!, ids: [...g.querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value) })));
   expect(groups.map((g) => g.l)).toEqual(["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州", "沖縄"]);
-  expect(groups.flatMap((g) => g.ids)).toHaveLength(50); expect([...groups[0].ids].sort()).toEqual(["HK-HAK", "HK-NEM", "HK-SAP"]); expect(groups[3].ids).toContain("JP-15"); expect(groups[5].ids).toContain("JP-31");
+  expect(groups.flatMap((g) => g.ids)).toHaveLength(50); expect([...groups[0].ids].sort()).toEqual(["HK-HAK", "HK-NEM", "HK-SAP", "KRF"]); expect(groups[3].ids).toContain("JP-15"); expect(groups[5].ids).toContain("JP-31");
   await openSetup(page); expect(await page.locator("#era-list .rw-item").first().textContent()).toMatch(/神化|元化|神和|同和|継明|順明|明保|寛安|元安|立成|定業|光文|章明|協中/); expect(await page.textContent("#era-desc")).toMatch(/復興方針/);
   await seatSelect(page, "capital", "HK-NEM"); expect(await app(page, "a => a.s.capital")).toBe("HK-NEM"); await seatSelect(page, "capital", "JP-13");
   await closeSheet(page);
@@ -719,7 +719,7 @@ test("Stage 23: 府県は初期の選択式(地方ブロック別・北から南
   await page.click("#setup-tab-capital"); const sel = page.locator("#seat-sel-capital"); expect(await sel.isVisible()).toBe(true);
   { const b = await sel.boundingBox(); expect(b!.x).toBeGreaterThanOrEqual(0); expect(b!.x + b!.width).toBeLessThanOrEqual(360); expect(b!.y + b!.height).toBeLessThanOrEqual(740 - 40); }
   const groups = await sel.evaluate((e) => [...e.querySelectorAll("optgroup")].map((g) => [g.getAttribute("label"), g.querySelectorAll("option").length] as [string, number]));
-  expect(groups.map((g) => g[0])).toEqual(["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州", "沖縄"]); expect(groups.reduce((n, g) => n + g[1], 0)).toBe(49);
+  expect(groups.map((g) => g[0])).toEqual(["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州", "沖縄"]); expect(groups.reduce((n, g) => n + g[1], 0)).toBe(50);
   const vals = await sel.evaluate((e) => [...e.querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value)); expect(vals[0].startsWith("HK-")).toBe(true); expect(vals[vals.length - 1]).toBe("JP-47"); expect(await sel.inputValue()).toBe("JP-13");
   await sel.selectOption("JP-47"); expect(await app(page, "a => a.s.capital")).toBe("JP-47"); expect(await page.locator("#setup-panel").count()).toBe(1); expect(await sel.inputValue()).toBe("JP-47");   // the panel stays after choosing
   expect(await page.locator("#seat-sel-capital option[value=JP-27]").count()).toBe(1);
