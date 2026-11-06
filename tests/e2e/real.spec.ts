@@ -1149,7 +1149,8 @@ test("Stage 30A: 山脈ボタン→一覧と地図タップが同じ選択にな
   const mid = await app(page, "a => a.rangeScreenPoint('kiso')") as [number, number];
   await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => a.rangeSel")).toBe("kiso"); expect(await page.textContent("#range-pick")).toContain("中央アルプス");
   await page.click("#range-pick"); expect(await page.getAttribute("#range-kiso", "aria-selected")).toBe("true"); expect(await page.getAttribute("#range-kyushu", "aria-selected")).toBe("false");   // the list shows what the map chose
-  await page.mouse.click(mid[0], mid[1]); expect(await app(page, "a => a.rangeSel")).toBe(null);
+  await page.click("#range-pick");   // (Stage 36: close the list again -- on the larger map the open list lies over the point being tapped)
+  const mid2 = await app(page, "a => a.rangeScreenPoint('kiso')") as [number, number]; await page.mouse.click(mid2[0], mid2[1]); expect(await app(page, "a => a.rangeSel")).toBe(null);
   // persistence: the edit comes back after a reload
   await page.waitForTimeout(800); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.rangeEdits?.akaishi")).toBe(-0.05);
