@@ -101,5 +101,10 @@ test("Pixel 7a-size touch: the relocation wizard (back, snapshot, mid-wizard rel
   expect(await app(page, "a => a.sim.e2200.state")).toBe("done"); expect(await app(page, "a => { const d = a.sim; return [d.relocFirst, d.relocSkipped.length, d.e2200.n]; }")).toEqual([2100, 1, 0]);
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => [a.sim.relocFirst, a.sim.relocSkipped, a.sim.e2200.state]")).toEqual([2100, [2250], "done"]);   // the skipped boundary survives the reload and does not fire again
+  // Stage 36: 遷都のみ手動 -- the button is pressed by touch; the era change stays automatic but the relocation (2400) opens and stops the clock
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.openSheet("policy"); }); await tap(page, "#polmode-autoReloc");
+  expect(await app(page, "a => a.sim.policy.mode")).toBe("autoReloc"); await page.evaluate(() => (window as any).__kfm.closeSheet?.());
+  await jump(page, 2400, "autoReloc"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 });
+  expect(await app(page, "a => a.sim.relocSkipped")).toEqual([2250]); const mm = (await app(page, "a => a.sim.month")) as number; await page.waitForTimeout(1500); expect(await app(page, "a => a.sim.month")).toBe(mm);   // stopped, not skipped
   expect(errs).toEqual([]);
 });
