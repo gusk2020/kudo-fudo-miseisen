@@ -628,7 +628,7 @@ export class App {
   updateFitExtra() {
     if (!this.real) return; const w = this.world; if (!w) return; const pts: Vec[] = [];
     for (const id of EXTRA_IDS) for (const q of EXTRA.islands[id]?.parts.flat() ?? []) pts.push(q);
-    for (const x of w.islets ?? []) if (x.islet.group !== "その他の東京都の島" && x.islet.group !== "千島列島(北部)") { const r = Math.max(x.islet.len, x.islet.wid) / 2; pts.push([x.pos[0] - r, x.pos[1] - r], [x.pos[0] + r, x.pos[1] + r]); }
+    for (const x of w.islets ?? []) if (x.islet.group !== "その他の東京都の島") { const r = Math.max(x.islet.len, x.islet.wid) / 2; pts.push([x.pos[0] - r, x.pos[1] - r], [x.pos[0] + r, x.pos[1] + r]); }
     this.r.fitExtra = pts; if (!this.fitDone) { this.fitDone = true; this.r.fit(this.s); }
   }
   /** Stage 32: choosing a prefecture brings the map to its administrative capital (the player may then pan anywhere and place the seat in another prefecture). */

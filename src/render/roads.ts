@@ -157,7 +157,7 @@ export class RoadLayer {
    *  International routes are kept in the simulation but not drawn. */
   private drawHubs(a: RoadArgs, sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
     const at = hubsAt(sim, year ?? Number.POSITIVE_INFINITY), nodes = this.g.nodes, lanes = this.g.lanes, pos = (id: string) => w.cityById.get(id)?.pos;
-    const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && zoom >= 0.12, far = zoom < 0.5;
+    const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && zoom >= 0.1,   /* (Stage 36: the whole-nation view now reaches the northern Kurils, a phone shows it at about 0.115) */ far = zoom < 0.5;
     if (showL && showA) {
       const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol).slice(0, lite ? 8 : far ? 14 : 30);
       for (const r of dom) { const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; const arc = airArc(p, q); for (const sp of [AIR_STYLE.casing!, AIR_STYLE.body]) { line(lanes, arc); lanes.stroke({ width: px(sp.width), color: sp.colour, alpha: sp.alpha, cap: sp.cap, join: "round" }); } }
