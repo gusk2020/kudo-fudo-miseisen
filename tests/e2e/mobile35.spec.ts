@@ -6,7 +6,7 @@ test.use({ actionTimeout: 20000 });   // an action that cannot find its element 
 const app = (page: Page, f: string) => page.evaluate(`(() => { const a = window.__kfm; return (${f})(a); })()`);
 function watchErrors(page: Page) { const errs: string[] = []; page.on("pageerror", (e) => errs.push(String(e))); return errs; }
 /** a real touch tap on the middle of an element */
-async function tap(page: Page, sel: string) { const el = page.locator(sel).first(); await el.scrollIntoViewIfNeeded(); const b = (await el.boundingBox())!; await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2); }
+async function tap(page: Page, sel: string) { const el = page.locator(sel).first(); await el.scrollIntoViewIfNeeded(); await el.evaluate((e) => e.scrollIntoView({ block: "center" })); const b = (await el.boundingBox())!; await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2); }
 const screenOf = (page: Page, p: [number, number]) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p) as Promise<[number, number]>;
 async function touchDrag(cdp: CDPSession, pts: [number, number][]) {
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: pts[0][0], y: pts[0][1] }] });
@@ -76,8 +76,9 @@ test("Pixel 7a-size touch: the relocation wizard (back, snapshot, mid-wizard rel
   // reload in the first stage: the event is still open, the clock still stopped, the wizard starts again from its first stage
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
   expect(await app(page, "a => [a.sim.e2200.state, a.rwStage]")).toEqual(["pending", 0]);
-  await tap(page, "#e22-era-1"); await tap(page, "#e22-next"); await page.selectOption("#e22-sel-sub", "JP-40"); await page.selectOption("#e22-sel-capital", "JP-27"); await page.selectOption("#e22-sel-sub", "JP-13"); await tap(page, "#e22-decide");   /* (a prefecture already taken by the other seat is refused by the list itself, so the swap goes through a third one) */
+  await tap(page, "#e22-era-1"); await tap(page, "#e22-next"); await page.selectOption("#e22-sel-sub", "JP-40"); await page.selectOption("#e22-sel-capital", "JP-27"); await page.selectOption("#e22-sel-sub", "JP-13"); await tap(page, "#e22-sub-count-2"); expect(await page.locator("#e22-sel-sub2").count()).toBe(1); await page.selectOption("#e22-sel-sub2", "JP-04"); await tap(page, "#e22-decide");   /* Stage 36 M3: two sub-capitals chosen at the relocation, by touch */   /* (a prefecture already taken by the other seat is refused by the list itself, so the swap goes through a third one) */
   expect(await app(page, "a => [a.sim.e2200.state, a.sim.capital, a.rwStage]")).toEqual(["road0", "JP-27", 2]);
+  expect(await app(page, "a => a.sim.subCapital2")).toBe("JP-04");
   // back from the road: the game is restored from the snapshot, the choices are still on the sheet
   await tap(page, "#rw-back"); await page.waitForSelector("#e22-box"); expect(await app(page, "a => [a.sim.e2200.state, a.rwStage]")).toEqual(["pending", 1]); expect(await page.locator("#e22-sel-capital").inputValue()).toBe("JP-27");
   await tap(page, "#e22-decide"); expect(await app(page, "a => a.sim.e2200.state")).toBe("road0");
