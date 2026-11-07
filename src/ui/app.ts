@@ -769,7 +769,8 @@ export class App {
     if (!d.strokes.length && !d.past.length && !d.redo.length) { delete this.cerDraft[kind]; this.saveCer(); return; }
     if (!d.strokes.length) { d.pts = []; d.prev = { ok: false, reasons: ["線がありません。描いてください"], cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "" }; this.saveCer(); return; }
     d.pts = d.strokes.flat(); const st = seatsOf(this.s);
-    if (kind === "kokudo0" && this.sim) { d.prev = previewNational(w, d.pts, this.sim.capital, this.sim.subCapital, { snapKm: snapKmFor(this.r.view.zoom), roadside: true, roadCells: buildIndex(this.sim, "road").roadCells }); return; }   // Stage 22: along the roads that are there
+    if (kind === "kokudo0" && this.sim) { const sim0 = this.sim, ends = [d.pts[0], d.pts[d.pts.length - 1]].filter(Boolean), subFor = sim0.subCapital2 && ends.length ? [sim0.subCapital, sim0.subCapital2].map((p) => ({ p, c: p ? subCity(w, p) : null })).filter((x) => x.c).sort((a, b) => Math.min(...ends.map((q) => Math.hypot(a.c!.pos[0] - q[0], a.c!.pos[1] - q[1]))) - Math.min(...ends.map((q) => Math.hypot(b.c!.pos[0] - q[0], b.c!.pos[1] - q[1]))))[0]?.p : sim0.subCapital;   /* Stage 36 M3: with two sub-capitals 国道0号 runs from the capital to whichever of them the line was drawn to */
+    d.prev = previewNational(w, d.pts, this.sim.capital, subFor ?? this.sim.subCapital, { snapKm: snapKmFor(this.r.view.zoom), roadside: true, roadCells: buildIndex(this.sim, "road").roadCells }); return; }   // Stage 22: along the roads that are there
     d.prev = this.real ? previewNational(w, d.pts, st.capital, st.sub, { snapKm: snapKmFor(this.r.view.zoom), roadside: true }) : previewCeremony(w, kind, d.pts, this.s.capital); this.saveCer();
   }
   cerUndo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.past.length) return; d.redo.push(d.strokes); d.strokes = d.past.pop()!; this.cerSel = null; this.replanCer(kind); this.renderRoads(); this.buildUI(); }
