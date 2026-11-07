@@ -11,7 +11,7 @@ const hwy = (sim: SimState) => Object.values(sim.edges).filter((e) => e.mode !==
 describe("Stage 36 M2: an 1800 start", () => {
   it("starts in 1800 with no railway, scaled population; rail only from 1830, scheduled air only from 1920, expressways only from 1930", () => {
     const base = stage3Sim("heisei", 7, true, 0, 2, true), { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true });
-    expect(sim.startYear).toBe(1800); expect(sim.rules1800).toBe(true); expect(railKm(sim)).toBe(0); expect(railKm(base.sim)).toBeGreaterThan(0);
+    expect(sim.startYear).toBe(1800); expect(sim.rules1800).toBe(true); expect(railKm(sim)).toBe(0);   expect(Object.keys(sim.hubs?.ports ?? {}).length).toBeGreaterThan(10); expect(Object.keys(sim.hubs?.airports ?? {}).length).toBe(0); expect(Object.values(sim.edges).every((e) => e.standard === "rural")).toBe(true);   // the start: roads and ports only expect(railKm(base.sim)).toBeGreaterThan(0);
     const tot = (s: SimState) => Object.values(s.cities).reduce((a, c) => a + c.pop, 0); expect(tot(sim) / tot(base.sim)).toBeLessThan(POP_1800_FACTOR * 1.2);
     sim.policy!.mode = "auto";
     advance(sim, w, 12 * 29); expect(yearOf(sim)).toBe(1829); expect(railKm(sim)).toBe(0); expect(air(sim)).toBe(0); expect(hwy(sim)).toBe(0);
