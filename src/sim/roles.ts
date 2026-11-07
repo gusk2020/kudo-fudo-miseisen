@@ -25,6 +25,7 @@
  *
  * Only games created from Stage 10 on carry `sim.roles`; older saves keep the bonus they were created with (CAPITAL_BONUS) and are not recomputed.
  */
+import { SUB2_SHARE, shareMult } from "./subs36";
 import { DEFAULT_CAPITAL, DEFAULT_PALACE, DEFAULT_SUB } from "../core/seat";
 import { startPop } from "./census50";
 import type { RoleState, SimState } from "./types";
@@ -65,8 +66,9 @@ export function computeRoles(w: World, capital: string, sub: string, palace: str
 }
 const scaleMemo = new WeakMap<RoleState, { w: World; s: Map<string, number> }>();
 /** The factor applied to every city of a prefecture: (mass it carries) / (its own mass). 1 without roles. */
-export function roleScale(sim: Pick<SimState, "roles">, w: World, pref: string | null): number {
+export function roleScale(sim: Pick<SimState, "roles"> & Partial<Pick<SimState, "subCapital" | "subCapital2">>, w: World, pref: string | null): number {
   const r = sim.roles; if (!r || !pref) return 1;
+  if (sim.subCapital2 && (pref === sim.subCapital || pref === sim.subCapital2)) { const own = prefMass(w, pref, r.p15); return own > 0 ? shareMult(prefMass(w, ROLE_OSAKA, r.p15) / own, SUB2_SHARE) : 1; }   // Stage 36 M3: each of two sub-capitals has 0.7x of the sub-capital's role uplift (the real Osaka's mass over its own)
   let e = scaleMemo.get(r); if (!e || e.w !== w) { const s = new Map<string, number>(); for (const [p, m] of Object.entries(r.prof)) { const own = prefMass(w, p, r.p15); s.set(p, own > 0 ? prefMass(w, m, r.p15) / own : 1); } e = { w, s }; scaleMemo.set(r, e); }
   return e.s.get(pref) ?? 1;
 }

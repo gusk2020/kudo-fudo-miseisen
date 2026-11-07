@@ -113,13 +113,14 @@ export interface SimState {
   crossings?: true;           // Issue #15: the game starts with ferries between land masses and plans strait links (bridge / tunnel / ferry); absent = older games
   subCapital?: string;        // Issue #15: prefecture ids of the sub-capital and the palace (administrative settings; the palace point is where it is drawn)
   palace?: { pref: string; pos: Vec };
+  /** Stage 36 M3: the second sub-capital (prefecture and map point); absent = one sub-capital */ subCapital2?: string; subPos2?: Vec;
   capitalPos?: Vec; subPos?: Vec;   // Stage 19: where the capital / sub-capital were put on the map (world frame); absent = the 県庁所在地 (older games, and games that chose from the prefecture list)
   tech?: { k: number; wk?: number };       // Issue #13: bridge/tunnel technology rule (see tech.ts). Absent = older games, which keep the old fixed facility rules
   hubs?: HubsState;          // Stage 8: ports, airports and their routes (hubs.ts). Absent = older saves; created at the next yearly step
   kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
   city12?: Record<string, { p: number[]; h: number[]; adv: number }>;   // Stage 12: per city, the parts of its yearly migration advantage and its size every 5 years (econ.ts)
   metro?: import("./metro").MetroState;   // Stage 13: the metropolitan areas (metro.ts), rebuilt every year. Absent = older saves; created at the next yearly step
-  pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
+  pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true; /** Stage 36 M3: the two sub-capitals whose weights are each 0.7x of a single one's uplift */ sub2?: string[] };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
   lastTunnelException18?: number;   // Stage 18: the year the last sea/lake tunnel was allowed under 海路重視 / 空路重視 (policy18.ts)
   moves20?: { pref: string; pos: Vec; by: "capital" | "sub" | "palace"; since?: number; extra?: boolean }[];
   /** Stage 30A: the world this game belongs to, the timeline within it, and the timelines it branched from (with the year it left each). Absent = a save from before Stage 30A */
