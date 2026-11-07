@@ -186,3 +186,19 @@ export async function loadGame(name: string): Promise<LoadedGame | null> {
   } catch { return null; }
 }
 export async function listSlots(): Promise<string[]> { try { return (await tx<IDBValidKey[]>("readonly", (s) => s.getAllKeys())).map(String); } catch { return []; } }
+
+/** Stage 36: data kept aside because it cannot be loaded by this version -- listed with the reason, never loaded and never deleted. */
+export interface OldData { key: string; label: string; reason: string; savedAt: number | null }
+export async function listOldData(prefix: string): Promise<OldData[]> {
+  const out: OldData[] = [], keys = (await listSlots()).filter((k) => k.startsWith(prefix));
+  for (const k of keys) {
+    const tail = k.slice(prefix.length);
+    if (/^slot\d$/.test(tail)) { const l = await loadGame(k); if (!l) out.push({ key: k, label: `セーブ${tail.slice(4)}`, reason: "この版では読めない形式です(旧版のデータ。削除はしていません)", savedAt: null }); else if (l.quarantine) out.push({ key: k, label: `セーブ${tail.slice(4)}の道路データ`, reason: "地図や地形が一致しないため道路は読み込みません(旧版のデータ)", savedAt: l.savedAt }); continue; }
+    if (/:(quarantine|broken)$/.test(tail) || /^(auto|slot\d?):(quarantine|broken)$/.test(tail)) {
+      let reason = "旧版のデータとして退避されています", savedAt: number | null = null;
+      try { const j = JSON.parse((await getRaw(k)) ?? "null"); if (j) { if (typeof j.reason === "string") reason = j.reason; else if (/broken$/.test(k)) reason = "書き込みが途中で切れた壊れたデータです"; if (typeof j.savedAt === "number") savedAt = j.savedAt; } } catch { /* keep default */ }
+      out.push({ key: k, label: /broken$/.test(k) ? "壊れたデータの控え" : "退避された道路データ", reason, savedAt });
+    }
+  }
+  return out;
+}

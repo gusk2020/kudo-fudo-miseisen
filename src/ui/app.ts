@@ -14,7 +14,7 @@ import { EXTRA, EXTRA_IDS, ISLAND_LABEL, JAPAN, lonLatToReal, realToLonLat } fro
 import { FEATURE_LIMITS } from "../core/save";
 import { PREF_IDS, prefOfSeat, palaceWorld, prefName as seatPrefName, prefPoint, seatsOf } from "../core/seat";
 import { dist, pointInPolygon, pointSegDist, rot as rotv, simplifyLine } from "../core/geom";
-import { exportGame, getRaw, idbCpStore, listSlots, slotMeta, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
+import { exportGame, getRaw, idbCpStore, listOldData, listSlots, slotMeta, loadGame, makeSave, mapStateHash, parseSave, putRaw, saveGame, validateSimAgainstWorld } from "../core/save2";
 import { assignBranch, checkpointDue, ensureIdentity, identityOf, inHistory, listCheckpoints, markCheckpoint, readCheckpoint, writeCheckpoint, type CpEntry } from "../sim/checkpoint";
 import { Store, featureWorldPos, LAYER_KEYS, LAYER_LABELS, ROAD_LAYER_KEYS, defaultState, realState } from "../core/state";
 import { suggestRidge } from "../core/suggest";
@@ -1359,6 +1359,9 @@ export class App {
         h("button", { class: "slot-load", disabled: !used, onclick: async () => { const l = await loadGame(n); if (l) void this.adopt(l); else this.toast("ロードできません"); } }, "読込")));
     });
     if (this.real) await this.buildCheckpoints(body);
+    { const od = await listOldData(pfx); if (od.length) { const d = h("details", { id: "old-data" }, h("summary", {}, `旧版のデータ(${od.length}件・読み込みません)`));
+      for (const o of od) d.append(h("div", { class: "slot-row old-row" }, h("span", { class: "slot-text", title: o.reason }, `${o.label}${o.savedAt ? " / " + new Date(o.savedAt).toLocaleDateString("ja-JP") : ""} … ${o.reason}`)));
+      d.append(h("small", {}, "これらは消していません。別の版で開き直すと読めることがあります。")); body.append(d); } }
     body.append(h("div", { class: "row" },
       h("button", { id: "export", onclick: () => this.exportFile() }, "JSONエクスポート"),
       h("label", {}, "JSON読込 ", h("input", { type: "file", accept: ".json,application/json", id: "import", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; const p = parseSave(await f.text()); if (!p.ok) { this.toast("読み込めません: " + p.problems[0]); return; } void this.adopt(p); } }))));

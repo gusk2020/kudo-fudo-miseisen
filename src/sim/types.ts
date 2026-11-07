@@ -53,7 +53,7 @@ export const modeOf = (x: { mode?: Mode }): Mode => x.mode ?? "road";
 export interface RouteEdgeRef { edgeId: string; dir: 1 | -1 }
 /** A numbered route: designation over edges. The stable `id` never changes; grade/number may (promotion/demotion). */
 export interface SimRoute {
-  id: string; scope: string; grade: Grade; number: number; name: string; edges: RouteEdgeRef[]; /** Stage 25: the year of a later 国道0号 (the one of a relocation after 2200) */ gen?: number;
+  id: string; scope: string; grade: Grade; number: number; name: string; edges: RouteEdgeRef[]; /** Stage 25: the year of a later 国道0号 (the one of a relocation after 2200) */ gen?: number; /** Stage 36: the name of a main highway of the 1800 start (東海道 ...); the official 国道N号 number is kept */ kaido?: string;
   since: number; active: boolean; lowYears: number; highYears: number;
   history: { month: number; grade: Grade; number: number; text: string; scope?: string; opName?: string }[];
   endMonth?: number;        // month the designation ended (abolished); the line stays in the ledger
@@ -75,7 +75,7 @@ export interface SimProject {
 export interface SimEvent { id: number; month: number; kind: string; text: string; cause: string; refs: Record<string, string> }
 export interface CityState { pop: number; industry: number; popSource: "ne" | "synthetic"; lowAccessYears: number; airport?: number /* year the airport opened (Stage 3) */ }
 /** 集落: 合成の小さな居住地(実在の集落ではない)。旧道の「地域内需要」と孤立判定の根拠。 */
-export interface Settlement { id: string; name: string; cell: number; city: string; pop: number; pop0: number; isolatedYears: number; gone: boolean }
+export interface Settlement { id: string; name: string; cell: number; city: string; pop: number; pop0: number; isolatedYears: number; gone: boolean; /** Stage 36: a post town (宿場) on one of the 1800 start's main highways */ post?: string }
 export interface SimLink { id: string; kind: "bypass"; newEdges: string[]; oldEdges: string[]; month: number; routeId: string | null }
 export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number; paxRail?: number; frRail?: number; ports?: number; airports?: number; hubs?: number; seaCargo?: number; airPax?: number; airIntl?: number; seaLanes?: number; airLanes?: number }   // paxRail / frRail (Stage 7): the railway's share of passenger-km and of freight on land
 
