@@ -37,6 +37,15 @@ export const mayScheduleService = (id: TechId, year: number) => techStage(id, ye
 export const relocYears1800 = (upTo: number): number[] => { const out: number[] = []; for (let y = START_YEAR_1800 + RELOC_STEP_1800; y <= upTo; y += RELOC_STEP_1800) out.push(y); return out; };
 export const nextReloc1800 = (year: number): number => START_YEAR_1800 + RELOC_STEP_1800 * (Math.floor((year - START_YEAR_1800) / RELOC_STEP_1800) + 1);
 
+/**
+ * 1800年の初期人口(ゲーム用推計。出典の数字そのものではない): 全国人口の推計(鬼頭宏の系列、国立社会保障・人口問題研究所の資料に掲載)
+ * 1792年 29,869.7千人・1846年 32,297.2千人 を直線で補間した1800年 ≈ 30,229千人を、1950年国勢調査の全国人口 83,200千人(概数)で割った比を
+ * 1950年の都市人口に一律に掛ける。県別・都市別の1800年の実数ではなく、都市の大小関係は1950年のものを流用している(既知の限界)。
+ */
+export const POP_1800_TOTAL_K = 29869.7 + (32297.2 - 29869.7) * (1800 - 1792) / (1846 - 1792), POP_1950_TOTAL_K = 83200, POP_1800_FACTOR = POP_1800_TOTAL_K / POP_1950_TOTAL_K;
+/** 空港の判定(1958年に空港が開く等)は実年代で作られている。1800年開始では定期空路が1920年に始まるので、その判定には38年ずらした年を渡す(1920 → 1958)。 */
+export const AIR_YEAR_SHIFT_1800 = 1958 - 1920;
+
 /** 使った元号名は二度と出さない: 史実の候補→ランダム名の順に探し、どちらも尽きたら決定的な連番名(同じ入力なら同じ結果)。 */
 export function pickEraName(used: ReadonlySet<string>, historic: readonly string[], random: readonly string[], seq: number): string {
   for (const n of historic) if (!used.has(n)) return n;

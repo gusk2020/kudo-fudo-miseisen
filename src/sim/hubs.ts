@@ -159,7 +159,7 @@ const costMult = (_sim: SimState, _y: number) => 1;
 const buildYears = (_sim: SimState, _y: number, base: number) => base;
 
 export function reviewHubs(sim: SimState, w: World, tot: HubTotals | undefined, y: number): number {
-  const h = ensureHubs(sim, w, y); if (!h || !tot) return 0;
+  const h = ensureHubs(sim, w, sim.rules1800 ? y + 38 : y); if (!h || !tot) return 0;   // (Stage 36: see hubYear in engine.ts)
   const dl = sim.dials, seaApp0 = 0.5 + 0.5 * Math.min(1.5, dl.seaBias) + 0.2 * (dl.growth - 1), airApp0 = 0.5 + 0.5 * Math.min(1.5, dl.airBias) + 0.2 * (dl.growth - 1), [sk, ak] = hubAppetite18(sim), seaApp = seaApp0 * sk, airApp = airApp0 * ak;   // (Stage 18: the policy scales what is NEW; the shrink rules below read the unscaled appetite so a policy never closes anything)
   let n = 0;
   // finish works
