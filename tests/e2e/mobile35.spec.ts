@@ -56,7 +56,7 @@ test("Pixel 7a-size touch: intro -> terrain -> era -> seats on the map -> 国道
 
 /** A started game on the phone-sized screen, set up the quick way (the full path is the test above). */
 async function startQuick(page: Page) {
-  await page.goto("/?nointro"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
+  await page.goto("/?nointro&start=1950"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });
   await page.evaluate(() => (window as any).__kfm.wizGo(3)); await tap(page, "#tool-cer-kokudo1");
   const A = await screenOf(page, await cityPos(page, "東京")), B = await screenOf(page, await cityPos(page, "大阪市")), cdp = await page.context().newCDPSession(page);

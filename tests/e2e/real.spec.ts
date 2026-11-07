@@ -10,7 +10,7 @@ async function draw(page: Page, from: [number, number], to: [number, number]) {
   await page.mouse.move(a[0], a[1]); await page.mouse.down(); await page.mouse.move(b[0], b[1], { steps: 14 }); await page.mouse.up();
 }
 async function bootReal(page: Page) {
-  await page.goto("/?nointro"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(300);
+  await page.goto("/?nointro&start=1950"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await page.waitForTimeout(300);
 }
 /** The first era is chosen from the 14 candidates of 1926; index 0/1/2 carry the balanced / road / rail stance. */
 /** Issue #20: the era and the seats live in their own sheet (⚙ 元号・首都), not in the terrain menu. */
