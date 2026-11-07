@@ -49,3 +49,39 @@ describe("Stage 36 M3: the count changes at a relocation event, and a save keeps
     expect(parseState(JSON.parse(JSON.stringify({ ...realState(), subCapital: "JP-27", subCapital2: "JP-27" }))).state.subCapital2).toBeUndefined();
   });
 });
+
+describe("Stage 36 M3: 0.7x in the places that are not the weights", () => {
+  it("recon.coreness: each of two sub-capitals pulls at 0.7x of the single sub-capital's weight; the capital's pull is the same", async () => {
+    const { coreness } = await import("../../src/sim/recon"); const { subCity } = await import("../../src/sim/ceremony");
+    const { w, hash } = realWorld(true, true), mk = (two: boolean) => createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27", ...(two ? { subCapital2: "JP-40" } : {}) });
+    const one = mk(false), two = mk(true), s2 = subCity(w, "JP-40")!, s1 = subCity(w, "JP-27")!;
+    expect(coreness(two, w, s2.id)).toBeCloseTo(0.7 * coreness(mk(false).subCapital === "JP-27" ? { ...one, subCapital: "JP-40" } as never : one, w, s2.id), 9);   // (as if the single sub-capital stood there, scaled by 0.7)
+    expect(coreness(two, w, s1.id)).toBeCloseTo(0.7 * coreness(one, w, s1.id), 9);
+  });
+  it("reclaim34: with two sub-capitals each sub site gains land at 0.7x of the single rate; the capital's site is unchanged", async () => {
+    const { stepReclaim } = await import("../../src/sim/reclaim34"); type W = import("../../src/sim/world").World;
+    const nx = 40, ny = 30, N = nx * ny, t = { land: new Uint8Array(N), island: new Uint8Array(N), pref: new Uint8Array(N), plains: new Uint8Array(N), elev: new Float32Array(N).fill(-200), grid: { x0: 0, y0: 0, cell: 5, nx, ny } };
+    const cells = [8 * nx + 8, 8 * nx + 30, 22 * nx + 19]; cells.forEach((k, n) => { t.land[k] = 1; t.island[k] = n + 1; t.pref[k] = n + 1; t.elev[k] = 30; });
+    const lm = new Uint16Array(N); cells.forEach((k, n) => (lm[k] = n + 1));
+    const city = (cell: number, pref: string) => ({ id: pref, name: pref, cell, pos: [0, 0], pref, island: t.island[cell], pop0: 1, popSource: "synthetic", coastal: true, plains: 1, kind: "capital" });
+    const run = (two: boolean) => {
+      const w = { t: { ...t, land: t.land.slice(), island: t.island.slice(), pref: t.pref.slice(), plains: t.plains.slice(), elev: t.elev.slice() }, nx, ny, cell: 5, N, cities: [city(cells[0], "JP-13"), city(cells[1], "JP-27"), city(cells[2], "JP-40")], lm: lm.slice(), g34: true } as unknown as W;
+      const sim = { subCapital: "JP-27", ...(two ? { subCapital2: "JP-40" } : {}), rec34: { sites: [], log: [], done: [] } } as never as import("../../src/sim/types").SimState;
+      for (let y = 1900; y <= 1990; y++) stepReclaim(sim, w, y); return sim.rec34!.sites;
+    };
+    const a = run(false), b = run(true), f = (sites: typeof a, role: string) => sites.find((x) => x.role === role)!;
+    expect(a.map((x) => x.role)).toEqual(["capital", "sub"]); expect(b.map((x) => x.role)).toEqual(["capital", "sub", "sub2"]);
+    expect(f(b, "capital").filled).toBe(f(a, "capital").filled); expect(f(a, "sub").filled).toBeGreaterThan(0);
+    const accA = f(a, "sub").filled * 50 + f(a, "sub").accU, accB = f(b, "sub").filled * 50 + f(b, "sub").accU; expect(accB / accA).toBeCloseTo(0.7, 1);   // (units: 50 half-km2 per cell)
+  });
+});
+
+describe("Stage 36 M3: the city order (seats14)", () => {
+  it("a second sub-capital's city is a seat: it is not counted as a city that outgrew the seats, and it joins the seat list", async () => {
+    const { cityOrderBreaches } = await import("../../src/sim/seats14"); const { subCity } = await import("../../src/sim/ceremony");
+    const { w, hash } = realWorld(true, true), mk = (two: boolean) => createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27", ...(two ? { subCapital2: "JP-40" } : {}) });
+    const one = mk(false), two = mk(true), c = subCity(w, "JP-40")!;
+    one.cities[c.id].pop = 1e7; two.cities[c.id].pop = 1e7;   // a huge city in the second sub-capital's prefecture
+    expect(cityOrderBreaches(one, w)).toBeGreaterThan(cityOrderBreaches(two, w));   // (with one sub-capital it outgrows the seats; with two it IS a seat)
+  });
+});

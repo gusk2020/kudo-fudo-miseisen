@@ -20,3 +20,10 @@ describe("Stage 36 M2: an 1800 start", () => {
     expect(checkIntegrity(sim)).toEqual([]);
   }, 900000);
 });
+
+describe("Stage 36 M2: the national railway of an 1800 game", () => {
+  it("is 官営鉄道 from 1830, not 国鉄 from 1950; a 1950 game keeps 国鉄", () => {
+    const a = stage3Sim("heisei", 7, false, 0, 2, true, undefined, undefined, { start1800: true }).sim, b = stage3Sim("heisei", 7, false, 0, 2, true).sim;
+    expect([a.operators.jnr.name, a.operators.jnr.since]).toEqual(["官営鉄道", 1830]); expect([b.operators.jnr.name, b.operators.jnr.since]).toEqual(["国鉄", 1950]);
+  });
+});
