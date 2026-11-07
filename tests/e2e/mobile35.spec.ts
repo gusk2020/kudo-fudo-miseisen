@@ -46,6 +46,11 @@ test("Pixel 7a-size touch: intro -> terrain -> era -> seats on the map -> 国道
   // 6. the ceremony, then time moves at x20 and the map keeps working
   expect(await page.isEnabled("#cer-go")).toBe(true); await tap(page, "#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
   await tap(page, "#speed-20"); const m0 = (await app(page, "a => a.sim.month")) as number; await page.waitForFunction((m) => (window as any).__kfm.sim.month > (m as number) + 6, m0, { timeout: 120000 });
+  // 6b. Stage 36: an 1800 game -- the atlas says rail does not exist yet, the timeline has the technology / fictional-history rows (by touch)
+  await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; });
+  expect(await app(page, "a => [a.sim.startYear, !!a.sim.rules1800]")).toEqual([1800, true]);
+  await tap(page, "#dock-atlas"); await page.waitForSelector("#atlas-tech"); expect(await page.textContent("#atlas-tech-鉄道")).toContain("まだない"); expect(await page.textContent("#atlas-tech-飛行船")).toContain("まだない"); await tap(page, "#sheet-close");
+  await tap(page, "#dock-timeline"); await tap(page, "#tl-tech"); expect(await page.locator("#sheet .issue", { hasText: "架空" }).count()).toBeGreaterThan(0); await tap(page, "#sheet-close");
   // 7. save, reload, and the same game is back (seats, month, the road)
   await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; }); const before = await app(page, "a => [a.sim.capital, !!a.sim.capitalPos, a.sim.month, Object.keys(a.sim.routes).length]") as [string, boolean, number, number];
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForSelector("#intro-modal"); await tap(page, "#intro-ok"); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });

@@ -1,3 +1,4 @@
+import { fireHistory1800 } from "./history1800";
 import { AIR_YEAR_SHIFT_1800, POP_1800_FACTOR, RELOC_STEP_1800, START_YEAR_1800, mayScheduleService } from "./rules1800";
 /**
  * Monthly road-network simulation. Pure and deterministic: (sim, world) -> sim, all randomness from sim.rngState.
@@ -137,6 +138,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   if (sim.econ) squeezeSites(sim, w);
   if (firstCand && w.townIds && opts.pot17 !== false) { const seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), ...(sim.subCapital2 ? { sub2: sim.subCapital2 } : {}), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; sim.pot17 = initPotential(w.t, seats, sim.kaigen?.recon?.focus ?? "concentrate", seed, sim.startYear, opts.coast18 === false || sim.kaigen?.recon?.coast === "neutral" ? undefined : sim.kaigen?.recon?.coast, seatLL(sim, w)); startCandidates(sim, w); }   // Stage 17   // Stage 12: a city whose land is far worse than any real city's starts smaller; the rest settle on the better land near it
   enforceCaps(sim, w);   // Stage 20
+  if (sim.rules1800) fireHistory1800(sim, sim.startYear);   // (the rows of the start year itself)
   if (sim.rules1800) for (const c of w.cities) sim.cities[c.id].pop = Math.max(500, Math.round(sim.cities[c.id].pop * POP_1800_FACTOR));   // Stage 36: the 1800 game estimate (rules1800.ts)
   if (sim.stage3) ensureHubs(sim, w, hubYear(sim, sim.startYear));   // Stage 8: the ports of 1950 (airports open from the late 1950s)
   yield* seedInitialNetworkGen(sim, w); refreshNick(sim); if (sim.stage3) { sim.numreg = newNumReg(); syncNumbers(sim, sim.startYear); } yield 1;
@@ -196,6 +198,7 @@ const edgeName = (sim: SimState, e: SimEdge) => `${sim.nodes[e.a]?.name ?? "地�
 function* yearlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
   if (sim.rec34) { const n = stepReclaim(sim, w, y).length; if (n) ev(sim, "reclaim", `${y}年: 首都・副首都の埋め立てで${n}マス(約${n * w.cell * w.cell}km²)の陸地が増えた`, "埋め立ては年間の面積をためておき、1マス(25km²)分になった時に1マスずつ海岸に足す。別の島とは陸続きにならない", {}); }   // Stage 34
+  if (sim.rules1800 && y > sim.startYear) fireHistory1800(sim, y);   // Stage 36: the technology rows and the fictional history of an 1800 game
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, hubYear(sim, y)); }
   // Stage 13: the rest of the 1950s bay and strait ferries come in a few at a time (ferry.ts: BAY_FIRST)
   if (sim.tech?.wk !== undefined && y > sim.startYear && y < sim.startYear + BAY_YEARS) { for (let i = 0; i < BAY_PER_YEAR; i++) { if (!seedBayFerries(sim, w, 1)) break; yield; } }   // (one ferry per slice: each access road is a pass over the whole network)

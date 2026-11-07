@@ -1,4 +1,5 @@
 /** Stage 3 panels: era choice, timeline, route ledger, transport atlas (year slider), policy window. Plain DOM, built only when opened. */
+import { TECHS_1800, techNow } from "../sim/history1800";
 import type { RadioGroup } from "./radioWin";
 import type { App } from "./app";
 import { h } from "./app";
@@ -65,9 +66,9 @@ export function buildKaigen(app: App, body: HTMLElement) {
 
 const KIND_FILTER: Record<string, (k: string) => boolean> = {
   all: () => true, world: (k) => k === "world", domestic: (k) => k === "domestic" || k === "reform", policy: (k) => k === "policy",
-  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), hub: (k) => ["port", "air", "lane", "ferry"].includes(k), city: (k) => k === "city" || k === "village" || k === "boom",
+  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), hub: (k) => ["port", "air", "lane", "ferry"].includes(k), tech: (k) => k === "tech", city: (k) => k === "city" || k === "village" || k === "boom",
 };
-const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", hub: "港湾・空港", city: "人口" };
+const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", hub: "港湾・空港", tech: "技術・架空史", city: "人口" };
 export function buildTimeline(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "年表(新しい順・原因つき)")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
   if (sim.kaigen) body.append(h("div", { class: "issue", id: "era-line" }, "元号: " + sim.kaigen.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → "), h("br"), h("small", {}, sim.kaigen.pending ? "改元の選択待ち" : `次の改元: ${sim.kaigen.next}年ごろ`)));
@@ -131,12 +132,20 @@ export function buildLedger(app: App, body: HTMLElement) {
   app.hlList = list;
 }
 
+/** Stage 36: the state of each transport technology of an 1800 game (試験・実用・普及・衰退) in the current year, so an experiment is never mistaken for a service. */
+export function buildTechAtlas(sim: SimState, body: HTMLElement) {
+  const y = sim.startYear + Math.floor(sim.month / 12), box = h("div", { class: "issue", id: "atlas-tech" }, h("b", {}, `技術の段階(${y}年)`));
+  for (const t of TECHS_1800) { const s = techNow(t, y); box.append(h("div", { class: "row", id: "atlas-tech-" + t }, `${t}: ${s.label}${s.since ? `(${s.since}年〜)` : ""}${s.phase === "experiment" ? " ※試験のみ。定期の路線は作られません" : ""}`)); }
+  box.append(h("small", {}, "技術の登場年は固定。広がり方は人口・経済・地形・需要で変わります。"));
+  body.append(box);
+}
 export function buildAtlas(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "交通地図帳")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
   // Stage 26: no past-year slider and no stored snapshots any more -- what the game was in an earlier year is reached through the 自動セーブポイント (menu), and what happened is in the 年表 and the 台帳
   let rk = 0, rl = 0, plan = 0, lost = 0;
   for (const e of Object.values(sim.edges)) { const rail = modeOf(e) === "rail"; if (e.built < 1) plan++; else if (e.state === "lost") lost++; else if (e.state === "open") rail ? (rl += e.lengthKm) : (rk += e.lengthKm); }
   body.append(h("div", { class: "issue", id: "atlas-summary" }, `現在: 道路${Math.round(rk).toLocaleString()}km・鉄道${Math.round(rl).toLocaleString()}km(供用中) ／ 計画・工事中${plan}区間 ／ 廃道・廃線跡${lost}区間`));
+  if (sim.rules1800) buildTechAtlas(sim, body);
   buildTrends(sim, body); buildHubAtlas(app, sim, body, null); buildCityEconomy(app, sim, body, null); buildCityTiers(app, sim, body);
 }
 
