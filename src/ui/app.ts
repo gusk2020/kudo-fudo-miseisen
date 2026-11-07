@@ -1,3 +1,5 @@
+/** Stage 36: a new game starts in 1800 (the fictional timeline); ?start=1950 starts the older 1950 game (kept for its own tests and for comparison) */
+const START_1800 = typeof location === "undefined" || new URLSearchParams(location.search).get("start") !== "1950";
 import { lsKey } from "../core/ns";
 import type { RecLog } from "../sim/reclaim34";
 import { buildIndex } from "../sim/network";
@@ -795,7 +797,7 @@ export class App {
     const seats = seatsOf(this.s), palacePos = palaceWorld(this.s);
     this.building = 0.01; this.status(); this.buildUI();
     // the 1950 network is generated in slices (a single long task froze phones); the UI shows progress and stays responsive
-    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra, capital: seats.capital, subCapital: seats.sub, palace: { pref: seats.palace, pos: palacePos ?? [0, 0] }, ...(this.s.capitalPos ? { capitalPos: this.s.capitalPos } : {}), ...(this.s.subPos ? { subPos: this.s.subPos } : {}), ...(this.s.subCapital2 ? { subCapital2: this.s.subCapital2, ...(this.s.subPos2 ? { subPos2: this.s.subPos2 } : {}) } : {}), ...(w.moveSpec ? { moves: w.moveSpec } : {}) } : {}); let sim: SimState | null = null;
+    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra, capital: seats.capital, subCapital: seats.sub, palace: { pref: seats.palace, pos: palacePos ?? [0, 0] }, ...(this.s.capitalPos ? { capitalPos: this.s.capitalPos } : {}), ...(this.s.subPos ? { subPos: this.s.subPos } : {}), ...(this.s.subCapital2 ? { subCapital2: this.s.subCapital2, ...(this.s.subPos2 ? { subPos2: this.s.subPos2 } : {}) } : {}), ...(w.moveSpec ? { moves: w.moveSpec } : {}), ...(START_1800 ? { start1800: true } : {}) } : {}); let sim: SimState | null = null;
     while (!sim) {
       const t0 = performance.now();
       while (performance.now() - t0 < 10) { const r = gen.next(); if (r.done) { sim = r.value; break; } this.building = Math.max(this.building, r.value); }
