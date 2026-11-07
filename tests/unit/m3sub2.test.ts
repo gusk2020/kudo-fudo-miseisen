@@ -85,3 +85,14 @@ describe("Stage 36 M3: the city order (seats14)", () => {
     expect(cityOrderBreaches(one, w)).toBeGreaterThan(cityOrderBreaches(two, w));   // (with one sub-capital it outgrows the seats; with two it IS a seat)
   });
 });
+
+describe("Stage 36 M3: the clusters round the sub-capitals", () => {
+  it("the first sub-capital's cluster is 0.7x of its single-sub uplift; the second has a cluster of its own, also at 0.7x of the real Osaka region's mass; the capital's cluster is untouched", () => {
+    const { w, hash } = realWorld(true, true), mk = (two: boolean) => createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-40", ...(two ? { subCapital2: "JP-04" } : {}) });
+    const one = mk(false), two = mk(true);
+    expect(one.roles!.sub2Metro).toBeUndefined(); expect(Object.keys(two.roles!.sub2Metro ?? {}).length).toBeGreaterThan(0);
+    for (const p of one.roles!.subMetro) expect(roleScale(two, w, p), p).toBeCloseTo(shareMult(roleScale(one, w, p), SUB2_SHARE), 9);
+    for (const p of two.roles!.capMetro) expect(roleScale(two, w, p), p).toBeCloseTo(roleScale(one, w, p), 9);
+    for (const p of Object.keys(two.roles!.sub2Metro!)) { expect(two.roles!.capMetro).not.toContain(p); expect(roleScale(two, w, p), p).toBeGreaterThan(0); }
+  });
+});

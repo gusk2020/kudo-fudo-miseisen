@@ -148,7 +148,7 @@ export interface SimState {
   roles?: RoleState;          // Stage 10: who carries whose regional role (roles.ts). Absent = older games (they keep the bonus they were created with)
 }
 /** Stage 10: `prof[p] = q` -- prefecture p carries prefecture q's role mass (only the changed ones); the two clusters; the prefecture with Kyoto's cultural role. */
-export interface RoleState { prof: Record<string, string>; capMetro: string[]; subMetro: string[]; culture: string; p15?: true /* Stage 15: the cities start from the 1950 census (census50.ts) */ }
+export interface RoleState { prof: Record<string, string>; capMetro: string[]; subMetro: string[]; /** Stage 36 M3: the cluster round a second sub-capital: prefecture -> the mass (a prefecture id) it takes after, at 0.7x; no mass is swapped (nothing is conserved or compensated) */ sub2Metro?: Record<string, string>; culture: string; p15?: true /* Stage 15: the cities start from the 1950 census (census50.ts) */ }
 export const SIM_VERSION = 3;
 export const ERA = { key: "kobun", name: "光文", firstYear: 1945, note: "1926年の昭和代替元号候補『光文』を、1945年の敗戦時に改元が起きた架空史へ転用" };
 export const eraYear = (calYear: number) => calYear - ERA.firstYear + 1;
