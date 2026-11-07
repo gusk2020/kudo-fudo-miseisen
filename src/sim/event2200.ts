@@ -1,3 +1,4 @@
+import { RELOC_STEP_1800 } from "./rules1800";
 /**
  * Stage 22: the year 2200 -- 遷都と復興. Once in a game (made from Stage 3 on, with the era timeline), at the start of 2200, the player may
  *   - put the capital, the sub-capital and the palace anywhere again (a prefecture, or a point on the map that becomes its 県庁所在地, as at the start),
@@ -26,13 +27,15 @@ export const E2200_STEP = RELOC_STEP;
 export const eventsOpened = (sim: Pick<SimState, "e2200" | "e2200hist">) => (sim.e2200hist?.length ?? 0) + (sim.e2200 ? 1 : 0);
 /** Stage 35: the boundaries a fully unattended game let pass (their scheduled years). A boundary is one slot of the fixed schedule whether it was opened or skipped, so the next one is always `first + 150 * slots`. */
 export const slotsPassed = (sim: Pick<SimState, "e2200" | "e2200hist" | "relocSkipped">) => eventsOpened(sim) + (sim.relocSkipped?.length ?? 0);
-export const originOf = (sim: Pick<SimState, "startYear"> & Partial<Pick<SimState, "relocFirst">>) => sim.relocFirst ?? relocFirstOf(sim.startYear);   // the first boundary: recorded when the game was made, else its own start year + 150
-export const nextYear2200 = (sim: Pick<SimState, "e2200" | "e2200hist" | "relocSkipped" | "startYear"> & Partial<Pick<SimState, "relocFirst">>) => relocYear(slotsPassed(sim), originOf(sim));
+export const originOf = (sim: Pick<SimState, "startYear"> & Partial<Pick<SimState, "relocFirst" | "rules1800">>) => sim.relocFirst ?? (sim.rules1800 ? sim.startYear + RELOC_STEP_1800 : relocFirstOf(sim.startYear));   // the first boundary: recorded when the game was made, else its own start year + 150
+/** Stage 36 M4: an 1800 game relocates every 100 years (1900, 2000, ...); every other game every 150 */
+export const relocStepOf = (sim: Partial<Pick<SimState, "rules1800">>) => (sim.rules1800 ? RELOC_STEP_1800 : RELOC_STEP);
+export const nextYear2200 = (sim: Pick<SimState, "e2200" | "e2200hist" | "relocSkipped" | "startYear"> & Partial<Pick<SimState, "relocFirst" | "rules1800">>) => relocYear(slotsPassed(sim), originOf(sim), relocStepOf(sim));
 /** Stage 35: fully unattended = the policy mode 常に自動 only. 放置中のみ自動 (semi-automatic) and the speed multipliers are not: they still stop for a relocation. */
 export const unattended = (sim: Pick<SimState, "policy">) => sim.policy?.mode === "auto";
 /** Stage 35: a due boundary in an unattended game is skipped whole: no event, no era, no seats, no 国道0号, no stop. Returns how many boundaries were skipped (a catch-up can pass several; each is skipped once, in order, and never made up later). */
 export function skip2200(sim: SimState): number {
-  let n = 0; while (due2200(sim) && unattended(sim)) { const at = nextYear2200(sim); (sim.relocSkipped ??= []).push(at); n++; ev(sim, "kaigen", `${at}年: 完全自動運転のため遷都・改元は行わなかった(次は${nextYear2200(sim)}年)`, "完全自動では遷都をまるごと見送る。元号・首都・副首都・皇居・道路・埋め立ての進み方はそのまま。手動に戻しても過去の遷都は行わず、次の固定周期を待つ", {}); }
+  let n = 0; while (due2200(sim) && unattended(sim)) { const at = nextYear2200(sim), slot = slotsPassed(sim); (sim.relocSkipped ??= []).push(at); n++; if (sim.rules1800) { const nm = renameAtReloc(sim, at, slot, true); if (nm) ev(sim, "kaigen", `${at}年: 常に自動のため首都・副首都・皇居はそのまま、元号だけを${nm}に改めた`, "1800年開始のゲームでは遷都の年に必ず改元する", {}); } ev(sim, "kaigen", `${at}年: 完全自動運転のため遷都・改元は行わなかった(次は${nextYear2200(sim)}年)`, "完全自動では遷都をまるごと見送る。元号・首都・副首都・皇居・道路・埋め立ての進み方はそのまま。手動に戻しても過去の遷都は行わず、次の固定周期を待つ", {}); }
   return n;
 }
 /** Due at a year boundary on or after the next scheduled year in a timeline game, once the previous event is over. The schedule counts events, not the year they happened to open in, so it cannot drift or fire twice. */
@@ -43,6 +46,11 @@ export function open2200(sim: SimState) {
   ev(sim, "kaigen", `${yearOf(sim)}年: 遷都と復興の時を迎えた(第${n + 1}回)`, "首都・副首都・皇居、元号、復興方針を選び直せます(選ばなければ今のまま)", {});
 }
 /** The candidates put to the player at the open event (built now for a game saved before they were recorded). */
+/** Stage 36 M4: in an 1800 game a relocation always changes the era, even when the seats stay ("今のまま続ける" and 常に自動): the first unused name of that event's historical candidate group. Returns the name. */
+export function renameAtReloc(sim: SimState, y: number, n: number, auto: boolean): string | null {
+  const k = sim.kaigen; if (!k) return null; const g = ((k.reloc ??= [])[n] ??= relocGroup(k, n, y)), used = usedKeys(k), c = g.cands.find((x) => !used.has(eraKey(x.name))); if (!c) return null;
+  const cur = k.eras[k.eras.length - 1]; k.eras.push({ name: c.name, start: y, stance: cur?.stance ?? "heisei", real: c.real, picked: g.cands.indexOf(c), of: g.cands.length, auto }); g.chosen = c.name; return c.name;
+}
 export function groupOf2200(sim: SimState): RelocGroup | null {
   const e = sim.e2200, k = sim.kaigen; if (!e || !k) return null; const n = e.n ?? Math.max(0, (sim.e2200hist?.length ?? 0));
   return (k.reloc ??= [])[n] ??= relocGroup(k, n, e.year);
@@ -50,12 +58,12 @@ export function groupOf2200(sim: SimState): RelocGroup | null {
 /** The choice is applied. `null` = keep everything as it is (the player pressed 今のまま続ける). Returns the seat moves that change the world (the app rebuilds it with them). */
 export function apply2200(sim: SimState, ch: Choice2200 | null, auto = false, seatPos?: (pref: string) => Vec | null): boolean {
   const e = sim.e2200, k = sim.kaigen; if (!e || e.state !== "pending" || !k) return false; const y = e.year;
-  if (!ch) { e.state = "done"; e.kept = true; if (auto) e.auto = true; ev(sim, "kaigen", `${y}年: 遷都・改元は行わず、今の首都・元号・方針を続ける${auto ? "【自動】" : ""}`, "選択されなかったため現状を維持", {}); return false; }
+  if (!ch) { e.state = "done"; e.kept = true; if (auto) e.auto = true; if (sim.rules1800) { const nm = renameAtReloc(sim, y, e.n ?? 0, auto); if (nm) ev(sim, "kaigen", `${y}年: 首都などはそのまま、元号を${nm}に改めた${auto ? "【自動】" : ""}`, "1800年開始のゲームでは遷都の年に必ず改元する", {}); } if (!sim.rules1800) ev(sim, "kaigen", `${y}年: 遷都・改元は行わず、今の首都・元号・方針を続ける${auto ? "【自動】" : ""}`, "選択されなかったため現状を維持", {}); return false; }
   const g = groupOf2200(sim)!, used = usedKeys(k); let ci = Math.max(0, Math.min(g.cands.length - 1, Math.floor(ch.era)));
   if (used.has(eraKey(g.cands[ci].name))) ci = Math.max(0, g.cands.findIndex((x) => !used.has(eraKey(x.name))));   // (a name already adopted is never adopted again)
   const c = { ...g.cands[ci], yomi: g.cands[ci].yomi ?? "" };
   if (!used.has(eraKey(c.name))) { k.eras.push({ name: c.name, start: y, stance: ch.stance, real: c.real, picked: ci, of: g.cands.length, auto }); g.chosen = c.name; }
-  k.pending = null; k.next = y + futureInterval(sim.seed, k.nextIdx); k.nextIdx++;
+  k.pending = null; k.next = y + futureInterval(sim.seed, k.nextIdx, !!k.free); k.nextIdx++;
   k.recon = { coast: ch.coast, focus: ch.focus, since: y };
   // seats: prefecture ids; a point on the map becomes that prefecture's 県庁所在地 (as at the start); a seat with no point stands at its prefecture's 県庁所在地
   const moved: string[] = [], capNow = sim.capital ?? DEFAULT_CAPITAL, subNow = sim.subCapital ?? (capNow === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB);   // (the seats as they stand: a default is a prefecture too, so choosing it again with no point is not a move)

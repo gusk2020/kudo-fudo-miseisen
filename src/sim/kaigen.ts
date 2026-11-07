@@ -27,7 +27,7 @@ export interface EraCand { name: string; stance: EraKey; real: boolean; note: st
 /** Stage 10: the 1945 reconstruction policy (recon.ts). Only the first era choice carries one. */
 export interface Recon { coast: "pacific" | "japansea" | "neutral"; focus: "concentrate" | "disperse"; /** Stage 22: the year the policy was set (1945 if absent); its strength fades from there */ since?: number }
 export interface EraEntry { name: string; start: number; stance: EraKey; real: boolean; picked: number; of: number; auto: boolean }
-export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number; recon?: Recon; /** Stage 25: the groups put to the player at each relocation event (index = the event's number), with the one chosen */ reloc?: (RelocGroup | null)[] }
+export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number; recon?: Recon; /** Stage 25: the groups put to the player at each relocation event (index = the event's number), with the one chosen */ reloc?: (RelocGroup | null)[]; /** Stage 36 M4: an 1800 game -- every ordinary era change is 20-40 years after the last (no fixed 1989/2019), and names come from the generator only */ free?: true }
 
 /** The policy stances a candidate can carry, in the order they are handed out. Issue #15 added 空路重視 and 海路重視 to the original three. */
 export const STANCES: EraKey[] = ["heisei", "shubun", "shoka", "kuuro", "kairo"];
@@ -117,8 +117,10 @@ export function kaigenRand(seed: number, n: number): number {
   let t = ((seed ^ 0x9e3779b9) + Math.imul(n + 1, 0x85ebca6b)) >>> 0;
   t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
-export function futureInterval(seed: number, idx: number): number {
-  const lo = FUTURE_INTERVAL.base - FUTURE_INTERVAL.spread, hi = FUTURE_INTERVAL.base + FUTURE_INTERVAL.spread;
+/** Stage 36 M4: the 1800 rules space ordinary era changes 20-40 years apart (mean 30). */
+export const FREE_INTERVAL = { base: 30, spread: 10 } as const;
+export function futureInterval(seed: number, idx: number, free = false): number {
+  const iv = free ? FREE_INTERVAL : FUTURE_INTERVAL, lo = iv.base - iv.spread, hi = iv.base + iv.spread;
   return lo + Math.floor(kaigenRand(seed, idx) * (hi - lo + 1));
 }
 /** The five candidate names for a kaigen in `year`, fewest strokes first. `taken` = names this game has already used. */
@@ -135,9 +137,9 @@ export function futureCandidates(year: number, taken: Set<string> = new Set()): 
 }
 
 // ---------------------------------------------------------------- the timeline ----------
-export const newKaigen = (first: EraCand, firstIdx: number, seed: number): KaigenState => ({ eras: [{ name: first.name, start: FIRST_YEAR, stance: first.stance, real: first.real, picked: firstIdx, of: CAND_1945.length, auto: false }], pending: null, next: KAIGEN_YEARS.second, nextIdx: 0, ...(first.recon ? { recon: { ...first.recon } } : {}) });
+export const newKaigen = (first: EraCand, firstIdx: number, seed: number, start1800 = false): KaigenState => ({ ...(start1800 ? { free: true as const } : {}), eras: [{ name: first.name, start: start1800 ? 1800 : FIRST_YEAR, stance: first.stance, real: first.real, picked: firstIdx, of: CAND_1945.length, auto: false }], pending: null, next: start1800 ? 1800 + futureInterval(seed, 0, true) : KAIGEN_YEARS.second, nextIdx: start1800 ? 1 : 0, ...(first.recon ? { recon: { ...first.recon } } : {}) });
 export function candidatesFor(k: KaigenState, year: number): EraCand[] {
-  if (year === KAIGEN_YEARS.second) return CAND_1989; if (year === KAIGEN_YEARS.third) return CAND_2019;
+  if (!k.free) { if (year === KAIGEN_YEARS.second) return CAND_1989; if (year === KAIGEN_YEARS.third) return CAND_2019; }
   return futureCandidates(year, new Set(k.eras.map((x) => x.name)));
 }
 /** Is a kaigen due at the start of `year`? Opens it (pending) and returns true. Never opens twice for one year. */
@@ -148,7 +150,7 @@ export function chooseEra(k: KaigenState, idx: number, seed: number, auto = fals
   const p = k.pending; if (!p) return null; const i = Math.max(0, Math.min(p.cands.length - 1, Math.floor(idx))), c = p.cands[i];
   const e: EraEntry = { name: c.name, start: p.year, stance: c.stance, real: c.real, picked: i, of: p.cands.length, auto };
   k.eras.push(e); k.pending = null;
-  if (p.year < KAIGEN_YEARS.third) k.next = p.year === KAIGEN_YEARS.second ? KAIGEN_YEARS.third : KAIGEN_YEARS.second; else { k.next = p.year + futureInterval(seed, k.nextIdx); k.nextIdx++; }
+  if (!k.free && p.year < KAIGEN_YEARS.third) k.next = p.year === KAIGEN_YEARS.second ? KAIGEN_YEARS.third : KAIGEN_YEARS.second; else { k.next = p.year + futureInterval(seed, k.nextIdx, !!k.free); k.nextIdx++; }
   return e;
 }
 /** The era in force in `year` (null before the first), and its year number (元年 = 1). */
@@ -191,7 +193,7 @@ export function stanceAt(sim: { era: string; kaigen?: KaigenState }, year: numbe
  *  name no origin (unit tests of the cadence itself); the simulation never uses it. */
 export const RELOC_FIRST_LEGACY = 2200, RELOC_STEP = 150, RELOC_MIN = 3, RELOC_TARGET = 5;
 export const relocFirstOf = (startYear: number) => startYear + RELOC_STEP;
-export const relocYear = (n: number, first: number = RELOC_FIRST_LEGACY) => first + RELOC_STEP * n;
+export const relocYear = (n: number, first: number = RELOC_FIRST_LEGACY, step: number = RELOC_STEP) => first + step * n;
 export interface RelocCand { name: string; yomi?: string; real: boolean; note: string; origin: "inherit" | "history" | "fiction" }
 export interface RelocGroup { n: number; year: number; base: string; cands: RelocCand[]; chosen?: string }
 /** Old and new forms, and width variants, of the same name are one name. */
