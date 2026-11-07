@@ -24,3 +24,13 @@ describe("Stage 36 M3: two sub-capitals, 0.7x each of the sub-capital modifiers"
     expect(roleScale(two, w, "JP-13")).toBe(roleScale(one, w, "JP-13"));   // the capital's own role is untouched
   });
 });
+
+describe("Stage 36 M3: the sub-capital sites", () => {
+  it("one sub-capital: one site at full strength; two: one site each at 0.7x; the capital's site is the same", async () => {
+    const { sitesOf } = await import("../../src/sim/sites");
+    const { w, hash } = realWorld(true, true), one = createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-40" }), two = createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-40", subCapital2: "JP-04" });
+    const s1 = sitesOf(one, w).filter((s) => s.kind === "sub"), s2 = sitesOf(two, w).filter((s) => s.kind === "sub");
+    expect(s1).toHaveLength(1); expect(s1[0].scale ?? 1).toBe(1); expect(s2).toHaveLength(2); expect(s2.map((s) => s.scale)).toEqual([SUB2_SHARE, SUB2_SHARE]); expect(new Set(s2.map((s) => s.pref))).toEqual(new Set(["JP-40", "JP-04"]));
+    expect(JSON.stringify(sitesOf(two, w).filter((s) => s.kind === "capital"))).toBe(JSON.stringify(sitesOf(one, w).filter((s) => s.kind === "capital")));
+  });
+});

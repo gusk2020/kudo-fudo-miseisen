@@ -12,6 +12,7 @@
  *   tourism       観光  leisure attraction: also scales passenger mass, and keeps nearby villages from emptying as fast.
  * 産業 and 工業 do overlap -- both raise freight -- but 産業 acts through the slow-moving level of industry and the regional share, 工業 through the volume a city ships at once.
  */
+import { SUB2_SHARE } from "./subs36";
 import { dist } from "../core/geom";
 import type { Vec } from "../core/types";
 import { homeCity, subCity } from "./ceremony";
@@ -46,7 +47,8 @@ const ZERO = (): Boost => ({ commerce: 0, industry: 0, manufacturing: 0, tourism
 export function sitesOf(sim: SimState, w: World): Site[] {
   const out: Site[] = [], hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital);
   if (hc) out.push({ kind: "capital", pos: hc.pos, pref: hc.pref });
-  if (sc) out.push({ kind: "sub", pos: sc.pos, pref: sc.pref });
+  if (sc) out.push({ kind: "sub", pos: sc.pos, pref: sc.pref, ...(sim.subCapital2 ? { scale: SUB2_SHARE } : {}) });
+  const sc2 = sim.subCapital2 ? subCity(w, sim.subCapital2) : null; if (sc2 && sc2.id !== sc?.id) out.push({ kind: "sub", pos: sc2.pos, pref: sc2.pref, scale: SUB2_SHARE });   // Stage 36 M3: two sub-capitals, each site at 0.7x
   if (sim.palace) out.push({ kind: "palace", pos: sim.palace.pos, pref: sim.palace.pref });
   // Stage 10: the cultural role sits at the palace when the palace was moved, else at real Kyoto's seat (games created before Stage 10 have none)
   if (sim.roles) { const at = sim.palace && sim.palace.pref === sim.roles.culture ? { pos: sim.palace.pos, pref: sim.palace.pref } : (() => { const c = w.cities.find((x) => x.pref === sim.roles!.culture && x.kind === "capital"); return c ? { pos: c.pos, pref: c.pref } : null; })(); if (at) out.push({ kind: "culture", ...at }); }

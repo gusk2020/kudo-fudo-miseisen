@@ -44,7 +44,7 @@ const hash = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; 
 
 /** How well a place suits each character: what it has, 0..~1. */
 function scores(sim: SimState, w: World, an: Analysis, c: WCity, i: number, y: number): Record<ZoneKind, number> {
-  const st = sim.cities[c.id], stance = stanceAt(sim, y), cap = c.pref === sim.capital || c.pref === sim.subCapital;
+  const st = sim.cities[c.id], stance = stanceAt(sim, y), cap = c.pref === sim.capital || c.pref === sim.subCapital || (!!sim.subCapital2 && c.pref === sim.subCapital2);
   const g = w.t.grid, ci = c.cell % w.nx, cj = (c.cell / w.nx) | 0; let hi = 0;
   for (let dj = -4; dj <= 4; dj++) for (let di = -4; di <= 4; di++) { const a = ci + di, b = cj + dj; if (a >= 0 && b >= 0 && a < w.nx && b < w.ny) hi = Math.max(hi, w.t.elev[b * w.nx + a]); }
   void g; const relief = Math.min(1, Math.max(0, hi) / 1200), acc = Math.min(1, an.acc[i] ?? 0), port = c.coastal ? 1 : 0, air = st.airport !== undefined ? 1 : 0;
