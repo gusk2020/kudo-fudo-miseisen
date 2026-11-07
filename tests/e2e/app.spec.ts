@@ -52,13 +52,13 @@ test("full flow: place islands, features, generate terrain, finalize, export", a
   await page.click("#suggest"); await page.click("#btn-next");
   expect(await app(page, "a => a.s.step")).toBe(4);
   await page.waitForFunction(() => (window as any).__kfm.terrain, null, { timeout: 60000 });
-  expect(await app(page, "a => a.terrain.stats.prefCount")).toBe(49);
+  expect(await app(page, "a => a.terrain.stats.prefCount")).toBe(50);
   await page.screenshot({ path: "test-results/terrain.png" });
   await page.click("#btn-next"); await page.click('#dock [data-sheet="menu"]');
   await page.click("#finalize"); expect(await app(page, "a => a.s.finalized")).toBe(true);
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#export")]);
   const j = JSON.parse(fs.readFileSync((await dl.path())!, "utf8"));
-  expect(j.schemaVersion).toBe(2); expect(j.map.schemaVersion).toBe(1); expect(j.map.finalized).toBe(true); expect(j.sim).toBeNull(); expect(j.mapHash).toBeTruthy(); expect(j.geo.geoIds.prefectures).toHaveLength(49); expect(j.geo.terrainHash).toBeTruthy();
+  expect(j.schemaVersion).toBe(2); expect(j.map.schemaVersion).toBe(1); expect(j.map.finalized).toBe(true); expect(j.sim).toBeNull(); expect(j.mapHash).toBeTruthy(); expect(j.geo.geoIds.prefectures).toHaveLength(50); expect(j.geo.terrainHash).toBeTruthy();
   expect(errs).toEqual([]);
 });
 

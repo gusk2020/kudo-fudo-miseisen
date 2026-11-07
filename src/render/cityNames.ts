@@ -10,7 +10,7 @@ export const nameWidth = (s: string) => s.length * FONT + 4;
 /** Most names shown at a zoom: none in the far view, then 7 / 18 / 45 as one looks closer (Stage 22: a little fewer than Stage 19's 10 / 24 / 60; the places themselves are all still simulated). */
 export const maxNames = (zoom: number) => (zoom < 0.55 ? 0 : zoom < 1 ? 7 : zoom < 2 ? 18 : 45);
 /** Stage 22: names of the 49 県庁所在地 on the base map: none far out, the 25 that matter most (the seats first, then by size) at a middle zoom, all from 0.85 -- always without overlaps. */
-export const maxCapitalNames = (zoom: number) => (zoom < 0.55 ? 0 : zoom < 0.85 ? 25 : 49);
+export const maxCapitalNames = (zoom: number) => (zoom < 0.55 ? 0 : zoom < 0.85 ? 25 : 50);
 const hit = (a: Box, b: Box) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
 export function placeNames(circles: NameCircle[], fixed: Box[], zoom: number, capN = maxNames(zoom)): { i: number; x: number; y: number }[] {
   const out: { i: number; x: number; y: number }[] = [], cap = capN; if (!cap) return out;

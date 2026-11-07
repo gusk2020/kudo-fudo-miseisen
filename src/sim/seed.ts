@@ -1,4 +1,5 @@
 /** 1950 starting network: thin ordinary roads already exist all over the country (synthetic, deterministic from the seed). */
+import { seedKaido1800 } from "./kaido1800";
 import { basePop, capitalPref } from "./roles";
 import { dist } from "../core/geom";
 import { FU_PREFS, type Grade, type SimState } from "./types";
@@ -66,5 +67,6 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
   }
   ev(sim, "seed", `1950年の既存道路網: 都市間${links.length}線・集落${Object.keys(sim.settlements).length}か所(合成)・路線${nRoutes}本`, "初期条件(実在の道路網ではない)", {});
   void newId;
-  if (sim.stage3) { yield* seedRailGen(sim, w); openStraits(sim, w, sim.startYear, true); if (sim.crossings) { seedFerries(sim, w); if (sim.roles) seedInnerSeaFerries(sim, w); seedLakeFerries(sim, w); if (sim.tech?.wk !== undefined) seedBayFerries(sim, w, BAY_FIRST); } yield 0.95; }
+  if (sim.rules1800) seedKaido1800(sim, w);   // Stage 36: the main highways and their post towns
+  if (sim.stage3) { if (!sim.rules1800) yield* seedRailGen(sim, w);   /* Stage 36: 1800 has no railway */ openStraits(sim, w, sim.startYear, true); if (sim.crossings) { seedFerries(sim, w); if (sim.roles) seedInnerSeaFerries(sim, w); seedLakeFerries(sim, w); if (sim.tech?.wk !== undefined) seedBayFerries(sim, w, BAY_FIRST); } yield 0.95; }
 }

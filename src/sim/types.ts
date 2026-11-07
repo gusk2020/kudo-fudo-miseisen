@@ -53,7 +53,7 @@ export const modeOf = (x: { mode?: Mode }): Mode => x.mode ?? "road";
 export interface RouteEdgeRef { edgeId: string; dir: 1 | -1 }
 /** A numbered route: designation over edges. The stable `id` never changes; grade/number may (promotion/demotion). */
 export interface SimRoute {
-  id: string; scope: string; grade: Grade; number: number; name: string; edges: RouteEdgeRef[]; /** Stage 25: the year of a later 国道0号 (the one of a relocation after 2200) */ gen?: number;
+  id: string; scope: string; grade: Grade; number: number; name: string; edges: RouteEdgeRef[]; /** Stage 25: the year of a later 国道0号 (the one of a relocation after 2200) */ gen?: number; /** Stage 36: the name of a main highway of the 1800 start (東海道 ...); the official 国道N号 number is kept */ kaido?: string;
   since: number; active: boolean; lowYears: number; highYears: number;
   history: { month: number; grade: Grade; number: number; text: string; scope?: string; opName?: string }[];
   endMonth?: number;        // month the designation ended (abolished); the line stays in the ledger
@@ -75,7 +75,7 @@ export interface SimProject {
 export interface SimEvent { id: number; month: number; kind: string; text: string; cause: string; refs: Record<string, string> }
 export interface CityState { pop: number; industry: number; popSource: "ne" | "synthetic"; lowAccessYears: number; airport?: number /* year the airport opened (Stage 3) */ }
 /** 集落: 合成の小さな居住地(実在の集落ではない)。旧道の「地域内需要」と孤立判定の根拠。 */
-export interface Settlement { id: string; name: string; cell: number; city: string; pop: number; pop0: number; isolatedYears: number; gone: boolean }
+export interface Settlement { id: string; name: string; cell: number; city: string; pop: number; pop0: number; isolatedYears: number; gone: boolean; /** Stage 36: a post town (宿場) on one of the 1800 start's main highways */ post?: string }
 export interface SimLink { id: string; kind: "bypass"; newEdges: string[]; oldEdges: string[]; month: number; routeId: string | null }
 export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number; paxRail?: number; frRail?: number; ports?: number; airports?: number; hubs?: number; seaCargo?: number; airPax?: number; airIntl?: number; seaLanes?: number; airLanes?: number }   // paxRail / frRail (Stage 7): the railway's share of passenger-km and of freight on land
 
@@ -113,15 +113,16 @@ export interface SimState {
   crossings?: true;           // Issue #15: the game starts with ferries between land masses and plans strait links (bridge / tunnel / ferry); absent = older games
   subCapital?: string;        // Issue #15: prefecture ids of the sub-capital and the palace (administrative settings; the palace point is where it is drawn)
   palace?: { pref: string; pos: Vec };
+  /** Stage 36 M3: the second sub-capital (prefecture and map point); absent = one sub-capital */ subCapital2?: string; subPos2?: Vec;
   capitalPos?: Vec; subPos?: Vec;   // Stage 19: where the capital / sub-capital were put on the map (world frame); absent = the 県庁所在地 (older games, and games that chose from the prefecture list)
   tech?: { k: number; wk?: number };       // Issue #13: bridge/tunnel technology rule (see tech.ts). Absent = older games, which keep the old fixed facility rules
   hubs?: HubsState;          // Stage 8: ports, airports and their routes (hubs.ts). Absent = older saves; created at the next yearly step
   kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
   city12?: Record<string, { p: number[]; h: number[]; adv: number }>;   // Stage 12: per city, the parts of its yearly migration advantage and its size every 5 years (econ.ts)
   metro?: import("./metro").MetroState;   // Stage 13: the metropolitan areas (metro.ts), rebuilt every year. Absent = older saves; created at the next yearly step
-  pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
+  pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true; /** Stage 36 M3: the two sub-capitals whose weights are each 0.7x of a single one's uplift */ sub2?: string[] };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
   lastTunnelException18?: number;   // Stage 18: the year the last sea/lake tunnel was allowed under 海路重視 / 空路重視 (policy18.ts)
-  moves20?: { pref: string; pos: Vec; by: "capital" | "sub" | "palace"; since?: number }[];
+  moves20?: { pref: string; pos: Vec; by: "capital" | "sub" | "palace"; since?: number; extra?: boolean }[];
   /** Stage 30A: the world this game belongs to, the timeline within it, and the timelines it branched from (with the year it left each). Absent = a save from before Stage 30A */
   wid?: string; tl?: string; anc?: { tl: string; y: number }[];
   cp?: { y50: number; reloc: number };   // Stage 26: the last 50-year mark a checkpoint was taken for, and how many relocation events have had theirs
@@ -134,6 +135,8 @@ export interface SimState {
   e2200?: import("./event2200").E2200;   // Stage 22: the 2200 event (遷都・改元・復興方針・国道0号). Absent = not yet (or an older game before 2200)   // Stage 20: the seat points that made a new 県庁所在地 (the world is built with them). Absent = the Stage 19 meaning of a seat point
   numreg?: import("./numreg").NumReg;   // Stage 23: the route NUMBER register (numreg.ts): six classes, numbers never reused. Absent = an older save: started (marked estimated) at its next yearly step
   tier23?: import("./tier23").Tier23;   // Stage 23: 政令特区 / 政令指定都市 and their wards (tier23.ts). Absent = an older game (no tiers)
+  rules1800?: true;            // Stage 36 M2: a game started in 1800 under the fictional timeline (src/sim/rules1800.ts)
+  isl36?: true;               // Stage 36: the world also carries 南鳥島 and 沖ノ鳥島 on the grid (isl22 is set with it)
   isl22?: true;               // Stage 22: the islands are their real outlines (and 南鳥島・沖ノ鳥島 are on the map); absent with isl20 = the Stage 20 ellipses
   sea22?: true;               // Stage 22: domestic ocean routes and island lifelines (sea22.ts). Absent = the older sea model
   isl20?: true;               // Stage 20: the world carries the small and far islands (src/data/islets.json; the grid is widened). Absent = the older grid
@@ -145,7 +148,7 @@ export interface SimState {
   roles?: RoleState;          // Stage 10: who carries whose regional role (roles.ts). Absent = older games (they keep the bonus they were created with)
 }
 /** Stage 10: `prof[p] = q` -- prefecture p carries prefecture q's role mass (only the changed ones); the two clusters; the prefecture with Kyoto's cultural role. */
-export interface RoleState { prof: Record<string, string>; capMetro: string[]; subMetro: string[]; culture: string; p15?: true /* Stage 15: the cities start from the 1950 census (census50.ts) */ }
+export interface RoleState { prof: Record<string, string>; capMetro: string[]; subMetro: string[]; /** Stage 36 M3: the cluster round a second sub-capital: prefecture -> the mass (a prefecture id) it takes after, at 0.7x; no mass is swapped (nothing is conserved or compensated) */ sub2Metro?: Record<string, string>; culture: string; p15?: true /* Stage 15: the cities start from the 1950 census (census50.ts) */ }
 export const SIM_VERSION = 3;
 export const ERA = { key: "kobun", name: "光文", firstYear: 1945, note: "1926年の昭和代替元号候補『光文』を、1945年の敗戦時に改元が起きた架空史へ転用" };
 export const eraYear = (calYear: number) => calYear - ERA.firstYear + 1;

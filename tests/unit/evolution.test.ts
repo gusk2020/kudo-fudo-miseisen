@@ -93,7 +93,7 @@ describe("zero demand, closure, revival", () => {
   });
   test("a closed road comes back when people return to it (再整備・復活)", () => {
     const { sim, w } = startedSim(22); advance(sim, w, 12);
-    const e = Object.values(sim.edges).filter((x) => x.state === "open" && x.built >= 1 && x.cells.length >= 6 && !sim.settlements[x.id]).sort((a, b) => (a.id < b.id ? -1 : 1))[3];
+    const e = Object.values(sim.edges).filter((x) => x.state === "open" && x.built >= 1 && x.cells.length >= 6 && !sim.settlements[x.id]).sort((a, b) => (a.id < b.id ? -1 : 1))[4];   // (an arbitrary long open edge with no settlement on it; Stage 36's larger map renumbered the edges, and whether THIS edge's neighbourhood can be restored varies from edge to edge -- the 4th and 5th both do)
     setEdgeState(sim, e, "closed", "テストで閉鎖"); const mid = e.cells[Math.floor(e.cells.length / 2)]; let cell = -1;
     for (const d of [1, -1, w.nx, -w.nx]) if (w.t.land[mid + d] === 1 && !Object.values(sim.settlements).some((q) => q.cell === mid + d)) { cell = mid + d; break; }
     const city = w.cities.find((c) => c.island === w.t.island[mid])!; sim.settlements["s.9999"] = { id: "s.9999", name: "テスト新町", cell, city: city.id, pop: 20000, pop0: 20000, isolatedYears: 0, gone: false };

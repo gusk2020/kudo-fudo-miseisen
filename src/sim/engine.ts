@@ -1,3 +1,5 @@
+import { fireHistory1800 } from "./history1800";
+import { AIR_YEAR_SHIFT_1800, POP_1800_FACTOR, RELOC_STEP_1800, START_YEAR_1800, mayScheduleService } from "./rules1800";
 /**
  * Monthly road-network simulation. Pure and deterministic: (sim, world) -> sim, all randomness from sim.rngState.
  * Every change that matters appends an event with its cause and, for roads, an entry in the edge's own history.
@@ -80,7 +82,7 @@ export function ev(sim: SimState, kind: string, text: string, cause: string, ref
 }
 export const prefName = (id: string) => JAPAN.prefectures.find((p) => p.id === id)?.name ?? id;
 /** Official name only (国道N号). */
-export const routeOfficial = (r: SimRoute) => GRADE_MODE[r.grade] === "rail" ? `${r.opName ?? GRADE_LABEL[r.grade]}${r.number}号線` : `${r.scope === "JP" ? "" : prefName(r.scope) + " "}${GRADE_LABEL[r.grade]}${r.number}号${r.gen ? `(${r.gen}年)` : ""}`;
+export const routeOfficial = (r: SimRoute) => r.kaido ? `${r.kaido}(${GRADE_LABEL[r.grade]}${r.number}号)` : GRADE_MODE[r.grade] === "rail" ? `${r.opName ?? GRADE_LABEL[r.grade]}${r.number}号線` : `${r.scope === "JP" ? "" : prefName(r.scope) + " "}${GRADE_LABEL[r.grade]}${r.number}号${r.gen ? `(${r.gen}年)` : ""}`;
 /** Official name plus the earned nickname, if any: 国道N号(通称:酷道). */
 export const routeLabel = (r: SimRoute) => routeOfficial(r) + (r.nick ? `(通称:${NICK_LABEL[r.grade]})` : "");
 export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).year;
@@ -102,7 +104,7 @@ export function projectTimeMult(sim: SimState, p: SimProject): number {
 }
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
-export interface SimOpts { /** Stage 28: the year of the first relocation (absent = the game's own start year + 150) */ relocFirst?: number; moves?: SeatMove[]; capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
+export interface SimOpts { /** Stage 36 M2: start in 1800 (the 1800 rules) */ start1800?: boolean; /** Stage 36 M3: a second sub-capital (prefecture, and its map point) */ subCapital2?: string; subPos2?: Vec; /** Stage 28: the year of the first relocation (absent = the game's own start year + 150) */ relocFirst?: number; moves?: SeatMove[]; capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 /** Stage 19: the exact lon/lat of the seats put on the map (world = real for the real map); undefined when every seat stands at its 県庁所在地, so such a game orders the prefectures exactly as before. */
 function seatLL(sim: SimState, w: World): { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } | undefined {
   const ll = (p: Vec) => realToLonLat(p) as [number, number], o: { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } = {};
@@ -114,32 +116,36 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   w.barrier = !!opts.stage3;   // Stage 9: the mountain barrier is part of the real-map game
   w.land12 = !!(opts.stage3 && opts.firstEra !== undefined);   // Stage 12: every game started from the era timeline (Stage 10 onward flow) uses the land model
   const firstCand = opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
-  const startYear = 1950;   // (a game's own start year: the relocation origin is derived from it, so there is one place that says 1950)
+  const startYear = opts.start1800 ? START_YEAR_1800 : 1950;   // (a game's own start year: the relocation origin is derived from it, so there is one place that says 1950)
   const sim: SimState = {
     schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
     next: { node: 0, edge: 0, route: 0, project: 0, event: 0 }, nodes: {}, edges: {}, routes: {}, projects: {}, cities: {}, settlements: {}, links: [], regionShare: {},
     macro: { mood: 0, budgetBu: 0, maintCoverage: 1 }, routeCounters: {}, events: [], stats: [], skippedMonths: 0, lastWallMs: 0, ceremonyDone: false,
-    operators: { jnr: { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0) } : {}), ...(opts.stage3 && (firstCand || opts.techK !== undefined) ? { tech: { k: opts.techK ?? TECH_K, ...(firstCand && opts.waterK !== 0 ? { wk: opts.waterK ?? WATER_K } : {}) } } : {}),
-    ...(opts.relocFirst || (opts.stage3 && firstCand) ? { relocFirst: opts.relocFirst || relocFirstOf(startYear), relocOrigin: "new" as const } : {}),   // Stage 35: the origin is the game's own start year + 150 (an explicit one is kept as given)
+    operators: { jnr: opts.start1800 ? { id: "jnr", name: "官営鉄道", kind: "jnr", since: 1830, note: "国有(官営)の鉄道(架空史: 1830年の鉄道営業開始とともに)" } : { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0, !!opts.start1800) } : {}), ...(opts.stage3 && (firstCand || opts.techK !== undefined) ? { tech: { k: opts.techK ?? TECH_K, ...(firstCand && opts.waterK !== 0 ? { wk: opts.waterK ?? WATER_K } : {}) } } : {}),
+    ...(opts.relocFirst || (opts.stage3 && firstCand) ? { relocFirst: opts.relocFirst || (opts.start1800 ? START_YEAR_1800 + RELOC_STEP_1800 : relocFirstOf(startYear)), relocOrigin: "new" as const } : {}),   // Stage 35: the origin is the game's own start year + 150 (an explicit one is kept as given)
     ...(prefOfSeat(opts.capital) && prefOfSeat(opts.capital) !== DEFAULT_CAPITAL ? { capital: prefOfSeat(opts.capital)! } : {}), ...(prefOfSeat(opts.subCapital) ? { subCapital: prefOfSeat(opts.subCapital)! } : {}), ...(opts.palace ? { palace: opts.palace } : {}), ...(opts.capitalPos ? { capitalPos: opts.capitalPos } : {}), ...(opts.subPos ? { subPos: opts.subPos } : {}),
-    ...(firstCand ? { crossings: true as const } : {}),
+    ...(firstCand ? { crossings: true as const } : {}), ...(opts.start1800 ? { rules1800: true as const } : {}), ...(prefOfSeat(opts.subCapital2) ? { subCapital2: prefOfSeat(opts.subCapital2)! } : {}), ...(opts.subPos2 ? { subPos2: opts.subPos2 } : {}),
   };
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
-  if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false); }
-  if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.g34new) sim.rec34 = { sites: [], log: [...w.g34new.log], done: [...w.g34new.done] }; if (w.islets) { sim.isl20 = true; if (w.t.isletVersion === 2) { sim.isl22 = true; sim.sea22 = true; sim.tier23 = newTier23(); } } if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
+  if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false, sim.subCapital2); }
+  if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.g34new) sim.rec34 = { sites: [], log: [...w.g34new.log], done: [...w.g34new.done] }; if (w.islets) { sim.isl20 = true; if (w.t.isletVersion === 3) sim.isl36 = true; if (w.t.isletVersion === 2 || w.t.isletVersion === 3) { sim.isl22 = true; sim.sea22 = true; sim.tier23 = newTier23(); } } if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
   const tokyoId = sim.roles ? undefined : tokyoCity(w)?.id;
   for (const c of w.cities) sim.cities[c.id] = { pop: basePop(sim, w, c), popSource: c.popSource, lowAccessYears: 0, industry: Math.round(Math.max(0.05, Math.min(1, 0.25 + 0.3 * (c.coastal ? 1 : 0) + 0.25 * c.plains + 0.1 * rand(sim) + roleIndustry(sim, w, c))) * 1000) / 1000 };
   // (older games) a moved capital draws people and industry to itself and costs the old one some; a sub-capital gains a little (fictional, modest, provisional)
   if (sim.capital && tokyoId && sim.cities[tokyoId]) { const hc = homeCity(w, sim.capital); if (hc && sim.cities[hc.id] && hc.id !== tokyoId) { const c = sim.cities[hc.id], o = sim.cities[tokyoId]; c.pop = Math.round(c.pop * CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.15) * 1000) / 1000); if (!(sim.subCapital && subCity(w, sim.subCapital)?.id === tokyoId)) o.pop = Math.round(o.pop * CAPITAL_LOSS); } }
   if (sim.subCapital && !sim.roles) { const sc = subCity(w, sim.subCapital), hc = homeCity(w, sim.capital); if (sc && sim.cities[sc.id] && sc.id !== hc?.id) { const c = sim.cities[sc.id]; c.pop = Math.round(c.pop * SUB_CAPITAL_BONUS); c.industry = Math.min(1, Math.round((c.industry + 0.05) * 1000) / 1000); } }
   if (sim.econ) squeezeSites(sim, w);
-  if (firstCand && w.townIds && opts.pot17 !== false) { const seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; sim.pot17 = initPotential(w.t, seats, sim.kaigen?.recon?.focus ?? "concentrate", seed, sim.startYear, opts.coast18 === false || sim.kaigen?.recon?.coast === "neutral" ? undefined : sim.kaigen?.recon?.coast, seatLL(sim, w)); startCandidates(sim, w); }   // Stage 17   // Stage 12: a city whose land is far worse than any real city's starts smaller; the rest settle on the better land near it
+  if (firstCand && w.townIds && opts.pot17 !== false) { const seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), ...(sim.subCapital2 ? { sub2: sim.subCapital2 } : {}), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; sim.pot17 = initPotential(w.t, seats, sim.kaigen?.recon?.focus ?? "concentrate", seed, sim.startYear, opts.coast18 === false || sim.kaigen?.recon?.coast === "neutral" ? undefined : sim.kaigen?.recon?.coast, seatLL(sim, w)); startCandidates(sim, w); }   // Stage 17   // Stage 12: a city whose land is far worse than any real city's starts smaller; the rest settle on the better land near it
   enforceCaps(sim, w);   // Stage 20
-  if (sim.stage3) ensureHubs(sim, w, sim.startYear);   // Stage 8: the ports of 1950 (airports open from the late 1950s)
+  if (sim.rules1800) fireHistory1800(sim, sim.startYear);   // (the rows of the start year itself)
+  if (sim.rules1800) for (const c of w.cities) sim.cities[c.id].pop = Math.max(500, Math.round(sim.cities[c.id].pop * POP_1800_FACTOR));   // Stage 36: the 1800 game estimate (rules1800.ts)
+  if (sim.stage3) ensureHubs(sim, w, hubYear(sim, sim.startYear));   // Stage 8: the ports of 1950 (airports open from the late 1950s)
   yield* seedInitialNetworkGen(sim, w); refreshNick(sim); if (sim.stage3) { sim.numreg = newNumReg(); syncNumbers(sim, sim.startYear); } yield 1;
   return sim;
 }
+/** Stage 36: the year the port/airport rules see (shifted for an 1800 game so that scheduled flights begin in 1920) */
+export const hubYear = (sim: Pick<SimState, "rules1800">, y: number) => (sim.rules1800 ? y + AIR_YEAR_SHIFT_1800 : y);
 export function createSim(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): SimState {
   const g = createSimGen(w, mapHash, terrainHash, seed, opts); for (;;) { const r = g.next(); if (r.done) return r.value; }
 }
@@ -175,6 +181,7 @@ const macroBudget = (y: number) => Math.pow(1.06, Math.min(y, 1973) - 1950) * Ma
  * then decline. Cities grow faster than the country (the model's rural areas hold the rest). Stage 2 (legacy) keeps its own curve.
  */
 function popRateReal(y: number, pop: number): number {
+  if (y < 1950) return y < 1870 ? 0.002 : 0.01;   // Stage 36: before 1950 only an 1800 game runs -- early-modern near-stagnation, then about 1% a year (a game assumption, not a measured series)
   let r = y < 1975 ? 0.016 : y < 1990 ? 0.0105 : y < 2008 ? 0.0075 : -0.003;
   if (pop > 1e6 && y < 1990) r += 0.007; if (pop < 1.5e5 && y >= 1955 && y < 1985) r -= 0.006; if (pop < 3e5 && y >= 2008) r -= 0.006; return r;
 }
@@ -191,7 +198,8 @@ const edgeName = (sim: SimState, e: SimEdge) => `${sim.nodes[e.a]?.name ?? "地�
 function* yearlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
   if (sim.rec34) { const n = stepReclaim(sim, w, y).length; if (n) ev(sim, "reclaim", `${y}年: 首都・副首都の埋め立てで${n}マス(約${n * w.cell * w.cell}km²)の陸地が増えた`, "埋め立ては年間の面積をためておき、1マス(25km²)分になった時に1マスずつ海岸に足す。別の島とは陸続きにならない", {}); }   // Stage 34
-  if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, y); }
+  if (sim.rules1800 && y > sim.startYear) fireHistory1800(sim, y);   // Stage 36: the technology rows and the fictional history of an 1800 game
+  if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, hubYear(sim, y)); }
   // Stage 13: the rest of the 1950s bay and strait ferries come in a few at a time (ferry.ts: BAY_FIRST)
   if (sim.tech?.wk !== undefined && y > sim.startYear && y < sim.startYear + BAY_YEARS) { for (let i = 0; i < BAY_PER_YEAR; i++) { if (!seedBayFerries(sim, w, 1)) break; yield; } }   // (one ferry per slice: each access road is a pass over the whole network)
   const an = yield* analyzeGen(sim, w); yield;
@@ -279,7 +287,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     const tot = w.cities.reduce((t, c) => t + sim.cities[c.id].pop, 0), want = totalBefore * (1 + natRate), f = tot > 0 ? want / tot : 1;
     if (Math.abs(f - 1) > 1e-9) for (const c of w.cities) { const st = sim.cities[c.id]; st.pop = Math.max(2000, Math.round(st.pop * f)); }
   }
-  if (sim.pot17) { const k = sim.kaigen; if (k && k.eras.length > (sim.pot17.eras ?? 1)) { const e = k.eras[k.eras.length - 1], seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; reassignPotential(sim.pot17, w.t, seats, k.recon?.focus ?? "concentrate", sim.seed, k.eras.length, y, e.name, (k.recon?.coast === "neutral" ? undefined : k.recon?.coast), sim.pot17.c19 ? seatLL(sim, w) : undefined); ev(sim, "potential", `改元(${e.name})で府県の発展順位が組み替わった`, `上位は首都・副首都・皇居とその隣県。順位は${y}年から年々なだらかに効く`, {}); sim.pot17.eras = k.eras.length; } glidePotential(sim.pot17); settleCities(sim, w, an, y); }   // Stage 17: the weights glide toward the order in force; the capitals' people settle the candidate places
+  if (sim.pot17) { const k = sim.kaigen; if (k && k.eras.length > (sim.pot17.eras ?? 1)) { const e = k.eras[k.eras.length - 1], seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), ...(sim.subCapital2 ? { sub2: sim.subCapital2 } : {}), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; reassignPotential(sim.pot17, w.t, seats, k.recon?.focus ?? "concentrate", sim.seed, k.eras.length, y, e.name, (k.recon?.coast === "neutral" ? undefined : k.recon?.coast), sim.pot17.c19 ? seatLL(sim, w) : undefined); ev(sim, "potential", `改元(${e.name})で府県の発展順位が組み替わった`, `上位は首都・副首都・皇居とその隣県。順位は${y}年から年々なだらかに効く`, {}); sim.pot17.eras = k.eras.length; } glidePotential(sim.pot17); settleCities(sim, w, an, y); }   // Stage 17: the weights glide toward the order in force; the capitals' people settle the candidate places
   enforceCaps(sim, w);   // Stage 20: a small island's city holds what the island can
   const nodeCells = new Set(Object.values(sim.nodes).map((n) => n.cell));
   // Stage 3: a village that a railway or a proper road passes keeps its people better (empirical, not a statistic): this is the feedback that lets local transport pay back
@@ -349,7 +357,7 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
     const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
     if (e.state === "open" || e.state === "dormant") {
       if (e.through > e.peakThrough) e.peakThrough = e.through;
-      e.zeroYears = d < Z ? e.zeroYears + (1 - REBUILD_CLOCK_SLOW * rebuildDrive(sim.e2200, y)) : 0;   // (Stage 28: in the rebuilding the clocks of resting and closing run slowly -- fully as the drive fades over the balance phase, so no wave of closures is held back and then let go together)
+      e.zeroYears = d < Z ? e.zeroYears + (1 - REBUILD_CLOCK_SLOW * rebuildDrive(sim.e2200, y, !!sim.rules1800)) : 0;   // (Stage 28: in the rebuilding the clocks of resting and closing run slowly -- fully as the drive fades over the balance phase, so no wave of closures is held back and then let go together)
       e.congYears = e.through > 0.9 * capacityOf(e) ? e.congYears + 1 : 0;
       e.throughDropYears = e.peakThrough > 50 && e.bypassedBy.length && e.through < 0.25 * e.peakThrough ? e.throughDropYears + 1 : e.bypassedBy.length ? e.throughDropYears : 0;
       if (e.state === "dormant" && d >= Z * 2) { setEdgeState(sim, e, "open", `需要が回復(${Math.round(d)}${unit})`); ev(sim, "reopen", `${edgeName(sim, e)}が休止から再開`, `需要が${Math.round(d)}${unit}に回復`, { edge: e.id }); }
@@ -436,7 +444,7 @@ function* monthlyGen(sim: SimState, w: World): Generator<void> {
   }
   sim.macro.maintCoverage = need > 0 ? funded / need : 1;
   yield;   // Stage 7: upkeep, construction and the railways are separate slices of the month
-  const rbDrive = rebuildDrive(sim.e2200, y);   // Stage 28: ruins are kept from falling further while they wait to be restored
+  const rbDrive = rebuildDrive(sim.e2200, y, !!sim.rules1800);   // Stage 28: ruins are kept from falling further while they wait to be restored
   for (const e of Object.values(sim.edges)) if (e.state === "closed" && e.built >= 1) { e.weathering = Math.min(100, e.weathering + 0.3 * (1 - 0.8 * rbDrive)); if (e.weathering >= 100) { setEdgeState(sim, e, "lost", "閉鎖後に放置され風化"); ev(sim, "lost", `${edgeName(sim, e)}が廃道化`, "閉鎖後に維持されず風化(復旧には再整備が必要)", { edge: e.id }); } }
   // construction: each region funds its own queue; leftovers and the national pool fund the rest
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "road").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
@@ -555,7 +563,7 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
   }
   if (modeOf(p) === "rail") return completeRailProject(sim, w, p, es);
   if (p.kind === "upgrade") { for (const e of es) if (e.state === "open") { e.surface = "paved"; e.quality = Math.max(e.quality, 95); pushHist(sim, e, "舗装化"); } ev(sim, "project", `舗装化が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
-  if (p.kind === "improve") { const e = es[0]; if (e) { e.standard = e.standard === "rural" ? "standard" : "highgrade"; e.surface = "paved"; e.quality = 95; e.weathering = 0; pushHist(sim, e, `改良(規格を${e.standard === "standard" ? "一般2車線" : "高規格"}に)`); } ev(sim, "project", `改良が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
+  if (p.kind === "improve") { const e = es[0]; if (e) { e.standard = e.standard === "rural" || (sim.rules1800 && modeOf(e) !== "rail" && !mayScheduleService("expressway", yearOf(sim))) ? "standard" : "highgrade";   /* Stage 36: no expressway before 1930 in an 1800 game */ e.surface = "paved"; e.quality = 95; e.weathering = 0; pushHist(sim, e, `改良(規格を${e.standard === "standard" ? "一般2車線" : "高規格"}に)`); } ev(sim, "project", `改良が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
   if (p.kind === "restore") { const e = es[0]; if (e) { e.state = "closed"; setEdgeState(sim, e, "open", `沿線需要の回復で復旧(${p.reason})`); e.quality = 55; e.weathering = 0; e.lost = false; e.zeroYears = 0; reviveRoutes(sim, w, e.id); } ev(sim, "reopen", `復旧・再開通: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
   if (p.kind === "bypass") {
     // The old road may have been split by other projects after this one was planned: every piece of it is replaced, not just the first.
@@ -600,7 +608,7 @@ export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
 }
 /** An era change is due: open it; if nobody is there to choose (or the setting says so) the first candidate (the real one for 1989/2019, else fewest strokes) is taken. */
 export function startKaigen(sim: SimState, year: number) {
-  const k = sim.kaigen!; openKaigen(k, year); const pol = sim.policy, auto = !!pol && (pol.mode === "auto" || (pol.mode === "idleAuto" && pol.away));
+  const k = sim.kaigen!; openKaigen(k, year); const pol = sim.policy, auto = !!pol && (pol.mode === "auto" || pol.mode === "autoReloc" || (pol.mode === "idleAuto" && pol.away));
   if (auto) { settleKaigen(sim, 0, true); return; }
   ev(sim, "kaigen", `${year}年: 改元の時を迎えた(候補${k.pending!.cands.length}案)`, "元号を選んでください。時間は止まっています", {});
 }

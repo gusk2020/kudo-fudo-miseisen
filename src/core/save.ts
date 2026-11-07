@@ -1,3 +1,4 @@
+import { dbName } from "./ns";
 import { cleanCreations } from "./creations";
 import { cleanRangeEdits } from "./ranges";
 import { prefOfSeat } from "./seat";
@@ -70,6 +71,7 @@ export function parseState(input: unknown): { state: ProjectState; problems: str
     ...(okVec(raw.palacePos) ? { palacePos: raw.palacePos } : {}),
     ...(okVec(raw.capitalPos) && prefOfSeat(raw.capital) ? { capitalPos: raw.capitalPos } : {}),   // Stage 19
     ...(okVec(raw.subPos) && prefOfSeat(raw.subCapital) ? { subPos: raw.subPos } : {}),
+    ...(prefOfSeat(raw.subCapital2) && raw.subCapital2 !== raw.subCapital && raw.subCapital2 !== raw.capital ? { subCapital2: raw.subCapital2, ...(okVec(raw.subPos2) ? { subPos2: raw.subPos2 } : {}) } : {}),   // Stage 36 M3
     layers: { ...d.layers },
   };
   if (raw.layers && typeof raw.layers === "object") for (const k of Object.keys(d.layers)) if (typeof raw.layers[k] === "boolean") s.layers[k] = raw.layers[k];
@@ -80,7 +82,7 @@ export function exportJson(state: ProjectState, extra?: Record<string, unknown>)
 }
 
 // ---- IndexedDB (best effort: private mode or quota errors must never stop the app) ----
-const DB = "kfm-stage1", STORE = "saves";
+const DB = dbName("kfm-stage1"), STORE = "saves";
 function open(): Promise<IDBDatabase> {
   return new Promise((res, rej) => {
     if (typeof indexedDB === "undefined") return rej(new Error("no indexedDB"));

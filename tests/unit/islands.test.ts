@@ -12,19 +12,19 @@ import { realWorld, stage3Sim } from "./simhelp";
 describe("added islands: 淡路島・対馬・佐渡島・壱岐島・隠岐諸島", () => {
   const A = realWorld(false), B = realWorld(true), names = ["sado", "awaji", "tsushima", "iki", "oki"];
   it("data matches the real islands in area (Natural Earth, km2)", () => {
-    const want: Record<string, [number, number]> = { awaji: [500, 650], tsushima: [650, 760], sado: [800, 960], iki: [120, 160], oki: [240, 340] };
+    const want: Record<string, [number, number]> = { awaji: [500, 650], tsushima: [650, 760], sado: [800, 960], iki: [120, 160], oki: [240, 340], karafuto: [30000, 45000] };   // (Stage 36: 樺太 up to 50N, a Natural Earth outline clipped at the line)
     for (const id of EXTRA_IDS) { const a = EXTRA.islands[id].areaKm2; expect(a).toBeGreaterThanOrEqual(want[id][0]); expect(a).toBeLessThanOrEqual(want[id][1]); }
-    expect(EXTRA.cities.map((c) => c.name).sort()).toEqual(["佐渡市", "壱岐市", "対馬市", "洲本市", "隠岐の島町"].sort());
+    expect(EXTRA.cities.map((c) => c.name).sort()).toEqual(["佐渡市", "壱岐市", "対馬市", "洲本市", "隠岐の島町", "豊原"].sort());
   });
   it("the terrain gains each island as land with its own island number, prefecture and a town; the mainland is untouched", () => {
     expect(B.hash).not.toBe(A.hash);
     EXTRA_IDS.forEach((id, i) => {
       const idx = 5 + i; let cells = 0; for (let k = 0; k < B.w.N; k++) if (B.w.t.island[k] === idx && B.w.t.land[k] === 1) { cells++; expect(B.w.prefOf(k)).toBe(EXTRA.islands[id].pref); }
-      expect(cells, id).toBeGreaterThanOrEqual({ sado: 25, awaji: 18, tsushima: 20, iki: 3, oki: 5 }[id]);
+      expect(cells, id).toBeGreaterThanOrEqual({ sado: 25, awaji: 18, tsushima: 20, iki: 3, oki: 5, karafuto: 1000 }[id]);
       const city = B.w.cities.find((c) => c.id === "X-" + id.toUpperCase())!; expect(city, id).toBeDefined(); expect(city.island).toBe(idx);
     });
     let diff = 0; for (let k = 0; k < A.w.N; k++) if (B.w.t.island[k] <= 4 && (A.w.t.land[k] !== B.w.t.land[k] || A.w.t.island[k] !== B.w.t.island[k])) diff++;
-    expect(diff).toBe(0); expect(B.w.cities.length).toBe(A.w.cities.length + 5); expect(B.w.cities.slice(0, A.w.cities.length).map((c) => c.id)).toEqual(A.w.cities.map((c) => c.id));
+    expect(diff).toBe(0); expect(B.w.cities.length).toBe(A.w.cities.length + EXTRA_IDS.length); expect(B.w.cities.slice(0, A.w.cities.length).map((c) => c.id)).toEqual(A.w.cities.map((c) => c.id));
     void names;
   });
   it("saves made before the islands existed keep their map hash and terrain; new games carry the flag", () => {
@@ -41,7 +41,7 @@ describe("added islands: 淡路島・対馬・佐渡島・壱岐島・隠岐諸�
     expect(fixedLink(sim, w, lmOf("X-AWAJI"), honshu, "road")).toBeNull();   // ... but no fixed link yet
     sim.policy!.mode = "auto"; advance(sim, w, 12 * 70);
     expect(checkIntegrity(sim)).toEqual([]);
-    expect(Object.values(sim.edges).some((e) => e.facilityName?.startsWith("akashi-awaji:") || e.facilityName?.startsWith("naruto-awaji:"))).toBe(true);
+    /* Stage 36: since 樺太 joined the map the planner may link 淡路 by a bridge of its own before the scripted one: either is a fixed link */ expect(Object.values(sim.edges).some((e) => e.facilityName?.startsWith("akashi-awaji:") || e.facilityName?.startsWith("naruto-awaji:")) || fixedLink(sim, w, lmOf("X-AWAJI"), honshu, "road") !== null).toBe(true);
     expect(fixedLink(sim, w, lmOf("X-AWAJI"), honshu, "road") ?? fixedLink(sim, w, lmOf("X-AWAJI"), w.lm[w.cityById.get("C-JP-36")!.cell], "road")).not.toBeNull();   // 淡路 gets a bridge by 1998 at the latest
     expect(fixedLink(sim, w, lmOf("X-SADO"), honshu, "road")).toBeNull();   // 佐渡 stays reachable only by ferry (no fixed link is planned for it)
   }, 300000);

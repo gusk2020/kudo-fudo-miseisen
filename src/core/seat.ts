@@ -7,13 +7,13 @@
  * Every prefecture's representative point is its 県庁所在地 (the city of that name in the data); the palace may also be placed by hand anywhere inside its prefecture.
  */
 import { realToWorld } from "./body";
-import { JAPAN } from "./data";
+import { EXTRA, JAPAN } from "./data";
 import type { ProjectState, Vec } from "./types";
 
 export const PREF_IDS: string[] = JAPAN.prefectures.map((p) => p.id);
 /** Issue #20: the same 49 ids by the latitude of each 県庁所在地 alone (kept for reference; the pickers now list REGION_BLOCKS). */
 export const PREF_IDS_NS: string[] = [...PREF_IDS].sort((a, b) => {
-  const y = (id: string) => JAPAN.cities.find((c) => c.pref === id && c.kind === "capital")?.pos[1] ?? -1e9;
+  const y = (id: string) => [...JAPAN.cities, ...EXTRA.cities].find((c) => c.pref === id && c.kind === "capital")?.pos[1] ?? -1e9;
   return y(b) - y(a) || (a < b ? -1 : 1);
 });
 /**
@@ -21,7 +21,7 @@ export const PREF_IDS_NS: string[] = [...PREF_IDS].sort((a, b) => {
  * the latitude of its 県庁所在地 (so the country is never shuffled by latitude alone: 新潟 stays in 中部, 鳥取 in 中国). Hokkaido is this world's three prefectures.
  */
 export const REGION_BLOCKS: { name: string; prefs: string[] }[] = ([
-  ["北海道", ["HK-SAP", "HK-HAK", "HK-NEM"]], ["東北", ["JP-02", "JP-03", "JP-04", "JP-05", "JP-06", "JP-07"]], ["関東", ["JP-08", "JP-09", "JP-10", "JP-11", "JP-12", "JP-13", "JP-14"]],
+  ["北海道", ["HK-SAP", "HK-HAK", "HK-NEM", "KRF"]], ["東北", ["JP-02", "JP-03", "JP-04", "JP-05", "JP-06", "JP-07"]], ["関東", ["JP-08", "JP-09", "JP-10", "JP-11", "JP-12", "JP-13", "JP-14"]],
   ["中部", ["JP-15", "JP-16", "JP-17", "JP-18", "JP-19", "JP-20", "JP-21", "JP-22", "JP-23"]], ["近畿", ["JP-24", "JP-25", "JP-26", "JP-27", "JP-28", "JP-29", "JP-30"]],
   ["中国", ["JP-31", "JP-32", "JP-33", "JP-34", "JP-35"]], ["四国", ["JP-36", "JP-37", "JP-38", "JP-39"]], ["九州", ["JP-40", "JP-41", "JP-42", "JP-43", "JP-44", "JP-45", "JP-46"]], ["沖縄", ["JP-47"]],
 ] as [string, string[]][]).map(([name, prefs]) => {
@@ -38,17 +38,17 @@ export function prefOfSeat(v: unknown): string | null {
   const c = JAPAN.cities.find((x) => x.id === v); return c?.pref && PREF_IDS.includes(c.pref) ? c.pref : null;
 }
 export const DEFAULT_CAPITAL = "JP-13", DEFAULT_SUB = "JP-27", DEFAULT_PALACE = "JP-13";
-export interface Seats { capital: string; sub: string; palace: string }
+export interface Seats { capital: string; sub: string; palace: string; /** Stage 36 M3 */ sub2?: string }
 /** The effective seats of a map state: the chosen ones, else Tokyo / Osaka / Tokyo (Osaka and Tokyo swap if the capital alone was set to Osaka). */
-export function seatsOf(s: Pick<ProjectState, "capital" | "subCapital" | "palace">): Seats {
+export function seatsOf(s: Pick<ProjectState, "capital" | "subCapital" | "palace"> & Partial<Pick<ProjectState, "subCapital2">>): Seats {
   const capital = prefOfSeat(s.capital) ?? DEFAULT_CAPITAL, sub = prefOfSeat(s.subCapital) ?? (capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB);
-  return { capital, sub, palace: prefOfSeat(s.palace) ?? DEFAULT_PALACE };
+  const sub2 = prefOfSeat(s.subCapital2); return { capital, sub, palace: prefOfSeat(s.palace) ?? DEFAULT_PALACE, ...(sub2 && sub2 !== capital && sub2 !== sub ? { sub2 } : {}) };
 }
 /** The capital and the sub-capital must be different prefectures; the palace may share either. */
 export const seatsValid = (x: Seats) => x.capital !== x.sub;
 /** The 県庁所在地's real position, in the game's world frame (world = real while no body is deformed). */
 export function prefPoint(s: Pick<ProjectState, "bodies">, prefId: string): Vec | null {
-  const c = JAPAN.cities.find((x) => x.pref === prefId && x.kind === "capital"); if (!c) return null;
+  const c = JAPAN.cities.find((x) => x.pref === prefId && x.kind === "capital"); if (!c) { const x = EXTRA.cities.find((q) => q.pref === prefId && q.kind === "capital"); return x ? [x.pos[0], x.pos[1]] : null; }   // (Stage 36: 樺太県's capital is on an added island: world = real km)
   const body = c.island === "okinawa" ? "kyushu" : (c.island as "honshu"); return realToWorld(body, s.bodies[body], c.pos);
 }
 /** Where the palace is drawn: the chosen point, else its prefecture's representative point. */

@@ -1,3 +1,4 @@
+import { MILESTONES_1800, mayScheduleService } from "./rules1800";
 /**
  * Strait links (Issue #15): where a ferry runs, the game may decide to build a bridge or a tunnel in its place -- for roads and railways alike, earlier and more often than
  * history did, but never faster than the technology, the money and the traffic allow.
@@ -197,6 +198,7 @@ export function planCrossings(sim: SimState, w: World, y: number): SimProject[] 
   if (!sim.crossings || !sim.tech) return [];
   const dl = sim.dials, started: SimProject[] = [], proj = Object.values(sim.projects).filter(isCrossingProject), wk = sim.tech.wk;
   for (const mode of ["road", "rail"] as Mode[]) {
+    if (sim.rules1800 && !(mode === "rail" ? y >= MILESTONES_1800.railMainline : mayScheduleService("car", y))) continue;   // Stage 36: in an 1800 game no fixed link before the mainline railways (1850) / the motor roads (1910)
     const maxActive = wk !== undefined ? (sim.pot17 ? MAX_ACTIVE_WATER_17 : MAX_ACTIVE_WATER) : MAX_ACTIVE_PER_MODE;
     const appetite = (mode === "road" ? dl.hwyBuild : dl.railBuild) * (1 + 0.5 * dl.hsr) * (1 - 0.35 * Math.min(1, dl.seaBias)); if (appetite < 0.15) continue;
     let pool: Corridor[] | undefined; const fixed = fixedLinksOf(sim, mode);

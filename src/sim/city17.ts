@@ -53,7 +53,7 @@ export function suitability(sim: SimState, w: World, an: Analysis, i: number, pa
 export function settleCities(sim: SimState, w: World, an: Analysis, y: number): void {
   const pot = sim.pot17; if (!pot) return; const idx = new Map(w.cities.map((c, i) => [c.id, i])), cap = new Map<string, number>(), by = new Map<string, number[]>();
   const hold = prefHolders(w); w.cities.forEach((c, i) => { if (!c.pref) return; if (hold.get(c.pref) === i) cap.set(c.pref, i); else (by.get(c.pref) ?? by.set(c.pref, []).get(c.pref)!).push(i); });
-  const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital), seats = [sim.capitalPos ? { pos: sim.capitalPos as number[] } : hc, sim.subPos ? { pos: sim.subPos as number[] } : sc].filter(Boolean) as { pos: number[] }[];   // (Stage 19: from the point a seat was put at)
+  const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital), seats = [sim.capitalPos ? { pos: sim.capitalPos as number[] } : hc, sim.subPos ? { pos: sim.subPos as number[] } : sc, ...(sim.subCapital2 ? [sim.subPos2 ? { pos: sim.subPos2 as number[] } : subCity(w, sim.subCapital2)] : [])].filter(Boolean) as { pos: number[] }[];   // (Stage 36: and the second sub-capital)   // (Stage 19: from the point a seat was put at)
   for (const [pref, list] of by) {
     const p = cap.get(pref); if (p === undefined) continue; const capSt = sim.cities[w.cities[p].id];
     const ws = list.map((i) => Math.max(basePop(sim, w, w.cities[i]), 0.5 * (w.cities[i].capPop ?? 0)) * suitability(sim, w, an, i, p, seats)), wc = basePop(sim, w, w.cities[p]), tot = ws.reduce((a, b) => a + b, wc);

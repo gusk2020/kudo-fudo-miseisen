@@ -94,7 +94,7 @@ export function ecoYear(sim: SimState, w: World, an: { T: Float64Array; TT: Floa
   const log = w.cities.map((c) => { if (!h) return 0; const p = h.ports[c.id], a = h.airports[c.id]; let v = 0; if (p && p.until === undefined) v += (p.tier / 4) * Math.min(1, p.cargo / PORT_CAP[p.tier]); if (a && a.until === undefined) v += 0.5 * Math.min(1, a.pax / a.cap); return Math.min(1, v); });
   // --- tourism: travel time to each culture/nature site, and the cities on the way from the cores
   const sites = currentSites(sim, w).filter((s) => s.kind === "palace" || s.kind === "culture" || s.kind === "fuji" || s.kind === "biwa"), tourW: Record<string, number> = { palace: 0.5, culture: 1, fuji: 0.7, biwa: 0.5 };
-  const cores = [homeCity(w, sim.capital), subCity(w, sim.subCapital)].filter((c): c is WCity => !!c), coreIdx = [...new Set(cores.map((c) => idx.get(c.id)!))];
+  const cores = [homeCity(w, sim.capital), subCity(w, sim.subCapital), ...(sim.subCapital2 ? [subCity(w, sim.subCapital2)] : [])].filter((c): c is WCity => !!c), coreIdx = [...new Set(cores.map((c) => idx.get(c.id)!))];
   const tour = new Array(nc).fill(0), scale = at(TOUR_Y, y);
   for (const s of sites) {
     let si = -1, bd = Infinity; w.cities.forEach((c, i) => { const d = dist(c.pos, s.pos); if (d < bd) { bd = d; si = i; } }); if (si < 0 || bd > 120) continue; const wt = tourW[s.kind] ?? 0.5;

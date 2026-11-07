@@ -78,8 +78,8 @@ export function withSubgridLand(t: TerrainResult): TerrainResult {
   }
   return land ? { ...t, land, island: island!, elev: elev!, pref: pref! } : t;
 }
-export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false, islets: boolean | 1 | 2 = false, moves: SeatMove[] = [], g34: G34Input | false = false): World {
-  const t1 = withTowns ? withSubgridLand(t0) : t0, t2 = islets ? withIslets(t1, islets === 2 ? 2 : 1) : t1, g = g34 ? applyG34(t2, g34, moves) : null, t = g ? g.t : t2;
+export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false, islets: boolean | 1 | 2 | 3 = false, moves: SeatMove[] = [], g34: G34Input | false = false): World {
+  const t1 = withTowns ? withSubgridLand(t0) : t0, t2 = islets ? withIslets(t1, islets === 3 ? 3 : islets === 2 ? 2 : 1) : t1, g = g34 ? applyG34(t2, g34, moves) : null, t = g ? g.t : t2;
   const { nx, ny, cell, x0, y0 } = t.grid, N = nx * ny;
   const cellPos = (k: number): Vec => [x0 + ((k % nx) + 0.5) * cell, y0 + (((k / nx) | 0) + 0.5) * cell];
   const cellOf = (p: Vec) => { const i = Math.floor((p[0] - x0) / cell), j = Math.floor((p[1] - y0) / cell); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };

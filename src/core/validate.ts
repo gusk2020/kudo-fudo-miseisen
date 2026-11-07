@@ -88,9 +88,10 @@ export function validate(s: ProjectState): Issue[] {
   const lands: Vec[][] = s.real ? [] : [d.parts.honshu[0]]; if (s.real) for (const id of ISLAND_IDS) lands.push(...d.parts[id]);
   if (s.real && s.islands) for (const id of EXTRA_IDS) lands.push(...EXTRA.islands[id].parts);
   for (const which of ["biwa", "fuji"] as const) {
+    // Playtest fix: Lake Biwa is drawn from its whole outline, so it must lie wholly on land with the coast clearance (as before Stage 33) -- otherwise the drawn lake runs out over the bay and reads as joined to the sea. Fuji keeps the Stage 33 rule.
     // Stage 33: on the real map only the CENTRE has to be on land. The coast outranks Fuji (the cone is cut at the shore) and outranks Biwa (which keeps one land cell between itself and the sea) when the terrain is built.
-    const nm = which === "biwa" ? "琵琶湖" : "富士山", host = s.real ? lands.find((poly) => pointInPolygon(featureWorldPos(s, which), poly)) ?? null : featureHost(lands, d[which]);
-    if (!host) add("features", "error", `${which}.coast`, s.real ? `${nm}の中心が陸地にありません(海岸線は優先され、はみ出した部分は切り取られます)` : `${nm}の中心が陸地にないか、同じ陸地に収まっていないか、海岸線に近すぎます(面積1.2倍で判定)`);
+    const nm = which === "biwa" ? "琵琶湖" : "富士山", host = s.real && which === "fuji" ? lands.find((poly) => pointInPolygon(featureWorldPos(s, which), poly)) ?? null : featureHost(lands, d[which]);
+    if (!host) add("features", "error", `${which}.coast`, s.real && which === "fuji" ? `${nm}の中心が陸地にありません(海岸線は優先され、はみ出した部分は切り取られます)` : `${nm}の中心が陸地にないか、同じ陸地に収まっていないか、海岸線に近すぎます(面積1.2倍で判定)`);
     else if (s.real && Math.min(...featureScales(s.features[which])) < DEFAULT_MIN_SCALE && Math.abs(polyArea(host)) > SMALL_LAND_KM2) add("features", "error", `${which}.minscale`, `${nm}を0.5倍より小さくできるのは沖縄など小さな島だけです`);
   }
   if (!s.real) for (const which of ["biwa", "fuji"] as const) if (!inKHRange(kc, hc, centroid(d[which]))) add("features", "error", `${which}.range`, `${which === "biwa" ? "琵琶湖" : "富士山"}が北海道〜九州の軸範囲外です`);

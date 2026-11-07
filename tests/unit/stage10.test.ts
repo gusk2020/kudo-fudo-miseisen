@@ -126,7 +126,7 @@ describe("Stage 10: the 1945 reconstruction policy", () => {
     for (const n of ["新潟市", "金沢市", "秋田市", "富山市", "鳥取市", "福井市"]) expect(sd(n), n).toBeLessThan(-0.3);
     for (const n of ["東京", "静岡市", "高知市", "名古屋市", "仙台市", "宮崎市", "大阪市", "広島市"]) expect(sd(n), n).toBeGreaterThan(0.3);
     expect(Math.abs(sd("長野市"))).toBeLessThan(0.6);
-    expect(JAPAN.cities.length).toBeGreaterThan(0); expect(PREF_IDS.length).toBe(49);
+    expect(JAPAN.cities.length).toBeGreaterThan(0); expect(PREF_IDS.length).toBe(50);
   });
   it("its growth effect is a redistribution (zero national sum), kept after 1989, and the Japan Sea policy shifts people to that coast", () => {
     const run = (first: number) => { const x = stage3Sim("heisei", 7, true, first, 2, true); while (yearOf(x.sim) < 1992) { stepMonth(x.sim, x.w); if (x.sim.kaigen?.pending) settleKaigen(x.sim, 0, true); if (x.sim.policy?.pending) x.sim.policy.pending = null; } return x; };

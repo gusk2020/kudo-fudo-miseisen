@@ -25,6 +25,7 @@
  *
  * Only games created from Stage 10 on carry `sim.roles`; older saves keep the bonus they were created with (CAPITAL_BONUS) and are not recomputed.
  */
+import { SUB2_SHARE, shareMult } from "./subs36";
 import { DEFAULT_CAPITAL, DEFAULT_PALACE, DEFAULT_SUB } from "../core/seat";
 import { startPop } from "./census50";
 import type { RoleState, SimState } from "./types";
@@ -47,7 +48,7 @@ export function nearestPrefs(w: World, centre: string, skip: Set<string>, n = ME
   return prefsOf(w).filter((p) => p !== centre && !skip.has(p)).map((p) => ({ p, d: accessKm(w, centre, p) })).filter((x) => isFinite(x.d)).sort((a, b) => a.d - b.d || (a.p < b.p ? -1 : 1)).slice(0, n).map((x) => x.p);
 }
 /** The role assignment for a game: who carries whose mass, the two clusters, and where the cultural role sits. */
-export function computeRoles(w: World, capital: string, sub: string, palace: string, p15?: boolean): RoleState {
+export function computeRoles(w: World, capital: string, sub: string, palace: string, p15?: boolean, sub2?: string): RoleState {
   const prof = new Map<string, string>(), holder = new Map<string, string>(), fixed = new Set<string>();
   for (const p of prefsOf(w)) { prof.set(p, p); holder.set(p, p); }
   const give = (target: string, mass: string) => {   // `target` takes `mass`; whoever held it takes target's
@@ -61,12 +62,21 @@ export function computeRoles(w: World, capital: string, sub: string, palace: str
   const capMetro = nearestPrefs(w, capital, new Set([...fixed])); capMetro.forEach((t, i) => { if (origCap[i]) give(t, origCap[i]); });
   const subMetro = sub !== capital ? nearestPrefs(w, sub, new Set([...fixed])) : []; subMetro.forEach((t, i) => { if (origSub[i]) give(t, origSub[i]); });
   const out: Record<string, string> = {}; for (const [p, m] of prof) if (p !== m) out[p] = m;
-  return { prof: out, capMetro, subMetro, culture: palace !== DEFAULT_PALACE ? palace : ROLE_KYOTO, ...(p15 ? { p15: true as const } : {}) };
+  // Stage 36 M3: a second sub-capital gets its own cluster after the real Osaka region's neighbours (no mass swapped: the uplift is simply 0.7x, see roleScale)
+  let sub2Metro: Record<string, string> | undefined;
+  if (sub2 && sub2 !== capital && sub2 !== sub && prof.has(sub2)) { sub2Metro = {}; const taken = new Set([...fixed, sub2, ...Object.keys(out)]); nearestPrefs(w, sub2, taken).forEach((t, i) => { if (origSub[i]) sub2Metro![t] = origSub[i]; }); }
+  return { prof: out, capMetro, subMetro, ...(sub2Metro ? { sub2Metro } : {}), culture: palace !== DEFAULT_PALACE ? palace : ROLE_KYOTO, ...(p15 ? { p15: true as const } : {}) };
 }
 const scaleMemo = new WeakMap<RoleState, { w: World; s: Map<string, number> }>();
 /** The factor applied to every city of a prefecture: (mass it carries) / (its own mass). 1 without roles. */
-export function roleScale(sim: Pick<SimState, "roles">, w: World, pref: string | null): number {
+export function roleScale(sim: Pick<SimState, "roles"> & Partial<Pick<SimState, "subCapital" | "subCapital2">>, w: World, pref: string | null): number {
   const r = sim.roles; if (!r || !pref) return 1;
+  if (sim.subCapital2) {
+    const own = (p: string) => prefMass(w, p, r.p15);
+    if (pref === sim.subCapital || pref === sim.subCapital2) { const o = own(pref); return o > 0 ? shareMult(prefMass(w, ROLE_OSAKA, r.p15) / o, SUB2_SHARE) : 1; }
+    const m2 = r.sub2Metro?.[pref]; if (m2) { const o = own(pref); return o > 0 ? shareMult(prefMass(w, m2, r.p15) / o, SUB2_SHARE) : 1; }   // the second cluster
+    if (r.subMetro.includes(pref) && r.prof[pref]) { const o = own(pref); return o > 0 ? shareMult(prefMass(w, r.prof[pref], r.p15) / o, SUB2_SHARE) : 1; }   // the first cluster too is a sub-capital effect: 0.7x
+  }   // Stage 36 M3: each of two sub-capitals has 0.7x of the sub-capital's role uplift (the real Osaka's mass over its own)
   let e = scaleMemo.get(r); if (!e || e.w !== w) { const s = new Map<string, number>(); for (const [p, m] of Object.entries(r.prof)) { const own = prefMass(w, p, r.p15); s.set(p, own > 0 ? prefMass(w, m, r.p15) / own : 1); } e = { w, s }; scaleMemo.set(r, e); }
   return e.s.get(pref) ?? 1;
 }
@@ -76,7 +86,7 @@ export const basePop = (sim: Pick<SimState, "roles">, w: World, c: WCity): numbe
 export function roleLabel(sim: Pick<SimState, "roles">, pref: string): string | null {
   const r = sim.roles; if (!r) return null; const m = r.prof[pref];
   if (m === ROLE_TOKYO) return "旧東京の役割(首都)"; if (m === ROLE_OSAKA) return "旧大阪の役割(副首都)";
-  if (r.capMetro.includes(pref)) return "首都圏(旧関東の役割)"; if (r.subMetro.includes(pref)) return "副首都圏(旧近畿の役割)";
+  if (r.capMetro.includes(pref)) return "首都圏(旧関東の役割)"; if (r.subMetro.includes(pref)) return "副首都圏(旧近畿の役割)"; if (r.sub2Metro?.[pref]) return "2つ目の副首都圏(旧近畿の役割の0.7倍)";
   return m ? "役割を交換(縮小または拡大)" : null;
 }
 /** The prefecture a stray item without one is booked to: the capital's (never a fixed name). */
