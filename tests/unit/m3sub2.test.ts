@@ -96,3 +96,12 @@ describe("Stage 36 M3: the clusters round the sub-capitals", () => {
     for (const p of Object.keys(two.roles!.sub2Metro!)) { expect(two.roles!.capMetro).not.toContain(p); expect(roleScale(two, w, p), p).toBeGreaterThan(0); }
   });
 });
+
+describe("Stage 36 M3: the order of the prefectures with two sub-capitals", () => {
+  it("the first four ranks are capital, sub-capital 1, sub-capital 2 and the palace; every prefecture once; one sub-capital is unchanged", async () => {
+    const { potentialData, potentialOrder } = await import("../../src/sim/potential17"), d = potentialData(realWorld(true).w.t);
+    const inp = { capital: "JP-13", sub: "JP-27", palace: "JP-26", mode: "concentrate" as const, seed: 7 };
+    const two = potentialOrder({ ...inp, sub2: "JP-40" }, d), one = potentialOrder(inp, d);
+    expect(two.slice(0, 4)).toEqual(["JP-13", "JP-27", "JP-40", "JP-26"]); expect(new Set(two).size).toBe(PREF_IDS.length); expect(one.slice(0, 3)).toEqual(["JP-13", "JP-27", "JP-26"]);
+  });
+});
