@@ -112,9 +112,8 @@ const rawWeight = (rank: number) => POT_FLOOR + (1 - POT_FLOOR) * 2.5 * Math.exp
 export function potentialWeights(order: string[], sub2?: string[]): Record<string, number> {
   const raw = order.map((_, i) => rawWeight(i + 1)), mean = raw.reduce((a, b) => a + b, 0) / raw.length, w: Record<string, number> = Object.fromEntries(order.map((p, i) => [p, raw[i] / mean]));
   if (!sub2 || sub2.length < 2) return w;
-  // Stage 36 M3: each of two sub-capitals has 0.7x of the uplift a single sub-capital (rank 2) has; the rest are rescaled so the mean stays exactly 1
-  const one = raw[1] / mean, target = shareMult(one, SUB2_SHARE), others = order.filter((p) => !sub2.includes(p)), rest = order.length - sub2.length * target, have = others.reduce((a, p) => a + w[p], 0);
-  for (const p of sub2) if (p in w) w[p] = target; for (const p of others) w[p] = (w[p] * rest) / have; return w;
+  // Stage 36 M3: each of two sub-capitals has 0.7x of the uplift a single sub-capital (rank 2) has. Nothing else is changed: no compensation keeps the national total constant (the spec says so).
+  const target = shareMult(raw[1] / mean, SUB2_SHARE); for (const p of sub2) if (p in w) w[p] = target; return w;
 }
 /** The rate (per year) at which the weights in force move toward the weights of the current order: a re-ordering reaches people, industry and roads over years, nothing jumps. */
 export const POT_GLIDE = 0.07;

@@ -6,6 +6,7 @@
  *  The enlargement target is 30 km2 but the grid can only hold 25 or 50, so a one-cell island becomes two cells (50 km2): the effective area is always reported.
  *  Land is never joined to another land mass: a cell is added only if every land cell around it (all 8 neighbours) already belongs to the mass it grows.
  *  Everything that changed the land is recorded in an ordered log; a world is rebuilt from the terrain plus that log, so the same log always gives the same land. */
+import { SUB2_SHARE } from "./subs36";
 import type { Vec } from "../core/types";
 import type { World } from "./world";
 import { resetWorldCaches } from "./worldMemo";
@@ -23,7 +24,7 @@ export const RECLAIMED_ELEV_M = 4;
 
 export interface RecLog { k: number; kind: "grow" | "fill"; y: number; site?: number }
 /** `epoch`: how many relocation events had moved this role when the site began. A move that lands on the same grid cell is still a move (the 5 km cell is coarser than the point the player chose), so the cell alone cannot tell it. */
-export interface RecSite { role: "capital" | "sub"; epoch?: number; cell: number; start: number; last: number; accU: number; active: boolean; coastal: boolean; filled: number; blocked: number }
+export interface RecSite { role: "capital" | "sub" | "sub2"; epoch?: number; cell: number; start: number; last: number; accU: number; active: boolean; coastal: boolean; filled: number; blocked: number }
 export interface Rec34 { sites: RecSite[]; log: RecLog[]; done: string[] }
 export interface G34Input { log: RecLog[]; done: string[] }
 
@@ -79,9 +80,10 @@ export function applyG34<T extends TerrainLike>(t: T, input: G34Input, moves: Se
 }
 
 /** The relocation events (finished or open) that moved this role: kept (現状維持) events and events that left the seat alone do not count. */
-export const movesOf = (sim: SimState, role: "capital" | "sub"): number => [...(sim.e2200hist ?? []), ...(sim.e2200 ? [sim.e2200] : [])].filter((e) => e.moved?.includes(role)).length;
-const seatCellOf = (sim: SimState, w: World, role: "capital" | "sub"): number => {
+export const movesOf = (sim: SimState, role: "capital" | "sub" | "sub2"): number => [...(sim.e2200hist ?? []), ...(sim.e2200 ? [sim.e2200] : [])].filter((e) => e.moved?.includes(role)).length;
+const seatCellOf = (sim: SimState, w: World, role: "capital" | "sub" | "sub2"): number => {
   const cap = sim.capital ?? DEFAULT_CAPITAL;
+  if (role === "sub2") { const c2 = sim.subCapital2 ? subCity(w, sim.subCapital2) : null; return c2 ? c2.cell : -1; }   // Stage 36 M3
   const c = role === "capital" ? homeCity(w, cap) : subCity(w, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB));
   return c ? c.cell : -1;
 };
@@ -90,7 +92,7 @@ function isCoastal(w: World, k: number): boolean { const i = k % w.nx, j = (k / 
 /** Once a year: starts a site for a seat that has none (a moved seat ends the old site's schedule and starts a new one; the old land stays), adds the year's budget, and turns whole cells' worth into land. Returns the cells added. */
 export function stepReclaim(sim: SimState, w: World, y: number): number[] {
   const rec = sim.rec34; if (!rec || !w.g34) return [];
-  for (const role of ["capital", "sub"] as const) {
+  for (const role of (sim.subCapital2 ? ["capital", "sub", "sub2"] : ["capital", "sub"]) as ("capital" | "sub" | "sub2")[]) {
     const cell = seatCellOf(sim, w, role); if (cell < 0) continue; const cur = rec.sites.find((s) => s.role === role && s.active);
     const ep = movesOf(sim, role); if (cur && cur.epoch === undefined) cur.epoch = ep;   // (a site saved before epochs existed is taken to be current)
     if (cur && cur.cell === cell && cur.epoch === ep) continue; if (cur) cur.active = false;
@@ -99,7 +101,8 @@ export function stepReclaim(sim: SimState, w: World, y: number): number[] {
   const a: Arrays = { land: w.t.land, island: w.t.island, pref: w.t.pref, plains: w.t.plains, elev: w.t.elev, nx: w.nx, ny: w.ny }, added: number[] = [], CU = cellUnits(w.cell);
   rec.sites.forEach((s, si) => {
     if (!s.active) return;
-    while (s.last < y) { s.last++; if (s.coastal) s.accU += rateUnits(s.last - s.start); }
+    const share = sim.subCapital2 && s.role !== "capital" ? SUB2_SHARE : 1;   // Stage 36 M3: with two sub-capitals each reclaims at 0.7x
+    while (s.last < y) { s.last++; if (s.coastal) s.accU += rateUnits(s.last - s.start) * share; }
     const lm0 = w.lm[s.cell], ci = s.cell % w.nx, cj = (s.cell / w.nx) | 0;
     while (s.accU >= CU) {
       const c = pickCell(a, ci, cj, SEARCH_CELLS, (q) => w.lm[q] === lm0);
@@ -111,7 +114,7 @@ export function stepReclaim(sim: SimState, w: World, y: number): number[] {
   return added;
 }
 
-export interface RecReport { role: "capital" | "sub"; active: boolean; coastal: boolean; years: number; budgetKm2: number; filledCells: number; filledKm2: number; blocked: number }
+export interface RecReport { role: "capital" | "sub" | "sub2"; active: boolean; coastal: boolean; years: number; budgetKm2: number; filledCells: number; filledKm2: number; blocked: number }
 /** What the panel shows: the budget (exact km2) next to what the grid has actually received (whole cells, 25 km2 each). */
 export function reclaimReport(sim: SimState, cellKm = 5): RecReport[] {
   return (sim.rec34?.sites ?? []).map((s) => ({ role: s.role, active: s.active, coastal: s.coastal, years: s.last - s.start, budgetKm2: s.accU * UNIT_KM2, filledCells: s.filled, filledKm2: s.filled * cellKm * cellKm, blocked: s.blocked }));

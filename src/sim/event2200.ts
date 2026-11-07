@@ -16,7 +16,7 @@ import type { Vec } from "../core/types";
 import type { World } from "./world";
 
 export const E2200_YEAR = 2200;
-export interface Choice2200 { era: number; stance: EraKey; coast: Recon["coast"]; focus: Recon["focus"]; capital?: string; sub?: string; palace?: string; capitalPos?: Vec; subPos?: Vec; palacePos?: Vec }
+export interface Choice2200 { era: number; stance: EraKey; coast: Recon["coast"]; focus: Recon["focus"]; capital?: string; sub?: string; palace?: string; capitalPos?: Vec; subPos?: Vec; palacePos?: Vec; /** Stage 36 M3: the second sub-capital; null = go back to one */ sub2?: string | null; subPos2?: Vec }
 export interface Road0Info { routeId: string; reusedKm: number; restoredKm: number; newKm: number; costBu: number; spurs: number }
 export interface E2200 { /** Stage 25: this is the n-th (0-based) relocation event; it came due in `sched` (2200 + 150n) */ n?: number; sched?: number; year: number; state: "pending" | "road0" | "done"; era?: string; stance?: EraKey; recon?: Recon; moved?: string[]; kept?: true; auto?: true; skipped?: true; road0?: Road0Info }
 export const TRANSPORT_LABEL: Record<string, string> = { shubun: "道路重視", shoka: "鉄道重視", kairo: "海路重視", kuuro: "空路重視", heisei: "均衡" };
@@ -76,6 +76,10 @@ export function apply2200(sim: SimState, ch: Choice2200 | null, auto = false, se
   };
   if (ch.capital && ch.sub && ch.capital === ch.sub) ch = { ...ch, sub: undefined, subPos: undefined };
   set("capital", ch.capital, ch.capitalPos); set("sub", ch.sub, ch.subPos); set("palace", ch.palace, ch.palacePos);
+  // Stage 36 M3: the number of sub-capitals may change only here (and at the start): null = back to one; a prefecture = the second one (never the capital's or the first sub-capital's)
+  if (ch.sub2 === null && sim.subCapital2) { delete sim.subCapital2; delete sim.subPos2; moved.push("sub2"); }
+  else if (ch.sub2 && ch.sub2 !== (sim.capital ?? DEFAULT_CAPITAL) && ch.sub2 !== (sim.subCapital ?? subNow)) { if (sim.subCapital2 !== ch.sub2 || ch.subPos2) moved.push("sub2"); sim.subCapital2 = ch.sub2; if (ch.subPos2) sim.subPos2 = ch.subPos2; else delete sim.subPos2;
+    const pos = ch.subPos2; if (pos && sim.isl20 && !(sim.moves20 ?? []).some((m) => m.pref === ch.sub2 && Math.hypot(m.pos[0] - pos[0], m.pos[1] - pos[1]) < 0.5)) (sim.moves20 ??= []).push({ pref: ch.sub2, pos: [pos[0], pos[1]], by: "sub", since: y }); }
   e.state = "road0"; e.era = c.name; e.stance = ch.stance; e.recon = { ...k.recon }; e.moved = moved;
   setActiveTimeline(k.eras); sim.dials = composeDials(sim, y);
   ev(sim, "kaigen", `改元・遷都: ${c.name}${c.yomi ? `(${c.yomi})` : ""}元年(${y}年)${c.real ? "" : "【架空の名】"}`, `方針は元号と切り離して選択: ${TRANSPORT_LABEL[ch.stance] ?? ch.stance}・${ch.coast === "pacific" ? "太平洋側重視" : ch.coast === "japansea" ? "日本海側重視" : "海側は中立"}・${ch.focus === "concentrate" ? "一極集中" : "地方分散"}${moved.length ? `。${moved.map((r) => ({ capital: "首都", sub: "副首都", palace: "皇居" })[r]).join("・")}を移した(旧所在地の都市と住民はそのまま)` : ""}`, {});

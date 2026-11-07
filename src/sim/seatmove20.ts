@@ -13,9 +13,9 @@ export interface MoveResult { pref: string; by: SeatRole; cityId: string; name: 
 export const PEOPLE_PER_KM2 = 2500, MIN_CITY_POP = 2000, ADOPT_KM = 25, NEW_SHARE = 0.01, NEW_POP_MIN = 300, NEW_POP_MAX = 20000;
 
 /** The moves a game's seat settings amount to: one per prefecture (a capital or sub-capital point first, then a palace point), only for points the player put on the map. */
-export function movesOfSettings(seats: { capital: string; sub: string; palace: string }, pos: { capitalPos?: Vec; subPos?: Vec; palacePos?: Vec }): SeatMove[] {
+export function movesOfSettings(seats: { capital: string; sub: string; palace: string; sub2?: string }, pos: { capitalPos?: Vec; subPos?: Vec; palacePos?: Vec; subPos2?: Vec }): SeatMove[] {
   const out: SeatMove[] = [], seen = new Set<string>();
-  for (const [by, p, pref] of [["capital", pos.capitalPos, seats.capital], ["sub", pos.subPos, seats.sub], ["palace", pos.palacePos, seats.palace]] as [SeatRole, Vec | undefined, string][]) { if (!p) continue; const extra = seen.has(pref); seen.add(pref); out.push({ pref, pos: [p[0], p[1]], by, ...(extra ? { extra: true } : {}) }); }
+  for (const [by, p, pref] of [["capital", pos.capitalPos, seats.capital], ["sub", pos.subPos, seats.sub], ...(seats.sub2 ? [["sub", pos.subPos2, seats.sub2]] : []), ["palace", pos.palacePos, seats.palace]] as [SeatRole, Vec | undefined, string][]) { if (!p) continue; const extra = seen.has(pref); seen.add(pref); out.push({ pref, pos: [p[0], p[1]], by, ...(extra ? { extra: true } : {}) }); }
   return out;
 }
 const cellCentre = (t: TerrainResult, k: number): Vec => { const g = t.grid; return [g.x0 + ((k % g.nx) + 0.5) * g.cell, g.y0 + (((k / g.nx) | 0) + 0.5) * g.cell]; };

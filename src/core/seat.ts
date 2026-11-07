@@ -38,11 +38,11 @@ export function prefOfSeat(v: unknown): string | null {
   const c = JAPAN.cities.find((x) => x.id === v); return c?.pref && PREF_IDS.includes(c.pref) ? c.pref : null;
 }
 export const DEFAULT_CAPITAL = "JP-13", DEFAULT_SUB = "JP-27", DEFAULT_PALACE = "JP-13";
-export interface Seats { capital: string; sub: string; palace: string }
+export interface Seats { capital: string; sub: string; palace: string; /** Stage 36 M3 */ sub2?: string }
 /** The effective seats of a map state: the chosen ones, else Tokyo / Osaka / Tokyo (Osaka and Tokyo swap if the capital alone was set to Osaka). */
-export function seatsOf(s: Pick<ProjectState, "capital" | "subCapital" | "palace">): Seats {
+export function seatsOf(s: Pick<ProjectState, "capital" | "subCapital" | "palace"> & Partial<Pick<ProjectState, "subCapital2">>): Seats {
   const capital = prefOfSeat(s.capital) ?? DEFAULT_CAPITAL, sub = prefOfSeat(s.subCapital) ?? (capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB);
-  return { capital, sub, palace: prefOfSeat(s.palace) ?? DEFAULT_PALACE };
+  const sub2 = prefOfSeat(s.subCapital2); return { capital, sub, palace: prefOfSeat(s.palace) ?? DEFAULT_PALACE, ...(sub2 && sub2 !== capital && sub2 !== sub ? { sub2 } : {}) };
 }
 /** The capital and the sub-capital must be different prefectures; the palace may share either. */
 export const seatsValid = (x: Seats) => x.capital !== x.sub;

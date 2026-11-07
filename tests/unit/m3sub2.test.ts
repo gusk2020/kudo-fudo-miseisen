@@ -11,11 +11,10 @@ describe("Stage 36 M3: two sub-capitals, 0.7x each of the sub-capital modifiers"
     expect(subPrefsOf({ subCapital: "JP-27" })).toEqual(["JP-27"]); expect(subPrefsOf({ subCapital: "JP-27", subCapital2: "JP-40" })).toEqual(["JP-27", "JP-40"]);
     expect(subShareOf({})).toBe(1); expect(subShareOf({ subCapital2: "JP-40" })).toBe(SUB2_SHARE); expect(shareMult(2, 0.7)).toBeCloseTo(1.7, 12); expect(shareMult(1, 0.7)).toBe(1);
   });
-  it("potential weights: each of the two gets 0.7x of the single sub-capital's uplift, the capital and the palace are not scaled down, the mean stays 1", () => {
+  it("potential weights: each of the two gets 0.7x of the single sub-capital's uplift, nothing else changes (no compensation for the national total)", () => {
     const order = [...PREF_IDS], one = potentialWeights(order), two = potentialWeights(order, [order[1], order[2]]);
     const target = shareMult(one[order[1]], SUB2_SHARE); expect(two[order[1]]).toBeCloseTo(target, 12); expect(two[order[2]]).toBeCloseTo(target, 12);
-    expect(Object.values(two).reduce((a, b) => a + b, 0) / order.length).toBeCloseTo(1, 12);
-    expect(two[order[0]] / one[order[0]]).toBeGreaterThan(0.9);   // the capital: only the common renormalisation, no 0.7
+    for (const p of order.slice(3)) expect(two[p], p).toBe(one[p]); expect(two[order[0]]).toBe(one[order[0]]);   // the capital and every other prefecture: untouched (no compensation for the national total)
   });
   it("roles: a second sub-capital gets 0.7x of the sub-capital role uplift; a game with one is unchanged", () => {
     const { w, hash } = realWorld(true, true), one = createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-40" }), two = createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-40", subCapital2: "JP-04" });
@@ -32,5 +31,21 @@ describe("Stage 36 M3: the sub-capital sites", () => {
     const s1 = sitesOf(one, w).filter((s) => s.kind === "sub"), s2 = sitesOf(two, w).filter((s) => s.kind === "sub");
     expect(s1).toHaveLength(1); expect(s1[0].scale ?? 1).toBe(1); expect(s2).toHaveLength(2); expect(s2.map((s) => s.scale)).toEqual([SUB2_SHARE, SUB2_SHARE]); expect(new Set(s2.map((s) => s.pref))).toEqual(new Set(["JP-40", "JP-04"]));
     expect(JSON.stringify(sitesOf(two, w).filter((s) => s.kind === "capital"))).toBe(JSON.stringify(sitesOf(one, w).filter((s) => s.kind === "capital")));
+  });
+});
+
+describe("Stage 36 M3: the count changes at a relocation event, and a save keeps it", () => {
+  it("apply2200: to two (a third prefecture), back to one; a second sub-capital in the capital's prefecture is refused", async () => {
+    const { apply2200, open2200 } = await import("../../src/sim/event2200");
+    const { w, hash } = realWorld(true, true), sim = createSim(w, "m", hash, 7, { stage3: true, firstEra: 0, techK: 2, subCapital: "JP-27" });
+    const go = (ch: Record<string, unknown>) => { sim.month = (2200 - sim.startYear) * 12; sim.e2200 = undefined as never; open2200(sim); apply2200(sim, { era: 0, stance: "heisei", coast: "neutral", focus: "concentrate", ...ch } as never); };
+    go({ sub2: "JP-13" }); expect(sim.subCapital2).toBeUndefined();   // the capital's prefecture
+    go({ sub2: "JP-40" }); expect(sim.subCapital2).toBe("JP-40"); expect(sim.e2200?.moved).toContain("sub2");
+    go({ sub2: null }); expect(sim.subCapital2).toBeUndefined();
+  });
+  it("a save keeps the second sub-capital (and drops a broken one)", async () => {
+    const { parseState } = await import("../../src/core/save"); const { realState } = await import("../../src/core/state");
+    const ok = parseState(JSON.parse(JSON.stringify({ ...realState(), subCapital: "JP-27", subCapital2: "JP-40", subPos2: [1, 2] }))).state; expect(ok.subCapital2).toBe("JP-40"); expect(ok.subPos2).toEqual([1, 2]);
+    expect(parseState(JSON.parse(JSON.stringify({ ...realState(), subCapital: "JP-27", subCapital2: "JP-27" }))).state.subCapital2).toBeUndefined();
   });
 });

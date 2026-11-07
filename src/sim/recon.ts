@@ -13,6 +13,7 @@
  *   planning    the priority of new links between two cities (the reason text says so)
  * Older games (no `recon` on their era timeline) are unaffected.
  */
+import { SUB2_SHARE } from "./subs36";
 import { realToLonLat } from "../core/data";
 import { homeCity, subCity } from "./ceremony";
 import type { Recon } from "./kaigen";
@@ -77,7 +78,9 @@ export function coastSide(w: World, cityId: string): number {
 export function coreness(sim: SimState, w: World, cityId: string): number {
   const c = w.cityById.get(cityId); if (!c) return 0; const hc0 = homeCity(w, sim.capital), sc0 = subCity(w, sim.subCapital), hc = sim.capitalPos && hc0 ? { ...hc0, pos: sim.capitalPos } : hc0, sc = sim.subPos && sc0 ? { ...sc0, pos: sim.subPos } : sc0;   // (Stage 19: a seat put on the map counts from that point)
   const f = (p: { pos: [number, number] | number[] } | null | undefined, wt: number) => (p ? wt * Math.exp(-Math.hypot(p.pos[0] - c.pos[0], p.pos[1] - c.pos[1]) / CORE_KM) : 0);
-  return Math.max(f(hc, 1), f(sc, SUB_CORE));
+  if (!sim.subCapital2) return Math.max(f(hc, 1), f(sc, SUB_CORE));
+  const sc20 = subCity(w, sim.subCapital2), sc2 = sim.subPos2 && sc20 ? { ...sc20, pos: sim.subPos2 } : sc20, share = SUB2_SHARE * SUB_CORE;   // Stage 36 M3: two sub-capitals, each at 0.7x of the sub-capital's weight
+  return Math.max(f(hc, 1), f(sc, share), f(sc2, share));
 }
 export const reconOf = (sim: SimState): Recon | null => sim.kaigen?.recon ?? null;
 const sgnC = (r: Recon) => (r.coast === "pacific" ? 1 : r.coast === "neutral" ? 0 : -1), sgnF = (r: Recon) => (r.focus === "concentrate" ? 1 : -1);
