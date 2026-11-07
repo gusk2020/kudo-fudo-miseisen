@@ -1,4 +1,4 @@
-import { AIR_YEAR_SHIFT_1800, POP_1800_FACTOR, RELOC_STEP_1800, START_YEAR_1800 } from "./rules1800";
+import { AIR_YEAR_SHIFT_1800, POP_1800_FACTOR, RELOC_STEP_1800, START_YEAR_1800, mayScheduleService } from "./rules1800";
 /**
  * Monthly road-network simulation. Pure and deterministic: (sim, world) -> sim, all randomness from sim.rngState.
  * Every change that matters appends an event with its cause and, for roads, an entry in the edge's own history.
@@ -354,7 +354,7 @@ function* evaluateEdgesGen(sim: SimState, w: World, an: Analysis, y: number): Ge
     const d = e.through + e.local + (sim.stage3 ? e.freight * 0.4 : 0), unit = modeOf(e) === "rail" ? "人/日" : "台/日", Z = zeroDemand(e);
     if (e.state === "open" || e.state === "dormant") {
       if (e.through > e.peakThrough) e.peakThrough = e.through;
-      e.zeroYears = d < Z ? e.zeroYears + (1 - REBUILD_CLOCK_SLOW * rebuildDrive(sim.e2200, y)) : 0;   // (Stage 28: in the rebuilding the clocks of resting and closing run slowly -- fully as the drive fades over the balance phase, so no wave of closures is held back and then let go together)
+      e.zeroYears = d < Z ? e.zeroYears + (1 - REBUILD_CLOCK_SLOW * rebuildDrive(sim.e2200, y, !!sim.rules1800)) : 0;   // (Stage 28: in the rebuilding the clocks of resting and closing run slowly -- fully as the drive fades over the balance phase, so no wave of closures is held back and then let go together)
       e.congYears = e.through > 0.9 * capacityOf(e) ? e.congYears + 1 : 0;
       e.throughDropYears = e.peakThrough > 50 && e.bypassedBy.length && e.through < 0.25 * e.peakThrough ? e.throughDropYears + 1 : e.bypassedBy.length ? e.throughDropYears : 0;
       if (e.state === "dormant" && d >= Z * 2) { setEdgeState(sim, e, "open", `需要が回復(${Math.round(d)}${unit})`); ev(sim, "reopen", `${edgeName(sim, e)}が休止から再開`, `需要が${Math.round(d)}${unit}に回復`, { edge: e.id }); }
@@ -441,7 +441,7 @@ function* monthlyGen(sim: SimState, w: World): Generator<void> {
   }
   sim.macro.maintCoverage = need > 0 ? funded / need : 1;
   yield;   // Stage 7: upkeep, construction and the railways are separate slices of the month
-  const rbDrive = rebuildDrive(sim.e2200, y);   // Stage 28: ruins are kept from falling further while they wait to be restored
+  const rbDrive = rebuildDrive(sim.e2200, y, !!sim.rules1800);   // Stage 28: ruins are kept from falling further while they wait to be restored
   for (const e of Object.values(sim.edges)) if (e.state === "closed" && e.built >= 1) { e.weathering = Math.min(100, e.weathering + 0.3 * (1 - 0.8 * rbDrive)); if (e.weathering >= 100) { setEdgeState(sim, e, "lost", "閉鎖後に放置され風化"); ev(sim, "lost", `${edgeName(sim, e)}が廃道化`, "閉鎖後に維持されず風化(復旧には再整備が必要)", { edge: e.id }); } }
   // construction: each region funds its own queue; leftovers and the national pool fund the rest
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "road").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
@@ -560,7 +560,7 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
   }
   if (modeOf(p) === "rail") return completeRailProject(sim, w, p, es);
   if (p.kind === "upgrade") { for (const e of es) if (e.state === "open") { e.surface = "paved"; e.quality = Math.max(e.quality, 95); pushHist(sim, e, "舗装化"); } ev(sim, "project", `舗装化が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
-  if (p.kind === "improve") { const e = es[0]; if (e) { e.standard = e.standard === "rural" ? "standard" : "highgrade"; e.surface = "paved"; e.quality = 95; e.weathering = 0; pushHist(sim, e, `改良(規格を${e.standard === "standard" ? "一般2車線" : "高規格"}に)`); } ev(sim, "project", `改良が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
+  if (p.kind === "improve") { const e = es[0]; if (e) { e.standard = e.standard === "rural" || (sim.rules1800 && modeOf(e) !== "rail" && !mayScheduleService("expressway", yearOf(sim))) ? "standard" : "highgrade";   /* Stage 36: no expressway before 1930 in an 1800 game */ e.surface = "paved"; e.quality = 95; e.weathering = 0; pushHist(sim, e, `改良(規格を${e.standard === "standard" ? "一般2車線" : "高規格"}に)`); } ev(sim, "project", `改良が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
   if (p.kind === "restore") { const e = es[0]; if (e) { e.state = "closed"; setEdgeState(sim, e, "open", `沿線需要の回復で復旧(${p.reason})`); e.quality = 55; e.weathering = 0; e.lost = false; e.zeroYears = 0; reviveRoutes(sim, w, e.id); } ev(sim, "reopen", `復旧・再開通: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
   if (p.kind === "bypass") {
     // The old road may have been split by other projects after this one was planned: every piece of it is replaced, not just the first.

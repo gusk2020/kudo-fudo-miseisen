@@ -16,7 +16,7 @@ describe("Stage 36 M2: an 1800 start", () => {
     sim.policy!.mode = "auto";
     advance(sim, w, 12 * 29); expect(yearOf(sim)).toBe(1829); expect(railKm(sim)).toBe(0); expect(air(sim)).toBe(0); expect(hwy(sim)).toBe(0);
     advance(sim, w, 12 * 90); expect(yearOf(sim)).toBe(1919); expect(air(sim)).toBe(0); expect(hwy(sim)).toBe(0);
-    console.log("1800 game at 1919: rail edges", railKm(sim), "cities pop", Math.round(tot(sim) / 1000), "k");
+    expect(railKm(sim)).toBeGreaterThan(0);   // the railway did come after 1830
     expect(checkIntegrity(sim)).toEqual([]);
   }, 900000);
 });

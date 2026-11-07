@@ -98,7 +98,7 @@ export function createProject(sim: SimState, kind: ProjectKind, region: string, 
 const nodeName = (sim: SimState, id: string) => sim.nodes[id]?.name ?? "地点";
 
 export function* planYearGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
-  const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; const drive = sim.stage3 ? rebuildDrive(sim.e2200, y) : 0; let pf = Math.round((sim.stage3 ? MAX_PATHFINDS_S3 : MAX_PATHFINDS) * (1 + REBUILD_DRIVE_MAX.pathfinds * drive)); const RPY = Math.round((sim.stage3 ? REGIONS_PER_YEAR_S3 : REGIONS_PER_YEAR) * (1 + REBUILD_DRIVE_MAX.regions * drive)), extraActive = drive > 0.5 ? 1 : 0;   // (Stage 28: the rebuilding lifts the yearly limits)
+  const regions = w.t.prefOrder, n = regions.length, B = sim.stage3 ? sim.macro.budgetBu * sim.dials.roadShare * (0.4 + 0.8 * sim.dials.hwyBuild) : sim.macro.budgetBu; const drive = sim.stage3 ? rebuildDrive(sim.e2200, y, !!sim.rules1800) : 0; let pf = Math.round((sim.stage3 ? MAX_PATHFINDS_S3 : MAX_PATHFINDS) * (1 + REBUILD_DRIVE_MAX.pathfinds * drive)); const RPY = Math.round((sim.stage3 ? REGIONS_PER_YEAR_S3 : REGIONS_PER_YEAR) * (1 + REBUILD_DRIVE_MAX.regions * drive)), extraActive = drive > 0.5 ? 1 : 0;   // (Stage 28: the rebuilding lifts the yearly limits)
   const def = sim.stage3 ? accessDeficit(w, an) : null, rc = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined;
   const start = ((y - sim.startYear) * RPY) % n, slice = Array.from({ length: Math.min(n, RPY) }, (_, i) => regions[(start + i) % n]);
   const live = activeProjects(sim).filter((p) => modeOf(p) === "road"), busy = new Set(live.flatMap((p) => p.edgeIds)), perRegion = new Map<string, number>();
@@ -335,6 +335,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
 }
 function planImprove(sim: SimState, w: World, e: SimEdge, region: string, purse: number, c: Cand): boolean {
   const target: Standard = e.standard === "rural" ? "standard" : "highgrade", cost = e.lengthKm * UNIT[target] * 0.6 * mtnCost(w, sim, "road", e.cells, yearOf(sim)); if (cost > purse * 1.5) return false;
+  if (target === "highgrade" && sim.rules1800 && !mayScheduleService("expressway", yearOf(sim))) return false;   // Stage 36: a road is not raised to an expressway before 1930
   const p = createProject(sim, "improve", region, e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], cost, c.reason, c.score);
   ev(sim, "project", `改良計画: ${nodeName(sim, e.a)}〜${nodeName(sim, e.b)}(${target === "standard" ? "2車線化" : "高規格化"})`, c.reason, { project: p.id, edge: e.id }); return true;
 }
