@@ -203,7 +203,7 @@ export function buildPolicy(app: App, body: HTMLElement) {
     }
   }
   if (pol.history.length) { body.append(h("h3", {}, "これまでの決定")); for (const r of [...pol.history].reverse()) body.append(h("div", { class: "issue" }, `${r.year}年 ${r.none ? "点を使わず決定" : DOMAIN_LABEL[r.domain]}${r.auto ? "(自動)" : ""}: 採用 ${r.adopted.map((a) => a.label).join("・") || "なし"}`, h("br"), h("small", {}, [...r.adopted.map((a) => `${a.label}: ${a.reason}`), ...r.declined.map((d) => `見送り ${d.label}: ${d.reason}`)].join(" ／ ")))); }
-  const now = sim.dials; body.append(h("h3", {}, "現在の世界の傾向(参考)")); body.append(h("small", {}, DIAL_KEYS.map((k) => `${DIAL_LABEL[k]} ${now[k].toFixed(2)}`).join(" ／ "))); body.append(h("details", { id: "dial-guide" }, h("summary", {}, "傾向の見方(名称・範囲・効果)"), ...DIAL_KEYS.map((k) => h("div", { class: "note", title: DIAL_INFO[k].effect }, `${DIAL_LABEL[k]}(${DIAL_RANGE[k][0]}〜${DIAL_RANGE[k][1]}・対象: ${DIAL_INFO[k].target}): ${DIAL_INFO[k].explain}`)))); void composeDials; void GRADE_MODE; void STATE_LABEL;
+  const now = sim.dials; body.append(h("h3", {}, "現在の世界の傾向(参考)")); body.append(h("small", {}, DIAL_KEYS.map((k) => `${DIAL_LABEL[k]} ${now[k].toFixed(2)}`).join(" ／ "))); if (sim.rules1800) body.append(h("small", { id: "pop1800-note" }, "1800年開始の人口は、史実の全国人口(1792年・1846年の間を補間)に合わせたゲーム用推計です。都市ごとの実数ではありません。地形(樺太・千島)は暫定です。")); body.append(h("details", { id: "dial-guide" }, h("summary", {}, "傾向の見方(名称・範囲・効果)"), ...DIAL_KEYS.map((k) => h("div", { class: "note", title: DIAL_INFO[k].effect }, `${DIAL_LABEL[k]}(${DIAL_RANGE[k][0]}〜${DIAL_RANGE[k][1]}・対象: ${DIAL_INFO[k].target}): ${DIAL_INFO[k].explain}`)))); void composeDials; void GRADE_MODE; void STATE_LABEL;
 }
 
 /**
