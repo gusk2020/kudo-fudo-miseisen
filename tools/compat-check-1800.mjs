@@ -56,6 +56,15 @@ try {
   check("new build: manual slot 2 is untouched", (await rd(page, "s3:slot2")) === slot2Orig);
   await kfm(page, "a => { a.openSheet('menu'); return 1; }"); await page.waitForSelector("#slot-2");
   check("new build: slot 2 is still listed", (await page.textContent("#slot-2")).includes("年"));
+  // the new policy: old data is not needed -- a brand-new 1800 game must start normally on top of it
+  { await kfm(page, "a => { a.sheet = null; a.buildSheet(); return 1; }").catch(() => {}); await page.evaluate(() => { const a = window.__kfm; if (a.wizGo) a.wizGo(3); }); await page.click("#tool-cer-kokudo1");
+    const A = await scr(await pos("東京")), B = await scr(await pos("大阪市")); await page.mouse.move(A[0], A[1]); await page.mouse.down(); await page.mouse.move(B[0], B[1], { steps: 14 }); await page.mouse.up();
+    if (await page.locator("#wiz-ok").count()) { await kfm(page, "a => a.wizGo(0)"); await page.waitForFunction(() => { const a = window.__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) await page.click("#wiz-ok"); }
+    await page.click("#cer-go"); await page.waitForFunction(() => window.__kfm.sim, null, { timeout: 90000 }).catch(() => {});
+    const ns = await kfm(page, "a => a.sim ? { y: a.sim.startYear, r: !!a.sim.rules1800, routes: Object.keys(a.sim.routes).length } : null");
+    check("new build: a brand-new 1800 game starts normally on top of the old data", !!ns && ns.y === 1800 && ns.r && ns.routes > 0, JSON.stringify(ns));
+    await kfm(page, "a => { a.sim.speed = 0; a.sim.policy.mode = 'auto'; a.ffYears(3); return 1; }").catch(() => {}); await page.evaluate(async () => { await window.__kfm.persist(true); });
+    check("new build: the new game keeps playing and saves", await kfm(page, "a => a.sim.month > 0") && (await rd(page, "s3:auto")) !== oldAuto); }
   check("new build: no page errors", errs2.length === 0, errs2[0] ?? "");
   const state2 = await ctx.storageState({ indexedDB: true }); await ctx.close();
   // ---- 3a. the way back, realistic: the new build was opened and the player did NOT start a new game
