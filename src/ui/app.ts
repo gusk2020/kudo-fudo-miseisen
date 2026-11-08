@@ -107,7 +107,7 @@ export class App {
 
   /** Stage 3 plays on the real Japan; the old hand-edited-map flow stays reachable with ?legacy=1 and keeps its own save key. */
   /** Set when a stored save existed but its road data could not be attached: autosave must not overwrite it with an empty state. */
-  private saveLocked = false; private prevCopied = false;
+  private saveLocked = false; private prevCopied = false; private bootPending = false;   // Stage 36: a game read at start-up and not yet checked against the terrain -- nothing is written over its save until it has been accepted or put aside
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
     const a = new App(); a.real = real; a.r = await Renderer.create(host);
@@ -126,7 +126,7 @@ export class App {
     if (saved && saved.quarantine) a.saveLocked = true;
     if (restoredFromBackup) setTimeout(() => a.toast("最新のセーブが壊れていたため、バックアップから復元しました(壊れたデータは別に保管しています)"), 800);
     if (saved) {
-      a.store.replace(saved.map); a.pendingSim = saved.sim;
+      a.store.replace(saved.map); a.pendingSim = saved.sim; a.bootPending = !!saved.sim;
       if (saved.quarantine) { await putRaw(a.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: saved.quarantine }); }
       if (saved.problems.length) a.toast("保存データについて: " + saved.problems.slice(0, 2).join(" / "));
     }
@@ -186,6 +186,7 @@ export class App {
       // Stage 36: the same for a save from before the 1800 start (the live Stage 31-35 game): kept for good under its own key, so going back to the old version always finds it.
       void getRaw(this.saveKey).then(async (raw) => { if (!raw) return; try { const j = JSON.parse(raw), sv = j?.save ?? j; if (sv?.sim && !sv.sim.rules1800 && !(await getRaw(this.saveKey + ":pre-1800"))) await putRaw(this.saveKey + ":pre-1800", j); } catch { /* not a save we understand: leave it */ } }).catch(() => { /* ignore */ });
       void getRaw(this.saveKey).then((raw) => { if (raw) { try { return putRaw(this.saveKey + ":prev", JSON.parse(raw)); } catch { return putRaw(this.saveKey + ":prev", { raw }); } } }).catch(() => { /* ignore */ }); }
+    if (this.bootPending) return Promise.resolve(false);
     if (this.saveLocked && !this.sim && !this.pendingSim) return Promise.resolve(false);
     if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now();
     if (this.real && this.sim && performance.now() - this.lastBackup > 120000) { this.lastBackup = performance.now(); void saveGame(this.saveKey + ":backup", makeSave(this.s, this.sim)); }   /* a second copy every two minutes; a sim still waiting for its terrain is kept in the save, never dropped */ return saveGame(this.saveKey, makeSave(this.s, this.sim ?? this.pendingSim)); }
@@ -221,7 +222,7 @@ export class App {
   }
   /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
   private attachPendingSim() {
-    if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null;
+    if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null; this.bootPending = false;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
     ensureIdentity(sim); finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; if (this.saveAfterAttach) { this.saveAfterAttach = false; void this.persist(true); }   /* a game the player loaded is written as the running game at once: a reload right after must not bring back the one it replaced */ setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
