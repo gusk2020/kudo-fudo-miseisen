@@ -183,6 +183,8 @@ export class App {
     if (!this.prevCopied) { this.prevCopied = true;
       // Stage 35 audit: the first time a save written by an OLDER version (a game without the Stage 34 reclamation log) is about to be overwritten, its original text is kept for good under its own key. Never overwritten, never deleted: the way back if a newer version ever misbehaves.
       void getRaw(this.saveKey).then(async (raw) => { if (!raw) return; try { const j = JSON.parse(raw), sv = j?.save ?? j; if (sv?.sim && sv.sim.stage3 && !sv.sim.rec34 && !(await getRaw(this.saveKey + ":pre-s35"))) await putRaw(this.saveKey + ":pre-s35", j); }   /* (the record is { savedAt, save: { sim, map, ... } }) */ catch { /* not a save we understand: leave it */ } }).catch(() => { /* ignore */ });
+      // Stage 36: the same for a save from before the 1800 start (the live Stage 31-35 game): kept for good under its own key, so going back to the old version always finds it.
+      void getRaw(this.saveKey).then(async (raw) => { if (!raw) return; try { const j = JSON.parse(raw), sv = j?.save ?? j; if (sv?.sim && !sv.sim.rules1800 && !(await getRaw(this.saveKey + ":pre-1800"))) await putRaw(this.saveKey + ":pre-1800", j); } catch { /* not a save we understand: leave it */ } }).catch(() => { /* ignore */ });
       void getRaw(this.saveKey).then((raw) => { if (raw) { try { return putRaw(this.saveKey + ":prev", JSON.parse(raw)); } catch { return putRaw(this.saveKey + ":prev", { raw }); } } }).catch(() => { /* ignore */ }); }
     if (this.saveLocked && !this.sim && !this.pendingSim) return Promise.resolve(false);
     if (this.sim) this.sim.lastWallMs = Date.now(); this.lastPersist = performance.now();

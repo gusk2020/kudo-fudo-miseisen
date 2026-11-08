@@ -40,12 +40,12 @@
 - 公開対象コミットのCI最終結果。
 - 実機確認(上の1〜12)。
 - ライブ版の保存データの扱い: 1800年・50府県の新版は地図が変わるため、**ライブ版の旧セーブは読み込まず退避**される(削除はしない。メニューの旧版データ一覧に残る)。新版が旧セーブを上書きしないこと(`saveLocked`)を実機で1度確認すること。旧版に戻せば旧セーブはそのまま読める。
-- 現在公開中のコミットの再確認: `docs/PAGES_RELEASE_AND_ROLLBACK.md` は `eb02cc7`(Stage 30A)を記録しているが、他の記録では `ce0327b` ともされている。**公開直前に GitHub の Deployments で現行の sha を読み取り**、ロールバック用ブランチをその sha に作り直す(下記)。
+- **現在公開中のコミット(GitHub Deployments から読み取り済み、2026-11-08)**: `ce0327b29ccb6ed410f83f24e595df5d686e570a`(Deployment id 7559574172、ref `claude/stage31-35-audit`、2026-11-04 22:27 UTC、状態 success、URL `https://gusk2020.github.io/kudo-fudo-miseisen/`)。`docs/PAGES_RELEASE_AND_ROLLBACK.md` に書かれた `eb02cc7`(Stage 30A、2026-10-31)は**一つ前の公開**で、現在の公開ではない。Pages設定のAPIはこの環境から読めないため、公開元の設定は未確認。公開直前にもう一度 Deployments を見ること。
 - `pages.yml` の push 対象に `claude/stage31-35-audit` は無い。手動実行(Run workflow)のみで公開される。デプロイ環境がこのブランチを拒否した場合は、所有者が環境のブランチ規則を変える必要がある。
 
 ## 4. ロールバック(公開後に問題が出たとき)
 1. 現行のPages公開コミットを公開前に控える(Deployments で sha を確認)。
-2. 公開前に、その sha を指す退避ブランチを用意する。既存: `claude/rollback-pages-eb02cc7`(= `eb02cc7`)。公開中が別の sha なら、その sha で `claude/rollback-pages-<短いsha>` を作る(作るだけでは何も公開されない)。
+2. 退避ブランチ(どちらも保持。作っただけでは何も公開されない): **`claude/rollback-pages-ce0327b`(= 現在公開中の `ce0327b`。公開後に問題が出たらここへ戻す)** と、一つ前の世代 `claude/rollback-pages-eb02cc7`(= `eb02cc7`)。
 3. 戻す: GitHub → Actions → 「Pages」 → Run workflow → ブランチに退避ブランチを選ぶ。同じURLが旧版に戻る。
 4. 保存データはどちらの方向でも削除されない。新版が旧セーブを退避しても、旧版で開けばそのまま読める。戻した後に新版で作ったセーブは、旧版では地図が違うため読み込まれない場合があるので、必要ならJSONエクスポートを先に取る。
 5. 戻したあと、PR #59 は Draft のまま、原因を直してから再公開。
