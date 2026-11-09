@@ -966,6 +966,9 @@ export class App {
     this.status(); this.buildToolbar(); this.buildSheet();
   }
   private tbtn(label: string, on: boolean, f: () => void, id?: string, mark = true) { return h("button", { id, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", onclick: f }, on && mark ? "✓ " + label : label); }
+  /** Stage 38 (F): 台帳's 「なぜ?」 -- the same tool as before: the sheet is put away so the map can be tapped, and pressing it again stops it. */
+  startWhy() { if (this.tool !== "why") this.openSheet(null); this.setTool("why"); }
+  isWhyOn() { return this.tool === "why"; }
   private setTool(t: Tool) {
     if (this.setupTab && t !== "seatpick") { this.setupTab = null; this.seatMode = null; this.seatPick = null; this.r.seatPending = null; }   // choosing another tool folds the setup panel away
     this.tool = this.tool === t ? "view" : t; this.pending = null;
@@ -1198,7 +1201,7 @@ export class App {
     if (this.real) {
       g.append(h("button", { id: "btn-legend", type: "button", "aria-pressed": this.legendShown ? "true" : "false", class: this.legendShown ? "mode on" : "mode", onclick: () => this.setLegendShown(!this.legendShown) }, "凡例"),
         h("button", { id: "btn-bg", type: "button", "aria-pressed": this.bg === "roadmap" ? "true" : "false", class: this.bg === "roadmap" ? "mode on" : "mode", onclick: () => this.setBg(this.bg === "roadmap" ? "terrain" : "roadmap") }, this.bg === "roadmap" ? "✓ 道路地図" : "背景:地形"));
-      tb.append(g); const gw = h("div", { class: "grp" }); gw.append(this.tbtn("なぜ?(線路・道路をタップ)", this.tool === "why", () => this.setTool("why"), "tool-why")); tb.append(gw); return;
+      tb.append(g); if (this.tool === "why") tb.append(h("div", { class: "grp", id: "why-hint" }, h("span", { class: "note" }, "なぜ?: 線路・道路をタップ"), h("button", { id: "why-stop", type: "button", class: "mode on", onclick: () => this.setTool("why") }, "やめる"))); return;   // Stage 38 (F): the 「なぜ?」 button lives in the 台帳 now (toolbar shows only the running state)
     }
     g.append(h("button", { id: "btn-history", type: "button", onclick: () => this.openSheet("history") }, "年表"), h("button", { id: "btn-roads", type: "button", onclick: () => this.openSheet("roads") }, "路線一覧"), h("button", { id: "btn-legend", type: "button", onclick: () => this.openSheet("legend") }, "凡例"));
     tb.append(g);
@@ -1354,6 +1357,13 @@ export class App {
     if (tok === this.menuTok && this.sheet === "menu") body.append(...Array.from(tmp.childNodes));
   }
   private async buildMenuInner(body: HTMLElement) {
+    const ops = h("div", { id: "menu-ops" });   // Stage 38 (G): the three operation buttons of this panel -- JSON export (with JSON import), 道路だけやり直す, 最初からやり直す -- are at the TOP now (names, order and actions unchanged)
+    ops.append(h("div", { class: "row" },
+      h("button", { id: "export", onclick: () => this.exportFile() }, "JSONエクスポート"),
+      h("label", {}, "JSON読込 ", h("input", { type: "file", accept: ".json,application/json", id: "import", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; const p = parseSave(await f.text()); if (!p.ok) { this.toast("読み込めません: " + p.problems[0]); return; } void this.adopt(p); } }))));
+    if (this.s.finalized) ops.append(h("div", { class: "row" }, this.real ? "" : h("button", { id: "unlock-menu", onclick: () => this.unlockMap() }, "地図のロックを解除して編集"), this.sim ? h("button", { id: "restart-roads", onclick: () => { if (confirm("道路を消して開通の儀からやり直します(地図は維持)。よろしいですか?")) { this.sim = null; this.cerDraft = {}; this.persist(); this.go(6); this.onChange(); } } }, "道路だけやり直す") : h("small", {}, "")));
+    ops.append(h("div", { class: "row" }, h("button", { id: "reset", onclick: () => { if (confirm("初期状態に戻します。よろしいですか?")) { this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.wizReset(); this.store.replace(this.real ? realState(this.s.seed) : defaultState(this.s.seed)); this.r.fit(this.s); } } }, "最初からやり直す")));
+    body.append(ops);
     if (this.real && this.sim?.stage3) body.append(h("div", { class: "note", id: "reloc-diag" }, relocDiag(this.sim)));   // Stage 29: the schedule of the relocation events, and whether this game began with it
     body.append(h("h3", {}, "セーブ / ロード / 出力"));
     const pfx = this.real ? "s3:" : "", slots = [1, 2, 3, 4, 5].map((i) => `${pfx}slot${i}`), have = new Set(await listSlots()), metas = await Promise.all(slots.map((n) => (have.has(n) ? slotMeta(n) : Promise.resolve(null))));
@@ -1368,17 +1378,12 @@ export class App {
     { const od = await listOldData(pfx); if (od.length) { const d = h("details", { id: "old-data" }, h("summary", {}, `旧版のデータ(${od.length}件・読み込みません)`));
       for (const o of od) d.append(h("div", { class: "slot-row old-row" }, h("span", { class: "slot-text", title: o.reason }, `${o.label}${o.savedAt ? " / " + new Date(o.savedAt).toLocaleDateString("ja-JP") : ""} … ${o.reason}`)));
       d.append(h("small", {}, "これらは消していません。別の版で開き直すと読めることがあります。")); body.append(d); } }
-    body.append(h("div", { class: "row" },
-      h("button", { id: "export", onclick: () => this.exportFile() }, "JSONエクスポート"),
-      h("label", {}, "JSON読込 ", h("input", { type: "file", accept: ".json,application/json", id: "import", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; const p = parseSave(await f.text()); if (!p.ok) { this.toast("読み込めません: " + p.problems[0]); return; } void this.adopt(p); } }))));
-    if (this.s.finalized) body.append(h("div", { class: "row" }, this.real ? "" : h("button", { id: "unlock-menu", onclick: () => this.unlockMap() }, "地図のロックを解除して編集"), this.sim ? h("button", { id: "restart-roads", onclick: () => { if (confirm("道路を消して開通の儀からやり直します(地図は維持)。よろしいですか?")) { this.sim = null; this.cerDraft = {}; this.persist(); this.go(6); this.onChange(); } } }, "道路だけやり直す") : h("small", {}, "")));
     if (this.stepId === "confirm") {
       const errs = this.issues.filter((i) => i.severity === "error").length, ready = errs === 0 && !!this.terrain;
       body.append(h("h3", {}, "最終確定"));
       body.append(h("div", { class: "row" }, h("button", { id: "finalize", disabled: !ready, onclick: () => this.finalize() }, this.s.finalized ? "確定済み(再確定)" : "この地図を最終確定"), h("small", {}, ready ? "確定すると地理IDと座標変換APIが固定されます" : errs ? "不正を直してください" : "地形生成の完了を待ってください")));
       if (this.terrain) { const t = this.terrain.stats; body.append(h("small", {}, `陸地${t.landCells}セル / 河川${t.riverCount}本 / 府県${t.prefCount} / 都市補正${t.citiesMoved} / hash ${this.terrain.hash}`)); }
     }
-    body.append(h("div", { class: "row" }, h("button", { id: "reset", onclick: () => { if (confirm("初期状態に戻します。よろしいですか?")) { this.sim = null; this.pendingSim = null; this.cerDraft = {}; this.wizReset(); this.store.replace(this.real ? realState(this.s.seed) : defaultState(this.s.seed)); this.r.fit(this.s); } } }, "最初からやり直す")));
   }
   /** Stage 26: the 自動セーブポイント list -- year, 50-year or just-before-relocation, the seats it was saved with; 読込 continues the game from there. Kept apart from the numbered slots. */
   private async buildCheckpoints(body: HTMLElement) {
