@@ -35,7 +35,7 @@ describe("Stage 37 B1/B2: a capital put on a plain that had no city starts a lar
 describe("Stage 37 B3/B4: the world's mood sets the pace, and sub-capitals count 0.7 each", () => {
   const g = plainGame();
   it("a boom with a will to build and a rebuilding phase pulls harder than a slump", () => {
-    const f = (d: Partial<import("../../src/sim/eras").Dials>) => { Object.assign(g.sim.dials, { growth: 1, hwyBuild: 0.8, railBuild: 0.8, hsr: 0.5 }, d); return devFactor(g.sim, 1830); };
+    const f = (d: Partial<import("../../src/sim/eras").Dials>) => { Object.assign(g.sim.dials, { growth: 1, hwyBuild: 0.8, railBuild: 0.8, hsr: 0.5 }, d); return devFactor(g.sim); };
     expect(f({ growth: 1.4, hwyBuild: 1.4, railBuild: 1.4 })).toBeGreaterThan(f({})); expect(f({})).toBeGreaterThan(f({ growth: 0.6, hwyBuild: 0.3, railBuild: 0.3 }));
   });
   it("two sub-capitals each aim at 0.7 of the one's share", () => {

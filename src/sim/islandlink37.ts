@@ -19,7 +19,7 @@ import { buildIndex, newEdgeDefaults, newId, nodeAtCell } from "./network";
 import { stance18 } from "./policy18";
 import { nearTown } from "./ferry";
 import { nearestPlace } from "../core/gazetteer";
-import { modeOf, type SimEdge, type SimState } from "./types";
+import type { SimEdge, SimState } from "./types";
 import type { World } from "./world";
 import { worldMemo } from "./worldMemo";
 
@@ -27,7 +27,7 @@ export const ISLAND_TAG = "【島間接続】", LINK_FROM = 1950, MAX_GAP_KM = 1
 export type Drive = "ultra" | "aggressive" | "real";
 export interface DriveInfo { drive: Drive; bar: number; perYear: number; maxActive: number; fundMult: number; boom: boolean; dispersed: boolean; synergy: boolean }
 /** One candidate: the nearest shore pair of two land masses. */
-export interface ShorePair { a: number; b: number; ca: number; cb: number; gap: number }
+export interface ShorePair { a: number; b: number; ca: number; cb: number; gap: number; /** the straight crossing runs over no other land (the terrain does not change between resets of the cache) */ clear: boolean }
 const pairMemo = worldMemo<ShorePair[]>();
 
 /** The nearest shore pair of every two land masses within MAX_GAP_KM, computed once per world (the terrain changes only by whole reclaimed cells, which reset this cache). */
@@ -36,15 +36,16 @@ export function shorePairs(w: World): ShorePair[] {
   const nx = w.nx, ny = w.ny, coast: number[] = [], land = w.t.land;
   for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) { const k = j * nx + i; if (land[k] !== 1) continue; if (land[k - 1] === 0 || land[k + 1] === 0 || land[k - nx] === 0 || land[k + nx] === 0) coast.push(k); }
   const B = SCAN_CELLS, bx = Math.ceil(nx / B), buckets = new Map<number, number[]>();
-  for (const k of coast) { const key = ((k / nx) | 0) / B | 0; void key; const bkey = (((k / nx) | 0) / B | 0) * bx + ((k % nx) / B | 0); (buckets.get(bkey) ?? buckets.set(bkey, []).get(bkey)!).push(k); }
+  for (const k of coast) { const bkey = (((k / nx) | 0) / B | 0) * bx + ((k % nx) / B | 0); (buckets.get(bkey) ?? buckets.set(bkey, []).get(bkey)!).push(k); }
   const best = new Map<number, ShorePair>(), reach = MAX_GAP_KM / w.cell;
   for (const k of coast) {
     const i = k % nx, j = (k / nx) | 0, bi = (i / B) | 0, bj = (j / B) | 0, la = w.lm[k];
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       const arr = buckets.get((bj + dj) * bx + (bi + di)); if (!arr) continue;
-      for (const q of arr) { const lb = w.lm[q]; if (lb <= la) continue; const d = Math.hypot((q % nx) - i, ((q / nx) | 0) - j); if (d > reach) continue; const key = la * 100000 + lb, cur = best.get(key); if (!cur || d * w.cell < cur.gap) best.set(key, { a: la, b: lb, ca: k, cb: q, gap: Math.round(d * w.cell * 10) / 10 }); }
+      for (const q of arr) { const lb = w.lm[q]; if (lb <= la) continue; const d = Math.hypot((q % nx) - i, ((q / nx) | 0) - j); if (d > reach) continue; const key = la * 100000 + lb, cur = best.get(key); if (!cur || d * w.cell < cur.gap) best.set(key, { a: la, b: lb, ca: k, cb: q, gap: Math.round(d * w.cell * 10) / 10, clear: true }); }
     }
   }
+  for (const pr of best.values()) pr.clear = clearCrossing(w, pr.ca, pr.cb);
   const out = [...best.values()].sort((p, q) => p.gap - q.gap || p.a - q.a || p.b - q.b); pairMemo.set(w, out); return out;
 }
 /** Is the straight line between two shore cells all water in between (it may not cross any other land)? */
@@ -72,7 +73,9 @@ function components(sim: SimState, w: World): Map<number, number> {
   for (const e of Object.values(sim.edges)) { if ((e.facility !== "bridge" && e.facility !== "tunnel") || e.cells.length < 2 || !(e.built >= 1 || live.has(e.id))) continue; const a = w.lm[e.cells[0]], b = w.lm[e.cells[e.cells.length - 1]]; if (a !== b) parent.set(find(a), find(b)); }
   const out = new Map<number, number>(); for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && !out.has(w.lm[k])) out.set(w.lm[k], find(w.lm[k])); return out;
 }
-const nearNode = (sim: SimState, w: World, cell: number, km: number) => { for (const n of Object.values(sim.nodes)) if (w.lm[n.cell] === w.lm[cell] && dist(w.cellPos(n.cell), w.cellPos(cell)) <= km) return true; return false; };
+/** The cells of the road network's nodes, by land mass (built once a year). */
+const nodesByMass = (sim: SimState, w: World) => { const m = new Map<number, number[]>(); for (const n of Object.values(sim.nodes)) (m.get(w.lm[n.cell]) ?? m.set(w.lm[n.cell], []).get(w.lm[n.cell])!).push(n.cell); return m; };
+const nearNode = (w: World, nodes: Map<number, number[]>, cell: number, km: number) => { for (const c of nodes.get(w.lm[cell]) ?? []) if (dist(w.cellPos(c), w.cellPos(cell)) <= km) return true; return false; };
 export interface LinkEval { ok: boolean; why: string; pair: ShorePair; fac?: "bridge" | "tunnel"; cost?: number; score?: number }
 /** Pairs of land masses a link was given up on (project abolished) within COOLING_YEARS: not tried again at once. */
 export const COOLING_YEARS_37 = 12;
@@ -85,12 +88,12 @@ function coolingPairs(sim: SimState, w: World, y: number): Set<number> {
   }
   return out;
 }
-export function evalLink(sim: SimState, w: World, pr: ShorePair, y: number, d: DriveInfo, comp: Map<number, number>, cool: Set<number> = new Set()): LinkEval {
+export function evalLink(sim: SimState, w: World, pr: ShorePair, y: number, d: DriveInfo, comp: Map<number, number>, cool: Set<number> = new Set(), nodes: Map<number, number[]> = nodesByMass(sim, w)): LinkEval {
   if (comp.get(pr.a) === comp.get(pr.b)) return { ok: false, why: "joined", pair: pr };
   if (cool.has(pr.a * 100000 + pr.b)) return { ok: false, why: "cooling", pair: pr };
-  if (!clearCrossing(w, pr.ca, pr.cb)) return { ok: false, why: "over-land", pair: pr };
+  if (!pr.clear) return { ok: false, why: "over-land", pair: pr };
   const s = chooseStructure(sim, pr.gap, pr.gap, "road", y); if (!s) return { ok: false, why: "no-structure", pair: pr };
-  const popA = massPop(sim, w, pr.a), popB = massPop(sim, w, pr.b), small = Math.min(popA, popB), big = Math.max(popA, popB), roads = (nearNode(sim, w, pr.ca, 60) ? 1 : 0) + (nearNode(sim, w, pr.cb, 60) ? 1 : 0);
+  const popA = massPop(sim, w, pr.a), popB = massPop(sim, w, pr.b), small = Math.min(popA, popB), big = Math.max(popA, popB), roads = (nearNode(w, nodes, pr.ca, 60) ? 1 : 0) + (nearNode(w, nodes, pr.cb, 60) ? 1 : 0);
   if (small + big < 200 && roads < 2) return { ok: false, why: "empty", pair: pr, fac: s.fac, cost: s.cost };   // nobody to serve
   const score = (small + 0.15 * big + 400 * roads) / (Math.max(pr.gap, 1) * 250);
   if (score < d.bar) return { ok: false, why: "demand", pair: pr, fac: s.fac, cost: s.cost, score };
@@ -114,10 +117,10 @@ function startLink(sim: SimState, w: World, ev0: LinkEval, y: number): boolean {
 export function planIslandLinks(sim: SimState, w: World, y: number): number {
   if (!sim.rules1800 || !sim.crossings || !sim.tech || y < LINK_FROM) return 0;
   const d = driveOf(sim, y), live = Object.values(sim.projects).filter((p) => p.reason.includes(ISLAND_TAG) && isLive(p.status)).length; if (live >= d.maxActive) return 0;
-  const comp = components(sim, w), cool = coolingPairs(sim, w, y), ok: LinkEval[] = [];
-  for (const pr of shorePairs(w)) { const r = evalLink(sim, w, pr, y, d, comp, cool); if (r.ok) ok.push(r); }
+  const comp = components(sim, w), cool = coolingPairs(sim, w, y), nodes = nodesByMass(sim, w), ok: LinkEval[] = [];
+  for (const pr of shorePairs(w)) { const r = evalLink(sim, w, pr, y, d, comp, cool, nodes); if (r.ok) ok.push(r); }
   ok.sort((p, q) => (q.score ?? 0) / Math.sqrt(Math.max(1, q.cost ?? 1)) - (p.score ?? 0) / Math.sqrt(Math.max(1, p.cost ?? 1)) || p.pair.gap - q.pair.gap);
   let n = 0; const used = new Set<number>();
   for (const r of ok) { if (n >= d.perYear || live + n >= d.maxActive) break; const ka = comp.get(r.pair.a)!, kb = comp.get(r.pair.b)!; if (used.has(ka) || used.has(kb)) continue; if (startLink(sim, w, r, y)) { used.add(ka); used.add(kb); n++; } }
-  void modeOf; return n;
+  return n;
 }
