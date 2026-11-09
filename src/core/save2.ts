@@ -3,7 +3,7 @@ import { PREF_IDS } from "./seat";
 /** Save format v2: { map, sim } with integrity checks. v1 (map only) is migrated, never rejected. Nothing here throws. */
 import { validMetro } from "../sim/metro";
 import { STANCES } from "../sim/kaigen";
-import { checkIntegrity } from "../sim/network";
+import { checkIntegrity, repairRouteChains } from "../sim/network";
 import { DIAL_KEYS, composeDials } from "../sim/eras";
 import { defaultPolicy } from "../sim/policy";
 import { hashString } from "../sim/engine";
@@ -114,8 +114,12 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   }
   raw.schemaVersion = 3;
   const sim = { ...raw, events: Array.isArray(raw.events) ? raw.events : [], stats: Array.isArray(raw.stats) ? raw.stats : [], ...(fin(raw.skippedWallMs) && raw.skippedWallMs >= 0 && raw.skippedWallMs < 1e11 ? { skippedWallMs: raw.skippedWallMs } : {}), skippedMonths: fin(raw.skippedMonths) ? raw.skippedMonths : 0, lastWallMs: fin(raw.lastWallMs) ? raw.lastWallMs : 0, speed: raw.speed === 50 ? 20 : [0, 1, 5, 20].includes(raw.speed) ? raw.speed : 0,   /* Stage 25: ×50 was withdrawn; an old save that had it runs at ×20 */ ceremonyDone: raw.ceremonyDone === true } as unknown as SimState;
-  const bad = checkIntegrity(sim); if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
-  return { sim, problems: [] };
+  let bad = checkIntegrity(sim), note: string[] = [];
+  if (bad.length && bad.every((b) => /^route r\.\d+: (chain broken|missing edge)/.test(b))) {   // Stage 37: a stale route chain is repaired in memory (the stored text is untouched); anything else is still refused
+    const n = repairRouteChains(sim); bad = checkIntegrity(sim); if (!bad.length) note = [`路線${n}本の途中が切れていたため、つながる部分だけ残して読み込みました`];
+  }
+  if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
+  return { sim, problems: note };
 }
 /** After the world exists: every cell must be real land on this map. */
 export function validateSimAgainstWorld(sim: SimState, w: World, terrainHash: string): string | null {

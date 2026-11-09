@@ -224,6 +224,20 @@ export function layPath(sim: SimState, w: World, pathCells: number[], o: LayOpts
   return { chain, created };
 }
 /** Structural self-check used by tests and by load: returns a list of problems (empty = consistent). */
+/** Stage 37: a route whose edge chain has a gap (an edge missing, or two edges that do not meet) is cut at the first gap and keeps the part that is connected -- a route with nothing connected left is removed. Returns how many routes were changed. Used when a save is read, so that one stale route does not make a whole game unreadable (the stored text itself is never touched). */
+export function repairRouteChains(sim: SimState): number {
+  let n = 0;
+  for (const r of Object.values(sim.routes)) {
+    let prev: string | null = null, keep = r.edges.length;
+    for (let i = 0; i < r.edges.length; i++) {
+      const ref = r.edges[i], e = sim.edges[ref.edgeId]; if (!e) { keep = i; break; }
+      const from = ref.dir === 1 ? e.a : e.b, to = ref.dir === 1 ? e.b : e.a;
+      if (prev !== null && prev !== from) { keep = i; break; } prev = to;
+    }
+    if (keep < r.edges.length) { n++; if (keep === 0) delete sim.routes[r.id]; else r.edges = r.edges.slice(0, keep); }
+  }
+  return n;
+}
 export function checkIntegrity(sim: SimState): string[] {
   const bad: string[] = [];
   for (const e of Object.values(sim.edges)) {

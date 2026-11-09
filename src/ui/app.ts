@@ -1402,7 +1402,8 @@ export class App {
       let br = false; try { br = assignBranch(l.sim, await listCheckpoints(idbCpStore)); } catch { ensureIdentity(l.sim); } if (br) l.problems = [...l.problems, "別の分岐として続けます"]; }
     this.sim = null; this.cerDraft = {}; this.pin = null; this.store.replace(l.map); this.creationPrimed = false; this.creationStatus.clear(); this.pendingSim = l.sim; this.saveAfterAttach = !!l.sim; this.r.fit(l.map);
     if (l.quarantine) putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), quarantine: l.quarantine });
-    this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
+    if (l.quarantine) this.toast(`道路データは読み込めませんでした(地図だけ読み込み。保存データは消していません): ${l.problems.find((p) => !/退避/.test(p)) ?? l.problems[0] ?? "原因不明"}`);   // Stage 37: a refused road network is never reported as a successful load
+    else this.toast("読み込みました" + (l.problems.length ? `(${l.problems[0]})` : "")); this.onChange();
     if (this.terrain && this.pendingSim) this.attachPendingSim();   // Stage 26: the same map (a checkpoint, or a slot of this very map) needs no new terrain, so nothing else would ever attach the loaded game
   }
   finalize() {

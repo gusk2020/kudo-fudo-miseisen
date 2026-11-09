@@ -23,12 +23,14 @@ export const POST_KM = 28, POST_REACH_KM = 12;
 export function seedKaido1800(sim: SimState, w: World): { routes: number; posts: number; km: number } {
   let routes = 0, posts = 0, km = 0; const taken = new Set<string>(w.cities.map((c) => c.name)), claimed = new Set<string>();
   for (const k of KAIDO_1800) {
-    const cities = k.via.map((n) => w.cities.find((c) => c.name === n)).filter((c): c is NonNullable<typeof c> => !!c), chain: RouteEdgeRef[] = [], cells: number[] = [];
+    const cities = k.via.map((n) => w.cities.find((c) => c.name === n)).filter((c): c is NonNullable<typeof c> => !!c), cells: number[] = [], hold = { id: "r.kaido-hold", edges: [] as RouteEdgeRef[], oldEdges: [] as string[], active: false } as unknown as SimState["routes"][string];   // (a later leg can split an edge an earlier leg already laid: the chain is kept in a route-shaped holder while laying, so splitEdge rewrites it too -- a plain array went stale and broke the route's chain)
+    sim.routes[hold.id] = hold;
     for (let i = 1; i < cities.length; i++) {
       if (w.t.island[cities[i - 1].cell] !== w.t.island[cities[i].cell]) break;   // (a highway of one island: it ends where the sea begins, so the route stays one connected chain)
       const path = pathfind(w, cities[i - 1].cell, cities[i].cell, { roadCells: buildIndex(sim).roadCells, margin: 10 }); if (!path) continue;
-      const l = layPath(sim, w, path, { open: true, surface: "gravel", quality: 55, built: 1, month: 0, standard: "rural" }); chain.push(...l.chain); cells.push(...path);
+      const l = layPath(sim, w, path, { open: true, surface: "gravel", quality: 55, built: 1, month: 0, standard: "rural" }); hold.edges.push(...l.chain); cells.push(...path);
     }
+    delete sim.routes[hold.id]; const chain = hold.edges;
     if (!chain.length) continue;
     const r = designate(sim, chain, "national", "JP", `${k.name}: ${cities[0].name}〜${cities[cities.length - 1].name}`, "1800年の主要街道(ゲーム上の初期配置。実在の街道の簡略化)", true); if (!r) continue;
     r.kaido = k.name; routes++; km += chain.reduce((a, c) => a + (sim.edges[c.edgeId]?.lengthKm ?? 0), 0);
