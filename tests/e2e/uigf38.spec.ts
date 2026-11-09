@@ -2,7 +2,7 @@
 import { expect, test } from "@playwright/test";
 test.use({ hasTouch: true });
 test("なぜ? is in the 台帳 (not the basic display) and the save panel's three buttons are at its top", async ({ page }) => {
-  test.setTimeout(300000); await page.setViewportSize({ width: 412, height: 915 }); const errs: string[] = []; page.on("pageerror", (e) => errs.push(String(e))); page.on("dialog", (d) => void d.dismiss());
+  test.setTimeout(90000); await page.setViewportSize({ width: 412, height: 915 }); const errs: string[] = []; page.on("pageerror", (e) => errs.push(String(e))); page.on("dialog", (d) => void d.dismiss());
   await page.goto("/?nointro"); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 });
   const kfm = (f: string) => page.evaluate(`(() => { const a = window.__kfm; return (${f})(a); })()`);
   const pos = (n: string) => kfm(`a => a.world.cities.find((c) => c.name === '${n}').pos`), scr = (p: any) => page.evaluate((q) => (window as any).__kfm.r.worldToScreen(q), p);
@@ -14,7 +14,7 @@ test("なぜ? is in the 台帳 (not the basic display) and the save panel's thre
   // F: not in the basic display ...
   expect(await page.locator("#tool-why").count()).toBe(0);
   // ... but in the 台帳, once
-  await page.click("#dock-ledger"); await page.waitForSelector("#tool-why"); expect(await page.locator("#tool-why").count()).toBe(1); expect(await page.locator("#sheet #why-row #tool-why").count()).toBe(1);
+  await page.click("#dock-ledger"); await page.waitForTimeout(800); await page.waitForSelector("#tool-why"); expect(await page.locator("#tool-why").count()).toBe(1); expect(await page.locator("#sheet #led-modes #tool-why").count()).toBe(1);
   const box = (await page.locator("#tool-why").boundingBox())!; expect(box.height).toBeGreaterThanOrEqual(30); expect(box.y + box.height).toBeLessThan(915);
   await page.click("#tool-why"); await page.waitForSelector("#why-hint"); expect(await page.getAttribute("#why-hint #why-stop", "aria-pressed") ?? "x").toBeTruthy();   // the sheet is put away, the state is shown
   expect(await kfm("a => a.sheet")).toBeNull();
