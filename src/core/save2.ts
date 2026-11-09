@@ -162,7 +162,8 @@ async function tx<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequ
   const db = await open();
   return new Promise((res, rej) => { const q = f(db.transaction(STORE, mode).objectStore(STORE)); q.onsuccess = () => { res(q.result); db.close(); }; q.onerror = () => { rej(q.error); db.close(); }; });
 }
-export async function putRaw(key: string, value: unknown): Promise<boolean> { try { await tx("readwrite", (s) => s.put(JSON.stringify(value), key)); return true; } catch { return false; } }
+/** Stage 38 (A): the value is turned into text HERE, in the caller's own turn, and only then is the database opened. It used to be serialised inside the transaction -- after an await -- so a save asked for between two months was written from whatever the running game looked like a moment later (half way through a year's update), and that save would not load. */
+export async function putRaw(key: string, value: unknown): Promise<boolean> { let text: string; try { text = JSON.stringify(value); } catch { return false; } try { await tx("readwrite", (s) => s.put(text, key)); return true; } catch { return false; } }
 export async function getRaw(key: string): Promise<string | undefined> { try { return await tx<string | undefined>("readonly", (s) => s.get(key) as IDBRequest<string | undefined>); } catch { return undefined; } }
 /** Stage 23: what a slot shows -- the capital and sub-capital IN THAT SAVE and the year it was saved in (never the game now being played). */
 export interface SlotMeta { capital: string; sub: string; year: number | null; savedAt: number }

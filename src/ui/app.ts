@@ -171,6 +171,8 @@ export class App {
     this.r.featureSel = this.tool === "feature" && this.editable() ? this.selFeature : null; this.r.rangeSel = this.tool === "range" && this.rangeSel && this.editable() ? (() => { const d = rangeById(this.rangeSel!); return d ? { pts: rangeWorldLine(this.s, d), core: d.core } : null; })() : null; this.r.creationSel = this.tool === "create" ? this.creationOutline() : null; this.r.createPending = this.tool === "create" && this.createPick ? this.createPick.w : null; this.r.ridgeHandles = isRidgeTool(this.tool); this.r.ridgeSel = this.tool === "ridge-pick" ? this.ridgeSel : null; { const wi = this.real && this.terrain ? this.ensureWorld()?.islets : undefined; { const w0 = this.real && this.terrain ? this.world : null, st0 = this.activeSeats(), seat = new Set([st0.capital, st0.sub, st0.palace]); this.r.seatOverride = this.sim?.e2200 && w0 ? this.seatPoints(w0) : null; this.r.baseNames = w0 ? w0.cities.filter((c) => c.kind === "capital").sort((a, b) => (seat.has(b.pref ?? "") ? 1 : 0) - (seat.has(a.pref ?? "") ? 1 : 0) || b.pop0 - a.pop0).map((c) => ({ name: c.name, p: c.pos })) : null; } this.r.islets = wi && this.isletsWanted() ? wi.filter((x) => !x.existing).map((x) => ({ pos: x.pos, len: x.islet.len, wid: x.islet.wid, bear: x.islet.bear, name: x.islet.name, claim: !!x.islet.claim, shaped: !!x.islet.shape, tiny: (x.islet.shapeAreaKm2 ?? x.islet.area) < 1, ...(x.islet.since !== undefined && x.islet.shape && x.islet.shape.length > 2 ? { shape: x.islet.shape.flatMap((q: number[]) => { const r = lonLatToReal(q[0], q[1]); return [r[0], -r[1]]; }) } : {}) })) : null; } this.r.update(this.s, this.terrain, this.issues, this.pending); this.renderRoads(); }
   markClean() { try { localStorage.removeItem(lsKey("run")); } catch { /* ignore */ } }
   /** Saves only between simulated months (never a half-finished one). `force` finishes the month first (the page is going away). */
+  /** Stage 38 (A): the game as a save, taken between months: the month in progress is finished first, so the state written is a whole one. */
+  private snapshot() { if (this.runner && !this.runner.idle) this.runner.settle(); return makeSave(this.s, this.sim ?? this.pendingSim); }
   persist(force = false): Promise<boolean> {
     // Saves only between months. While the clock is busy, wait for a gap (one retry timer at a time, never a growing pile of them);
     // if none comes for 30 s (×20 never goes idle), finish the month in progress and save anyway so progress is never lost.
@@ -222,7 +224,8 @@ export class App {
   }
   /** After terrain exists: attach a loaded sim only if it matches this map and terrain exactly; otherwise quarantine it. */
   private attachPendingSim() {
-    if (!this.pendingSim) return; const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null; this.bootPending = false;
+    if (!this.pendingSim) return; if (this.terrain) this.worldKey = "\u0000attach";   // Stage 38 (A): the world is built again from THIS game's land log. The cache key only said "a log exists", and a world made a moment earlier from the screen's old (or empty) log was kept -- a save made later than that failed on land the world did not have ("道路が地形の外にあります") and came back as a map without its roads
+    const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null; this.bootPending = false;
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
     ensureIdentity(sim); finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; if (this.saveAfterAttach) { this.saveAfterAttach = false; void this.persist(true); }   /* a game the player loaded is written as the running game at once: a reload right after must not bring back the one it replaced */ setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
@@ -1358,7 +1361,7 @@ export class App {
     slots.forEach((n, i) => {
       const m = metas[i], used = have.has(n), text = m ? `${m.capital} / ${m.sub} / ${m.year === null ? "開始前" : m.year + "年"}` : used ? "(読めないデータ)" : "(空)";
       body.append(h("div", { class: "slot-row", id: "slot-" + (i + 1) }, h("span", { class: "slot-no" }, NUM[i]), h("span", { class: "slot-text" + (used ? "" : " empty"), title: text }, text),
-        h("button", { class: "slot-save", onclick: async () => { if (used && !confirm(`${NUM[i]}は使用中です(${text})。上書きしますか?`)) return; this.toast((await saveGame(n, makeSave(this.s, this.sim ?? this.pendingSim))) ? "セーブしました" : "セーブできません(ブラウザの保存が無効)"); this.buildSheet(); } }, "保存"),
+        h("button", { class: "slot-save", onclick: async () => { if (used && !confirm(`${NUM[i]}は使用中です(${text})。上書きしますか?`)) return; this.toast((await saveGame(n, this.snapshot())) ? "セーブしました" : "セーブできません(ブラウザの保存が無効)"); this.buildSheet(); } }, "保存"),
         h("button", { class: "slot-load", disabled: !used, onclick: async () => { const l = await loadGame(n); if (l) void this.adopt(l); else this.toast("ロードできません"); } }, "読込")));
     });
     if (this.real) await this.buildCheckpoints(body);
@@ -1412,7 +1415,7 @@ export class App {
   }
   exportFile() {
     const geo = this.s.finalized && this.terrain ? new GeoMap(this.s, this.terrain).summary() : undefined;
-    const blob = new Blob([exportGame(makeSave(this.s, this.sim), { geo })], { type: "application/json" });
+    const blob = new Blob([exportGame(this.snapshot(), { geo })], { type: "application/json" });
     const a = h("a", { href: URL.createObjectURL(blob), download: this.s.finalized ? "kfm-map-final.json" : "kfm-map-draft.json" });
     document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
