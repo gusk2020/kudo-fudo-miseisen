@@ -1,8 +1,7 @@
 /**
- * Stage 36 / M1: which prefecture each Kuril island belongs to in the 1800 start (北海道 or 樺太県).
+ * Stage 36 / M1, Stage 38 (E): which prefecture each Kuril island belongs to in the 1800 start: ALL of them belong to 根室県 (HK-NEM) -- 歯舞・色丹・国後・択捉 and the northern chain up to 占守島 alike (the game's own alternate-world decision; it is not a statement about who governs these islands).
  * Decided ONCE, from fixed coordinates and a fixed rule, and frozen for the whole game: nothing here reads the year, the roads or any simulation state, so membership can never change as the network grows.
- * Rule: each island goes to the nearer of two fixed harbour anchors by great-circle distance -- 根室(納沙布岬) for 北海道 and 大泊(コルサコフ) for 樺太県, the two ports the chain was reached from
- * (the sea routes of the time ran from them). A distance tie (within 1 km) goes to 北海道. The coordinates are approximate public geographic positions (a gameplay assumption, not a survey).
+ * (Before Stage 38 the northern islands nearer 大泊 went to 樺太県; the anchors below stay for reference, the rule no longer reads them.)
  * Fictional alternate history: not a claim about who governed these islands.
  */
 export type KurilPref = "HK-NEM" | "KRF";   // (根室県 = the Hokkaido prefecture whose coast the chain is reached from; 樺太県)
@@ -20,6 +19,6 @@ export const kmBetween = (a: { lat: number; lon: number }, b: { lat: number; lon
   return 6371 * 2 * Math.asin(Math.sqrt(h));
 };
 export function kurilPrefOf(i: { lat: number; lon: number }): KurilPref {
-  const h = kmBetween(i, KURIL_ANCHORS["HK-NEM"]), k = kmBetween(i, KURIL_ANCHORS.KRF); return k < h - 1 ? "KRF" : "HK-NEM";
+  void i; return "HK-NEM";   // Stage 38: every Kuril island is 根室県
 }
 export const KURIL_MEMBERSHIP: Readonly<Record<string, KurilPref>> = Object.freeze(Object.fromEntries(KURIL_ISLANDS.map((i) => [i.id, kurilPrefOf(i)])));

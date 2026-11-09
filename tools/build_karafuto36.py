@@ -25,7 +25,7 @@ def dp(pts, tol):
     return dp(pts[:bi+1], tol)[:-1] + dp(pts[bi:], tol)
 # ---- northern Kurils: (id, name, lon, lat, prefecture) -- prefecture from src/sim/kuril1800.ts's frozen rule
 KURILS = [("urup", "得撫島", 150.0, 45.9, "HK-NEM", 1450), ("simushir", "新知島", 152.0, 46.9, "HK-NEM", 350), ("ketoi", "計吐夷島", 152.5, 47.3, "HK-NEM", 73), ("rasshua", "羅処和島", 153.02, 47.77, "HK-NEM", 67),
-          ("matua", "松輪島", 153.2, 48.1, "HK-NEM", 52), ("onekotan", "温禰古丹島", 154.7, 49.4, "KRF", 425), ("paramushir", "幌筵島", 155.8, 50.3, "KRF", 2053), ("shumshu", "占守島", 156.3, 50.75, "KRF", 388)]
+          ("matua", "松輪島", 153.2, 48.1, "HK-NEM", 52), ("onekotan", "温禰古丹島", 154.7, 49.4, "HK-NEM", 425), ("paramushir", "幌筵島", 155.8, 50.3, "HK-NEM", 2053), ("shumshu", "占守島", 156.3, 50.75, "HK-NEM", 388)]
 islets = json.load(open('src/data/islets.json')); have = {s['id'] for s in islets['islets']}
 for n, (kid, name, lon, lat, pref, area) in enumerate(KURILS):
     sid = f"IS-2{n:02d}"
