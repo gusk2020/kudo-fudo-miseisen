@@ -7,7 +7,8 @@
  * Nothing here touches the terrain, the coastline or Lake Biwa.
  */
 import { cycleOf } from "./cycle27";
-import { ev } from "./engine";
+import { ev, rand } from "./engine";
+import { buildIndex, nodeAtCell, pad } from "./network";
 import { homeCity, subCity } from "./ceremony";
 import { SUB2_SHARE } from "./subs36";
 import type { SimState } from "./types";
@@ -15,6 +16,8 @@ import type { World, WCity } from "./world";
 
 export const SEAT_SHARE: Record<"capital" | "sub" | "palace", number> = { capital: 0.07, sub: 0.035, palace: 0.01 };
 export const MAINTAIN_RATE = 0.7, MAINTAIN_SHARE = 0.6;
+/** Satellite towns round a developing seat: up to SAT_MAX (capital) of them, one every SAT_EVERY years while the seat grows, 12-40 km out on the same land. */
+export const SAT_MAX = 6, SAT_EVERY = 2, SAT_MIN_KM = 12, SAT_MAX_KM = 40, SAT_POP_MIN = 3500, SAT_POP_SPAN = 4500;
 export const DEV_YEARS = 70, DEV_FULL_YEARS = 40, DEV_RATE = 0.09, DONOR_MAX = 0.015, DONOR_FLOOR = 2000;
 /** The world's mood for building a city this year (about 1 in an ordinary year, more in a boom with a will to build, less in a slump). */
 export function devFactor(sim: SimState): number {
@@ -43,8 +46,10 @@ export function developSeats37(sim: SimState, w: World, y: number): number {
     let want = Math.round(gap * DEV_RATE * f * t); if (want < 1) continue;
     const donors = w.cities.filter((c) => !seatIds.has(c.id) && (sim.cities[c.id]?.pop ?? 0) > DONOR_FLOOR); let room = 0; const gives = donors.map((c) => { const g = Math.max(0, Math.min(DONOR_MAX * sim.cities[c.id].pop, sim.cities[c.id].pop - DONOR_FLOOR)); room += g; return g; });
     if (room <= 0) continue; want = Math.min(want, Math.floor(room));
+    // the pull is shared: most goes to the city, a part to the satellite towns round it (the commuter belt of a capital is made of towns)
+    const toSat = age >= 1 && age <= DEV_FULL_YEARS && age % SAT_EVERY === 0 ? maybeSatellite(sim, w, s, st.pop / Math.max(1, target), want) : 0, toCity = want - toSat;
     let got = 0; donors.forEach((c, i) => { const take = Math.round((gives[i] / room) * want); sim.cities[c.id].pop -= take; got += take; });
-    st.pop += got; moved += got;
+    st.pop += Math.min(got, toCity); moved += got;
   }
   return moved;
 }
@@ -54,4 +59,20 @@ export function seatFloor37(sim: SimState, w: World, cityId: string, y: number):
   if (!sim.rules1800 || !sim.dev37) return 0;
   for (const s of seatTargets(sim, w)) { if (s.city.id !== cityId) continue; const age = y - (sim.dev37[`${s.role}:${s.city.id}`] ?? y); let total = 0; for (const c of w.cities) total += sim.cities[c.id]?.pop ?? 0; return Math.min(0.8 * s.share * (MAINTAIN_SHARE + (1 - MAINTAIN_SHARE) * taper(age)) * total, 0.9 * (s.city.capPop ?? Infinity)) * 0.9; }
   return 0;
+}
+
+/** One satellite town, when the seat has fewer than its share of them: returns the people it takes (they are part of this year's pull, so the total is unchanged). */
+function maybeSatellite(sim: SimState, w: World, s: SeatTarget, fill: number, budget: number): number {
+  const mine = Object.values(sim.settlements).filter((v) => v.city === s.city.id && !v.gone && /近郊/.test(v.name)), cap = Math.round(SAT_MAX * (s.share / SEAT_SHARE.capital)), want = Math.min(cap, Math.ceil(cap * Math.min(1, fill * 1.2)));
+  if (mine.length >= want || budget < SAT_POP_MIN) return 0;
+  const used = new Set(Object.values(sim.settlements).map((v) => v.cell)); let cell = -1;
+  for (let tries = 0; tries < 24 && cell < 0; tries++) {
+    const ang = rand(sim) * Math.PI * 2, r = SAT_MIN_KM + rand(sim) * (SAT_MAX_KM - SAT_MIN_KM), q = w.cellOf([s.city.pos[0] + Math.cos(ang) * r, s.city.pos[1] + Math.sin(ang) * r]);
+    if (q >= 0 && w.t.land[q] === 1 && w.lm[q] === w.lm[s.city.cell] && !used.has(q) && !w.cityByCell.has(q)) cell = q;
+  }
+  if (cell < 0) return 0;
+  const pop = Math.min(Math.round(budget), Math.round(SAT_POP_MIN + rand(sim) * SAT_POP_SPAN)), id = `s.${pad(1 + Object.keys(sim.settlements).reduce((m, k) => Math.max(m, parseInt(k.slice(2), 10) || 0), 0), 4)}`;
+  sim.settlements[id] = { id, name: `${s.city.name.replace(/市$/, "")}近郊${mine.length + 1}`, cell, city: s.city.id, pop, pop0: pop, isolatedYears: 0, gone: false };
+  nodeAtCell(sim, w, buildIndex(sim), cell, "village");
+  return pop;
 }

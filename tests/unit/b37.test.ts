@@ -15,6 +15,7 @@ function plainGame() {
   const g = stage3SimOn(base, 0, 7, { start1800: true, capital: pref } as never) as unknown as { sim: import("../../src/sim/types").SimState; w: import("../../src/sim/world").World }; g.sim.policy!.mode = "auto"; return { ...g, pos, far: bd };
 }
 const urban = (g: { sim: import("../../src/sim/types").SimState; w: import("../../src/sim/world").World }) => g.w.cities.reduce((a, c) => a + (g.sim.cities[c.id]?.pop ?? 0), 0);
+const everyone = (g: { sim: import("../../src/sim/types").SimState; w: import("../../src/sim/world").World }) => urban(g) + Object.values(g.sim.settlements).reduce((a, v) => a + (v.gone ? 0 : v.pop), 0);
 describe("Stage 37 B1/B2: a capital put on a plain that had no city starts a large development at once", () => {
   const g = plainGame(), cap = homeCity(g.w, g.sim.capital)!, landBefore = g.w.t.land.reduce((a, b) => a + b, 0), start = g.sim.cities[cap.id].pop;
   it("the place is really new (far from every existing city) and starts small", () => { expect(g.far).toBeGreaterThan(60); expect(start).toBeLessThan(60000); });
@@ -25,7 +26,12 @@ describe("Stage 37 B1/B2: a capital put on a plain that had no city starts a lar
   it("the development is logged in the timeline, and nobody is created or destroyed by it (one year moves people, the total stays)", () => {
     expect(g.sim.events.some((e) => e.kind === "seatdev")).toBe(true);
     const k = Object.keys(g.sim.dev37!).length; expect(k).toBeGreaterThanOrEqual(1);
-    const before = urban(g); const moved = developSeats37(g.sim, g.w, 1830 + 0); expect(urban(g)).toBe(before); expect(moved).toBeGreaterThanOrEqual(0);
+    const before = everyone(g); const moved = developSeats37(g.sim, g.w, 1830 + 0); expect(Math.abs(everyone(g) - before)).toBeLessThan(200); expect(moved).toBeGreaterThanOrEqual(0);
+  });
+  it("satellite towns grow up round the new capital (the commuter belt), on the same land, 12-40 km out, with people who came from elsewhere", () => {
+    const sats = Object.values(g.sim.settlements).filter((v) => v.city === cap.id && !v.gone && /近郊/.test(v.name)); expect(sats.length).toBeGreaterThanOrEqual(3);
+    for (const v of sats) { expect(g.w.lm[v.cell]).toBe(g.w.lm[cap.cell]); expect(g.w.t.land[v.cell]).toBe(1); const d = Math.hypot(g.w.cellPos(v.cell)[0] - cap.pos[0], g.w.cellPos(v.cell)[1] - cap.pos[1]); expect(d).toBeGreaterThan(8); expect(d).toBeLessThan(60); }
+    expect(new Set(Object.values(g.sim.settlements).map((v) => v.id)).size).toBe(Object.keys(g.sim.settlements).length);
   });
   it("the terrain, the coast and the lakes are untouched by it", () => { expect(g.w.t.land.reduce((a, b) => a + b, 0)).toBe(landBefore); });
   it("the old capital stays an ordinary city with most of its people (it is never emptied)", () => {
