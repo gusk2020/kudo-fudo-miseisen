@@ -52,6 +52,7 @@ export const MS_PER_MONTH_X1 = MONTHS_PER_YEAR_X1_MS / 12;
 export const CATCHUP_CAP_MONTHS = 360;            // at most 30 years are simulated on return; the rest is reported as skipped
 export const EVENT_CAP = 600, EVENT_CAP_S3 = 1000;
 /** Everyday noise is dropped first when the timeline is full, so the history that matters (world, policy, reforms, openings, closures) survives a century. */
+const KEEP_EVENTS = new Set(["tech"]);
 const MINOR_EVENTS = new Set(["village", "boom", "city", "dormant", "reopen", "lost", "skip", "project", "lane"]);
 export const CAPITAL_BONUS = 1.35, CAPITAL_LOSS = 0.85, SUB_CAPITAL_BONUS = 1.15;   // pop multipliers for a capital that is not Tokyo (provisional)
 /** Stage 9: リニア -- not before this calendar year, nor before the technology clock reaches MAGLEV_TECH_YEAR, and only for long new high-speed lines. */
@@ -77,7 +78,7 @@ export function ev(sim: SimState, kind: string, text: string, cause: string, ref
   const cap = sim.stage3 ? EVENT_CAP_S3 : EVENT_CAP;
   if (sim.events.length > cap + (sim.stage3 ? 100 : 0)) {
     if (sim.stage3) { let extra = sim.events.length - cap; const keep = sim.events.filter((x) => { if (extra > 0 && MINOR_EVENTS.has(x.kind)) { extra--; return false; } return true; }); sim.events = keep; }
-    if (sim.events.length > cap) sim.events.splice(0, sim.events.length - cap);
+    if (sim.events.length > cap) { let extra = sim.events.length - cap; sim.events = sim.events.filter((x) => { if (extra > 0 && !KEEP_EVENTS.has(x.kind)) { extra--; return false; } return true; }); }   // Stage 37: the technology / fictional-history entries (a few dozen in a whole game) are never the ones dropped -- the oldest ordinary events go first
   }
 }
 export const prefName = (id: string) => JAPAN.prefectures.find((p) => p.id === id)?.name ?? id;

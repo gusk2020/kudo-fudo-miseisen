@@ -52,3 +52,15 @@ export function fireHistory1800(sim: SimState, y: number): number {
   for (const m of ALL_MILESTONES) if (m.year === y) { ev(sim, "tech", `${y}年: ${m.text}${m.tech === "世界線" || m.tech === "地図" ? "" : `【${PHASE_LABEL[m.phase]}】`}`, m.cause, { milestone: m.id }); n++; }
   return n;
 }
+
+/** Stage 37: puts back any technology / fictional-history entry that is due but missing from the event list (a game that lost them to an old event cap, or one started before they existed). Idempotent: an entry is identified by its milestone id. Returns how many were added. */
+export function backfillHistory1800(sim: SimState, nowYear: number): number {
+  if (!sim.rules1800) return 0;
+  const have = new Set(sim.events.filter((e) => e.kind === "tech").map((e) => e.refs?.milestone)); let n = 0;
+  for (const m of ALL_MILESTONES) {
+    if (m.year > nowYear || have.has(m.id)) continue;
+    sim.events.push({ id: ++sim.next.event, month: Math.max(0, (m.year - sim.startYear) * 12), kind: "tech", text: `${m.year}年: ${m.text}${m.tech === "世界線" || m.tech === "地図" ? "" : `【${PHASE_LABEL[m.phase]}】`}`, cause: m.cause, refs: { milestone: m.id } }); n++;
+  }
+  if (n) sim.events.sort((a, b) => a.month - b.month || a.id - b.id);
+  return n;
+}

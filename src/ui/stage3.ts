@@ -5,6 +5,7 @@ import type { App } from "./app";
 import { h } from "./app";
 import { buildMini, buildNumberList, modeBar, targetOfEdges, targetOfProject, targetOfRoute, type HlTarget } from "./lines23";
 import type { NumClass } from "../sim/numreg";
+import { backfillHistory1800 } from "../sim/history1800";
 import { DIAL_INFO, DIAL_RANGE, DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey } from "../sim/eras";
 import { effectText } from "../sim/events";
 import { prefName, routeLabel, skippedLabel } from "../sim/engine";
@@ -76,6 +77,7 @@ export function buildTimeline(app: App, body: HTMLElement) {
   for (const k of Object.keys(FILTER_LABEL)) row.append(h("button", { id: "tl-" + k, class: ui3.tl === k ? "mode on" : "mode", "aria-pressed": ui3.tl === k ? "true" : "false", onclick: () => { ui3.tl = k; ui3.tlN = 60; app.buildSheet(); } }, FILTER_LABEL[k]));
   body.append(row, h("small", {}, "【史実】=実際の歴史／【架空】=この世界線だけの出来事／【予測モデル】=2027年以降の確率的な想定"));
   if (sim.skippedMonths) body.append(h("div", { class: "issue warn" }, `${skippedLabel(sim)}(放置した実時間のうち、計算しきれず飛ばした分)`));
+  if (sim.rules1800) backfillHistory1800(sim, sim.startYear + Math.floor(sim.month / 12));   // Stage 37: the technology rows are always there when the filter is opened
   const f = KIND_FILTER[ui3.tl] ?? KIND_FILTER.all, list = [...sim.events].reverse().filter((e) => (ui3.tl === "rail" ? /鉄|線|電|事業者|国鉄/.test(e.text) : f(e.kind)));
   for (const e of list.slice(0, ui3.tlN)) body.append(h("div", { class: "issue" }, `${ym(sim, e.month)} ${e.text}`, h("br"), h("small", {}, `原因・理由: ${e.cause}`)));
   if (list.length > ui3.tlN) body.append(h("button", { id: "tl-more", onclick: () => { ui3.tlN += 60; app.buildSheet(); } }, `さらに表示(残り${list.length - ui3.tlN}件)`));
@@ -134,7 +136,7 @@ export function buildLedger(app: App, body: HTMLElement) {
 
 /** Stage 36: the state of each transport technology of an 1800 game (試験・実用・普及・衰退) in the current year, so an experiment is never mistaken for a service. */
 export function buildTechAtlas(sim: SimState, body: HTMLElement) {
-  const y = sim.startYear + Math.floor(sim.month / 12), box = h("div", { class: "issue", id: "atlas-tech" }, h("b", {}, `技術の段階(${y}年)`));
+  const y = sim.startYear + Math.floor(sim.month / 12), box = h("div", { class: "issue", id: "atlas-tech" }, h("b", {}, `技術(鉄道・飛行船・自動車・飛行機・高速道路)の段階(${y}年)`));
   for (const t of TECHS_1800) { const s = techNow(t, y); box.append(h("div", { class: "row", id: "atlas-tech-" + t }, `${t}: ${s.label}${s.since ? `(${s.since}年〜)` : ""}${s.phase === "experiment" ? " ※試験のみ。定期の路線は作られません" : ""}`)); }
   box.append(h("small", {}, "技術の登場年は固定。広がり方は人口・経済・地形・需要で変わります。"));
   body.append(box);

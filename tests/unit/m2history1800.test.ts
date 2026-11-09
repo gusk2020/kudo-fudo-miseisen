@@ -27,3 +27,22 @@ describe("Stage 36: timeline and atlas of an 1800 game", () => {
     expect((sim.hubs?.routes ?? []).filter((r) => r.mode === "air").length).toBe(0);
   }, 900000);
 });
+
+import { advance as advance37 } from "../../src/sim/engine";
+import { stage3Sim as stage3Sim37 } from "./simhelp";
+describe("Stage 37 (A3): the technology / fictional-history entries survive the event cap", () => {
+  it("after 150 busy years the 1800-1860 technology entries are still in the timeline, and the 技術・架空史 filter has them", () => {
+    const g = stage3Sim37("heisei", 7, false, 0, 2, true, undefined, undefined, { start1800: true }); g.sim.policy!.mode = "auto"; advance37(g.sim, g.w, 12 * 150);
+    const tech = g.sim.events.filter((e) => e.kind === "tech"); expect(tech.length).toBeGreaterThan(8);
+    expect(tech.some((e) => /1810|鉄道/.test(e.text))).toBe(true); expect(tech.some((e) => /1860|飛行船/.test(e.text))).toBe(true); expect(g.sim.events.length).toBeLessThanOrEqual(1100);
+  });
+});
+describe("Stage 37 (A3): missing technology rows are put back", () => {
+  it("backfill restores dropped rows once, in order, and never duplicates", async () => {
+    const { backfillHistory1800 } = await import("../../src/sim/history1800");
+    const g = stage3Sim37("heisei", 7, false, 0, 2, true, undefined, undefined, { start1800: true }); g.sim.events = g.sim.events.filter((e) => e.kind !== "tech");
+    const n = backfillHistory1800(g.sim, 1865); expect(n).toBeGreaterThan(6); expect(backfillHistory1800(g.sim, 1865)).toBe(0);
+    const t = g.sim.events.filter((e) => e.kind === "tech"); expect(t.some((e) => /1860/.test(e.text))).toBe(true); expect(t.every((e, i) => i === 0 || t[i - 1].month <= e.month)).toBe(true);
+    expect(t.some((e) => /1900/.test(e.text))).toBe(false);
+  });
+});

@@ -68,7 +68,7 @@ export class Renderer {
   /** Stage 20: the small islands (drawn as ellipses of their real size, at least a few pixels wide so the tiniest can be seen and tapped) */
   /** Stage 22: the 県庁所在地 of the game's world (moved ones included), most important first; the base map names these, without overlaps */
   baseNames: { name: string; p: Vec }[] | null = null;
-  islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean; shaped?: boolean; tiny?: boolean }[] | null = null;
+  islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean; shaped?: boolean; tiny?: boolean; shape?: number[] }[] | null = null;
   /** Stage 22: the real-map coastline of 地球地図日本 (drawn once, reused; the 5 km grid underneath keeps the simulation's own land) */
   private gm: { fill: Graphics; mask: Graphics; coast: Graphics; border: Graphics; bg: string } | null = null;
   private gmSplit = splitGmj(GMJ.polys as unknown as number[][]);
@@ -130,6 +130,8 @@ export class Renderer {
   ridgeSel: { key: "sw" | "ne"; si: number } | null = null;
   /** How many range strokes the last redraw put on the map (0 on the road map; for tests). */
   ridgeStrokesDrawn = 0;
+  /** Stage 37: how many far-north outlines (樺太, the northern Kurils) the last redraw put on the real map (for tests). */
+  farLandDrawn = 0;
   private withPending(s: ProjectState, pending: Pending | null, which: "biwa" | "fuji"): ProjectState {
     const f = pending?.feature; if (!f || f.which !== which) return s;
     return { ...s, features: { ...s.features, [which]: { ...s.features[which], pos: f.pos, ...(f.rot !== undefined ? { rot: f.rot } : {}), ...(f.scale !== undefined ? { scale: f.scale } : {}), ...(f.scaleY !== undefined ? { scaleY: f.scaleY } : { scaleY: undefined }) } } };
@@ -173,11 +175,15 @@ export class Renderer {
         if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(bad.has(id) ? 3 : 1.4), color: bad.has(id) ? 0xd22 : 0x2c3e1f });
       }
     }
-    if (s.islands && !gmOn) for (const id of EXTRA_IDS) for (const poly of EXTRA.islands[id].parts) {   // the added islands (world = real km; never deformed)
+    this.farLandDrawn = 0;
+    if (s.islands) for (const id of EXTRA_IDS) if (!gmOn || id === "karafuto") for (const poly of EXTRA.islands[id].parts) {
+      if (gmOn) this.farLandDrawn++;   // (Stage 37: 樺太 is outside 地球地図日本's coastline, so it is drawn from its own outline on the real map too)
+        // the added islands (world = real km; never deformed)
       if (landFlat) fills.poly(flat(poly)).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d });
       if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(1.4), color: 0x2c3e1f });
     }
-    if (this.islets) for (const o of this.islets) {   // Stage 20 / 22: the island's own outline is in the coastline above; a speck too small to see gets a small dot (never a made-up shape); one with no outline in the data, a dot too
+    if (this.islets) for (const o of this.islets) {
+      if (o.shape && gmOn) { this.farLandDrawn++; if (landFlat) fills.poly(o.shape).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); if (s.layers.coast) coast.poly(o.shape).stroke({ width: px(1.2), color: 0x2c3e1f }); }   // Stage 37: an island outside 地球地図日本's coastline (the northern Kurils) is drawn from its own outline   // Stage 20 / 22: the island's own outline is in the coastline above; a speck too small to see gets a small dot (never a made-up shape); one with no outline in the data, a dot too
       if (!o.shaped || o.tiny || !gmOn) { const r = px(2.6); fills.circle(o.pos[0], -o.pos[1], r).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); coast.circle(o.pos[0], -o.pos[1], r).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f }); }
       if (z > 0.9 || (z > 0.45 && o.len >= 12)) { const tx = new Text({ text: o.name, style: { fontSize: 10, fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(o.pos[0] + px(6), -o.pos[1] - px(5)); this.labels.addChild(tx); }
     }
