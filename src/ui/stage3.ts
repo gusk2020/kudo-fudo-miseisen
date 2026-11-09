@@ -67,7 +67,7 @@ export function buildKaigen(app: App, body: HTMLElement) {
 
 const KIND_FILTER: Record<string, (k: string) => boolean> = {
   all: () => true, world: (k) => k === "world", domestic: (k) => k === "domestic" || k === "reform", policy: (k) => k === "policy",
-  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), hub: (k) => ["port", "air", "lane", "ferry"].includes(k), tech: (k) => k === "tech", city: (k) => k === "city" || k === "village" || k === "boom",
+  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), hub: (k) => ["port", "air", "lane", "ferry"].includes(k), tech: (k) => k === "tech", city: (k) => k === "city" || k === "village" || k === "boom" || k === "seatdev",
 };
 const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", hub: "港湾・空港", tech: "技術・架空史", city: "人口" };
 export function buildTimeline(app: App, body: HTMLElement) {

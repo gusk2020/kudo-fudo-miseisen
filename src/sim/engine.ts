@@ -29,6 +29,8 @@ import { ensureHubs, hubBoost, hubStats, reviewHubs } from "./hubs";
 import { reviewRailLines } from "./railecon";
 import { reviewWorks } from "./freeze";
 import { carryOver, finishCrossing, isCrossingProject, planCrossings } from "./crossing";
+import { planIslandLinks } from "./islandlink37";
+import { developSeats37 } from "./devseat37";
 import { homeCity, seatCity, subCity, tokyoCity } from "./ceremony";
 import { siteCapacity, upkeepMult } from "./land";
 import { ecoIndustry, ecoYear } from "./econ";
@@ -52,7 +54,7 @@ export const MS_PER_MONTH_X1 = MONTHS_PER_YEAR_X1_MS / 12;
 export const CATCHUP_CAP_MONTHS = 360;            // at most 30 years are simulated on return; the rest is reported as skipped
 export const EVENT_CAP = 600, EVENT_CAP_S3 = 1000;
 /** Everyday noise is dropped first when the timeline is full, so the history that matters (world, policy, reforms, openings, closures) survives a century. */
-const KEEP_EVENTS = new Set(["tech"]);
+const KEEP_EVENTS = new Set(["tech", "seatdev"]);
 const MINOR_EVENTS = new Set(["village", "boom", "city", "dormant", "reopen", "lost", "skip", "project", "lane"]);
 export const CAPITAL_BONUS = 1.35, CAPITAL_LOSS = 0.85, SUB_CAPITAL_BONUS = 1.15;   // pop multipliers for a capital that is not Tokyo (provisional)
 /** Stage 9: リニア -- not before this calendar year, nor before the technology clock reaches MAGLEV_TECH_YEAR, and only for long new high-speed lines. */
@@ -209,7 +211,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   yield* evaluateEdgesGen(sim, w, an, y); yield;
   evaluateRoutes(sim, w, y); reviewRailLines(sim, w, y); yield;
   yield* planYearGen(sim, w, an, y);
-  if (sim.crossings) { yield; planCrossings(sim, w, y); yield; reviewLakeFerries(sim, w, y); }
+  if (sim.crossings) { yield; planCrossings(sim, w, y); yield; if (sim.rules1800) planIslandLinks(sim, w, y); yield; reviewLakeFerries(sim, w, y); }   // (Stage 37: the island links of an 1800 game, from 1950)
   if (sim.stage3) { yield; syncNumbers(sim, y); }   // Stage 23
   reviewWorks(sim);
   refreshNick(sim);
@@ -288,7 +290,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     const tot = w.cities.reduce((t, c) => t + sim.cities[c.id].pop, 0), want = totalBefore * (1 + natRate), f = tot > 0 ? want / tot : 1;
     if (Math.abs(f - 1) > 1e-9) for (const c of w.cities) { const st = sim.cities[c.id]; st.pop = Math.max(2000, Math.round(st.pop * f)); }
   }
-  if (sim.pot17) { const k = sim.kaigen; if (k && k.eras.length > (sim.pot17.eras ?? 1)) { const e = k.eras[k.eras.length - 1], seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), ...(sim.subCapital2 ? { sub2: sim.subCapital2 } : {}), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; reassignPotential(sim.pot17, w.t, seats, k.recon?.focus ?? "concentrate", sim.seed, k.eras.length, y, e.name, (k.recon?.coast === "neutral" ? undefined : k.recon?.coast), sim.pot17.c19 ? seatLL(sim, w) : undefined); ev(sim, "potential", `改元(${e.name})で府県の発展順位が組み替わった`, `上位は首都・副首都・皇居とその隣県。順位は${y}年から年々なだらかに効く`, {}); sim.pot17.eras = k.eras.length; } glidePotential(sim.pot17); settleCities(sim, w, an, y); }   // Stage 17: the weights glide toward the order in force; the capitals' people settle the candidate places
+  if (sim.pot17) { const k = sim.kaigen; if (k && k.eras.length > (sim.pot17.eras ?? 1)) { const e = k.eras[k.eras.length - 1], seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), ...(sim.subCapital2 ? { sub2: sim.subCapital2 } : {}), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; reassignPotential(sim.pot17, w.t, seats, k.recon?.focus ?? "concentrate", sim.seed, k.eras.length, y, e.name, (k.recon?.coast === "neutral" ? undefined : k.recon?.coast), sim.pot17.c19 ? seatLL(sim, w) : undefined); ev(sim, "potential", `改元(${e.name})で府県の発展順位が組み替わった`, `上位は首都・副首都・皇居とその隣県。順位は${y}年から年々なだらかに効く`, {}); sim.pot17.eras = k.eras.length; } glidePotential(sim.pot17); settleCities(sim, w, an, y); if (sim.rules1800) developSeats37(sim, w, y); }   // Stage 17: the weights glide toward the order in force; the capitals' people settle the candidate places
   enforceCaps(sim, w);   // Stage 20: a small island's city holds what the island can
   const nodeCells = new Set(Object.values(sim.nodes).map((n) => n.cell));
   // Stage 3: a village that a railway or a proper road passes keeps its people better (empirical, not a statistic): this is the feedback that lets local transport pay back
@@ -469,7 +471,7 @@ function resolveConcepts(sim: SimState) {
   for (const p of Object.values(sim.projects)) {
     if (p.status !== "concept" || sim.month - p.statusSince < 18) continue;
     const appetite = modeOf(p) === "rail" ? sim.dials.railBuild : sim.dials.hwyBuild;
-    if (appetite >= 0.25 && (rand(sim) < 0.7 || p.reason.includes("【島間】")))  { /* a link between two main islands is not dropped at random: STRATEGIC_TAG in crossing.ts */ p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
+    if (appetite >= 0.25 && (rand(sim) < 0.7 || p.reason.includes("【島間】") || p.reason.includes("【島間接続】")))  { /* a link between two main islands is not dropped at random: STRATEGIC_TAG in crossing.ts */ p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
     else {
       p.status = "abolished"; p.statusSince = sim.month;
       for (const id of p.edgeIds) { const e = sim.edges[id]; if (e && e.built < 1 && !Object.values(sim.routes).some((r) => r.edges.some((x) => x.edgeId === id)) && !Object.values(sim.projects).some((q) => q !== p && (q.edgeIds.includes(id) || q.chain.some((c) => c.edgeId === id) || q.replaces.includes(id)))) { delete sim.edges[id]; netRemoved(sim); } }

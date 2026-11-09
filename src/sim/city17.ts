@@ -10,6 +10,7 @@
 import { ev } from "./engine";
 import { homeCity, subCity } from "./ceremony";
 import { basePop } from "./roles";
+import { seatFloor37 } from "./devseat37";
 import type { Analysis } from "./demand";
 import type { SimState } from "./types";
 import type { World } from "./world";
@@ -58,7 +59,10 @@ export function settleCities(sim: SimState, w: World, an: Analysis, y: number): 
     const p = cap.get(pref); if (p === undefined) continue; const capSt = sim.cities[w.cities[p].id];
     const ws = list.map((i) => Math.max(basePop(sim, w, w.cities[i]), 0.5 * (w.cities[i].capPop ?? 0)) * suitability(sim, w, an, i, p, seats)), wc = basePop(sim, w, w.cities[p]), tot = ws.reduce((a, b) => a + b, wc);
     const U = list.reduce((a, i) => a + sim.cities[w.cities[i].id].pop, capSt.pop); let pay = 0;
-    list.forEach((i, k) => { const st = sim.cities[w.cities[i].id], target = (ws[k] / tot) * U; let d = Math.round(CITY_RATE * (target - st.pop)); if (st.pop + d < 2000) d = 2000 - st.pop; pay += d; st.pop += d; });
+    const ds = list.map((i, k) => { const st = sim.cities[w.cities[i].id], target = (ws[k] / tot) * U; let d = Math.round(CITY_RATE * (target - st.pop)); if (st.pop + d < 2000) d = 2000 - st.pop; return d; });
+    // Stage 37 (B): a seat city that is being developed does not pay its people out to the other places of its prefecture below its development floor (devseat37.ts)
+    const floor = seatFloor37(sim, w, w.cities[p].id, y), total = ds.reduce((a, b) => a + Math.max(0, b), 0), room = Math.max(0, capSt.pop - floor), scale = floor > 0 && total > room ? room / total : 1;
+    list.forEach((i, k) => { const st = sim.cities[w.cities[i].id]; let d = ds[k] > 0 ? Math.round(ds[k] * scale) : ds[k]; if (st.pop + d < 2000) d = 2000 - st.pop; pay += d; st.pop += d; });
     capSt.pop -= pay; if (capSt.pop < 2000) { const f = (2000 - capSt.pop) / Math.max(1, pay); capSt.pop = 2000; void f; }
   }
   // who is shown: a place appears when it is big enough and has grown, and loses its name when it shrinks well below that; the people stay either way

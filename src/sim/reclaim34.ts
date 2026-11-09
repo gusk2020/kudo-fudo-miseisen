@@ -21,6 +21,8 @@ export const RATE_FIRST_KM2 = 5, RATE_SECOND_KM2 = 0.5, FIRST_YEARS = 50, SECOND
 export const SEARCH_CELLS = 8;                     // a site fills the nearest shore within this many cells (40 km)
 export const COASTAL_CELLS = 2;                    // a seat is coastal when open sea is within this many cells
 export const RECLAIMED_ELEV_M = 4;
+/** Stage 37 (C1): the first year automatic reclamation may happen in an 1800 game. */
+export const RECLAIM_FROM_1800 = 1950;
 
 export interface RecLog { k: number; kind: "grow" | "fill"; y: number; site?: number }
 /** `epoch`: how many relocation events had moved this role when the site began. A move that lands on the same grid cell is still a move (the 5 km cell is coarser than the point the player chose), so the cell alone cannot tell it. */
@@ -102,7 +104,9 @@ export function stepReclaim(sim: SimState, w: World, y: number): number[] {
   rec.sites.forEach((s, si) => {
     if (!s.active) return;
     const share = sim.subCapital2 && s.role !== "capital" ? SUB2_SHARE : 1;   // Stage 36 M3: with two sub-capitals each reclaims at 0.7x
-    while (s.last < y) { s.last++; if (s.coastal) s.accU += rateUnits(s.last - s.start) * share; }
+    // Stage 37 (C1): in an 1800 game nothing is reclaimed from the sea by itself before 1950 (the enlargement of a tiny island under a seat is a separate thing and is untouched); the 100 years of reclamation then count from 1950
+    const from = sim.rules1800 ? Math.max(s.start, RECLAIM_FROM_1800 - 1) : s.start;
+    while (s.last < y) { s.last++; if (s.coastal && (!sim.rules1800 || s.last >= RECLAIM_FROM_1800)) s.accU += rateUnits(s.last - from) * share; }
     const lm0 = w.lm[s.cell], ci = s.cell % w.nx, cj = (s.cell / w.nx) | 0;
     while (s.accU >= CU) {
       const c = pickCell(a, ci, cj, SEARCH_CELLS, (q) => w.lm[q] === lm0);

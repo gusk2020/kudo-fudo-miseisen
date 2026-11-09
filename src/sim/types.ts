@@ -120,6 +120,8 @@ export interface SimState {
   kaigen?: KaigenState;       // Issue #13: the era timeline (1945 / 1989 / 2019 / every ~30 years). Absent = the older single-era games, which never change era
   city12?: Record<string, { p: number[]; h: number[]; adv: number }>;   // Stage 12: per city, the parts of its yearly migration advantage and its size every 5 years (econ.ts)
   metro?: import("./metro").MetroState;   // Stage 13: the metropolitan areas (metro.ts), rebuilt every year. Absent = older saves; created at the next yearly step
+  /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
+  dev37?: Record<string, number>;
   pot17?: { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true; /** Stage 36 M3: the two sub-capitals whose weights are each 0.7x of a single one's uplift */ sub2?: string[] };   // Stage 17: the development-potential order of the 49 prefectures, the weights in force, the history of re-orderings, and when each city first showed on the map (potential17.ts, city17.ts). Absent = older games
   lastTunnelException18?: number;   // Stage 18: the year the last sea/lake tunnel was allowed under 海路重視 / 空路重視 (policy18.ts)
   moves20?: { pref: string; pos: Vec; by: "capital" | "sub" | "palace"; since?: number; extra?: boolean }[];

@@ -34,6 +34,8 @@ import type { World } from "./world";
 import { worldMemo } from "./worldMemo";
 
 export const CROSSING_TAG = "【海峡連絡】";
+/** Stage 37 (C2): the first year a long (over SHORT_LINK_KM of open water) fixed link may be started in an 1800 game. */
+export const LONG_LINK_FROM_1800 = 1950, SHORT_LINK_KM = 3;
 /** At most this many crossing projects of one mode at once; and a pair is not tried again within COOLING_YEARS of an abandoned attempt. */
 export const MAX_ACTIVE_PER_MODE = 2, COOLING_YEARS = 12, FUND_SHARE = 0.6, SCORE_MIN = 0.3;
 /** Stage 11: the longer the water, the busier the ferry must be before a fixed link is planned: the bar is SCORE_MIN + span / SPAN_SCORE_KM (10 km: 0.47, 25 km: 0.72, 40 km: 0.97). */
@@ -171,6 +173,8 @@ export interface CorridorEval { ok: boolean; why: string; s?: { fac: "bridge" | 
 export function evalCorridor(sim: SimState, w: World, c: Corridor, mode: Mode, y: number, appetite: number, started: SimProject[] = [], proj: SimProject[] = Object.values(sim.projects).filter(isCrossingProject), fixed?: SimEdge[]): CorridorEval {
   const committed = sim.tech?.wk !== undefined ? [...proj, ...started].filter((p) => modeOf(p) === mode && ACTIVE.has(p.status)).reduce((t, p) => t + p.costBu / COMMIT_MONTHS, 0) : 0;
   const dl = sim.dials, wk = sim.tech?.wk, ferry = c.ferry;
+  // Stage 37 (C2): in an 1800 game no long bridge or tunnel is started before 1950; a short one (a narrow strait or river mouth) is an ordinary part of the network
+  if (sim.rules1800 && y < LONG_LINK_FROM_1800 && c.span > SHORT_LINK_KM) return { ok: false, why: "long-before-1950" };
   if (corridorTaken(sim, w, c, mode, fixed) || started.some((p) => p.from === ferry.a && p.to === ferry.b && modeOf(p) === mode)) return { ok: false, why: "taken" };
   if (proj.some((p) => modeOf(p) === mode && p.from === ferry.a && p.to === ferry.b && (ACTIVE.has(p.status) || yearOf(sim) - (sim.startYear + Math.floor(p.statusSince / 12)) < (p.reason.includes(STRATEGIC_TAG) ? STRATEGIC_COOLING_YEARS : COOLING_YEARS)))) return { ok: false, why: "recent" };
   // (Stage 13: a link is a crossing of water, not a second trunk road: where the two ports are far apart by land, the ordinary road between them comes first and the crossing is planned between nearer shores)
