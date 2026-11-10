@@ -1,5 +1,9 @@
 name: n03-probe
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/stage40]
+    paths: ['.github/workflows/n03-probe.yml']
 jobs:
   probe:
     runs-on: ubuntu-latest
