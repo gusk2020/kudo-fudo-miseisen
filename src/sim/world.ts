@@ -129,7 +129,7 @@ export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] 
       let coastal = false, plain = 0, cnt = 0;
       for (let dj = -3; dj <= 3; dj++) for (let di = -3; di <= 3; di++) { const a = (k % nx) + di, b = ((k / nx) | 0) + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue; const q = b * nx + a; cnt++; if (t.plains[q]) plain++; if (Math.abs(di) <= 2 && Math.abs(dj) <= 2 && t.land[q] === 0) coastal = true; }
       const apt = aptitudeOf(t.elev0 ? t.elev0[k] : t.elev[k]);
-      cities.push({ id: `Z-${z.id}-${n + 1}`, name: nm, cell: k, pos: cellPos(k), pref: t.prefOrder[t.pref[k] - 1], island: t.island[k], pop0: ZONE_POP0, popSource: "synthetic", coastal, plains: cnt ? plain / cnt : 0, kind: "city", capPop: Math.round(sd.areaKm2 * PEOPLE_PER_KM2 * apt), zone: { range: z.id, peak: z.peak!, n, factor: z.factor, apt } });
+      cities.push({ id: `Z-${z.id}-${n + 1}`, name: nm, cell: k, pos: cellPos(k), pref: t.prefOrder[t.pref[k] - 1], island: t.island[k], pop0: ZONE_POP0, popSource: "synthetic", coastal, plains: cnt ? plain / cnt : 0, kind: "city", capPop: Math.round(sd.areaKm2 * PEOPLE_PER_KM2 * apt * (1 + 1.5 * (1 - Math.min(1, z.factor / 0.3)))),   /* (a range worn right down to plain can hold a metropolis: up to 2.5x the ordinary density) */ zone: { range: z.id, peak: z.peak!, n, factor: z.factor, apt } });
     });
   }
   let moves20: MoveResult[] | undefined;

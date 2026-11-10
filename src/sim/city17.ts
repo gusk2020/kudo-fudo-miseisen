@@ -21,6 +21,8 @@ export const LATENT_START = 0.1;     // a candidate starts with this share of it
 export const CITY_RATE = 0.1;       // share of the gap to its target a place closes in a year
 export const SHOW_ON = 70000, SHOW_OFF = 50000, SHOW_GROWTH = 1.6;   // shown from SHOW_ON (and SHOW_GROWTH x what it started with); named no longer below SHOW_OFF
 export const SEAT_REACH_KM = 80;
+/** Stage 39: a town on a range worn to plain pulls with this share of its room (an ordinary candidate with a cap, 0.5): it grows over the decades but never empties the capital next to it. */
+export const ZONE_PULL = 0.12, ZONE_PULL_MAIN = 0.3;   // (the town named after the peak, the main one of its range, pulls hardest)
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 export const isCapitalCity = (c: { kind: string }) => c.kind === "capital";
 /** Stage 20: a capital that can only ever be small (a seat put on a tiny island) cannot hold its prefecture's city people: the former 県庁所在地 does, until the new one grows. */
@@ -59,7 +61,7 @@ export function settleCities(sim: SimState, w: World, an: Analysis, y: number): 
   const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital), seats = [sim.capitalPos ? { pos: sim.capitalPos as number[] } : hc, sim.subPos ? { pos: sim.subPos as number[] } : sc, ...(sim.subCapital2 ? [sim.subPos2 ? { pos: sim.subPos2 as number[] } : subCity(w, sim.subCapital2)] : [])].filter(Boolean) as { pos: number[] }[];   // (Stage 36: and the second sub-capital)   // (Stage 19: from the point a seat was put at)
   for (const [pref, list] of by) {
     const p = cap.get(pref); if (p === undefined) continue; const capSt = sim.cities[w.cities[p].id];
-    const ws = list.map((i) => Math.max(basePop(sim, w, w.cities[i]), 0.5 * (w.cities[i].capPop ?? 0)) * suitability(sim, w, an, i, p, seats)), wc = basePop(sim, w, w.cities[p]), tot = ws.reduce((a, b) => a + b, wc);
+    const ws = list.map((i) => Math.max(basePop(sim, w, w.cities[i]), (w.cities[i].zone ? (w.cities[i].zone!.n === 0 ? ZONE_PULL_MAIN : ZONE_PULL) : 0.5) * (w.cities[i].capPop ?? 0)) * suitability(sim, w, an, i, p, seats)), wc = basePop(sim, w, w.cities[p]), tot = ws.reduce((a, b) => a + b, wc);
     const U = list.reduce((a, i) => a + sim.cities[w.cities[i].id].pop, capSt.pop); let pay = 0;
     const ds = list.map((i, k) => { const st = sim.cities[w.cities[i].id], target = (ws[k] / tot) * U; let d = Math.round(CITY_RATE * (target - st.pop)); if (st.pop + d < 2000) d = 2000 - st.pop; return d; });
     // Stage 37 (B): a seat city that is being developed does not pay its people out to the other places of its prefecture below its development floor (devseat37.ts)

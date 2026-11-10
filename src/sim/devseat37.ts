@@ -10,6 +10,7 @@ import { cycleOf } from "./cycle27";
 import { ev, rand } from "./engine";
 import { buildIndex, nodeAtCell, pad } from "./network";
 import { mayStand, reclaimedCell } from "./muni39sim";
+import { CITY_FROM, TOWN_FROM } from "../core/muni39";
 import { homeCity, subCity } from "./ceremony";
 import { SUB2_SHARE } from "./subs36";
 import type { SimState } from "./types";
@@ -43,7 +44,7 @@ export function developSeats37(sim: SimState, w: World, y: number): number {
   for (const s of seats) {
     const key = `${s.role}:${s.city.id}`; if (dev[key] === undefined) { dev[key] = y; ev(sim, "seatdev", `${s.city.name}に${s.role === "capital" ? "首都" : s.role === "palace" ? "皇居" : "副首都"}が置かれ、市街地の開発が始まる`, "施設の周辺に人と産業が集まる(全国の人口は変わらず、ほかの都市から移る)", { city: s.city.id }); }
     const age = y - dev[key], t = Math.max(MAINTAIN_RATE, taper(age));   // (after the building years the pull stays on at a low rate, toward a smaller share: a seat city does not wither once the programme is over)
-    const st = sim.cities[s.city.id]; if (!st) continue; const cap = s.city.capPop ?? Infinity, target = Math.min(s.share * (MAINTAIN_SHARE + (1 - MAINTAIN_SHARE) * taper(age)) * total, 0.9 * cap), gap = target - st.pop; if (gap <= 0) continue;
+    const st = sim.cities[s.city.id]; if (!st) continue; const cap = s.city.capPop ?? Infinity, high = highGroundCap(sim, w, s.city.cell, st.pop, y), target = Math.min(high, s.share * (MAINTAIN_SHARE + (1 - MAINTAIN_SHARE) * taper(age)) * total, 0.9 * cap), gap = target - st.pop; if (gap <= 0) continue;
     let want = Math.round(gap * DEV_RATE * f * t); if (want < 1) continue;
     const donors = w.cities.filter((c) => !seatIds.has(c.id) && (sim.cities[c.id]?.pop ?? 0) > DONOR_FLOOR); let room = 0; const gives = donors.map((c) => { const g = Math.max(0, Math.min(DONOR_MAX * sim.cities[c.id].pop, sim.cities[c.id].pop - DONOR_FLOOR)); room += g; return g; });
     if (room <= 0) continue; want = Math.min(want, Math.floor(room));
@@ -76,4 +77,11 @@ function maybeSatellite(sim: SimState, w: World, s: SeatTarget, fill: number, bu
   sim.settlements[id] = { id, name: `${s.city.name.replace(/市$/, "")}近郊${mine.length + 1}`, cell, city: s.city.id, pop, pop0: pop, isolatedYears: 0, gone: false };
   nodeAtCell(sim, w, buildIndex(sim), cell, "village");
   return pop;
+}
+
+/** Stage 39 (E): a seat put on high ground may not grow into a kind of municipality the ground forbids (1300 m: no 市, 1400 m: no 町), unless the 1950 relaxations apply -- its size is held below that kind's size. */
+function highGroundCap(sim: SimState, w: World, cell: number, pop: number, y: number): number {
+  if (w.elevM(cell) < 1200) return Infinity;
+  if (mayStand(sim, w, cell, "city", y, pop)) return Infinity;
+  return mayStand(sim, w, cell, "town", y, pop) ? CITY_FROM - 1 : TOWN_FROM - 1;
 }
