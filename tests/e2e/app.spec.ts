@@ -52,13 +52,13 @@ test("full flow: place islands, features, generate terrain, finalize, export", a
   await page.click("#suggest"); await page.click("#btn-next");
   expect(await app(page, "a => a.s.step")).toBe(4);
   await page.waitForFunction(() => (window as any).__kfm.terrain, null, { timeout: 60000 });
-  expect(await app(page, "a => a.terrain.stats.prefCount")).toBe(49);
+  expect(await app(page, "a => a.terrain.stats.prefCount")).toBe(50);
   await page.screenshot({ path: "test-results/terrain.png" });
   await page.click("#btn-next"); await page.click('#dock [data-sheet="menu"]');
   await page.click("#finalize"); expect(await app(page, "a => a.s.finalized")).toBe(true);
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#export")]);
   const j = JSON.parse(fs.readFileSync((await dl.path())!, "utf8"));
-  expect(j.schemaVersion).toBe(2); expect(j.map.schemaVersion).toBe(1); expect(j.map.finalized).toBe(true); expect(j.sim).toBeNull(); expect(j.mapHash).toBeTruthy(); expect(j.geo.geoIds.prefectures).toHaveLength(49); expect(j.geo.terrainHash).toBeTruthy();
+  expect(j.schemaVersion).toBe(2); expect(j.map.schemaVersion).toBe(1); expect(j.map.finalized).toBe(true); expect(j.sim).toBeNull(); expect(j.mapHash).toBeTruthy(); expect(j.geo.geoIds.prefectures).toHaveLength(50); expect(j.geo.terrainHash).toBeTruthy();
   expect(errs).toEqual([]);
 });
 
@@ -232,8 +232,9 @@ async function startGame(page: Page) {
 }
 test("long absence: catch-up is capped, reported, and never freezes the page", async ({ page }) => {
   const errs = watchErrors(page); await startGame(page);
-  // persist() stamps 'now' synchronously but the stored copy is serialised later, so backdate right after calling it
-  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 20; const p = a.persist.bind(a); p(); a.sim.lastWallMs = Date.now() - 7 * 24 * 3600 * 1000; a.persist = () => Promise.resolve(true); });
+  // persist() stamps 'now' and (since Stage 38) writes the stored copy at once, so the absence is made by backdating the STORED copy
+  await page.evaluate(async () => { const a = (window as any).__kfm; a.sim.speed = 20; await a.persist(true); a.persist = () => Promise.resolve(true); });
+  await page.evaluate(() => new Promise<void>(async (res) => { const name = (await indexedDB.databases()).map((d) => d.name!).find((n) => n.startsWith("kfm-stage1"))!; const r = indexedDB.open(name, 1); r.onsuccess = () => { const db = r.result, g = db.transaction("saves").objectStore("saves").get("auto"); g.onsuccess = () => { const j = JSON.parse(g.result); (j.save ?? j).sim.lastWallMs = Date.now() - 7 * 24 * 3600 * 1000; const t = db.transaction("saves", "readwrite"); t.objectStore("saves").put(JSON.stringify(j), "auto"); t.oncomplete = () => { db.close(); res(); }; }; }; }));
   await page.waitForTimeout(400); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 60000 });
   // the page stays responsive while catching up
   const t0 = Date.now(); await page.evaluate(() => 1); expect(Date.now() - t0).toBeLessThan(3000);

@@ -7,13 +7,16 @@ import type { Vec } from "../core/types";
 import { applyG34, type G34Input } from "./reclaim34";
 import { withIslets, type IsletCell } from "./islands20";
 import { applySeatMoves, PEOPLE_PER_KM2, type MoveResult, type SeatMove } from "./seatmove20";
+import { aptitudeOf, townName } from "../core/muni39";
 
-export interface WCity { id: string; name: string; cell: number; pos: Vec; pref: string | null; island: number; pop0: number; popSource: "ne" | "synthetic"; coastal: boolean; plains: number; kind: string; /** Stage 20: the city was the prefecture's 県庁所在地 before a seat was put elsewhere (it keeps its people) */ former?: true; /** Stage 20: the seat role whose point made this city the 県庁所在地 */ moved?: "capital" | "sub" | "palace"; /** Stage 20: the most people the place can hold (a small island); absent = no limit */ capPop?: number }
+/** Stage 39: a town founded on a range worn to plain starts with this many people (the rest it draws from its prefecture's capital as it grows). */
+export const ZONE_POP0 = 4000;
+export interface WCity { /** Stage 39: the office point is under a lake the player made: the municipality is abolished when the game starts (never moved) */ submerged?: true; /** Stage 39: a town founded on a range worn to plain (its zone, the peak its name comes from, its aptitude from the ORIGINAL elevation) */ zone?: { range: string; peak: string; n: number; factor: number; apt: number }; id: string; name: string; cell: number; pos: Vec; pref: string | null; island: number; pop0: number; popSource: "ne" | "synthetic"; coastal: boolean; plains: number; kind: string; /** Stage 20: the city was the prefecture's 県庁所在地 before a seat was put elsewhere (it keeps its people) */ former?: true; /** Stage 20: the seat role whose point made this city the 県庁所在地 */ moved?: "capital" | "sub" | "palace"; /** Stage 20: the most people the place can hold (a small island); absent = no limit */ capPop?: number }
 export interface World {
   t: TerrainResult; nx: number; ny: number; cell: number; N: number;
   cities: WCity[]; cityById: Map<string, WCity>; cityByCell: Map<number, WCity>;
   river: Uint8Array; cellPos(k: number): Vec; cellOf(p: Vec): number;
-  elevM(k: number): number; prefOf(k: number): string | null;
+  elevM(k: number): number; /** Stage 39: the ground before any edit (falls back to elevM) */ elev0M(k: number): number; prefOf(k: number): string | null;
   /** Land mass id per cell (1..lmCount; 0 = sea or lake). A mass is a connected piece of land with ONE island number, so Honshu and Kyushu (touching on the 5 km grid at Kanmon) and Okinawa (which shares Kyushu's island number) are all different masses: exactly the pieces a road cannot join without a crossing. */
   lm: Uint16Array; lmCount: number;
   /** Stage 9: drawn ranges are a construction barrier (games on the real map). Older hand-drawn-map games keep the cost they always had. */
@@ -78,8 +81,8 @@ export function withSubgridLand(t: TerrainResult): TerrainResult {
   }
   return land ? { ...t, land, island: island!, elev: elev!, pref: pref! } : t;
 }
-export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false, islets: boolean | 1 | 2 = false, moves: SeatMove[] = [], g34: G34Input | false = false): World {
-  const t1 = withTowns ? withSubgridLand(t0) : t0, t2 = islets ? withIslets(t1, islets === 2 ? 2 : 1) : t1, g = g34 ? applyG34(t2, g34, moves) : null, t = g ? g.t : t2;
+export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] | false = false, islets: boolean | 1 | 2 | 3 = false, moves: SeatMove[] = [], g34: G34Input | false = false): World {
+  const t1 = withTowns ? withSubgridLand(t0) : t0, t2 = islets ? withIslets(t1, islets === 3 ? 3 : islets === 2 ? 2 : 1) : t1, g = g34 ? applyG34(t2, g34, moves) : null, t = g ? g.t : t2;
   const { nx, ny, cell, x0, y0 } = t.grid, N = nx * ny;
   const cellPos = (k: number): Vec => [x0 + ((k % nx) + 0.5) * cell, y0 + (((k / nx) | 0) + 0.5) * cell];
   const cellOf = (p: Vec) => { const i = Math.floor((p[0] - x0) / cell), j = Math.floor((p[1] - y0) / cell); return i < 0 || j < 0 || i >= nx || j >= ny ? -1 : j * nx + i; };
@@ -101,7 +104,7 @@ export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] 
       const a = (k % nx) + di, b = ((k / nx) | 0) + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue;
       const q = b * nx + a; cnt++; if (t.plains[q]) plain++; if (Math.abs(di) <= 2 && Math.abs(dj) <= 2 && t.land[q] === 0) coastal = true;
     }
-    cities.push({ id: c.id, name: c.name, cell: k, pos: c.pos, pref: c.prefIndex ? t.prefOrder[c.prefIndex - 1] : null, island: t.island[k], pop0: Math.round(p.pop * POP_1950_SCALE), popSource: p.src, coastal, plains: cnt ? plain / cnt : 0, kind: c.kind });
+    cities.push({ id: c.id, name: c.name, cell: k, pos: c.pos, pref: c.prefIndex ? t.prefOrder[c.prefIndex - 1] : null, island: t.island[k], pop0: Math.round(p.pop * POP_1950_SCALE), popSource: p.src, coastal, plains: cnt ? plain / cnt : 0, kind: c.kind, ...(c.submerged ? { submerged: true as const } : {}) });
   }
   // Stage 16: the provincial towns come last, so the cities keep their places in every array indexed by city (and the random stream above is untouched)
   if (withTowns && t.towns) {
@@ -114,8 +117,20 @@ export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] 
         const a = (k % nx) + di, b = ((k / nx) | 0) + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue;
         const q = b * nx + a; cnt++; if (t.plains[q]) plain++; if (Math.abs(di) <= 2 && Math.abs(dj) <= 2 && t.land[q] === 0) coastal = true;
       }
-      cities.push({ id: c.id, name: c.name, cell: k, pos: c.pos, pref: c.prefIndex ? t.prefOrder[c.prefIndex - 1] : null, island: t.island[k], pop0: Math.round((popOf.get(c.id) ?? 50000) * POP_1950_SCALE), popSource: "ne", coastal, plains: cnt ? plain / cnt : 0, kind: "town" });
+      cities.push({ id: c.id, name: c.name, cell: k, pos: c.pos, pref: c.prefIndex ? t.prefOrder[c.prefIndex - 1] : null, island: t.island[k], pop0: Math.round((popOf.get(c.id) ?? 50000) * POP_1950_SCALE), popSource: "ne", coastal, plains: cnt ? plain / cnt : 0, kind: "town", ...(c.submerged ? { submerged: true as const } : {}) });
     }
+  }
+  // Stage 39: towns founded on ranges the player wore down to plain (the terrain was confirmed: this world is only built then). Each is a latent candidate of its prefecture like every other
+  // candidate; its name comes from the highest peak of its range, its room from the real area of its zone (people per km2, scaled by the aptitude from the ORIGINAL elevation, which is bounded below)
+  if (withTowns && t.flat?.length) {
+    const used = new Set<string>([...cities.map((c) => c.name), ...JAPAN.prefectures.map((p) => p.name)]);
+    for (const z of t.flat) z.seeds.forEach((sd, n) => {
+      const k = sd.cell, nm = z.peak ? townName(z.peak, n, "city", used) : null; if (!nm || cities.some((x) => x.cell === k) || t.land[k] !== 1 || !t.pref[k]) return; used.add(nm);
+      let coastal = false, plain = 0, cnt = 0;
+      for (let dj = -3; dj <= 3; dj++) for (let di = -3; di <= 3; di++) { const a = (k % nx) + di, b = ((k / nx) | 0) + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue; const q = b * nx + a; cnt++; if (t.plains[q]) plain++; if (Math.abs(di) <= 2 && Math.abs(dj) <= 2 && t.land[q] === 0) coastal = true; }
+      const apt = aptitudeOf(t.elev0 ? t.elev0[k] : t.elev[k]);
+      cities.push({ id: `Z-${z.id}-${n + 1}`, name: nm, cell: k, pos: cellPos(k), pref: t.prefOrder[t.pref[k] - 1], island: t.island[k], pop0: ZONE_POP0, popSource: "synthetic", coastal, plains: cnt ? plain / cnt : 0, kind: "city", capPop: Math.round(sd.areaKm2 * PEOPLE_PER_KM2 * apt * (1 + 1.5 * (1 - Math.min(1, z.factor / 0.3)))),   /* (a range worn right down to plain can hold a metropolis: up to 2.5x the ordinary density) */ zone: { range: z.id, peak: z.peak!, n, factor: z.factor, apt } });
+    });
   }
   let moves20: MoveResult[] | undefined;
   if (moves.length) {   // Stage 20: a seat put on the map makes that point its prefecture's 県庁所在地
@@ -130,7 +145,7 @@ export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] 
   }
   const cityById = new Map(cities.map((c) => [c.id, c])), cityByCell = new Map<number, WCity>();
   for (const c of cities) if (!cityByCell.has(c.cell)) cityByCell.set(c.cell, c);
-  return { t, nx, ny, cell, N, cities, ...(g ? { g34: true as const, g34new: g.add, g34grown: g.grown } : {}), ...(islets && t.islets ? { islets: t.islets } : {}), ...(moves20 ? { moves20, moveSpec: moves } : {}), cityById, cityByCell, lm, lmCount, river, cellPos, cellOf, ...(withTowns && t.towns && cities.some((c) => c.kind === "town") ? { hasTowns: true as const, townIds: cities.filter((c) => c.kind === "town").map((c) => c.id) } : {}), elevM: (k) => t.elev[k], prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
+  return { t, nx, ny, cell, N, cities, ...(g ? { g34: true as const, g34new: g.add, g34grown: g.grown } : {}), ...(islets && t.islets ? { islets: t.islets } : {}), ...(moves20 ? { moves20, moveSpec: moves } : {}), cityById, cityByCell, lm, lmCount, river, cellPos, cellOf, ...(withTowns && t.towns && cities.some((c) => c.kind === "town") ? { hasTowns: true as const, townIds: cities.filter((c) => c.kind === "town").map((c) => c.id) } : {}), elevM: (k) => t.elev[k], elev0M: (k) => (t.elev0 ? t.elev0[k] : t.elev[k]), prefOf: (k) => (t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null) };
 }
 
 export interface PathOpts { bias?: (k: number) => number; allow?: (k: number) => boolean; roadCells?: { has(k: number): boolean }; margin?: number; rail?: boolean; ease?: number }   // ease 0..1: how much better tunnelling and bridging make mountains and rivers to cross (tech.ts); 0 = the older cost

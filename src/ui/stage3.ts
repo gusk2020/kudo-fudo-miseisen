@@ -1,10 +1,12 @@
 /** Stage 3 panels: era choice, timeline, route ledger, transport atlas (year slider), policy window. Plain DOM, built only when opened. */
+import { TECHS_1800, techNow } from "../sim/history1800";
 import type { RadioGroup } from "./radioWin";
 import type { App } from "./app";
 import { h } from "./app";
 import { buildMini, buildNumberList, modeBar, targetOfEdges, targetOfProject, targetOfRoute, type HlTarget } from "./lines23";
 import type { NumClass } from "../sim/numreg";
-import { DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey } from "../sim/eras";
+import { backfillHistory1800 } from "../sim/history1800";
+import { DIAL_INFO, DIAL_RANGE, DIAL_LABEL, DIAL_KEYS, ERAS, SELECTABLE_ERAS, composeDials, type EraKey } from "../sim/eras";
 import { effectText } from "../sim/events";
 import { prefName, routeLabel, skippedLabel } from "../sim/engine";
 import { numberHistory } from "../sim/ledger";
@@ -65,9 +67,9 @@ export function buildKaigen(app: App, body: HTMLElement) {
 
 const KIND_FILTER: Record<string, (k: string) => boolean> = {
   all: () => true, world: (k) => k === "world", domestic: (k) => k === "domestic" || k === "reform", policy: (k) => k === "policy",
-  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), hub: (k) => ["port", "air", "lane", "ferry"].includes(k), city: (k) => k === "city" || k === "village" || k === "boom",
+  road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), hub: (k) => ["port", "air", "lane", "ferry"].includes(k), tech: (k) => k === "tech", city: (k) => k === "city" || k === "village" || k === "boom" || k === "seatdev" || k === "muni39",
 };
-const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", hub: "港湾・空港", city: "人口" };
+const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", hub: "港湾・空港", tech: "技術・架空史", city: "人口" };
 export function buildTimeline(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "年表(新しい順・原因つき)")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
   if (sim.kaigen) body.append(h("div", { class: "issue", id: "era-line" }, "元号: " + sim.kaigen.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → "), h("br"), h("small", {}, sim.kaigen.pending ? "改元の選択待ち" : `次の改元: ${sim.kaigen.next}年ごろ`)));
@@ -75,6 +77,7 @@ export function buildTimeline(app: App, body: HTMLElement) {
   for (const k of Object.keys(FILTER_LABEL)) row.append(h("button", { id: "tl-" + k, class: ui3.tl === k ? "mode on" : "mode", "aria-pressed": ui3.tl === k ? "true" : "false", onclick: () => { ui3.tl = k; ui3.tlN = 60; app.buildSheet(); } }, FILTER_LABEL[k]));
   body.append(row, h("small", {}, "【史実】=実際の歴史／【架空】=この世界線だけの出来事／【予測モデル】=2027年以降の確率的な想定"));
   if (sim.skippedMonths) body.append(h("div", { class: "issue warn" }, `${skippedLabel(sim)}(放置した実時間のうち、計算しきれず飛ばした分)`));
+  if (sim.rules1800) backfillHistory1800(sim, sim.startYear + Math.floor(sim.month / 12));   // Stage 37: the technology rows are always there when the filter is opened
   const f = KIND_FILTER[ui3.tl] ?? KIND_FILTER.all, list = [...sim.events].reverse().filter((e) => (ui3.tl === "rail" ? /鉄|線|電|事業者|国鉄/.test(e.text) : f(e.kind)));
   for (const e of list.slice(0, ui3.tlN)) body.append(h("div", { class: "issue" }, `${ym(sim, e.month)} ${e.text}`, h("br"), h("small", {}, `原因・理由: ${e.cause}`)));
   if (list.length > ui3.tlN) body.append(h("button", { id: "tl-more", onclick: () => { ui3.tlN += 60; app.buildSheet(); } }, `さらに表示(残り${list.length - ui3.tlN}件)`));
@@ -131,12 +134,20 @@ export function buildLedger(app: App, body: HTMLElement) {
   app.hlList = list;
 }
 
+/** Stage 36: the state of each transport technology of an 1800 game (試験・実用・普及・衰退) in the current year, so an experiment is never mistaken for a service. */
+export function buildTechAtlas(sim: SimState, body: HTMLElement) {
+  const y = sim.startYear + Math.floor(sim.month / 12), box = h("div", { class: "issue", id: "atlas-tech" }, h("b", {}, `技術(鉄道・飛行船・自動車・飛行機・高速道路)の段階(${y}年)`));
+  for (const t of TECHS_1800) { const s = techNow(t, y); box.append(h("div", { class: "row", id: "atlas-tech-" + t }, `${t}: ${s.label}${s.since ? `(${s.since}年〜)` : ""}${s.phase === "experiment" ? " ※試験のみ。定期の路線は作られません" : ""}`)); }
+  box.append(h("small", {}, "技術の登場年は固定。広がり方は人口・経済・地形・需要で変わります。"));
+  body.append(box);
+}
 export function buildAtlas(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "交通地図帳")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
   // Stage 26: no past-year slider and no stored snapshots any more -- what the game was in an earlier year is reached through the 自動セーブポイント (menu), and what happened is in the 年表 and the 台帳
   let rk = 0, rl = 0, plan = 0, lost = 0;
   for (const e of Object.values(sim.edges)) { const rail = modeOf(e) === "rail"; if (e.built < 1) plan++; else if (e.state === "lost") lost++; else if (e.state === "open") rail ? (rl += e.lengthKm) : (rk += e.lengthKm); }
   body.append(h("div", { class: "issue", id: "atlas-summary" }, `現在: 道路${Math.round(rk).toLocaleString()}km・鉄道${Math.round(rl).toLocaleString()}km(供用中) ／ 計画・工事中${plan}区間 ／ 廃道・廃線跡${lost}区間`));
+  if (sim.rules1800) buildTechAtlas(sim, body);
   buildTrends(sim, body); buildHubAtlas(app, sim, body, null); buildCityEconomy(app, sim, body, null); buildCityTiers(app, sim, body);
 }
 
@@ -170,7 +181,7 @@ export function buildPolicy(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "政策介入(10年ごと)")); const sim = app.sim, pol = sim?.policy; if (!sim || !pol) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
   body.append(h("div", { class: "issue", id: "pol-points" }, `共通の持ち点: ${pol.points}点(毎回+${POINTS_PER_WINDOW}点。使わなかった分は全額繰り越し、無制限)`, h("br"), h("small", {}, "同じ政策に点を足すほど効果は逓減します(1点目が最も効き、10点目はごくわずか)。")));
   const modes = h("div", { class: "row" }); body.append(h("small", {}, "放置したとき"), modes);
-  for (const m of ["priority", "idleAuto", "auto"] as PolicyMode[]) modes.append(h("button", { id: "polmode-" + m, class: pol.mode === m ? "mode on" : "mode", "aria-pressed": pol.mode === m ? "true" : "false", onclick: () => { pol.mode = m; app.persist(); app.buildSheet(); } }, `${pol.mode === m ? "✓ " : ""}${POLICY_MODE_LABEL[m]}`));
+  for (const m of ["priority", "idleAuto", "auto", "autoReloc"] as PolicyMode[]) modes.append(h("button", { id: "polmode-" + m, class: pol.mode === m ? "mode on" : "mode", "aria-pressed": pol.mode === m ? "true" : "false", onclick: () => { pol.mode = m; app.persist(); app.buildSheet(); } }, `${pol.mode === m ? "✓ " : ""}${POLICY_MODE_LABEL[m]}`));
   const next = (Math.floor((sim.startYear + Math.floor(sim.month / 12) - sim.startYear) / 10) + 1) * 10 + sim.startYear;
   if (!pol.pending) body.append(h("div", { class: "issue" }, `次の介入の機会: ${next}年`)); 
   else {
@@ -194,7 +205,7 @@ export function buildPolicy(app: App, body: HTMLElement) {
     }
   }
   if (pol.history.length) { body.append(h("h3", {}, "これまでの決定")); for (const r of [...pol.history].reverse()) body.append(h("div", { class: "issue" }, `${r.year}年 ${r.none ? "点を使わず決定" : DOMAIN_LABEL[r.domain]}${r.auto ? "(自動)" : ""}: 採用 ${r.adopted.map((a) => a.label).join("・") || "なし"}`, h("br"), h("small", {}, [...r.adopted.map((a) => `${a.label}: ${a.reason}`), ...r.declined.map((d) => `見送り ${d.label}: ${d.reason}`)].join(" ／ ")))); }
-  const now = sim.dials; body.append(h("h3", {}, "現在の世界の傾向(参考)")); body.append(h("small", {}, DIAL_KEYS.map((k) => `${DIAL_LABEL[k]} ${now[k].toFixed(2)}`).join(" ／ "))); void composeDials; void GRADE_MODE; void STATE_LABEL;
+  const now = sim.dials; body.append(h("h3", {}, "現在の世界の傾向(参考)")); body.append(h("small", {}, DIAL_KEYS.map((k) => `${DIAL_LABEL[k]} ${now[k].toFixed(2)}`).join(" ／ "))); if (sim.rules1800) body.append(h("small", { id: "pop1800-note" }, "1800年開始の人口は、史実の全国人口(1792年・1846年の間を補間)に合わせたゲーム用推計です。都市ごとの実数ではありません。地形(樺太・千島)は暫定です。")); body.append(h("details", { id: "dial-guide" }, h("summary", {}, "傾向の見方(名称・範囲・効果)"), ...DIAL_KEYS.map((k) => h("div", { class: "note", title: DIAL_INFO[k].effect }, `${DIAL_LABEL[k]}(${DIAL_RANGE[k][0]}〜${DIAL_RANGE[k][1]}・対象: ${DIAL_INFO[k].target}): ${DIAL_INFO[k].explain}`)))); void composeDials; void GRADE_MODE; void STATE_LABEL;
 }
 
 /**
@@ -251,7 +262,7 @@ export function buildCityEconomy(app: App, sim: SimState, body: HTMLElement, yea
     const P = sim.pot17, W = potentialWeights(P.order), nm = (id: string) => prefName(id), cityName = (id: string) => w.cityById.get(id)?.name ?? id;
     body.append(h("div", { id: "pot17" }, h("b", {}, "府県の発展ポテンシャル順位(人口の順位ではなく、発展しやすさ。上位ほど強く、中位以下の差はわずか)"),
       h("div", { class: "issue", id: "pot17-top" }, "上位: " + P.order.slice(0, 12).map((p, i) => `${i + 1}${nm(p)}`).join(" ")),
-      h("small", {}, `重み(平均1): 1位${W[P.order[0]].toFixed(2)}・7位${W[P.order[6]].toFixed(2)}・25位${W[P.order[24]].toFixed(2)}・49位${W[P.order[48]].toFixed(2)}。今効いている重みは順位替えのあと年々なだらかに動く`),
+      h("small", {}, `重み(平均1): 1位${W[P.order[0]].toFixed(2)}・7位${W[P.order[6]].toFixed(2)}・25位${W[P.order[24]].toFixed(2)}・${P.order.length}位${W[P.order[P.order.length - 1]].toFixed(2)}。今効いている重みは順位替えのあと年々なだらかに動く`),
       ...P.hist.map((x) => h("div", { class: "issue" }, `${x.y}年 ${x.why}: 1〜6位 ${x.order.slice(0, 6).map(nm).join("・")}`))));
     const born = Object.entries(P.shown).filter(([id]) => !(w.cityById.get(id)?.kind === "capital")).sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]) || (a[0] < b[0] ? -1 : 1));
     body.append(h("div", { id: "city17" }, h("b", {}, `都市の誕生(県庁所在地のほか${born.filter(([, v]) => v > 0).length}市が都市として現れ、${born.filter(([, v]) => v < 0).length}市が表示を外れた)`),

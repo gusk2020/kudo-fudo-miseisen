@@ -13,9 +13,9 @@ export const ISLET_PAD_CELLS = 3;
 
 /** v1: the Stage 20 islands as ellipses (the worlds of Stage 20 games). v2 (Stage 22): every island, each as its real outline (地球地図日本), an ellipse only where no outline matched. */
 const OFF_GRID = new Set(["IS-104", "IS-105"]);   // 南鳥島, 沖ノ鳥島: the only two far from every other land (硫黄島 and the rest stay on the grid, as seats can be put there)
-export function withIslets(t: TerrainResult, version: 1 | 2 = 1): TerrainResult {
+export function withIslets(t: TerrainResult, version: 1 | 2 | 3 = 1): TerrainResult {
   if (t.islets) return t;
-  const LIST = version === 2 ? ISLETS : STAGE20_ISLETS, { x0, y0, cell, nx, ny } = t.grid, pos = LIST.map(version === 2 ? isletPos2 : isletPos);
+  const LIST = version >= 2 ? ISLETS.filter((s) => version === 3 || !s.since) : STAGE20_ISLETS, { x0, y0, cell, nx, ny } = t.grid, pos = LIST.map(version >= 2 ? isletPos2 : isletPos);
   let bx0 = x0, by0 = y0, bx1 = x0 + nx * cell, by1 = y0 + ny * cell;
   // Stage 22: an island nobody lives on, far outside the mainland's grid (南鳥島, 沖ノ鳥島), is drawn and listed but not simulated: widening the grid to reach it made every pass over the cells half as long again, for two specks no route serves
   const off = LIST.map((s, n) => version === 2 && OFF_GRID.has(s.id ?? "") && !(s.pop ?? 0));
@@ -33,7 +33,7 @@ export function withIslets(t: TerrainResult, version: 1 | 2 = 1): TerrainResult 
     if (c0 >= 0 && land[c0] === 1) { out.push({ islet: s, pos: p, cells: [], cell: c0, island: island[c0], existing: true, areaKm2: s.area }); return; }
     const a = Math.max(s.len, 0.5) / 2, b = Math.max(s.wid, 0.5) / 2, th = (s.bear * Math.PI) / 180, ux = Math.sin(th), uy = Math.cos(th), reach = Math.max(a, b) / cell + 1;
     const ci = Math.floor((p[0] - X0) / cell), cj = Math.floor((p[1] - Y0) / cell), cells: { k: number; r: number }[] = [];
-    const poly = version === 2 && s.shape ? s.shape.map(([lo, la]) => lonLatToReal(lo, la)) : null;
+    const poly = version >= 2 && s.shape ? s.shape.map(([lo, la]) => lonLatToReal(lo, la)) : null;
     if (poly) {   // Stage 22: the cells whose centre is inside the real outline (and always the one holding the island's centre); r = how far toward the shore, for the height
       let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity; for (const q of poly) { bx0 = Math.min(bx0, q[0]); bx1 = Math.max(bx1, q[0]); by0 = Math.min(by0, q[1]); by1 = Math.max(by1, q[1]); }
       const rad = Math.max(1, Math.hypot(bx1 - bx0, by1 - by0) / 2);
@@ -53,7 +53,11 @@ export function withIslets(t: TerrainResult, version: 1 | 2 = 1): TerrainResult 
     out.push({ islet: s, pos: p, cells: mine, cell: mine.length ? cen : c0, island: mine.length ? id : (c0 >= 0 ? island[c0] : id), existing: !mine.length, areaKm2: s.area });
   });
   const top = t.stats.fujiTopCell, stats = top >= 0 ? { ...t.stats, fujiTopCell: (((top / nx) | 0) + sy) * nx2 + (top % nx) + sx } : t.stats;   // (the one cell index the terrain keeps in its stats)
-  return { ...t, stats, isletVersion: version, grid: { x0: X0, y0: Y0, cell, nx: nx2, ny: ny2 }, land, island, pref, plains, elev, ridge, barrier, islets: out };
+  // Stage 39: the original elevation and the flat zones follow the wider grid (their cell numbers are the old grid's)
+  const mapK = (k: number) => (((k / nx) | 0) + sy) * nx2 + (k % nx) + sx;
+  let elev0: Float32Array | undefined; if (t.elev0) { elev0 = new Float32Array(N2).fill(-200); for (let j = 0; j < ny; j++) elev0.set(t.elev0.subarray(j * nx, j * nx + nx), (j + sy) * nx2 + sx); for (const o of out) for (const k of o.cells) elev0[k] = elev[k]; }
+  const flat = t.flat?.map((z) => ({ ...z, seeds: z.seeds.map((sd) => ({ ...sd, cell: mapK(sd.cell) })) }));
+  return { ...t, stats, isletVersion: version, grid: { x0: X0, y0: Y0, cell, nx: nx2, ny: ny2 }, land, island, pref, plains, elev, ridge, barrier, islets: out, ...(elev0 ? { elev0 } : {}), ...(flat ? { flat } : {}) };
 }
 
 const inPoly = (p: Vec, poly: Vec[]) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) c = !c; } return c; };

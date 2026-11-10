@@ -1,7 +1,9 @@
+import { dbName } from "./ns";
+import { PREF_IDS } from "./seat";
 /** Save format v2: { map, sim } with integrity checks. v1 (map only) is migrated, never rejected. Nothing here throws. */
 import { validMetro } from "../sim/metro";
 import { STANCES } from "../sim/kaigen";
-import { checkIntegrity } from "../sim/network";
+import { checkIntegrity, repairRouteChains } from "../sim/network";
 import { DIAL_KEYS, composeDials } from "../sim/eras";
 import { defaultPolicy } from "../sim/policy";
 import { hashString } from "../sim/engine";
@@ -15,7 +17,7 @@ import { ISLAND_IDS } from "./types";
 export const SAVE_VERSION = 2;
 /** Hash of everything that defines the finished map (not view prefs or step). Changes whenever the map is edited. */
 export function mapStateHash(s: ProjectState): string {
-  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne, ...(s.ridgeExtra && (s.ridgeExtra.sw.length || s.ridgeExtra.ne.length) ? [["ridgeExtra", s.ridgeExtra]] : []), ...(s.alpsRemoved && (s.alpsRemoved.ne || s.alpsRemoved.sw) ? [["alps", !!s.alpsRemoved.ne, !!s.alpsRemoved.sw]] : []), ...(s.rangeEdits && Object.keys(s.rangeEdits).length ? [["ranges", Object.keys(s.rangeEdits).sort().map((k) => [k, s.rangeEdits![k]])]] : []), ...(s.creations && s.creations.length ? [["creations", s.creations]] : []), ...(s.islands ? ["islands"] : []), ...(s.capital ? ["capital", s.capital] : []), ...(s.subCapital ? ["sub", s.subCapital] : []), ...(s.palace ? ["palace", s.palace] : []), ...(s.palacePos ? ["palacePos", s.palacePos] : []), ...(s.capitalPos ? ["capitalPos", s.capitalPos] : []), ...(s.subPos ? ["subPos", s.subPos] : [])]));   // the extras are appended only when set, so a save made before them hashes exactly as it did
+  return hashString(JSON.stringify([s.seed, ISLAND_IDS.map((id) => s.bodies[id]), s.features.biwa, s.features.fuji, s.ridges.sw, s.ridges.ne, ...(s.ridgeExtra && (s.ridgeExtra.sw.length || s.ridgeExtra.ne.length) ? [["ridgeExtra", s.ridgeExtra]] : []), ...(s.alpsRemoved && (s.alpsRemoved.ne || s.alpsRemoved.sw) ? [["alps", !!s.alpsRemoved.ne, !!s.alpsRemoved.sw]] : []), ...(s.rangeEdits && Object.keys(s.rangeEdits).length ? [["ranges", Object.keys(s.rangeEdits).sort().map((k) => [k, s.rangeEdits![k]])]] : []), ...(s.creations && s.creations.length ? [["creations", s.creations]] : []), ...(s.islands ? ["islands"] : []), ...(s.capital ? ["capital", s.capital] : []), ...(s.subCapital ? ["sub", s.subCapital] : []), ...(s.palace ? ["palace", s.palace] : []), ...(s.palacePos ? ["palacePos", s.palacePos] : []), ...(s.capitalPos ? ["capitalPos", s.capitalPos] : []), ...(s.subPos ? ["subPos", s.subPos] : []), ...(s.subCapital2 ? ["sub2", s.subCapital2, s.subPos2 ?? null] : [])]));   // the extras are appended only when set, so a save made before them hashes exactly as it did
 }
 export interface GameSave { format: "kudo-fudo-miseisen"; schemaVersion: 2; savedAt: number; map: ProjectState; mapHash: string; sim: SimState | null }
 export function makeSave(map: ProjectState, sim: SimState | null): GameSave {
@@ -59,7 +61,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (!isRec(raw.dials)) raw.dials = composeDials({ era: raw.era, mods: raw.mods }, monthYear(raw));
   raw.mods = (raw.mods as unknown[]).filter((m: any) => isRec(m) && typeof m.id === "string" && fin(m.from) && fin(m.until) && isRec(m.d) && Object.values(m.d).every(fin));
   if (!DIAL_KEYS.every((k) => fin(raw.dials[k]))) raw.dials = composeDials({ era: raw.era, mods: raw.mods }, monthYear(raw));
-  if (raw.stage3 === true && !(isRec(raw.policy) && fin(raw.policy.points) && Array.isArray(raw.policy.history) && ["priority", "idleAuto", "auto"].includes(raw.policy.mode) && (raw.policy.pending === null || (isRec(raw.policy.pending) && Number.isInteger(raw.policy.pending.year))))) raw.policy = defaultPolicy(); if (raw.stage3 !== true) { delete raw.stage3; delete raw.policy; }
+  if (raw.stage3 === true && !(isRec(raw.policy) && fin(raw.policy.points) && Array.isArray(raw.policy.history) && ["priority", "idleAuto", "auto", "autoReloc"].includes(raw.policy.mode) && (raw.policy.pending === null || (isRec(raw.policy.pending) && Number.isInteger(raw.policy.pending.year))))) raw.policy = defaultPolicy(); if (raw.stage3 !== true) { delete raw.stage3; delete raw.policy; }
   if (raw.tech !== undefined && !(isRec(raw.tech) && fin(raw.tech.k) && raw.tech.k >= 1 && raw.tech.k <= 4)) delete raw.tech;
   if (isRec(raw.tech) && raw.tech.wk !== undefined && !(fin(raw.tech.wk) && raw.tech.wk >= 1 && raw.tech.wk <= 6)) delete raw.tech.wk;   // Stage 13
   // Issue #13: the era timeline is kept only if it is well formed; otherwise the game simply continues as a single-era game (never refused)
@@ -68,7 +70,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
     if (!(isRec(k) && Array.isArray(k.eras) && k.eras.length >= 1 && k.eras.length < 400 && k.eras.every(okE) && Number.isInteger(k.next) && Number.isInteger(k.nextIdx) && (k.pending === null || (isRec(k.pending) && Number.isInteger(k.pending.year) && Array.isArray(k.pending.cands) && k.pending.cands.length > 0 && k.pending.cands.every((c: any) => isRec(c) && typeof c.name === "string" && STANCES.includes(c.stance)))))) delete raw.kaigen;
   }
   // Stage 10: the role assignment is kept only if well formed (a damaged one is dropped: the game then reads the real 1950 sizes, never refused)
-  if (raw.roles !== undefined) { const r = raw.roles, str = (x: any) => typeof x === "string" && x.length < 12; if (!(isRec(r) && isRec(r.prof) && Object.entries(r.prof).every(([k, v]) => str(k) && str(v)) && Array.isArray(r.capMetro) && r.capMetro.every(str) && Array.isArray(r.subMetro) && r.subMetro.every(str) && str(r.culture))) delete raw.roles; }
+  if (raw.roles !== undefined) { const r = raw.roles, str = (x: any) => typeof x === "string" && x.length < 12; if (!(isRec(r) && isRec(r.prof) && Object.entries(r.prof).every(([k, v]) => str(k) && str(v)) && Array.isArray(r.capMetro) && r.capMetro.every(str) && Array.isArray(r.subMetro) && r.subMetro.every(str) && str(r.culture) && (r.sub2Metro === undefined || (isRec(r.sub2Metro) && Object.entries(r.sub2Metro).every(([k, v]) => str(k) && str(v)))))) delete raw.roles; }
   // Stage 12: the per-city economy record is kept only if well formed (a damaged one is dropped; the next year rebuilds it)
   if (raw.city12 !== undefined && !(isRec(raw.city12) && Object.values<any>(raw.city12).every((c) => isRec(c) && Array.isArray(c.p) && c.p.length <= 12 && c.p.every(fin) && Array.isArray(c.h) && c.h.length < 60 && c.h.every(fin) && fin(c.adv)))) delete raw.city12;
   if (raw.metro !== undefined && !validMetro(raw.metro)) delete raw.metro;   // Stage 13: rebuilt at the next yearly step
@@ -80,6 +82,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.numreg !== undefined && !(isRec(raw.numreg) && isRec(raw.numreg.next) && isRec(raw.numreg.list) && ["road", "hwy", "rail", "hsr", "sea", "air"].every((k) => Array.isArray(raw.numreg.list[k]) && Number.isInteger(raw.numreg.next[k])))) delete raw.numreg;   // Stage 23: a register that is not whole is started again (estimated)
   if (raw.tier23 !== undefined && !(isRec(raw.tier23) && isRec(raw.tier23.zones) && isRec(raw.tier23.hist) && isRec(raw.tier23.cnt))) delete raw.tier23;   // Stage 23
   if (raw.isl22 !== undefined && raw.isl22 !== true) delete raw.isl22;
+  if (raw.isl36 !== undefined && raw.isl36 !== true) delete raw.isl36;
   if (raw.relocFirst !== undefined && !(Number.isInteger(raw.relocFirst) && raw.relocFirst >= 1950 && raw.relocFirst <= 3500)) delete raw.relocFirst;   // Stage 28 (absent = an older game: it takes its origin from its own history when loaded, adoptRelocSchedule)
   if (raw.relocSkipped !== undefined && !(Array.isArray(raw.relocSkipped) && raw.relocSkipped.every((y: unknown) => Number.isInteger(y)))) delete raw.relocSkipped;   // Stage 35
   if (raw.relocOrigin !== undefined && raw.relocOrigin !== "new" && raw.relocOrigin !== "migrated") delete raw.relocOrigin;   // Stage 29
@@ -94,8 +97,9 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.e2200 !== undefined && !(isRec(raw.e2200) && Number.isInteger(raw.e2200.year) && ["pending", "road0", "done"].includes(raw.e2200.state))) delete raw.e2200;   // Stage 22
   if (raw.moves20 !== undefined && !(Array.isArray(raw.moves20) && raw.moves20.length > 0 && raw.moves20.length <= 150 && raw.moves20.every((m: any) => isRec(m) && typeof m.pref === "string" && m.pref.length < 12 && ["capital", "sub", "palace"].includes(m.by) && (m.since === undefined || Number.isInteger(m.since)) && Array.isArray(m.pos) && m.pos.length === 2 && m.pos.every((x: unknown) => typeof x === "number" && Number.isFinite(x) && Math.abs(x as number) < 5000)))) delete raw.moves20;
   if (raw.towns16 !== undefined && !(Array.isArray(raw.towns16) && raw.towns16.length > 0 && raw.towns16.length < 400 && raw.towns16.every((x: unknown) => typeof x === "string" && x.length < 24))) delete raw.towns16;   // Stage 16
-  for (const k of ["capitalPos", "subPos"]) if (raw[k] !== undefined && !(Array.isArray(raw[k]) && raw[k].length === 2 && raw[k].every((x: unknown) => typeof x === "number" && Number.isFinite(x) && Math.abs(x as number) < 5000))) delete raw[k];   // Stage 19
-  if (raw.pot17 !== undefined) { const q = raw.pot17, ok = q && typeof q === "object" && Array.isArray(q.order) && q.order.length === 49 && q.order.every((x: unknown) => typeof x === "string") && q.cur && typeof q.cur === "object" && Array.isArray(q.hist) && q.shown && typeof q.shown === "object"; if (!ok) delete raw.pot17; else { for (const k of Object.keys(q.cur)) if (!Number.isFinite(q.cur[k])) q.cur[k] = 1; } }   // Stage 17
+  if (raw.subCapital2 !== undefined && !(typeof raw.subCapital2 === "string" && PREF_IDS.includes(raw.subCapital2) && raw.subCapital2 !== raw.subCapital && raw.subCapital2 !== raw.capital)) { delete raw.subCapital2; delete raw.subPos2; }   // Stage 36 M3
+  for (const k of ["capitalPos", "subPos", "subPos2"]) if (raw[k] !== undefined && !(Array.isArray(raw[k]) && raw[k].length === 2 && raw[k].every((x: unknown) => typeof x === "number" && Number.isFinite(x) && Math.abs(x as number) < 5000))) delete raw[k];   // Stage 19
+  if (raw.pot17 !== undefined) { const q = raw.pot17, ok = q && typeof q === "object" && Array.isArray(q.order) && q.order.length === PREF_IDS.length && q.order.every((x: unknown) => typeof x === "string") && q.cur && typeof q.cur === "object" && Array.isArray(q.hist) && q.shown && typeof q.shown === "object"; if (!ok) delete raw.pot17; else { for (const k of Object.keys(q.cur)) if (!Number.isFinite(q.cur[k])) q.cur[k] = 1; } }   // Stage 17
   if (isRec(raw.kaigen) && raw.kaigen.recon !== undefined && !(isRec(raw.kaigen.recon) && ["pacific", "japansea", "neutral"].includes(raw.kaigen.recon.coast) && (raw.kaigen.recon.since === undefined || Number.isInteger(raw.kaigen.recon.since)) && ["concentrate", "disperse"].includes(raw.kaigen.recon.focus))) delete raw.kaigen.recon;
   // Stage 8: a lake bridge keeps only its two shore cells (an early Stage 8 build stored the water cells too, which the land check would refuse)
   for (const e of Object.values<any>(raw.edges)) if (e.facility === "bridge" && typeof e.facilityName === "string" && e.facilityName.includes("湖上大橋") && e.cells.length > 2) e.cells = [e.cells[0], e.cells[e.cells.length - 1]];
@@ -110,8 +114,12 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   }
   raw.schemaVersion = 3;
   const sim = { ...raw, events: Array.isArray(raw.events) ? raw.events : [], stats: Array.isArray(raw.stats) ? raw.stats : [], ...(fin(raw.skippedWallMs) && raw.skippedWallMs >= 0 && raw.skippedWallMs < 1e11 ? { skippedWallMs: raw.skippedWallMs } : {}), skippedMonths: fin(raw.skippedMonths) ? raw.skippedMonths : 0, lastWallMs: fin(raw.lastWallMs) ? raw.lastWallMs : 0, speed: raw.speed === 50 ? 20 : [0, 1, 5, 20].includes(raw.speed) ? raw.speed : 0,   /* Stage 25: ×50 was withdrawn; an old save that had it runs at ×20 */ ceremonyDone: raw.ceremonyDone === true } as unknown as SimState;
-  const bad = checkIntegrity(sim); if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
-  return { sim, problems: [] };
+  let bad = checkIntegrity(sim), note: string[] = [];
+  if (bad.length && bad.every((b) => /^route r\.\d+: (chain broken|missing edge)/.test(b))) {   // Stage 37: a stale route chain is repaired in memory (the stored text is untouched); anything else is still refused
+    const n = repairRouteChains(sim); bad = checkIntegrity(sim); if (!bad.length) note = [`路線${n}本の途中が切れていたため、つながる部分だけ残して読み込みました`];
+  }
+  if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
+  return { sim, problems: note };
 }
 /** After the world exists: every cell must be real land on this map. */
 export function validateSimAgainstWorld(sim: SimState, w: World, terrainHash: string): string | null {
@@ -120,7 +128,7 @@ export function validateSimAgainstWorld(sim: SimState, w: World, terrainHash: st
   for (const n of Object.values(sim.nodes)) if (n.cell >= w.N) return "ノードが地形の外にあります";
   if ((sim.towns16 ?? []).join(",") !== (w.townIds ?? []).join(",")) return "都市データの種類(町の有無)が保存時と一致しません";   // Stage 16
   if (JSON.stringify(sim.moves20 ?? null) !== JSON.stringify(w.moveSpec ?? null)) return "県庁所在地の移転が保存時と一致しません";   // Stage 20
-  if ((sim.isl22 ? 2 : sim.isl20 ? 1 : 0) !== (w.islets ? w.t.isletVersion ?? 1 : 0)) return "島のデータの版(Stage 20の楕円か実際の輪郭か)が保存時と一致しません";   // Stage 22
+  if ((sim.isl36 ? 3 : sim.isl22 ? 2 : sim.isl20 ? 1 : 0) !== (w.islets ? w.t.isletVersion ?? 1 : 0)) return "島のデータの版(Stage 20の楕円か実際の輪郭か)が保存時と一致しません";   // Stage 22
   if (!!sim.isl20 !== !!w.islets) return "島のデータの種類(離島の有無)が保存時と一致しません";   // Stage 20
   if (!!sim.rec34 !== !!w.g34) return "埋め立て・島拡大のデータ(Stage 34)が保存時と一致しません";   // Stage 34
   for (const e of sim.rec34?.log ?? []) if (e.k >= w.N || w.t.land[e.k] !== 1) return "埋め立て済みの土地が地形と一致しません";
@@ -146,7 +154,7 @@ export function parseSave(input: unknown): ParsedSave {
 export function exportGame(save: GameSave, extra?: Record<string, unknown>): string { return JSON.stringify({ ...save, savedAt: Date.now(), ...extra }, null, 1); }
 
 // ---- IndexedDB (best effort) ----
-const DB = "kfm-stage1", STORE = "saves";
+const DB = dbName("kfm-stage1"), STORE = "saves";
 function open(): Promise<IDBDatabase> {
   return new Promise((res, rej) => { if (typeof indexedDB === "undefined") return rej(new Error("no indexedDB")); const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore(STORE); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 }
@@ -154,7 +162,8 @@ async function tx<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequ
   const db = await open();
   return new Promise((res, rej) => { const q = f(db.transaction(STORE, mode).objectStore(STORE)); q.onsuccess = () => { res(q.result); db.close(); }; q.onerror = () => { rej(q.error); db.close(); }; });
 }
-export async function putRaw(key: string, value: unknown): Promise<boolean> { try { await tx("readwrite", (s) => s.put(JSON.stringify(value), key)); return true; } catch { return false; } }
+/** Stage 38 (A): the value is turned into text HERE, in the caller's own turn, and only then is the database opened. It used to be serialised inside the transaction -- after an await -- so a save asked for between two months was written from whatever the running game looked like a moment later (half way through a year's update), and that save would not load. */
+export async function putRaw(key: string, value: unknown): Promise<boolean> { let text: string; try { text = JSON.stringify(value); } catch { return false; } try { await tx("readwrite", (s) => s.put(text, key)); return true; } catch { return false; } }
 export async function getRaw(key: string): Promise<string | undefined> { try { return await tx<string | undefined>("readonly", (s) => s.get(key) as IDBRequest<string | undefined>); } catch { return undefined; } }
 /** Stage 23: what a slot shows -- the capital and sub-capital IN THAT SAVE and the year it was saved in (never the game now being played). */
 export interface SlotMeta { capital: string; sub: string; year: number | null; savedAt: number }
@@ -182,3 +191,19 @@ export async function loadGame(name: string): Promise<LoadedGame | null> {
   } catch { return null; }
 }
 export async function listSlots(): Promise<string[]> { try { return (await tx<IDBValidKey[]>("readonly", (s) => s.getAllKeys())).map(String); } catch { return []; } }
+
+/** Stage 36: data kept aside because it cannot be loaded by this version -- listed with the reason, never loaded and never deleted. */
+export interface OldData { key: string; label: string; reason: string; savedAt: number | null }
+export async function listOldData(prefix: string): Promise<OldData[]> {
+  const out: OldData[] = [], keys = (await listSlots()).filter((k) => k.startsWith(prefix));
+  for (const k of keys) {
+    const tail = k.slice(prefix.length);
+    if (/^slot\d$/.test(tail)) { const l = await loadGame(k); if (!l) out.push({ key: k, label: `セーブ${tail.slice(4)}`, reason: "この版では読めない形式です(旧版のデータ。削除はしていません)", savedAt: null }); else if (l.quarantine) out.push({ key: k, label: `セーブ${tail.slice(4)}の道路データ`, reason: "地図や地形が一致しないため道路は読み込みません(旧版のデータ)", savedAt: l.savedAt }); continue; }
+    if (/:(quarantine|broken)$/.test(tail) || /^(auto|slot\d?):(quarantine|broken)$/.test(tail)) {
+      let reason = "旧版のデータとして退避されています", savedAt: number | null = null;
+      try { const j = JSON.parse((await getRaw(k)) ?? "null"); if (j) { if (typeof j.reason === "string") reason = j.reason; else if (/broken$/.test(k)) reason = "書き込みが途中で切れた壊れたデータです"; if (typeof j.savedAt === "number") savedAt = j.savedAt; } } catch { /* keep default */ }
+      out.push({ key: k, label: /broken$/.test(k) ? "壊れたデータの控え" : "退避された道路データ", reason, savedAt });
+    }
+  }
+  return out;
+}

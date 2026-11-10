@@ -27,10 +27,10 @@ describe("Stage 24: the 2200 event", () => {
   }, 300000);
   it("the development order is drawn again from the new seats by the starting rule, and it works: the new capital grows, the old one eases, nobody is created", () => {
     const keep = run14({ seed: 5, until: 2230, islets: true }), move = run14({ seed: 5, until: 2230, islets: true, e2200: MOVE as never });
-    const o = move.sim.pot17!.order; expect(new Set(o).size).toBe(49); expect(o.length).toBe(49); expect([...o].sort()).toEqual([...PREF_IDS].sort()); expect(o.slice(0, 3)).toEqual(["JP-40", "JP-04", "JP-40"].filter((x, i, a) => a.indexOf(x) === i).concat(o.slice(2, 3)).slice(0, 3));
-    const w = potentialWeights(o), mean = Object.values(w).reduce((a, b) => a + b, 0) / 49; expect(mean).toBeCloseTo(1, 6); expect(w["JP-40"]).toBeGreaterThan(w["JP-47"]);
+    const o = move.sim.pot17!.order; expect(new Set(o).size).toBe(PREF_IDS.length); expect(o.length).toBe(PREF_IDS.length); expect([...o].sort()).toEqual([...PREF_IDS].sort()); expect(o.slice(0, 3)).toEqual(["JP-40", "JP-04", "JP-40"].filter((x, i, a) => a.indexOf(x) === i).concat(o.slice(2, 3)).slice(0, 3));
+    const w = potentialWeights(o), mean = Object.values(w).reduce((a, b) => a + b, 0) / PREF_IDS.length; expect(mean).toBeCloseTo(1, 6); expect(w["JP-40"]).toBeGreaterThan(w["JP-47"]);
     expect(move.sim.pot17!.hist.some((h) => h.y >= 2200 && h.order[0] === "JP-40")).toBe(true);
-    expect(share(move, "JP-40")).toBeGreaterThan(share(keep, "JP-40") * 15); expect(share(move, "JP-13")).toBeLessThan(share(keep, "JP-13"));   // the move acts on the people
+    expect(share(move, "JP-40")).toBeGreaterThan(share(keep, "JP-40") * 10);   /* Stage 36: with the 50th prefecture the new capital still grows more than tenfold (11.6x measured; it was 15x+ with 49) */ expect(share(move, "JP-13")).toBeLessThan(share(keep, "JP-13"));   // the move acts on the people
     const a = tot(keep.sim), b = tot(move.sim); expect(Math.abs(a - b) / a).toBeLessThan(0.01);   // moved, not made: the nation is the same size
     for (const c of move.w.cities) expect(move.sim.cities[c.id].pop).toBeGreaterThanOrEqual(2000 - 1);
   }, 900000);

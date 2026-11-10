@@ -8,14 +8,14 @@ import type { Vec } from "../core/types";
 import type { WCity } from "./world";
 
 export type SeatRole = "capital" | "sub" | "palace";
-export interface SeatMove { pref: string; pos: Vec; by: SeatRole; /** Stage 22: set for a move made by the 2200 event */ since?: number }
+export interface SeatMove { pref: string; pos: Vec; by: SeatRole; /** Stage 22: set for a move made by the 2200 event */ since?: number; /** a second seat point in a prefecture that already has a 県庁所在地 from another role: it only enlarges a tiny island, it never takes the 県庁所在地 */ extra?: boolean }
 export interface MoveResult { pref: string; by: SeatRole; cityId: string; name: string; former: string | null; near: string; km: number; adopted: boolean }
 export const PEOPLE_PER_KM2 = 2500, MIN_CITY_POP = 2000, ADOPT_KM = 25, NEW_SHARE = 0.01, NEW_POP_MIN = 300, NEW_POP_MAX = 20000;
 
 /** The moves a game's seat settings amount to: one per prefecture (a capital or sub-capital point first, then a palace point), only for points the player put on the map. */
-export function movesOfSettings(seats: { capital: string; sub: string; palace: string }, pos: { capitalPos?: Vec; subPos?: Vec; palacePos?: Vec }): SeatMove[] {
+export function movesOfSettings(seats: { capital: string; sub: string; palace: string; sub2?: string }, pos: { capitalPos?: Vec; subPos?: Vec; palacePos?: Vec; subPos2?: Vec }): SeatMove[] {
   const out: SeatMove[] = [], seen = new Set<string>();
-  for (const [by, p, pref] of [["capital", pos.capitalPos, seats.capital], ["sub", pos.subPos, seats.sub], ["palace", pos.palacePos, seats.palace]] as [SeatRole, Vec | undefined, string][]) { if (!p || seen.has(pref)) continue; seen.add(pref); out.push({ pref, pos: [p[0], p[1]], by }); }
+  for (const [by, p, pref] of [["capital", pos.capitalPos, seats.capital], ["sub", pos.subPos, seats.sub], ...(seats.sub2 ? [["sub", pos.subPos2, seats.sub2]] : []), ["palace", pos.palacePos, seats.palace]] as [SeatRole, Vec | undefined, string][]) { if (!p) continue; const extra = seen.has(pref); seen.add(pref); out.push({ pref, pos: [p[0], p[1]], by, ...(extra ? { extra: true } : {}) }); }
   return out;
 }
 const cellCentre = (t: TerrainResult, k: number): Vec => { const g = t.grid; return [g.x0 + ((k % g.nx) + 0.5) * g.cell, g.y0 + (((k / g.nx) | 0) + 0.5) * g.cell]; };
@@ -24,6 +24,7 @@ const cellCentre = (t: TerrainResult, k: number): Vec => { const g = t.grid; ret
 export function applySeatMoves(cities: WCity[], t: TerrainResult, cellOf: (p: Vec) => number, moves: SeatMove[], capFor: (k: number) => number, coastalPlains: (k: number) => { coastal: boolean; plains: number }): MoveResult[] {
   const res: MoveResult[] = [];
   for (const m of moves) {
+    if (m.extra) continue;   // (its land is enlarged by Stage 34; the prefecture keeps the 県庁所在地 the first seat gave it)
     const old = cities.find((c) => c.kind === "capital" && c.pref === m.pref); let k = cellOf(m.pos); if (k < 0 || t.land[k] !== 1) { k = nearestLand(t, cellOf, m.pos); if (k < 0) continue; }
     const taken = new Set(cities.map((c) => c.name)), np = nearestPlace(m.pos, taken), np0 = nearestPlace(m.pos);   // (a name is never given to two cities: the nearest place not already a city of the game)
     if (old && (old.cell === k || (old.island === t.island[k] && Math.hypot(old.pos[0] - m.pos[0], old.pos[1] - m.pos[1]) <= ADOPT_KM))) { res.push({ pref: m.pref, by: m.by, cityId: old.id, name: old.name, former: null, near: np0?.place ?? old.name, km: np0?.km ?? 0, adopted: true }); continue; }

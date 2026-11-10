@@ -49,6 +49,24 @@ export interface Dials {
 export const DIAL_KEYS = ["roadShare", "carBias", "railBias", "freightRail", "jnrSubsidy", "jnrFare", "railBuild", "hwyBuild", "hsr", "growth", "austerity", "privatize", "airBias", "seaBias"] as const;
 export const DIAL_LABEL: Record<keyof Dials, string> = { roadShare: "道路への配分", carBias: "自動車の選好", railBias: "鉄道の選好", freightRail: "貨物の鉄道選好", jnrSubsidy: "国鉄への補助", jnrFare: "国鉄の運賃収入", railBuild: "鉄道建設の意欲", hwyBuild: "道路建設の意欲", hsr: "高速交通の意欲", growth: "経済成長", austerity: "維持費の余裕", privatize: "国鉄民営化の進度", airBias: "空路の選好", seaBias: "海路の選好" };
 export const DIAL_RANGE: Record<keyof Dials, [number, number]> = { roadShare: [0.1, 0.9], carBias: [-1, 2], railBias: [-1, 1.5], freightRail: [-1, 1], jnrSubsidy: [0, 1], jnrFare: [0.25, 1.3], railBuild: [0, 1.5], hwyBuild: [0, 1.5], hsr: [0, 1.5], growth: [0.5, 1.6], austerity: [0.5, 1.3], privatize: [0, 1], airBias: [0, 1.5], seaBias: [0, 1.5] };
+/** Stage 36: the one table that says what each policy dial is -- its name, range, what it acts on, what it does and the sentence the game shows. Descriptive only: no dial, range or effect is changed by it. */
+export interface DialInfo { target: string; effect: string; explain: string }
+export const DIAL_INFO: Record<keyof Dials, DialInfo> = {
+  roadShare: { target: "統合予算", effect: "道路と鉄道への予算の割り振り", explain: "大きいほど予算が道路に回り、小さいほど鉄道に回ります" },
+  carBias: { target: "旅客の手段選び", effect: "自動車の魅力を所要時間以上に上げ下げ", explain: "大きいほど自動車が選ばれやすくなります" },
+  railBias: { target: "旅客の手段選び", effect: "鉄道の魅力を所要時間以上に上げ下げ", explain: "大きいほど鉄道が選ばれやすくなります" },
+  freightRail: { target: "貨物の手段選び", effect: "貨物が鉄道とトラックのどちらを選ぶか", explain: "大きいほど貨物が鉄道に集まります" },
+  jnrSubsidy: { target: "官営・国鉄の鉄道", effect: "鉄道予算のうち国の鉄道に回る割合", explain: "大きいほど国の鉄道が手厚く支えられます" },
+  jnrFare: { target: "官営・国鉄の運賃", effect: "運賃収入のうち実際に集まる割合", explain: "小さいほど運賃が抑えられ、国の鉄道の収入が減ります" },
+  railBuild: { target: "鉄道の新設", effect: "鉄道を新しく造る意欲", explain: "大きいほど新線の計画と着工が増えます" },
+  hwyBuild: { target: "道路の新設", effect: "道路を新しく造る意欲", explain: "大きいほど道路の計画と着工が増えます" },
+  hsr: { target: "高速鉄道・高速道路", effect: "高規格化への意欲", explain: "大きいほど新幹線や高速道路の整備が早く進みます" },
+  growth: { target: "経済全体", effect: "景気から決まる予算の倍率", explain: "大きいほど使える建設予算が増えます" },
+  austerity: { target: "維持費", effect: "維持にかけられる余裕", explain: "小さいほど維持費が削られ、休止や廃道が増えます" },
+  privatize: { target: "国の鉄道", effect: "民営化の進み具合", explain: "大きいほど国の鉄道が民営化へ進みます" },
+  airBias: { target: "航空", effect: "空港と空路への傾き", explain: "大きいほど空港が早く整い、長距離で空路が選ばれます" },
+  seaBias: { target: "海運", effect: "港と海路への傾き", explain: "大きいほど沿岸貨物で海路が選ばれ、フェリーや海峡の連絡が優先されます" },
+};
 /** Stage 7: the most the policies in force may move one dial, as a share of the dial's range. */
 export const POLICY_CAP = 0.12;
 export const clampDial = (k: keyof Dials, v: number) => Math.max(DIAL_RANGE[k][0], Math.min(DIAL_RANGE[k][1], v));
@@ -127,13 +145,13 @@ export function blendedDials(eras: { stance: EraKey; start: number }[], year: nu
 /** A time-limited nudge to the dials, from an event or a policy. `d` is additive; the reason is kept so the timeline can say why. */
 export interface Mod { id: string; kind: "event" | "policy"; label: string; from: number; until: number; d: Partial<Dials> }
 /** Baseline + every active mod, clamped. The only place dials are composed. */
-export function composeDials(sim: Pick<SimState, "era" | "mods" | "kaigen"> & Partial<Pick<SimState, "e2200">>, year: number): Dials {
+export function composeDials(sim: Pick<SimState, "era" | "mods" | "kaigen"> & Partial<Pick<SimState, "e2200" | "rules1800">>, year: number): Dials {
   const d = sim.kaigen ? blendedDials(sim.kaigen.eras, year) : baseDials(eraKeyOf(sim.era), year);
   const pol = {} as Record<keyof Dials, number>; for (const k of DIAL_KEYS) pol[k] = 0;
   for (const m of sim.mods) if (year >= m.from && year < m.until) for (const k of DIAL_KEYS) { const v = m.d[k]; if (!v) continue; if (m.kind === "policy") pol[k] += v; else d[k] += v; }
   // Stage 7: the ten-yearly policies together may move a dial by at most POLICY_CAP of its range, so a policy steers within the world line and never replaces it
   for (const k of DIAL_KEYS) { const cap = POLICY_CAP * (DIAL_RANGE[k][1] - DIAL_RANGE[k][0]); d[k] += Math.max(-cap, Math.min(cap, pol[k])); d[k] = clampDial(k, d[k]); }
-  const cs = cycleShape(sim.e2200, year);   // Stage 27: the 150-year cycle moves the appetite to build, and nothing else
+  const cs = cycleShape(sim.e2200, year, !!sim.rules1800);   // Stage 27: the 150-year cycle moves the appetite to build, and nothing else
   if (cs) { for (const k of ["hwyBuild", "railBuild"] as const) d[k] = clampDial(k, Math.max(d[k], cs.build) * cs.damp); for (const k of ["airBias", "seaBias"] as const) d[k] = clampDial(k, Math.max(d[k], cs.airsea) * cs.damp); }
   return d;
 }

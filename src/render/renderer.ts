@@ -57,6 +57,8 @@ export function terrainCanvas(t: TerrainResult, part: "all" | "sea" | "land" = "
   g.putImageData(img, 0, 0); return c;
 }
 
+/** Stage 38 (D): the island's length on screen (px) below which its ring is fully drawn, and above which it is gone. */
+export const RING_FULL_PX = 4, RING_GONE_PX = 10;
 export class Renderer {
   app!: Application;
   view: View = { cx: 0, cy: 0, zoom: 0.3 };
@@ -64,11 +66,11 @@ export class Renderer {
   /** Stage 19: a seat point chosen on the map and not yet confirmed (a crosshair) */
   seatPending: Vec | null = null;
   /** Stage 24: after 2200 the seats are the game's (sim.capital ...), not the map state's: where the three markers stand (null = as the map state says). */
-  seatOverride: { capital: Vec | null; sub: Vec | null; palace: Vec | null } | null = null;
+  seatOverride: { capital: Vec | null; sub: Vec | null; sub2?: Vec | null; palace: Vec | null } | null = null;
   /** Stage 20: the small islands (drawn as ellipses of their real size, at least a few pixels wide so the tiniest can be seen and tapped) */
   /** Stage 22: the 県庁所在地 of the game's world (moved ones included), most important first; the base map names these, without overlaps */
   baseNames: { name: string; p: Vec }[] | null = null;
-  islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean; shaped?: boolean; tiny?: boolean }[] | null = null;
+  islets: { pos: Vec; len: number; wid: number; bear: number; name: string; claim: boolean; shaped?: boolean; tiny?: boolean; shape?: number[]; /** Stage 38 (D): an island out in the open ocean (the Kurils, Ogasawara, the Ryukyus ...) -- drawn as a ring while it is too small to show its shape */ outer?: boolean }[] | null = null;
   /** Stage 22: the real-map coastline of 地球地図日本 (drawn once, reused; the 5 km grid underneath keeps the simulation's own land) */
   private gm: { fill: Graphics; mask: Graphics; coast: Graphics; border: Graphics; bg: string } | null = null;
   private gmSplit = splitGmj(GMJ.polys as unknown as number[][]);
@@ -130,6 +132,10 @@ export class Renderer {
   ridgeSel: { key: "sw" | "ne"; si: number } | null = null;
   /** How many range strokes the last redraw put on the map (0 on the road map; for tests). */
   ridgeStrokesDrawn = 0;
+  /** Stage 37: how many far-north outlines (樺太, the northern Kurils) the last redraw put on the real map (for tests). */
+  farLandDrawn = 0;
+  /** Stage 38 (D): how many open-ocean island rings the last redraw drew (for tests). */
+  outerMarkersDrawn = 0; outerMarkersInView = 0;
   private withPending(s: ProjectState, pending: Pending | null, which: "biwa" | "fuji"): ProjectState {
     const f = pending?.feature; if (!f || f.which !== which) return s;
     return { ...s, features: { ...s.features, [which]: { ...s.features[which], pos: f.pos, ...(f.rot !== undefined ? { rot: f.rot } : {}), ...(f.scale !== undefined ? { scale: f.scale } : {}), ...(f.scaleY !== undefined ? { scaleY: f.scaleY } : { scaleY: undefined }) } } };
@@ -161,7 +167,7 @@ export class Renderer {
     const coast = new Graphics(), fills = new Graphics();
     const gmOn = !!s.real;   // Stage 22: on the real map the coastline is 地球地図日本's (the mainland, the added islands and the islets alike)
     if (gmOn) {
-      const bgKey = `${this.bg}:${landFlat}`; if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.mask.destroy(); this.gm?.coast.destroy(); this.gm?.border.destroy(); const f = new Graphics(), c = new Graphics(), m = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); else f.poly(pts).fill({ color: 0x93b266 }); m.poly(pts).fill({ color: 0xffffff }); } const seg = (g: Graphics, a: number[]) => { for (let i = 0; i < a.length; i += 4) { const p = lonLatToReal(a[i] / 1000, a[i + 1] / 1000), q = lonLatToReal(a[i + 2] / 1000, a[i + 3] / 1000); g.moveTo(p[0], -p[1]).lineTo(q[0], -q[1]); } }, bd = new Graphics(); seg(c, this.gmSplit.coast); c.stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); seg(bd, this.gmSplit.border); bd.stroke({ width: 1, color: 0x5b1f6e, alpha: 0.9, pixelLine: true }); /* the same polygons are the mask of the relief and of the rivers */ this.gm = { fill: f, mask: m, coast: c, border: bd, bg: bgKey }; }
+      const shapedIslets = (this.islets ?? []).filter((o): o is typeof o & { shape: number[] } => !!o.shape), bgKey = `${this.bg}:${landFlat}:${shapedIslets.length}`; /* Stage 39: the islands outside 地球地図日本's polygons are part of the land layer, so the layer is made again when their number changes */ if (!this.gm || this.gm.bg !== bgKey) { this.gm?.fill.destroy(); this.gm?.mask.destroy(); this.gm?.coast.destroy(); this.gm?.border.destroy(); const f = new Graphics(), c = new Graphics(), m = new Graphics(); for (const p of GMJ.polys) { const pts: number[] = []; for (let i = 0; i < p.length; i += 2) { const q = lonLatToReal(p[i] / 1000, p[i + 1] / 1000); pts.push(q[0], -q[1]); } if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); else f.poly(pts).fill({ color: 0x93b266 }); m.poly(pts).fill({ color: 0xffffff }); } for (const part of EXTRA.islands.karafuto.parts) { const pts: number[] = []; for (const q of part) pts.push(q[0], -q[1]); if (landFlat) f.poly(pts).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); else f.poly(pts).fill({ color: 0x93b266 }); m.poly(pts).fill({ color: 0xffffff }); } for (const o of shapedIslets) { if (landFlat) f.poly(o.shape).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); else f.poly(o.shape).fill({ color: 0x93b266 }); m.poly(o.shape).fill({ color: 0xffffff }); }   /* Stage 39 (A): the northern Kurils (and any island with its own outline) are filled and let through the relief mask like 南樺太 */ /* Stage 38 (B): 南樺太 is outside 地球地図日本's polygons, so it is filled, and let through the relief mask, from its own outline */ const seg = (g: Graphics, a: number[]) => { for (let i = 0; i < a.length; i += 4) { const p = lonLatToReal(a[i] / 1000, a[i + 1] / 1000), q = lonLatToReal(a[i + 2] / 1000, a[i + 3] / 1000); g.moveTo(p[0], -p[1]).lineTo(q[0], -q[1]); } }, bd = new Graphics(); seg(c, this.gmSplit.coast); c.stroke({ width: 1, color: 0x2c3e1f, pixelLine: true }); seg(bd, this.gmSplit.border); bd.stroke({ width: 1, color: 0x5b1f6e, alpha: 0.9, pixelLine: true }); /* the same polygons are the mask of the relief and of the rivers */ this.gm = { fill: f, mask: m, coast: c, border: bd, bg: bgKey }; }
       this.base.addChild(this.gm.fill);
       this.base.addChild(this.gm.mask);
       if (!landFlat && this.landSprite) { this.landSprite.mask = this.gm.mask; this.base.addChild(this.landSprite); }   // (the polygons' flat land, then the relief inside them)
@@ -173,12 +179,25 @@ export class Renderer {
         if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(bad.has(id) ? 3 : 1.4), color: bad.has(id) ? 0xd22 : 0x2c3e1f });
       }
     }
-    if (s.islands && !gmOn) for (const id of EXTRA_IDS) for (const poly of EXTRA.islands[id].parts) {   // the added islands (world = real km; never deformed)
+    this.farLandDrawn = 0;
+    if (s.islands) for (const id of EXTRA_IDS) if (!gmOn || id === "karafuto") for (const poly of EXTRA.islands[id].parts) {
+      if (gmOn) this.farLandDrawn++;   // (Stage 37: 樺太 is outside 地球地図日本's coastline, so it is drawn from its own outline on the real map too)
+        // the added islands (world = real km; never deformed)
       if (landFlat) fills.poly(flat(poly)).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d });
       if (s.layers.coast) coast.poly(flat(poly)).stroke({ width: px(1.4), color: 0x2c3e1f });
     }
-    if (this.islets) for (const o of this.islets) {   // Stage 20 / 22: the island's own outline is in the coastline above; a speck too small to see gets a small dot (never a made-up shape); one with no outline in the data, a dot too
-      if (!o.shaped || o.tiny || !gmOn) { const r = px(2.6); fills.circle(o.pos[0], -o.pos[1], r).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); coast.circle(o.pos[0], -o.pos[1], r).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f }); }
+    this.outerMarkersDrawn = 0; this.outerMarkersInView = 0; const ringed = new Set<object>();
+    if (this.islets && gmOn) {   // Stage 38 (D): an open-ocean island shows a ring while its own outline is smaller than a few pixels; the ring fades out as the outline grows (no jump), a crowd of them (the Ryukyus) is thinned, and the ring is only a picture (no hit area, no data)
+      const kept: [number, number][] = [], gap = px(11);
+      for (const o of [...this.islets].filter((x) => x.outer).sort((a, b) => b.len - a.len || (a.name < b.name ? -1 : 1))) {
+        const size = o.len * z, alpha = Math.max(0, Math.min(1, (RING_GONE_PX - size) / (RING_GONE_PX - RING_FULL_PX))); if (alpha <= 0) continue;
+        if (kept.some((q) => Math.hypot(q[0] - o.pos[0], q[1] - o.pos[1]) < gap)) continue; kept.push([o.pos[0], o.pos[1]]);
+        coast.circle(o.pos[0], -o.pos[1], px(5)).stroke({ width: px(1.6), color: o.claim ? 0x8a3b1f : 0x1f3b57, alpha }); fills.circle(o.pos[0], -o.pos[1], px(5)).fill({ color: 0xffffff, alpha: 0.45 * alpha }); this.outerMarkersDrawn++; ringed.add(o); { const sx = this.size.w / 2 + (o.pos[0] - this.view.cx) * z, sy = this.size.h / 2 - (o.pos[1] - this.view.cy) * z; if (sx > -20 && sx < this.size.w + 20 && sy > -20 && sy < this.size.h + 20) this.outerMarkersInView++; }
+      }
+    }
+    if (this.islets) for (const o of this.islets) {
+      if (o.shape && gmOn) { this.farLandDrawn++; if (landFlat) fills.poly(o.shape).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); if (s.layers.coast) coast.poly(o.shape).stroke({ width: px(1.2), color: 0x2c3e1f }); }   // Stage 37: an island outside 地球地図日本's coastline (the northern Kurils) is drawn from its own outline   // Stage 20 / 22: the island's own outline is in the coastline above; a speck too small to see gets a small dot (never a made-up shape); one with no outline in the data, a dot too
+      if ((!o.shaped || o.tiny || !gmOn) && !ringed.has(o)) { const r = px(2.6); fills.circle(o.pos[0], -o.pos[1], r).fill({ color: this.bg === "roadmap" ? ROAD_LAND : 0xbfd18d }); coast.circle(o.pos[0], -o.pos[1], r).stroke({ width: px(1.2), color: o.claim ? 0x8a3b1f : 0x2c3e1f }); }
       if (z > 0.9 || (z > 0.45 && o.len >= 12)) { const tx = new Text({ text: o.name, style: { fontSize: 10, fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(o.pos[0] + px(6), -o.pos[1] - px(5)); this.labels.addChild(tx); }
     }
     this.base.addChild(fills);
@@ -280,10 +299,11 @@ export class Renderer {
     const at = (pref: string): Vec | null => { const c = t?.cities.find((x) => x.pref === pref && x.kind === "capital"); return c ? c.pos : prefPoint(s, pref); };
     const star = (p: Vec, col: number, r: number) => { const pts: number[] = []; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r; pts.push(p[0] + Math.cos(a) * rr, -p[1] + Math.sin(a) * rr); } g.poly(pts).fill({ color: col }).stroke({ width: px(1.2), color: 0xffffff }); };
     const label = (p: Vec, text: string, dy: number) => { const tx = new Text({ text, style: { fontSize: 11, fontWeight: "700", fill: 0x111111, stroke: { color: 0xffffff, width: 3 } } }); tx.scale.set(1 / z); tx.position.set(p[0] + px(10), -p[1] + px(dy)); this.labels.addChild(tx); };
-    const ov = this.seatOverride, cp = ov ? ov.capital : s.capitalPos ?? at(seats.capital), sp = ov ? ov.sub : s.subPos ?? at(seats.sub), pp = ov ? ov.palace : s.palacePos ?? at(seats.palace);
+    const ov = this.seatOverride, cp = ov ? ov.capital : s.capitalPos ?? at(seats.capital), sp = ov ? ov.sub : s.subPos ?? at(seats.sub), pp = ov ? ov.palace : s.palacePos ?? at(seats.palace), sp2 = ov ? ov.sub2 ?? null : seats.sub2 ? s.subPos2 ?? at(seats.sub2) : null;
     if (this.seatPending) { const q = this.seatPending, r = px(11); g.circle(q[0], -q[1], r).stroke({ width: px(2), color: 0xff7a00 }); g.moveTo(q[0] - r * 1.6, -q[1]).lineTo(q[0] + r * 1.6, -q[1]).moveTo(q[0], -q[1] - r * 1.6).lineTo(q[0], -q[1] + r * 1.6).stroke({ width: px(2), color: 0xff7a00 }); label(q, "候補", 6); }
     if (cp) { star(cp, 0xd62828, px(10)); label(cp, "首都", -14); }
-    if (sp) { star(sp, 0x1f6fd0, px(9)); label(sp, "副首都", -14); }
+    if (sp) { star(sp, 0x1f6fd0, px(9)); label(sp, sp2 ? "副首都1" : "副首都", -14); }
+    if (sp2) { star(sp2, 0x1f6fd0, px(9)); label(sp2, "副首都2", -14); }   // Stage 36 M3
     if (pp) { const r = px(7); g.poly([pp[0], -pp[1] - r, pp[0] + r, -pp[1], pp[0], -pp[1] + r, pp[0] - r, -pp[1]]).fill({ color: 0xf2c200 }).stroke({ width: px(1.4), color: 0x5a3b00 }); label(pp, "皇居", 2); }
     this.overlay.addChild(g);
   }

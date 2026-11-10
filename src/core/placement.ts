@@ -38,6 +38,7 @@ export function stepSeat(g: PlaceGrid, p: Vec, dir: Dir): { k: number; pos: Vec 
   if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return null; const k = j * g.nx + i; return isSeatCell(g, k) ? { k, pos: g.cellPos(k) } : null;
 }
 /** The one rule between seats: capital and sub-capital are in different prefectures. The imperial residence is free (it may share either's prefecture, even its point). */
-export function seatConflict(which: "capital" | "sub" | "palace", pref: string, others: { capital: string; sub: string }): boolean {
-  return (which === "capital" && pref === others.sub) || (which === "sub" && pref === others.capital);
+export function seatConflict(which: "capital" | "sub" | "sub2" | "palace", pref: string, others: { capital: string; sub: string; sub2?: string }): boolean {
+  if (which === "sub2") return pref === others.capital || pref === others.sub;   // Stage 36 M3: the second sub-capital is in a third prefecture
+  return (which === "capital" && (pref === others.sub || pref === others.sub2)) || (which === "sub" && (pref === others.capital || pref === others.sub2));
 }

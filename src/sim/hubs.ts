@@ -22,6 +22,7 @@
  * Pure rules over the sim and the map; no real port or airport names, no timetables. Absent `sim.hubs` (older saves) it is created at the next yearly step.
  */
 import { dist } from "../core/geom";
+import { mayScheduleService } from "./rules1800";
 import { terrainGate } from "./land";
 import type { Vec } from "../core/types";
 import { ev } from "./engine";
@@ -159,7 +160,7 @@ const costMult = (_sim: SimState, _y: number) => 1;
 const buildYears = (_sim: SimState, _y: number, base: number) => base;
 
 export function reviewHubs(sim: SimState, w: World, tot: HubTotals | undefined, y: number): number {
-  const h = ensureHubs(sim, w, y); if (!h || !tot) return 0;
+  const h = ensureHubs(sim, w, sim.rules1800 ? y + 38 : y); if (!h || !tot) return 0;   // (Stage 36: see hubYear in engine.ts)
   const dl = sim.dials, seaApp0 = 0.5 + 0.5 * Math.min(1.5, dl.seaBias) + 0.2 * (dl.growth - 1), airApp0 = 0.5 + 0.5 * Math.min(1.5, dl.airBias) + 0.2 * (dl.growth - 1), [sk, ak] = hubAppetite18(sim), seaApp = seaApp0 * sk, airApp = airApp0 * ak;   // (Stage 18: the policy scales what is NEW; the shrink rules below read the unscaled appetite so a policy never closes anything)
   let n = 0;
   // finish works
@@ -188,7 +189,7 @@ export function reviewHubs(sim: SimState, w: World, tot: HubTotals | undefined, 
   for (const c of [...w.cities].sort((p, q) => (sim.cities[q.id]?.pop ?? 0) - (sim.cities[p.id]?.pop ?? 0) || (p.id < q.id ? -1 : 1))) {   // biggest first; the opening rule that Stage 3 used, now as a facility (a poorer or less air-minded era opens later)
     const st = sim.cities[c.id]; if (!st || h.airports[c.id]) continue; const b = dl.airBias, f = (1 - 0.25 * b) * hubThreshold18(sim)[1];
     const due = (st.pop > 400000 * f && y >= 1958 - Math.round(8 * b)) || (st.pop > 200000 * f && y >= 1972 - Math.round(8 * b)) || (st.pop > 100000 * f && y >= 1988 - Math.round(8 * b));
-    if (!due || !affordable(sim, 0.25 * costMult(sim, y), airApp)) continue;
+    if (!due || !affordable(sim, 0.25 * costMult(sim, y), airApp)) continue; if (sim.rules1800 && !mayScheduleService("plane", sim.startYear + Math.floor(sim.month / 12))) continue;   // (Stage 36: no airport before scheduled flights exist)
     const near = nearestKm(w, c.id, Object.values(h.airports).filter((a) => a.until === undefined).map((a) => a.city)); if (near < AIR_SPACING_KM && !(st.pop >= AIR_SPACING_POP && near >= 25)) continue;   // a neighbouring city's airport already serves it
     const rw = y >= JET_YEAR + 5 ? 2000 : 1200; h.airports[c.id] = newAirport(c.cell, c.id, y, rw); st.airport = y;
     ev(sim, "air", `${airName(w, c.id)}が開港(${AIR_KIND_LABEL.regional}・滑走路${rw}m)`, `人口${Math.round(st.pop / 1000)}千人に達し、空路の選好${b.toFixed(2)}`, { city: c.id }); n++;
@@ -263,7 +264,8 @@ function reviewRoutes(sim: SimState, w: World, h: HubsState, tot: HubTotals, y: 
     else r.lo = 0;
   }
   for (const [, v] of [...want.entries()].sort((p, q) => q[1].vol - p[1].vol || (p[0] < q[0] ? -1 : 1))) {
-    if (v.vol < v.min) continue; const r = newRoute(h, v.mode, v.a, v.b, v.intl, y, v.vol); ev(sim, "lane", `${label(r)}を開設`, `${v.intl ? "国際" : "国内"}${v.mode === "sea" ? "貨物・旅客" : "旅客"}の需要${Math.round(v.vol)}/日`, { city: v.a }); n++;
+    if (v.vol < v.min) continue; if (v.mode === "air" && sim.rules1800 && !mayScheduleService("plane", sim.startYear + Math.floor(sim.month / 12))) continue;   // Stage 36: no scheduled flight before 1920 (experiments only), whatever the shifted airport year says
+    const r = newRoute(h, v.mode, v.a, v.b, v.intl, y, v.vol); ev(sim, "lane", `${label(r)}を開設`, `${v.intl ? "国際" : "国内"}${v.mode === "sea" ? "貨物・旅客" : "旅客"}の需要${Math.round(v.vol)}/日`, { city: v.a }); n++;
   }
   const closed = h.routes.filter((r) => !live(r)); if (closed.length > 80) { const drop = new Set(closed.slice(0, closed.length - 80).map((r) => r.id)); h.routes = h.routes.filter((r) => !drop.has(r.id)); }
   return n;

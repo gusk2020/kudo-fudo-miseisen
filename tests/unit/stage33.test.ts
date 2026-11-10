@@ -30,10 +30,21 @@ describe("Stage 33: coast, Fuji and Biwa", () => {
     let raised = 0; for (let k = 0; k < t.land.length; k++) if (t.land[k] === 0 && t.elev[k] >= 0) raised++; expect(raised).toBe(0);
     const k = cellAt(t, realToWorldPos(s, c)); expect(t.land[k] === 1 ? t.elev[k] : 1).toBeGreaterThan(0);
   });
-  it("Biwa at the coast: allowed; the sea wins but one land cell always stays between the lake and the sea", () => {
+  it("Biwa over the bay: refused (its whole outline must be on land); the terrain still never joins it to the sea", () => {
     const { s, t } = gen((st) => { st.features.biwa.pos = realToWorldPos(st, W(136.9, 34.8)); });   // over Ise Bay
-    expect(validate(s).filter((i) => i.code === "biwa.coast")).toEqual([]);
+    expect(validate(s).some((i) => i.code === "biwa.coast")).toBe(true);
     expect(lakeCount(t)).toBeGreaterThan(0); for (let k = 0; k < t.land.length; k++) if (t.land[k] === 2) expect(touchesSea(t, k), `lake cell ${k}`).toBe(false);
+  });
+});
+
+describe("Playtest: Lake Biwa placed anew stays an inland lake", () => {
+  it("the default place is accepted; the bays of Ise, Osaka and Wakasa are refused; and no placed lake cell touches the sea", () => {
+    const base = gen(() => {}); expect(validate(base.s).some((i) => i.code === "biwa.coast")).toBe(false);
+    for (const [lo, la] of [[136.9, 34.8], [135.2, 34.6], [135.8, 35.6]] as [number, number][]) {
+      const { s, t } = gen((st) => { st.features.biwa.pos = realToWorldPos(st, W(lo, la)); });
+      expect(validate(s).some((i) => i.code === "biwa.coast"), `${lo},${la}`).toBe(true);
+      for (let k = 0; k < t.land.length; k++) if (t.land[k] === 2) expect(touchesSea(t, k)).toBe(false);
+    }
   });
 });
 

@@ -43,7 +43,10 @@ export function buildMini(app: App, body: HTMLElement) {
 
 /** 台帳の先頭の切替: 通常台帳 / 路線番号一覧. */
 export function modeBar(app: App, mode: "normal" | "numbers", set: (m: "normal" | "numbers") => void): HTMLElement {
-  return h("div", { class: "row", id: "led-modes" }, ...(["normal", "numbers"] as const).map((m) => h("button", { id: "led-mode-" + m, type: "button", class: mode === m ? "mode on" : "mode", "aria-pressed": mode === m ? "true" : "false", onclick: () => { if (mode !== m) { app.clearHl(false); set(m); app.buildSheet(); } } }, m === "normal" ? "通常台帳" : "路線番号一覧")));
+  const modes = (["normal", "numbers"] as const).map((m) => h("button", { id: "led-mode-" + m, type: "button", class: mode === m ? "mode on" : "mode", "aria-pressed": mode === m ? "true" : "false", onclick: () => { if (mode !== m) { app.clearHl(false); set(m); app.buildSheet(); } } }, m === "normal" ? "通常台帳" : "路線番号一覧"));
+  // Stage 38 (F): 「なぜ?」 moved here from the basic display (same row as the two modes, so the ledger is no taller)
+  const why = h("button", { id: "tool-why", type: "button", title: "なぜ?(線路・道路をタップ)", class: app.isWhyOn() ? "mode on" : "mode", "aria-pressed": app.isWhyOn() ? "true" : "false", onclick: () => app.startWhy() }, "なぜ?(タップ)");
+  return h("div", { class: "row", id: "led-modes" }, ...modes, why);
 }
 
 /** 路線番号一覧: the six classes, each counted from 1; a page of at most 100 numbers at a time. */

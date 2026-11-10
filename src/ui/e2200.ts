@@ -1,3 +1,4 @@
+import { PREF_IDS } from "../core/seat";
 /** Stage 22: the sheet of the 2200 event -- seats, the era name, and the policy chosen freely; one column of ○/● rows, nothing decided until 決める. */
 import type { App } from "./app";
 import { h } from "./app";
@@ -7,7 +8,7 @@ import { prefSelect } from "./prefSelect";
 import { seatCity } from "../sim/ceremony";
 import { DEFAULT_CAPITAL, DEFAULT_PALACE, DEFAULT_SUB, prefName } from "../core/seat";
 
-export const e22Draft = (sim: SimState): Choice2200 => ({ era: 0, stance: "heisei", coast: sim.kaigen?.recon?.coast ?? "neutral", focus: sim.kaigen?.recon?.focus ?? "concentrate", capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: sim.palace?.pref ?? DEFAULT_PALACE });
+export const e22Draft = (sim: SimState): Choice2200 => ({ era: 0, stance: "heisei", coast: sim.kaigen?.recon?.coast ?? "neutral", focus: sim.kaigen?.recon?.focus ?? "concentrate", capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), palace: sim.palace?.pref ?? DEFAULT_PALACE, ...(sim.subCapital2 ? { sub2: sim.subCapital2 } : {}) });
 const radio = (id: string, label: string, on: boolean, pick: () => void, desc?: string) => h("button", { id, type: "button", role: "radio", "aria-checked": String(on), class: "rw-item" + (on ? " on" : ""), onclick: pick }, h("span", { class: "rw-dot" }, on ? "●" : "○"), h("span", { class: "rw-txt" }, h("span", { class: "rw-label" }, label), ...(desc ? [h("span", { class: "rw-desc" }, desc)] : [])));
 export const RW_LABELS = ["元号・方針", "首都・副首都・皇居", "国道0号", "最終確認"];
 const rwHead = (n: number, extra = "") => h("div", { id: "rw-head", class: "note", role: "status", "aria-live": "polite" }, `遷都 ${n + 1}/4  ${RW_LABELS[n]}${extra}`);
@@ -21,10 +22,13 @@ export function buildE2200(app: App, body: HTMLElement) {
   body.append(h("div", { class: "row", id: "e22-bgrow" }, h("small", {}, "地図の表示"), app.bgSwitch("e22-bg")));   // Stage 27: the map can be switched (道路図 / 地形図) while the seats are chosen; nothing chosen is touched
   body.append(h("div", { class: "issue warn", id: "e22-window" }, n === 0 ? "元号と交通・地域・都市配置の方針を選びます。時間は止まっています。決めなければ「今のまま続ける」で現状維持。" : "首都・副首都・皇居を選びます(首都と副首都は別の府県、皇居は重なってもよい)。旧所在地の都市・道路・住民はそのまま残り、人はゆっくり移ります。"));
   if (n === 1) {
-    list.append(h("div", { class: "rw-head" }, "首都・副首都・皇居"));
-    for (const [role, label] of [["capital", "首都"], ["sub", "副首都"], ["palace", "皇居"]] as const) {
-      const pref = d[role], pos = role === "capital" ? d.capitalPos : role === "sub" ? d.subPos : d.palacePos;
-      list.append(h("div", { class: "e22-seat", id: "e22-seat-" + role }, h("span", {}, `${label}: ${pref ? prefName(pref) : "-"}${pos ? "(地図で指定)" : ""}`), prefSelect("e22-sel-" + role, label, pref ?? "", role === "capital" ? d.sub ?? null : role === "sub" ? d.capital ?? null : null, (pid) => (app.world ? seatCity(app.world, pid)?.name ?? "" : ""), (pid) => { app.centerOnPref(pid); d[role] = pid; if (role === "capital") delete d.capitalPos; else if (role === "sub") delete d.subPos; else delete d.palacePos; re(); }), h("button", { id: "e22-map-" + role, type: "button", onclick: () => app.startE22Map(role) }, "地図で")));
+    // Stage 36 M3: one or two sub-capitals, chosen again here (the only time besides the start); the switch sits in the heading row so the sheet does not grow under the dock
+    const two = !!d.sub2;
+    list.append(h("div", { class: "rw-head grp", id: "e22-sub-count" }, h("span", {}, "首都・副首都・皇居 ／ 副首都の数"), ...([1, 2] as const).map((n) => h("button", { id: "e22-sub-count-" + n, type: "button", class: (two ? 2 : 1) === n ? "mode on" : "mode", "aria-pressed": (two ? 2 : 1) === n ? "true" : "false", onclick: () => { if (n === 1) { d.sub2 = null; delete d.subPos2; } else if (!d.sub2) d.sub2 = PREF_IDS.find((p) => p !== d.capital && p !== d.sub && p === "JP-04") ?? PREF_IDS.find((p) => p !== d.capital && p !== d.sub); re(); } }, n + "か所"))));
+    const roles = (two ? [["capital", "首都"], ["sub", "副首都1"], ["sub2", "副首都2"], ["palace", "皇居"]] : [["capital", "首都"], ["sub", "副首都"], ["palace", "皇居"]]) as ["capital" | "sub" | "sub2" | "palace", string][];
+    for (const [role, label] of roles) {
+      const pref = d[role] ?? undefined, pos = role === "capital" ? d.capitalPos : role === "sub" ? d.subPos : role === "sub2" ? d.subPos2 : d.palacePos;
+      list.append(h("div", { class: "e22-seat", id: "e22-seat-" + role }, h("span", {}, `${label}: ${pref ? prefName(pref) : "-"}${pos ? "(地図で指定)" : ""}`), prefSelect("e22-sel-" + role, label, pref ?? "", role === "capital" ? d.sub ?? null : role === "sub" || role === "sub2" ? d.capital ?? null : null, (pid) => (app.world ? seatCity(app.world, pid)?.name ?? "" : ""), (pid) => { app.centerOnPref(pid); if (role === "sub2" ? pid === d.capital || pid === d.sub : role === "sub" && !!d.sub2 && pid === d.sub2) { app.toast("首都と副首都(2か所なら両方)はそれぞれ別の府県にしてください"); re(); return; } (d as unknown as Record<string, unknown>)[role] = pid; if (role === "capital") delete d.capitalPos; else if (role === "sub") delete d.subPos; else if (role === "sub2") delete d.subPos2; else delete d.palacePos; re(); }), h("button", { id: "e22-map-" + role, type: "button", onclick: () => app.startE22Map(role) }, "地図で")));
     }
     body.append(list, h("div", { class: "row" }, h("button", { id: "e22-back", type: "button", onclick: () => app.rwBack() }, "‹ 戻る"), h("button", { id: "e22-decide", type: "button", class: "mode on", onclick: () => app.decideE2200(false) }, "これで決定 ›(次: 国道0号)")));
     return;

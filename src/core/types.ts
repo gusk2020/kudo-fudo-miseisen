@@ -46,6 +46,8 @@ export interface ProjectState {
   capital?: string;
   /** Issue #15: the sub-capital (a prefecture id; must differ from the capital), and the Imperial Palace's prefecture and exact point. All are administrative settings. */
   subCapital?: string;
+  /** Stage 36 M3: a second sub-capital (prefecture) and its map point; absent = one sub-capital */
+  subCapital2?: string; subPos2?: Vec;
   palace?: string;
   palacePos?: Vec;
   /** Stage 19: the exact points of the capital and the sub-capital when they were chosen on the map (anywhere on the land of their prefecture); absent = the prefecture's 県庁所在地. Like palacePos, never terrain. */

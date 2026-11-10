@@ -5,7 +5,7 @@ import { centroid, densify } from "./geom";
 import type { IslandId, Vec } from "./types";
 import { ISLAND_IDS } from "./types";
 
-export interface PrefDef { id: string; weight: number; name: string; island: IslandId | "okinawa"; capital: string; seed: Vec; seedApprox: boolean }
+export interface PrefDef { id: string; weight: number; name: string; island: IslandId | "okinawa" | "karafuto"; capital: string; seed: Vec; seedApprox: boolean }
 export interface CityDef { id: string; name: string; pos: Vec; kind: "capital" | "city"; pref: string | null; island: string }
 export interface DemMeta { w: number; h: number; lon0: number; lat0: number; dLon: number; dLat: number; file: string }
 export interface JapanData {
@@ -44,4 +44,4 @@ export const EXTRA = extraRaw as unknown as ExtraData;
 /** Stage 16: real provincial towns (see src/data/towns.json). `pos` is the real-km projection, like a city's. */
 export interface TownDef { id: string; name: string; pos: Vec; kind: "town"; pref: null; island: IslandId; pop: number }
 export const TOWNS: TownDef[] = (townsRaw as unknown as { towns: { id: string; name: string; lon: number; lat: number; island: IslandId; pop: number }[] }).towns.map((t) => ({ id: t.id, name: t.name, pos: lonLatToReal(t.lon, t.lat), kind: "town" as const, pref: null, island: t.island, pop: t.pop }));
-export const EXTRA_IDS = ["sado", "awaji", "tsushima", "iki", "oki"] as const;
+export const EXTRA_IDS = ["sado", "awaji", "tsushima", "iki", "oki", "karafuto"] as const;   // Stage 36: 樺太(北緯50度以南) is the last, so the numbers of the older extra islands do not move

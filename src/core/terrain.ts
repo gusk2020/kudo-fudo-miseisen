@@ -6,6 +6,7 @@ import { dist, pointSegDist, rot as rotv } from "./geom";
 import { fbm, hashArrays } from "./rng";
 import { CREATION_MAX_LEVEL, creationFootprint, creationHeightM, type Creation } from "./creations";
 import { RANGES, RANGE_MAX_M, rangeFactor, rangeWorldLine } from "./ranges";
+import { RANGE_PEAKS, ZONE_FACTOR_MAX, planSeeds, type FlatZone } from "./muni39";
 import { featureWorldPos } from "./state";
 import { featureScales, featureWorld, FUJI_RADIUS_KM, fujiHeightFactor } from "./validate";
 import type { IslandId, ProjectState, Vec } from "./types";
@@ -14,7 +15,7 @@ import { ISLAND_IDS } from "./types";
 /** "ok"; "shrunk-sea" (cells beside the sea or off the land were left out); "gone-sea" (nothing could stay: the sea is too near); "gone-biwa" (it touched Lake Biwa, which wins) */
 export interface CreationReport { key: string; label: string; wanted: number; cells: number; status: "ok" | "shrunk-sea" | "gone-sea" | "gone-biwa" }
 export interface RiverInfo { id: string; mouth: Vec; lengthKm: number; path: Vec[]; accCells: number }
-export interface CityOut { id: string; name: string; kind: string; pref: string | null; pos: Vec; moved: boolean; elevM: number; prefIndex: number }
+export interface CityOut { id: string; name: string; kind: string; pref: string | null; pos: Vec; moved: boolean; elevM: number; prefIndex: number; /** Stage 39: the office point is under a lake the player made (or the range turned to a lake): the municipality is abolished at the start of the game, never moved */ submerged?: boolean }
 export interface TerrainResult {
   grid: { x0: number; y0: number; cell: number; nx: number; ny: number };
   land: Uint8Array;        // 0 sea, 1 land, 2 lake
@@ -29,6 +30,10 @@ export interface TerrainResult {
   streams2?: Float32Array;
   /** Stage 33: cells of the lakes the player made */
   freshLakeCells?: number[];
+  /** Stage 39: the ground as the DEM has it, before any edit of the player (the development aptitude of a place reads this; whether a municipality may exist reads `elev`) */
+  elev0?: Float32Array;
+  /** Stage 39: the ranges worn down to a relief factor of 0.3 or less: where towns may be founded after the player confirms the terrain */
+  flat?: FlatZone[];
   /** Stage 33: what became of each mountain / lake the player made (and of each range turned into a lake): its effective cells, or why it is gone */
   creationReport?: CreationReport[];
   borders: Float32Array;   // x1,y1,x2,y2 per segment
@@ -37,7 +42,7 @@ export interface TerrainResult {
   /** Stage 16: the provincial towns, placed like the cities but kept OUT of the terrain hash and of `cities`: only a world built with towns (games made from Stage 16 on) adds them. */
   towns?: CityOut[];
   /** Stage 20: the small and far islands a world made from Stage 20 on carries (src/sim/islands20.ts); never part of the terrain hash. */
-  islets?: import("../sim/islands20").IsletCell[]; isletVersion?: 1 | 2;
+  islets?: import("../sim/islands20").IsletCell[]; isletVersion?: 1 | 2 | 3;
   prefOrder: string[];
   stats: Record<string, number>;
   warnings: string[];
@@ -49,8 +54,12 @@ export const RIVER_AREA_KM2 = 2200;
 /** Stage 33: the drainage area from which a second-class river is drawn. */
 export const RIVER_AREA2_KM2 = 550;
 
+/** Stage 36: where the committed DEM does not reach (南樺太 north of its top row, the Kurils east of it) the height is a PROVISIONAL gameplay terrain (smooth noise, 20..420 m): not survey data. Replace by a GEBCO re-cut (see docs/PLAN_1800.md). */
+export const demCovers = (lon: number, lat: number): boolean => { const m = JAPAN.dem; return lat <= m.lat0 && lat >= m.lat0 - (m.h - 1) * m.dLat && lon >= m.lon0 && lon <= m.lon0 + (m.w - 1) * m.dLon; };
+export const provisionalElev = (real: Vec): number => 20 + 400 * fbm(36, real[0] / 70, real[1] / 70, 4);
 export function sampleDem(dem: Int16Array, real: Vec): number {
   const m = JAPAN.dem, [lon, lat] = realToLonLat(real);
+  if (!demCovers(lon, lat)) return provisionalElev(real);
   const fx = (lon - m.lon0) / m.dLon, fy = (m.lat0 - lat) / m.dLat;
   const x0 = Math.max(0, Math.min(m.w - 2, Math.floor(fx))), y0 = Math.max(0, Math.min(m.h - 2, Math.floor(fy)));
   const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
@@ -119,6 +128,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   // Issue #13: the extra islands share the real-km frame (world = real, since no body is placed or deformed); they take island numbers after the four bodies
   const extras = s.islands ? EXTRA_IDS.map((id, i) => ({ id, idx: ISLAND_IDS.length + 1 + i, polys: EXTRA.islands[id].parts })) : [];
   let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+  for (const b of extras.filter((e) => e.id === "karafuto")) for (const p of b.polys) for (const q of p) { bx0 = Math.min(bx0, q[0]); bx1 = Math.max(bx1, q[0]); by0 = Math.min(by0, q[1]); by1 = Math.max(by1, q[1]); }   // (Stage 36: the grid reaches 樺太 -- the one added island outside the four bodies' frame)
   for (const b of parts) for (const p of b.polys) for (const q of p) { bx0 = Math.min(bx0, q[0]); bx1 = Math.max(bx1, q[0]); by0 = Math.min(by0, q[1]); by1 = Math.max(by1, q[1]); }
   const pad = 40;
   const cell = Math.max(5, Math.ceil((Math.max(bx1 - bx0, by1 - by0) + 2 * pad) / GRID_MAX));
@@ -193,14 +203,17 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     } else elev[k] = -(25 + 14 * Math.pow(offshore[k], 0.85));
   }
 
+  const elev0 = Float32Array.from(elev);   // Stage 39: the ground before any edit
   // ---- Stage 10: the real Alps removed (a range the player takes over is drawn anew; the original massif must not stay as a second barrier) ----
   for (const key of ["ne", "sw"] as const) if (s.alpsRemoved?.[key]) levelRealAlps(key, s, elev, land, { x0, y0, cell, nx, ny }, seed);
 
   // ---- Stage 30A: the major ranges the player has raised or worn down. Only the RELIEF above the plain-equivalent ground (the same 2 m + 0.4 per km inland floor the land is built on) is scaled, by a weight that is 1 on the
   // crest zone and falls off smoothly to 0 at the range's edge -- so the original ridges, valleys and noise stay, the join with the surroundings is continuous, and nothing goes below sea level or the plain. Untouched ranges cost nothing.
   const rangeMask = new Float32Array(N), freshLakes: { key: string; label: string; cells: number[] }[] = [], creationReport: CreationReport[] = [];
+  const zonesRaw: { id: string; name: string; m0: number; cells: number[] }[] = [];
   for (const r of RANGES) {
-    const m0 = rangeFactor(s.rangeEdits, r.id); if (m0 === 1) continue; const m = Math.max(0, m0), turnToLake = m0 < 0, lakeCells: number[] = [];   // (Stage 33: x-0.05 = the range worn flat and its core turned into a lake)
+    const m0 = rangeFactor(s.rangeEdits, r.id); if (m0 === 1) continue; const m = Math.max(0, m0), turnToLake = m0 < 0, lakeCells: number[] = [];
+    const zoneCells: number[] | null = m0 >= 0 && m0 <= ZONE_FACTOR_MAX ? [] : null;   // Stage 39: a range worn to a factor of 0.3 or less is a flat zone   // (Stage 33: x-0.05 = the range worn flat and its core turned into a lake)
     const pts = rangeWorldLine(s, r);
     let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity; for (const p of pts) { bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]); by0 = Math.min(by0, p[1]); by1 = Math.max(by1, p[1]); }
     for (let j = Math.max(0, Math.floor((by0 - r.edge - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((by1 + r.edge - y0) / cell)); j++)
@@ -209,10 +222,12 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
         const p: Vec = [cx(i), cy(j)]; let d = Infinity; for (let q = 0; q + 1 < pts.length; q++) d = Math.min(d, pointSegDist(p, pts[q], pts[q + 1]));
         if (d >= r.edge) continue;
         const t = d <= r.core ? 0 : (d - r.core) / (r.edge - r.core), w = 1 - t * t * (3 - 2 * t), plain = 2 + 0.4 * inland[k], e = elev[k]; if (e <= plain) continue;
+        if (zoneCells && w >= 0.35) zoneCells.push(k);
         const f = 1 + (m - 1) * w, ne = Math.max(plain, Math.min(Math.max(e, RANGE_MAX_M), plain + (e - plain) * f));   // (an amplified summit stops at RANGE_MAX_M; ground already higher than that is left as it is)
         elev[k] = e > RANGE_MAX_M && f > 1 ? e : ne; if (m > 1 && w > rangeMask[k]) rangeMask[k] = w * Math.min(1, (m - 1) * 4);
       }
     if (turnToLake) { for (let j = Math.max(0, Math.floor((by0 - r.core - y0) / cell)); j <= Math.min(ny - 1, Math.ceil((by1 + r.core - y0) / cell)); j++) for (let i = Math.max(0, Math.floor((bx0 - r.core - x0) / cell)); i <= Math.min(nx - 1, Math.ceil((bx1 + r.core - x0) / cell)); i++) { const k = j * nx + i; if (land[k] !== 1) continue; const p: Vec = [cx(i), cy(j)]; let d = Infinity; for (let q = 0; q + 1 < pts.length; q++) d = Math.min(d, pointSegDist(p, pts[q], pts[q + 1])); if (d < r.core * 0.6) lakeCells.push(k); } freshLakes.push({ key: `r:${r.id}`, label: r.name, cells: lakeCells }); }
+    if (zoneCells && zoneCells.length) zonesRaw.push({ id: r.id, name: r.name, m0, cells: zoneCells });
   }
 
   // ---- Stage 33: mountains the player created on plain ground (500 m a press, at most 1500 m) and the lakes (kept for after Lake Biwa: Biwa wins every contact) ----
@@ -406,7 +421,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   const mult = new Float64Array(prefs.length);
   const seedMoved: number[] = [];
   prefs.forEach((p, n) => {
-    const w = realToWorld(bodyOf(p.island), s.bodies[bodyOf(p.island)], p.seed);
+    const w = p.island === "karafuto" ? p.seed : realToWorld(bodyOf(p.island), s.bodies[bodyOf(p.island)], p.seed);   // (樺太県 stands on an added island: world = real km)
     const k = seedCell(w);
     mult[n] = Math.pow(meanW / p.weight, 0.7);
     if (k < 0) { warnings.push(`${p.name}の県庁位置が陸地に置けません`); return; }
@@ -437,11 +452,15 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
 
   // ---- cities follow their island; only unsuitable sites move ----
   progress(0.9, "都市");
-  const cities: CityOut[] = [];
+  const cities: CityOut[] = [], freshLakeSet = new Set<number>(freshLakeCells);
   for (const c of s.islands ? [...JAPAN.cities, ...EXTRA.cities] : JAPAN.cities) {
     const isExtra = (EXTRA_IDS as readonly string[]).includes(c.island), b = isExtra ? "honshu" : bodyOf(c.island), w = isExtra ? c.pos : realToWorld(b, s.bodies[b], c.pos);
     let k = idxOf(w), moved = false;
     const bad = (n: number) => n < 0 || land[n] !== 1 || elev[n] > 2600;
+    // Stage 39: the office point of a municipality is FIXED. A lake the player made, or ground the player raised, never moves it: under water it is `submerged` (abolished when the game starts), on high ground the elevation rules decide
+    const userLake = k >= 0 && land[k] === 2 && freshLakeSet.has(k);
+    if (userLake) { cities.push({ id: c.id, name: c.name, kind: c.kind, pref: c.pref, pos: w, moved: false, elevM: Math.round(elev[k]), prefIndex: pref[k], submerged: true }); continue; }
+    if (k >= 0 && land[k] === 1 && elev[k] > 2600 && !(elev0[k] > 2600)) { cities.push({ id: c.id, name: c.name, kind: c.kind, pref: c.pref, pos: w, moved: false, elevM: Math.round(elev[k]), prefIndex: pref[k] }); continue; }
     if (bad(k)) {
       moved = true; const i0 = k < 0 ? 0 : k % nx, j0 = k < 0 ? 0 : (k / nx) | 0; let best = -1, bd = Infinity;
       for (let r = 1; r < 30 && best < 0; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
@@ -459,6 +478,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   const towns: CityOut[] = [], taken = new Set<number>(cities.map((c) => idxOf(c.pos)));
   for (const c of TOWNS) {
     const b = bodyOf(c.island), w = realToWorld(b, s.bodies[b], c.pos), k = idxOf(w);
+    if (k >= 0 && land[k] === 2 && freshLakeSet.has(k) && !taken.has(k)) { taken.add(k); towns.push({ id: c.id, name: c.name, kind: "town", pref: null, pos: w, moved: false, elevM: Math.round(elev[k]), prefIndex: pref[k], submerged: true }); continue; }   // Stage 39: under a lake the player made: kept (as abolished), not dropped
     if (k < 0 || land[k] !== 1 || elev[k] > 2600 || taken.has(k)) continue;
     taken.add(k); towns.push({ id: c.id, name: c.name, kind: "town", pref: null, pos: w, moved: false, elevM: Math.round(elev[k]), prefIndex: pref[k] });
   }
@@ -470,11 +490,16 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     plainFraction: landCount ? plainCount / landCount : 0, prefCount: prefs.length, prefMinCells: counts.slice(1).reduce((m, v) => Math.min(m, v), 1e9), prefMaxCells: counts.slice(1).reduce((m, v) => Math.max(m, v), 0),
     citiesMoved: movedN, fujiTopCell: fujiTop, freshLakes: freshLakeCells.length, maxElevM: elev.reduce((m, v) => (v > m ? v : m), -1e9),
   };
+  const flat: FlatZone[] = [], takenCells = new Set<number>(cities.map((c) => idxOf(c.pos)));
+  for (const z of zonesRaw) {
+    const peak = RANGE_PEAKS[z.id]?.name ?? null, seeds = planSeeds(z.cells, nx, cell, (k) => elev[k], (k) => plains[k], takenCells);
+    flat.push({ id: z.id, name: z.name, peak, factor: z.m0, cells: z.cells.length, areaKm2: Math.round(z.cells.length * cell * cell), seeds }); for (const sd of seeds) takenCells.add(sd.cell);
+  }
   const hash = hashArrays(Int16Array.from(elev, (v) => Math.round(v)), pref, land, Int16Array.from(borders), Int16Array.from(streamSeg));
   progress(1, "完了");
   return {
     grid: { x0, y0, cell, nx, ny }, land, island, elev, pref, plains, ridge, barrier, streams: Float32Array.from(streamSeg), streams2: Float32Array.from(streamSeg2), borders: Float32Array.from(borders),
-    rivers, cities, towns, freshLakeCells, creationReport, prefOrder: prefs.map((p) => p.id), stats, warnings, hash,
+    rivers, cities, towns, freshLakeCells, creationReport, elev0, flat, prefOrder: prefs.map((p) => p.id), stats, warnings, hash,
   };
 }
 export { rotv as _rot };

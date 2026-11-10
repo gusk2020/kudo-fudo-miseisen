@@ -2,14 +2,15 @@
  * Stage 17 (step A): the development-potential rank (1..49) of every prefecture, from the three seats of government. A pure function: nothing in the
  * simulation reads it yet (population, industry, traffic and city birth are not connected). The rank is a potential, not a forced population order.
  */
-import { JAPAN, realToLonLat } from "../core/data";
+import { EXTRA, JAPAN, realToLonLat } from "../core/data";
+import { SUB2_SHARE, shareMult } from "./subs36";
 import { mulberry32 } from "../core/rng";
 import { PREF_IDS } from "../core/seat";
 import type { TerrainResult } from "../core/terrain";
 import { seaClass } from "./recon";
 
 export type Dispersal = "concentrate" | "disperse";
-export interface PotentialInput { capital: string; sub: string; palace: string; mode: Dispersal; seed: number; /** Stage 18: the coast the era favours (applied after the order is fixed, to the random part only) */ coast?: "japansea" | "pacific"; /** Stage 19: the exact lon/lat of a seat chosen on the map; the centroid of the three seats uses it (the rank order still uses the seat's prefecture) */ at?: { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } }
+export interface PotentialInput { capital: string; sub: string; /** Stage 36 M3: a second sub-capital */ sub2?: string; palace: string; mode: Dispersal; seed: number; /** Stage 18: the coast the era favours (applied after the order is fixed, to the random part only) */ coast?: "japansea" | "pacific"; /** Stage 19: the exact lon/lat of a seat chosen on the map; the centroid of the three seats uses it (the rank order still uses the seat's prefecture) */ at?: { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } }
 export interface PotentialData { points: Record<string, [number, number]>; borders: Record<string, number>; coast?: Record<string, CoastCount> }
 /** Coastal land cells of a prefecture by the sea they face (see coastCounts). */
 export interface CoastCount { japansea: number; pacific: number }   // points: prefecture -> [lon, lat] of its 県庁所在地; borders: "a|b" (a<b) -> shared border length
@@ -29,7 +30,7 @@ export const borderKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|
 
 /** The prefecture capitals' lon/lat (from the data) and the shared border lengths (from the prefecture grid of a terrain: one unit per shared cell edge). */
 export function potentialData(t?: TerrainResult): PotentialData {
-  const points: PotentialData["points"] = {}; for (const c of JAPAN.cities) if (c.kind === "capital" && c.pref && PREF_IDS.includes(c.pref)) { const [lo, la] = realToLonLat(c.pos); points[c.pref] = [lo, la]; }
+  const points: PotentialData["points"] = {}; for (const c of [...JAPAN.cities, ...EXTRA.cities]) if (c.kind === "capital" && c.pref && PREF_IDS.includes(c.pref)) { const [lo, la] = realToLonLat(c.pos); points[c.pref] = [lo, la]; }
   const borders: PotentialData["borders"] = {};
   if (t) { const { nx, ny } = t.grid, at = (k: number) => (t.land[k] === 1 && t.pref[k] ? t.prefOrder[t.pref[k] - 1] : null);
     for (let k = 0; k < nx * ny; k++) { const a = at(k); if (!a) continue; for (const n of [(k % nx) + 1 < nx ? k + 1 : -1, k + nx < nx * ny ? k + nx : -1]) { if (n < 0) continue; const b = at(n); if (b && b !== a) { const key = borderKey(a, b); borders[key] = (borders[key] ?? 0) + 1; } } } }
@@ -43,7 +44,7 @@ export function potentialOrder(inp: PotentialInput, d: PotentialData): string[] 
   const centre = sphericalCentroid([inp.at?.capital ?? pt(inp.capital), inp.at?.sub ?? pt(inp.sub), inp.at?.palace ?? pt(inp.palace)]);
   const free = () => ids.filter((p) => !taken.has(p));
   // 1-3: the seats (a prefecture already ranked is skipped; its place goes to the nearest free prefecture)
-  for (const s of [inp.capital, inp.sub, inp.palace]) { if (!take(s)) { const near = free().sort((a, b) => greatCircleKm(pt(s), pt(a)) - greatCircleKm(pt(s), pt(b)) || (a < b ? -1 : 1))[0]; take(near); } }
+  for (const s of [inp.capital, inp.sub, ...(inp.sub2 ? [inp.sub2] : []), inp.palace]) { if (!take(s)) { const near = free().sort((a, b) => greatCircleKm(pt(s), pt(a)) - greatCircleKm(pt(s), pt(b)) || (a < b ? -1 : 1))[0]; take(near); } }
   // 4-6: the three free prefectures farthest from the centre, the farthest taking rank 6
   const far = free().sort((a, b) => greatCircleKm(centre, pt(b)) - greatCircleKm(centre, pt(a)) || (a < b ? -1 : 1)).slice(0, 3); for (const p of far.reverse()) take(p);
   // neighbours: by shared border length, then (if too few) by the distance between capitals
@@ -52,7 +53,7 @@ export function potentialOrder(inp: PotentialInput, d: PotentialData): string[] 
     if (got.length < n) for (const p of free().filter((q) => !got.includes(q)).sort((a, b) => greatCircleKm(pt(of), pt(a)) - greatCircleKm(pt(of), pt(b)) || (a < b ? -1 : 1)).slice(0, n - got.length)) got.push(p);
     for (const p of got) take(p);
   };
-  const plan: string[] = inp.mode === "concentrate" ? [inp.capital, inp.sub, inp.capital, inp.sub, inp.capital] : [inp.capital, inp.sub];
+  const plan: string[] = inp.sub2 ? (inp.mode === "concentrate" ? [inp.capital, inp.sub, inp.sub2, inp.capital, inp.capital] : [inp.capital, inp.sub, inp.sub2]) : inp.mode === "concentrate" ? [inp.capital, inp.sub, inp.capital, inp.sub, inp.capital] : [inp.capital, inp.sub];   // (Stage 36: with two sub-capitals each takes one neighbour pass where a single one takes two)
   for (const of of plan) near(of, 2);
   // the rest: shuffled by the game's seed (Fisher-Yates over the ids in data order, so a seed always gives the same result)
   const rest = free(), rnd = mulberry32(inp.seed >>> 0); for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
@@ -74,7 +75,7 @@ export const potentialRanks = (inp: PotentialInput, d: PotentialData): Record<st
  */
 export type CoastSide = "japansea" | "pacific" | "both" | "inland";
 export const PREF_COAST: Record<string, CoastSide> = {
-  "HK-SAP": "both", "HK-HAK": "both", "HK-NEM": "pacific",
+  "HK-SAP": "both", "HK-HAK": "both", "HK-NEM": "pacific", KRF: "both",
   "JP-02": "both", "JP-03": "pacific", "JP-04": "pacific", "JP-05": "japansea", "JP-06": "japansea", "JP-07": "pacific",
   "JP-08": "pacific", "JP-09": "inland", "JP-10": "inland", "JP-11": "inland", "JP-12": "pacific", "JP-13": "pacific", "JP-14": "pacific",
   "JP-15": "japansea", "JP-16": "japansea", "JP-17": "japansea", "JP-18": "japansea", "JP-19": "inland", "JP-20": "inland", "JP-21": "inland", "JP-22": "pacific", "JP-23": "pacific",
@@ -106,11 +107,13 @@ export function coastBoost(order: string[], from: number, side: "japansea" | "pa
  * a prefecture at the bottom is slower, not unable to grow). Normalised so the 49 weights average exactly 1 (the national total of development power is the same whatever the order).
  * Compared in docs/STAGE17_POTENTIAL.md with a linear, a power (Zipf) and a logistic curve.
  */
-export const POT_FLOOR = 0.35, POT_DECAY = 6, POT_N = 49;
+export const POT_FLOOR = 0.35, POT_DECAY = 6, POT_N = PREF_IDS.length;   // (Stage 36: 50 with 樺太県)
 const rawWeight = (rank: number) => POT_FLOOR + (1 - POT_FLOOR) * 2.5 * Math.exp(-(rank - 1) / POT_DECAY);
-export function potentialWeights(order: string[]): Record<string, number> {
-  const raw = order.map((_, i) => rawWeight(i + 1)), mean = raw.reduce((a, b) => a + b, 0) / raw.length;
-  return Object.fromEntries(order.map((p, i) => [p, raw[i] / mean]));
+export function potentialWeights(order: string[], sub2?: string[]): Record<string, number> {
+  const raw = order.map((_, i) => rawWeight(i + 1)), mean = raw.reduce((a, b) => a + b, 0) / raw.length, w: Record<string, number> = Object.fromEntries(order.map((p, i) => [p, raw[i] / mean]));
+  if (!sub2 || sub2.length < 2) return w;
+  // Stage 36 M3: each of two sub-capitals has 0.7x of the uplift a single sub-capital (rank 2) has. Nothing else is changed: no compensation keeps the national total constant (the spec says so).
+  const target = shareMult(raw[1] / mean, SUB2_SHARE); for (const p of sub2) if (p in w) w[p] = target; return w;
 }
 /** The rate (per year) at which the weights in force move toward the weights of the current order: a re-ordering reaches people, industry and roads over years, nothing jumps. */
 export const POT_GLIDE = 0.07;
@@ -119,19 +122,20 @@ export const POT_GROWTH = 0.002, MOVE_LIFT_YEARS = 60;
 /** How strongly a prefecture's weight lifts its share of the regional construction budget (renormalised: only the split changes). */
 export const POT_SHARE = 0.2;
 
-export interface PotState { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true }
+export interface PotState { order: string[]; cur: Record<string, number>; hist: { y: number; order: string[]; why: string }[]; shown: Record<string, number>; eras?: number; c18?: true; c19?: true; sub2?: string[] }
 const dataMemo = new WeakMap<TerrainResult, PotentialData>();
 export const potentialDataOf = (t: TerrainResult): PotentialData => { let d = dataMemo.get(t); if (!d) { d = potentialData(t); dataMemo.set(t, d); } return d; };
 /** The state of a new game: the order for the seats and the policy, in force from the first day. */
-export function initPotential(t: TerrainResult, seats: { capital: string; sub: string; palace: string }, mode: Dispersal, seed: number, year: number, coast?: "japansea" | "pacific", at?: PotentialInput["at"]): PotState {
+export function initPotential(t: TerrainResult, seats: { capital: string; sub: string; sub2?: string; palace: string }, mode: Dispersal, seed: number, year: number, coast?: "japansea" | "pacific", at?: PotentialInput["at"]): PotState {
   const order = potentialOrder({ ...seats, mode, seed: seed >>> 0, ...(coast ? { coast } : {}), ...(at ? { at } : {}) }, potentialDataOf(t));
-  return { order, cur: potentialWeights(order), hist: [{ y: year, order: [...order], why: coast ? `ゲーム開始(${coast === "japansea" ? "日本海側" : "太平洋側"}重視の補正あり)` : "ゲーム開始" }], shown: {}, eras: 1, c19: true as const, ...(coast ? { c18: true as const } : {}) };
+  const sub2 = seats.sub2 ? [seats.sub, seats.sub2] : undefined;
+  return { order, cur: potentialWeights(order, sub2), ...(sub2 ? { sub2 } : {}), hist: [{ y: year, order: [...order], why: coast ? `ゲーム開始(${coast === "japansea" ? "日本海側" : "太平洋側"}重視の補正あり)` : "ゲーム開始" }], shown: {}, eras: 1, c19: true as const, ...(coast ? { c18: true as const } : {}) };
 }
 /** A new era (改元) re-draws the order: same seats and policy, a seed of the era's own, so the middle ranks move while the top (the seats and their neighbours) holds. The weights in force glide to it. */
-export function reassignPotential(st: PotState, t: TerrainResult, seats: { capital: string; sub: string; palace: string }, mode: Dispersal, seed: number, eraIndex: number, year: number, name: string, coast?: "japansea" | "pacific", at?: PotentialInput["at"]): void {
-  const order = potentialOrder({ ...seats, mode, seed: (seed ^ Math.imul(eraIndex + 1, 0x9e3779b1)) >>> 0, ...(st.c18 && coast ? { coast } : {}), ...(at ? { at } : {}) }, potentialDataOf(t)); st.order = order; st.hist.push({ y: year, order: [...order], why: `改元(${name})` });
+export function reassignPotential(st: PotState, t: TerrainResult, seats: { capital: string; sub: string; sub2?: string; palace: string }, mode: Dispersal, seed: number, eraIndex: number, year: number, name: string, coast?: "japansea" | "pacific", at?: PotentialInput["at"]): void {
+  const order = potentialOrder({ ...seats, mode, seed: (seed ^ Math.imul(eraIndex + 1, 0x9e3779b1)) >>> 0, ...(st.c18 && coast ? { coast } : {}), ...(at ? { at } : {}) }, potentialDataOf(t)); st.order = order; if (seats.sub2) st.sub2 = [seats.sub, seats.sub2]; else delete st.sub2; st.hist.push({ y: year, order: [...order], why: `改元(${name})` });
 }
-export function glidePotential(st: PotState): void { const target = potentialWeights(st.order); for (const p of Object.keys(target)) st.cur[p] = (st.cur[p] ?? 1) + POT_GLIDE * (target[p] - (st.cur[p] ?? 1)); }
+export function glidePotential(st: PotState): void { const target = potentialWeights(st.order, st.sub2); for (const p of Object.keys(target)) st.cur[p] = (st.cur[p] ?? 1) + POT_GLIDE * (target[p] - (st.cur[p] ?? 1)); }
 import type { SimState } from "./types";
 import { cycleOf } from "./cycle27";
 import type { World } from "./world";
@@ -141,9 +145,9 @@ export function potGrowthOf(sim: SimState, w: World): Map<string, number> {
   const out = new Map<string, number>(), st = sim.pot17; if (!st) return out; let s = 0, p = 0;
   // the seats' own prefectures (ranks 1-3) already have the capital / sub-capital / palace functions of roles.ts, seats14.ts and the economy: here they count only as the 4th rank does
   const cg = cycleOf(sim)?.growth ?? 1;   // Stage 27: the redistribution is stronger in the rebuilding, weaker in the decline (still zero-sum: the mean is taken out below)
-  const cap = seatCap(st.order), seat = new Set(st.order.slice(0, 3));
+  const cap = seatCap(st.order), seat = new Set(st.order.slice(0, st.sub2 ? 4 : 3));   // (Stage 36 M3: with two sub-capitals the first four ranks are seats)
   // Stage 24: a seat that was MOVED in 2200 has none of the capital functions yet (the roles of the old seat stay where they grew): for sixty years its own weight counts in full, fading into the cap -- so the rank the player gave it works on growth, not only on paper
-  const e22 = sim.e2200, lift = e22?.moved?.length ? Math.max(0, 1 - (sim.startYear + Math.floor(sim.month / 12) - e22.year) / MOVE_LIFT_YEARS) : 0, movedPrefs = new Set<string>(); if (lift > 0) for (const r of e22!.moved!) { const pf = r === "capital" ? sim.capital : r === "sub" ? sim.subCapital : sim.palace?.pref; if (pf) movedPrefs.add(pf); }
+  const e22 = sim.e2200, lift = e22?.moved?.length ? Math.max(0, 1 - (sim.startYear + Math.floor(sim.month / 12) - e22.year) / MOVE_LIFT_YEARS) : 0, movedPrefs = new Set<string>(); if (lift > 0) for (const r of e22!.moved!) { const pf = r === "capital" ? sim.capital : r === "sub" ? sim.subCapital : r === "sub2" ? sim.subCapital2 : sim.palace?.pref;   /* (Stage 36 M3: a moved second sub-capital lifts ITS prefecture, not the palace's) */ if (pf) movedPrefs.add(pf); }
   for (const c of w.cities) { const free = c.pref && movedPrefs.has(c.pref), top = !c.pref ? 1 : seat.has(c.pref) ? (free ? cap + (1e9 - cap) * lift : cap) : 1e9, g = c.pref ? cg * POT_GROWTH * (Math.min(st.cur[c.pref] ?? 1, top) - 1) : 0, n = sim.cities[c.id]?.pop ?? 0; out.set(c.id, g); s += g * n; p += n; }
   const mean = p ? s / p : 0; for (const [k, v] of out) out.set(k, v - mean); return out;
 }

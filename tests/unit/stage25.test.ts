@@ -66,7 +66,7 @@ describe("Stage 25: the 150-year relocation event", () => {
     expect(all.every((e) => e.state === "done" && e.year >= e.sched! && e.year < e.sched! + 2)).toBe(true); expect(taken).toEqual([]);
     expect(sim.capital).toBe("JP-13"); const eraNames = sim.kaigen!.eras.map((e) => e.name); expect(new Set(eraNames).size).toBe(eraNames.length);
     for (let i = 0; i < 5; i++) expect(sim.kaigen!.reloc![i]!.chosen).toBe(all[i].era);
-    const o = sim.pot17!.order; expect(o.length).toBe(49); expect([...o].sort()).toEqual([...PREF_IDS].sort()); expect(o[0]).toBe("JP-13");
+    const o = sim.pot17!.order; expect(o.length).toBe(PREF_IDS.length); expect([...o].sort()).toEqual([...PREF_IDS].sort()); expect(o[0]).toBe("JP-13");
     expect(sim.pot17!.hist.filter((h) => [2200, 2350, 2500, 2650, 2800].some((y) => h.y >= y && h.y < y + 2)).length).toBeGreaterThanOrEqual(5);
     expect(before.length).toBe(5); for (let i = 0; i < 5; i++) expect(after[i]).toBe(before[i]); expect(total0).toBeGreaterThan(0);   // choosing moves the seats, never makes or removes people
     for (const c of r.w.cities) expect(sim.cities[c.id].pop).toBeGreaterThanOrEqual(2000 - 1);
