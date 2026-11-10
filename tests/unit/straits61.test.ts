@@ -13,7 +13,7 @@ const connected = (sim: SimState, e: SimEdge, ca: number, cb: number) => {
   const from = nodeAt.get(ca), to = nodeAt.get(cb); if (!from || !to) return false; const seen = new Set([from]), st = [from]; while (st.length) { const n = st.pop()!; if (n === to) return true; for (const m of adj.get(n) ?? []) if (!seen.has(m)) { seen.add(m); st.push(m); } } return false;
 };
 describe("Issue #61: the straits of the scripted crossings (関門・青函・瀬戸・明石・鳴門・西瀬戸)", () => {
-  const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true); delete (sim as { crossings?: boolean }).crossings; sim.edges = Object.fromEntries(Object.entries(sim.edges).filter(([, e]) => !e.facilityName?.includes(":")));
+  const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true); delete (sim as { crossings?: boolean }).crossings;
   openStraits(sim, w, 2100, true);
   const rows = STRAITS.map((s) => { const e = fac(sim, s.id), ca = w.cityById.get(s.a), cb = w.cityById.get(s.b); return { s, e, ca, cb, before: ca && cb ? Math.round(Math.hypot(ca.pos[0] - cb.pos[0], ca.pos[1] - cb.pos[1]) * 10) / 10 : 0 }; });
   process.stderr.write("S61 " + rows.map((r) => `${r.s.id}: before ${r.before}km after ${r.e ? r.e.lengthKm + "km" : "(not on this map)"}`).join(" | ") + "\n");
