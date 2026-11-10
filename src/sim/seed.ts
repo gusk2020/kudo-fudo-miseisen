@@ -26,7 +26,17 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
         const ang = rand(sim) * Math.PI * 2, r = c.island > 4 ? 4 + rand(sim) * 12 : 15 + rand(sim) * 30, q = w.cellOf([c.pos[0] + Math.cos(ang) * r, c.pos[1] + Math.sin(ang) * r]);
         if (q >= 0 && w.t.land[q] === 1 && w.t.island[q] === c.island && !used.has(q)) cell = q;
       }
-      const popv = Math.round((350 + rand(sim) * 3600) * (basePop(sim, w, c) > 1e6 ? 1.5 : 1)); if (cell < 0) continue;
+      const popv = Math.round((350 + rand(sim) * 3600) * (basePop(sim, w, c) > 1e6 ? 1.5 : 1));
+      /* Stage 39 (E): no 村 on ground of 1500 m or more, from the very start. The random draws above are untouched (so every other village keeps its place); a village that landed that high is moved to the nearest ordinary cell around it by a fixed scan with no draws, or not founded if there is none. */
+      if (cell >= 0 && w.elevM(cell) >= 1500) {
+        let alt = -1; const x0 = cell % w.nx, y0 = Math.floor(cell / w.nx);
+        for (let rr = 1; rr <= 6 && alt < 0; rr++) for (let dy = -rr; dy <= rr && alt < 0; dy++) for (let dx = -rr; dx <= rr; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== rr) continue; const x = x0 + dx, y = y0 + dy; if (x < 0 || y < 0 || x >= w.nx || y >= w.ny) continue;
+          const q = y * w.nx + x; if (w.t.land[q] === 1 && w.t.island[q] === c.island && !used.has(q) && w.elevM(q) < 1500) { alt = q; break; }
+        }
+        cell = alt;
+      }
+      if (cell < 0) continue;
       used.add(cell); const id = `s.${pad(++sid, 4)}`;
       sim.settlements[id] = { id, name: `${c.name.replace(/市$/, "")}近郊${k + 1}`, cell, city: c.id, pop: popv, pop0: popv, isolatedYears: 0, gone: false };
       nodeAtCell(sim, w, idx, cell, "village");

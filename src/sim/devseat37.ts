@@ -80,7 +80,7 @@ function maybeSatellite(sim: SimState, w: World, s: SeatTarget, fill: number, bu
 }
 
 /** Stage 39 (E): a seat put on high ground may not grow into a kind of municipality the ground forbids (1300 m: no 市, 1400 m: no 町), unless the 1950 relaxations apply -- its size is held below that kind's size. */
-function highGroundCap(sim: SimState, w: World, cell: number, pop: number, y: number): number {
+export function highGroundCap(sim: SimState, w: World, cell: number, pop: number, y: number): number {
   if (w.elevM(cell) < 1200) return Infinity;
   if (mayStand(sim, w, cell, "city", y, pop)) return Infinity;
   return mayStand(sim, w, cell, "town", y, pop) ? CITY_FROM - 1 : TOWN_FROM - 1;
