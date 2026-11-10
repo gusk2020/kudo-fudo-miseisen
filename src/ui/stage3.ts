@@ -137,7 +137,7 @@ export function buildLedger(app: App, body: HTMLElement) {
 /** Stage 36: the state of each transport technology of an 1800 game (試験・実用・普及・衰退) in the current year, so an experiment is never mistaken for a service. */
 export function buildTechAtlas(sim: SimState, body: HTMLElement) {
   const y = sim.startYear + Math.floor(sim.month / 12), box = h("div", { class: "issue", id: "atlas-tech" }, h("b", {}, `技術(鉄道・飛行船・自動車・飛行機・高速道路)の段階(${y}年)`));
-  for (const t of TECHS_1800) { const s = techNow(t, y); box.append(h("div", { class: "row", id: "atlas-tech-" + t }, `${t}: ${s.label}${s.since ? `(${s.since}年〜)` : ""}${s.phase === "experiment" ? " ※試験のみ。定期の路線は作られません" : ""}`)); }
+  for (const t of TECHS_1800) { const s = techNow(t, y, sim); box.append(h("div", { class: "row", id: "atlas-tech-" + t }, `${t}: ${s.label}${s.since ? `(${s.since}年〜)` : ""}${s.phase === "experiment" ? " ※試験のみ。定期の路線は作られません" : ""}`)); }
   box.append(h("small", {}, "技術の登場年は固定。広がり方は人口・経済・地形・需要で変わります。"));
   body.append(box);
 }

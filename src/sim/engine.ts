@@ -1,5 +1,5 @@
 import { fireHistory1800 } from "./history1800";
-import { AIR_YEAR_SHIFT_1800, POP_1800_FACTOR, RELOC_STEP_1800, START_YEAR_1800, mayScheduleService } from "./rules1800";
+import { POP_1800_FACTOR, RELOC_STEP_1800, START_YEAR_1800, airShiftYears, mayScheduleServiceFor } from "./rules1800";
 /**
  * Monthly road-network simulation. Pure and deterministic: (sim, world) -> sim, all randomness from sim.rngState.
  * Every change that matters appends an event with its cause and, for roads, an entry in the edge's own history.
@@ -150,7 +150,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   return sim;
 }
 /** Stage 36: the year the port/airport rules see (shifted for an 1800 game so that scheduled flights begin in 1920) */
-export const hubYear = (sim: Pick<SimState, "rules1800">, y: number) => (sim.rules1800 ? y + AIR_YEAR_SHIFT_1800 : y);
+export const hubYear = (sim: Pick<SimState, "rules1800" | "startYear" | "kaigen">, y: number) => (sim.rules1800 ? y + airShiftYears(sim, y) : y);
 export function createSim(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): SimState {
   const g = createSimGen(w, mapHash, terrainHash, seed, opts); for (;;) { const r = g.next(); if (r.done) return r.value; }
 }
@@ -568,7 +568,7 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
   }
   if (modeOf(p) === "rail") return completeRailProject(sim, w, p, es);
   if (p.kind === "upgrade") { for (const e of es) if (e.state === "open") { e.surface = "paved"; e.quality = Math.max(e.quality, 95); pushHist(sim, e, "舗装化"); } ev(sim, "project", `舗装化が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
-  if (p.kind === "improve") { const e = es[0]; if (e) { e.standard = e.standard === "rural" || (sim.rules1800 && modeOf(e) !== "rail" && !mayScheduleService("expressway", yearOf(sim))) ? "standard" : "highgrade";   /* Stage 36: no expressway before 1930 in an 1800 game */ e.surface = "paved"; e.quality = 95; e.weathering = 0; pushHist(sim, e, `改良(規格を${e.standard === "standard" ? "一般2車線" : "高規格"}に)`); } ev(sim, "project", `改良が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
+  if (p.kind === "improve") { const e = es[0]; if (e) { e.standard = e.standard === "rural" || (sim.rules1800 && modeOf(e) !== "rail" && !mayScheduleServiceFor(sim, "expressway", yearOf(sim))) ? "standard" : "highgrade";   /* Stage 36: no expressway before 1930 in an 1800 game */ e.surface = "paved"; e.quality = 95; e.weathering = 0; pushHist(sim, e, `改良(規格を${e.standard === "standard" ? "一般2車線" : "高規格"}に)`); } ev(sim, "project", `改良が完了: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
   if (p.kind === "restore") { const e = es[0]; if (e) { e.state = "closed"; setEdgeState(sim, e, "open", `沿線需要の回復で復旧(${p.reason})`); e.quality = 55; e.weathering = 0; e.lost = false; e.zeroYears = 0; reviveRoutes(sim, w, e.id); } ev(sim, "reopen", `復旧・再開通: ${projLabel(sim, p)}`, p.reason, { project: p.id }); return; }
   if (p.kind === "bypass") {
     // The old road may have been split by other projects after this one was planned: every piece of it is replaced, not just the first.

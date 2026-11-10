@@ -4,6 +4,8 @@
  * (the game has 55 cities, not every post town), and the post towns are the nearest real places along the line, one about every POST_KM. No railway and no air route exists.
  */
 import { nearestPlace } from "../core/gazetteer";
+import { nearestOld } from "../core/gazetteer2000";
+import { usedNames } from "./names2000";
 import { designate, ev, rand } from "./engine";
 import { buildIndex, layPath, nodeAtCell } from "./network";
 import { pathfind, type World } from "./world";
@@ -21,7 +23,7 @@ export const POST_KM = 28, POST_REACH_KM = 12;
 
 /** Lays the highways and names their post towns. Returns what it made. */
 export function seedKaido1800(sim: SimState, w: World): { routes: number; posts: number; km: number } {
-  let routes = 0, posts = 0, km = 0; const taken = new Set<string>(w.cities.map((c) => c.name)), claimed = new Set<string>();
+  let routes = 0, posts = 0, km = 0; const taken = usedNames(sim, w), claimed = new Set<string>();
   for (const k of KAIDO_1800) {
     const cities = k.via.map((n) => w.cities.find((c) => c.name === n)).filter((c): c is NonNullable<typeof c> => !!c), cells: number[] = [], hold = { id: "r.kaido-hold", edges: [] as RouteEdgeRef[], oldEdges: [] as string[], active: false } as unknown as SimState["routes"][string];   // (a later leg can split an edge an earlier leg already laid: the chain is kept in a route-shaped holder while laying, so splitEdge rewrites it too -- a plain array went stale and broke the route's chain)
     sim.routes[hold.id] = hold;
@@ -40,8 +42,8 @@ export function seedKaido1800(sim: SimState, w: World): { routes: number; posts:
       run += Math.hypot(w.cellPos(c)[0] - w.cellPos(prev)[0], w.cellPos(c)[1] - w.cellPos(prev)[1]); prev = c; if (run < POST_KM) continue; run = 0;
       const p = w.cellPos(c); let best: (typeof sim.settlements)[string] | null = null, bd = POST_REACH_KM;
       for (const s of Object.values(sim.settlements)) { if (claimed.has(s.id) || s.post) continue; const d = Math.hypot(w.cellPos(s.cell)[0] - p[0], w.cellPos(s.cell)[1] - p[1]); if (d < bd) { bd = d; best = s; } }
-      if (!best) continue; const np = nearestPlace(w.cellPos(best.cell), taken); if (!np) continue;
-      taken.add(np.name); claimed.add(best.id); best.name = `${np.name}宿`; best.post = k.name; posts++;
+      if (!best) continue; const old = nearestOld(w.cellPos(best.cell), taken); const np = old ? { name: old.stem } : nearestPlace(w.cellPos(best.cell), taken); if (!np) continue;   /* Stage 40: a post town is named after the nearest unused municipality of the 2000-10-01 list (the real-place list is the fallback) */
+      taken.add(np.name); if (old) { taken.add(old.stem); taken.add(old.name); best.origin = { code: old.code, name: old.name, pref: old.pref }; } claimed.add(best.id); best.name = `${np.name.replace(/市$/, "")}宿`; best.post = k.name; posts++;
     }
   }
   ev(sim, "seed", `1800年の主要街道: ${routes}本(約${Math.round(km)}km)・宿場${posts}か所`, "初期条件(ゲーム上の簡略化。鉄道・空路はない)", {});

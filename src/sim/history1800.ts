@@ -9,6 +9,7 @@
  * their years below are GAME ASSUMPTIONS chosen to sit before the 1830 public railway, and are marked 【架空】 on screen. Nothing here is a claim about real history except where a row says 【史実】.
  */
 import { ev } from "./engine";
+import { EARLY_EXPERIMENT_YEARS, EARLY_SERVICE_YEARS, gateOpen, type TechId } from "./rules1800";
 import type { SimState } from "./types";
 
 export type Phase = "experiment" | "service" | "spread" | "decline";
@@ -39,17 +40,29 @@ export const FICTION_1800: readonly Milestone[] = [
 ];
 export const ALL_MILESTONES: readonly Milestone[] = [...FICTION_1800, ...TECH_MILESTONES].slice().sort((a, b) => a.year - b.year);
 
+/** Stage 40: the technology rows whose date moves with the era stance: the technology and how many years earlier it may come at most. Every other row (the fictional history, the decline of airships, the 1950 multimodal era) has a fixed year. The simulation's gates (rules1800.ts gateOpen) are the very same test, so the timeline and the atlas show exactly when something really became usable. */
+export const MOVABLE: Record<string, { id: TechId; early: number }> = {
+  "rail-exp": { id: "rail", early: EARLY_EXPERIMENT_YEARS }, "rail-svc": { id: "rail", early: EARLY_SERVICE_YEARS }, "rail-spread": { id: "rail", early: EARLY_SERVICE_YEARS },
+  "airship-exp": { id: "airship", early: EARLY_EXPERIMENT_YEARS }, "airship-rigid": { id: "airship", early: EARLY_EXPERIMENT_YEARS },
+  "car-exp": { id: "car", early: EARLY_EXPERIMENT_YEARS }, "car-spread": { id: "car", early: EARLY_SERVICE_YEARS },
+  "plane-exp": { id: "plane", early: EARLY_EXPERIMENT_YEARS }, "plane-svc": { id: "plane", early: EARLY_SERVICE_YEARS }, "hwy-svc": { id: "expressway", early: EARLY_SERVICE_YEARS },
+};
+type SimYears = Pick<SimState, "startYear" | "kaigen"> & Partial<Pick<SimState, "events">>;
+/** Has this row's milestone been reached by `year` in this game? */
+export function reached(sim: SimYears, m: Milestone, year: number): boolean { const g = MOVABLE[m.id]; return g ? gateOpen(sim, g.id, m.year, g.early, year) : year >= m.year; }
+
 /** The state of a technology row in `year`: not yet, or its phase. (Rows of one technology: the latest one reached wins.) */
-export function techNow(tech: string, year: number): { phase: Phase | "none"; since?: number; label: string } {
-  let cur: Milestone | null = null; for (const m of TECH_MILESTONES) if (m.tech === tech && m.year <= year) cur = m;
-  return cur ? { phase: cur.phase, since: cur.year, label: PHASE_LABEL[cur.phase] } : { phase: "none", label: "まだない" };
+export function techNow(tech: string, year: number, sim?: SimYears): { phase: Phase | "none"; since?: number; label: string } {
+  let cur: Milestone | null = null; for (const m of TECH_MILESTONES) if (m.tech === tech && (sim ? reached(sim, m, year) : m.year <= year)) cur = m;
+  const real = cur && sim?.events?.find((e) => e.kind === "tech" && e.refs?.milestone === cur!.id);   /* the year it really came in this game (the row's own year moves with the era stance) */
+  return cur ? { phase: cur.phase, since: real ? sim!.startYear + Math.floor(real.month / 12) : cur.year, label: PHASE_LABEL[cur.phase] } : { phase: "none", label: "まだない" };
 }
 export const TECHS_1800 = ["鉄道", "飛行船", "自動車", "飛行機", "高速道路"] as const;
 
 /** Records the rows of `year` in the timeline (once each; an 1800 game only). */
 export function fireHistory1800(sim: SimState, y: number): number {
-  if (!sim.rules1800) return 0; let n = 0;
-  for (const m of ALL_MILESTONES) if (m.year === y) { ev(sim, "tech", `${y}年: ${m.text}${m.tech === "世界線" || m.tech === "地図" ? "" : `【${PHASE_LABEL[m.phase]}】`}`, m.cause, { milestone: m.id }); n++; }
+  if (!sim.rules1800) return 0; let n = 0; const have = new Set(sim.events.filter((e) => e.kind === "tech").map((e) => e.refs?.milestone));
+  for (const m of ALL_MILESTONES) if (!have.has(m.id) && reached(sim, m, y) && (MOVABLE[m.id] || m.year === y)) { ev(sim, "tech", `${y}年: ${m.text}${m.tech === "世界線" || m.tech === "地図" ? "" : `【${PHASE_LABEL[m.phase]}】`}`, m.cause, { milestone: m.id }); n++; }
   return n;
 }
 
@@ -58,8 +71,8 @@ export function backfillHistory1800(sim: SimState, nowYear: number): number {
   if (!sim.rules1800) return 0;
   const have = new Set(sim.events.filter((e) => e.kind === "tech").map((e) => e.refs?.milestone)); let n = 0;
   for (const m of ALL_MILESTONES) {
-    if (m.year > nowYear || have.has(m.id)) continue;
-    sim.events.push({ id: ++sim.next.event, month: Math.max(0, (m.year - sim.startYear) * 12), kind: "tech", text: `${m.year}年: ${m.text}${m.tech === "世界線" || m.tech === "地図" ? "" : `【${PHASE_LABEL[m.phase]}】`}`, cause: m.cause, refs: { milestone: m.id } }); n++;
+    if (!reached(sim, m, nowYear) || have.has(m.id)) continue;
+    sim.events.push({ id: ++sim.next.event, month: Math.max(0, (Math.min(m.year, nowYear) - sim.startYear) * 12), kind: "tech", text: `${m.year}年: ${m.text}${m.tech === "世界線" || m.tech === "地図" ? "" : `【${PHASE_LABEL[m.phase]}】`}`, cause: m.cause, refs: { milestone: m.id } }); n++;
   }
   if (n) sim.events.sort((a, b) => a.month - b.month || a.id - b.id);
   return n;

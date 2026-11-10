@@ -6,6 +6,7 @@
  * city with its people (nothing is taken from it by this rule -- it only stops being pulled to), and the new seat starts its own programme.
  * Nothing here touches the terrain, the coastline or Lake Biwa.
  */
+import { nameFromOld, usedNames } from "./names2000";
 import { cycleOf } from "./cycle27";
 import { ev, rand } from "./engine";
 import { buildIndex, nodeAtCell, pad } from "./network";
@@ -65,7 +66,7 @@ export function seatFloor37(sim: SimState, w: World, cityId: string, y: number):
 
 /** One satellite town, when the seat has fewer than its share of them: returns the people it takes (they are part of this year's pull, so the total is unchanged). */
 function maybeSatellite(sim: SimState, w: World, s: SeatTarget, fill: number, budget: number): number {
-  const mine = Object.values(sim.settlements).filter((v) => v.city === s.city.id && !v.gone && /近郊/.test(v.name)), cap = Math.round(SAT_MAX * (s.share / SEAT_SHARE.capital)), want = Math.min(cap, Math.ceil(cap * Math.min(1, fill * 1.2)));
+  const mine = Object.values(sim.settlements).filter((v) => v.city === s.city.id && !v.gone && !v.post && (/近郊/.test(v.name) || !!v.origin)), cap = Math.round(SAT_MAX * (s.share / SEAT_SHARE.capital)), want = Math.min(cap, Math.ceil(cap * Math.min(1, fill * 1.2)));
   if (mine.length >= want || budget < SAT_POP_MIN) return 0;
   const used = new Set(Object.values(sim.settlements).map((v) => v.cell)); let cell = -1;
   for (let tries = 0; tries < 24 && cell < 0; tries++) {
@@ -75,6 +76,7 @@ function maybeSatellite(sim: SimState, w: World, s: SeatTarget, fill: number, bu
   if (cell < 0) return 0;
   const pop = Math.min(Math.round(budget), Math.round(SAT_POP_MIN + rand(sim) * SAT_POP_SPAN)), id = `s.${pad(1 + Object.keys(sim.settlements).reduce((m, k) => Math.max(m, parseInt(k.slice(2), 10) || 0), 0), 4)}`;
   sim.settlements[id] = { id, name: `${s.city.name.replace(/市$/, "")}近郊${mine.length + 1}`, cell, city: s.city.id, pop, pop0: pop, isolatedYears: 0, gone: false };
+  if (sim.rules1800) nameFromOld(sim, w, sim.settlements[id], usedNames(sim, w));   /* Stage 40: a new satellite town of an 1800 game takes the nearest unused old municipality's name */
   nodeAtCell(sim, w, buildIndex(sim), cell, "village");
   return pop;
 }
