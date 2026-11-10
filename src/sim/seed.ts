@@ -24,7 +24,7 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
       let cell = -1;
       for (let tries = 0; tries < 10 && cell < 0; tries++) {
         const ang = rand(sim) * Math.PI * 2, r = c.island > 4 ? 4 + rand(sim) * 12 : 15 + rand(sim) * 30, q = w.cellOf([c.pos[0] + Math.cos(ang) * r, c.pos[1] + Math.sin(ang) * r]);
-        if (q >= 0 && w.t.land[q] === 1 && w.t.island[q] === c.island && !used.has(q) && w.elevM(q) < 1500) cell = q;   /* Stage 39: no 村 on ground of 1500 m or more */
+        if (q >= 0 && w.t.land[q] === 1 && w.t.island[q] === c.island && !used.has(q)) cell = q;
       }
       const popv = Math.round((350 + rand(sim) * 3600) * (basePop(sim, w, c) > 1e6 ? 1.5 : 1)); if (cell < 0) continue;
       used.add(cell); const id = `s.${pad(++sid, 4)}`;
