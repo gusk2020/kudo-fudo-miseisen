@@ -31,6 +31,7 @@ import { reviewWorks } from "./freeze";
 import { carryOver, finishCrossing, isCrossingProject, planCrossings } from "./crossing";
 import { planIslandLinks } from "./islandlink37";
 import { developSeats37 } from "./devseat37";
+import { abolishSubmerged, mayStand, reclaimedCell } from "./muni39sim";
 import { homeCity, seatCity, subCity, tokyoCity } from "./ceremony";
 import { siteCapacity, upkeepMult } from "./land";
 import { ecoIndustry, ecoYear } from "./econ";
@@ -54,7 +55,7 @@ export const MS_PER_MONTH_X1 = MONTHS_PER_YEAR_X1_MS / 12;
 export const CATCHUP_CAP_MONTHS = 360;            // at most 30 years are simulated on return; the rest is reported as skipped
 export const EVENT_CAP = 600, EVENT_CAP_S3 = 1000;
 /** Everyday noise is dropped first when the timeline is full, so the history that matters (world, policy, reforms, openings, closures) survives a century. */
-const KEEP_EVENTS = new Set(["tech", "seatdev"]);
+const KEEP_EVENTS = new Set(["tech", "seatdev", "muni39"]);
 const MINOR_EVENTS = new Set(["village", "boom", "city", "dormant", "reopen", "lost", "skip", "project", "lane"]);
 export const CAPITAL_BONUS = 1.35, CAPITAL_LOSS = 0.85, SUB_CAPITAL_BONUS = 1.15;   // pop multipliers for a capital that is not Tokyo (provisional)
 /** Stage 9: リニア -- not before this calendar year, nor before the technology clock reaches MAGLEV_TECH_YEAR, and only for long new high-speed lines. */
@@ -143,6 +144,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   enforceCaps(sim, w);   // Stage 20
   if (sim.rules1800) fireHistory1800(sim, sim.startYear);   // (the rows of the start year itself)
   if (sim.rules1800) for (const c of w.cities) sim.cities[c.id].pop = Math.max(500, Math.round(sim.cities[c.id].pop * POP_1800_FACTOR));   // Stage 36: the 1800 game estimate (rules1800.ts)
+  abolishSubmerged(sim, w);   // Stage 39: the municipalities the player's lakes drowned are abolished once every city has its starting people (after the 1800 scaling, which would give each one at least 500)
   if (sim.stage3) ensureHubs(sim, w, hubYear(sim, sim.startYear));   // Stage 8: the ports of 1950 (airports open from the late 1950s)
   yield* seedInitialNetworkGen(sim, w); refreshNick(sim); if (sim.stage3) { sim.numreg = newNumReg(); syncNumbers(sim, sim.startYear); } yield 1;
   return sim;
@@ -276,7 +278,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
   let accMean = 0.4, boostMean = 0; if (sim.seats14) { let pw = 0, a = 0, b = 0; w.cities.forEach((c, i) => { const p = sim.cities[c.id].pop, bo = cityBoost(sim, w, c.id); pw += p; a += p * accOf(an.acc[i]); b += p * (bo.commerce + bo.industry + bo.manufacturing) / 3; }); accMean = pw ? a / pw : 0.4; boostMean = pw ? b / pw : 0; }
   w.cities.forEach((c, i) => {
     const st = sim.cities[c.id], bo = cityBoost(sim, w, c.id), hb = hubBoost(sim, c.id), before = st.pop, g = (sim.econ ? natRate + popRate(y, st.pop, realRate) - curRate : popRate(y, st.pop, sim.stage3 === true && y <= 2026)) + hb.growth - hbMean + (sim.seats14 ? 0.012 * (accOf(an.acc[i]) - accMean) + 0.004 * ((bo.commerce + bo.industry + bo.manufacturing) / 3 - boostMean) : 0.012 * (an.acc[i] - 0.4) + 0.004 * (bo.commerce + bo.industry + bo.manufacturing) / 3) - (sim.stage3 ? crowding(st.pop, sim.econ ? basePop(sim, w, c) * siteCapacity(w, c) : basePop(sim, w, c), c.plains) : 0) + (rg.get(c.id) ?? 0) + (pg.get(c.id) ?? 0) + (eco?.get(c.id) ?? 0) + (rand(sim) - 0.5) * 0.008;
-    st.pop = Math.max(2000, Math.round(st.pop * (1 + g)));
+    st.pop = sim.abolished39?.[c.id] ? 0 : Math.max(2000, Math.round(st.pop * (1 + g)));   // (Stage 39: an abolished municipality has no people and gets none)
     const target = Math.min(1, 0.2 + 0.35 * (c.coastal ? 1 : 0) + 0.2 * c.plains + roleIndustry(sim, w, c) + 0.9 * accOf(an.acc[i]) + 0.5 * bo.industry + hb.industry + (rg.size ? reconIndustry(sim, w, c.id, y, rmc) : 0) + (sim.econ ? ecoIndustry(w, c) : 0)); st.industry = Math.round((st.industry + (target - st.industry) * 0.1) * 1000) / 1000;
     st.lowAccessYears = an.acc[i] < 0.02 ? st.lowAccessYears + 1 : 0; const base = basePop(sim, w, c);
     if (sim.stage3 && !sim.hubs && st.airport === undefined && ((st.pop > 400000 * (1 - 0.25 * sim.dials.airBias) && y >= 1958 - Math.round(8 * sim.dials.airBias)) || (st.pop > 200000 * (1 - 0.25 * sim.dials.airBias) && y >= 1972 - Math.round(8 * sim.dials.airBias)) || (st.pop > 100000 * (1 - 0.25 * sim.dials.airBias) && y >= 1988 - Math.round(8 * sim.dials.airBias)))) { st.airport = y; ev(sim, "air", `${c.name}に空港が開港`, `人口${Math.round(st.pop / 1000)}千人に達し、航空需要が見込まれた`, { city: c.id }); }
@@ -288,7 +290,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
     // the nation follows its demographic course (natRate: the rate of its 1950 make-up), whatever the shocks, the access terms and the seats' redistribution did this year: the people who are
     // moved between cities add up, and the total is brought back onto that course by one common factor (births and deaths, not a transfer)
     const tot = w.cities.reduce((t, c) => t + sim.cities[c.id].pop, 0), want = totalBefore * (1 + natRate), f = tot > 0 ? want / tot : 1;
-    if (Math.abs(f - 1) > 1e-9) for (const c of w.cities) { const st = sim.cities[c.id]; st.pop = Math.max(2000, Math.round(st.pop * f)); }
+    if (Math.abs(f - 1) > 1e-9) for (const c of w.cities) { const st = sim.cities[c.id]; st.pop = sim.abolished39?.[c.id] ? 0 : Math.max(2000, Math.round(st.pop * f)); }
   }
   if (sim.pot17) { const k = sim.kaigen; if (k && k.eras.length > (sim.pot17.eras ?? 1)) { const e = k.eras[k.eras.length - 1], seats = { capital: sim.capital ?? DEFAULT_CAPITAL, sub: sim.subCapital ?? (sim.capital === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), ...(sim.subCapital2 ? { sub2: sim.subCapital2 } : {}), palace: prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE }; reassignPotential(sim.pot17, w.t, seats, k.recon?.focus ?? "concentrate", sim.seed, k.eras.length, y, e.name, (k.recon?.coast === "neutral" ? undefined : k.recon?.coast), sim.pot17.c19 ? seatLL(sim, w) : undefined); ev(sim, "potential", `改元(${e.name})で府県の発展順位が組み替わった`, `上位は首都・副首都・皇居とその隣県。順位は${y}年から年々なだらかに効く`, {}); sim.pot17.eras = k.eras.length; } glidePotential(sim.pot17); settleCities(sim, w, an, y); if (sim.rules1800) developSeats37(sim, w, y); }   // Stage 17: the weights glide toward the order in force; the capitals' people settle the candidate places
   enforceCaps(sim, w);   // Stage 20: a small island's city holds what the island can
@@ -317,7 +319,7 @@ function updatePopulation(sim: SimState, w: World, an: Analysis, y: number) {
       const e = idle[Math.floor(rand(sim) * idle.length)], near = Object.values(sim.settlements).filter((v) => !v.gone && e.cells.some((c) => Math.abs((c % w.nx) - (v.cell % w.nx)) <= 2 && Math.abs(((c / w.nx) | 0) - ((v.cell / w.nx) | 0)) <= 2));
       if (near.length) { const v = near[Math.floor(rand(sim) * near.length)]; v.pop = Math.round(Math.max(v.pop * 2.2, 1500) + 1200); ev(sim, "boom", `${prefName(pref)}の${v.name}が再開発され、使われていない道の沿線に人が戻る`, "地域イベント(合成)", { settlement: v.id, edge: e.id }); continue; }
       const mid = e.cells[Math.floor(e.cells.length / 2)], i0 = mid % w.nx, j0 = (mid / w.nx) | 0; let cell = -1;
-      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]]) { const k = (j0 + dj) * w.nx + i0 + di; if (k >= 0 && k < w.N && w.t.land[k] === 1 && !Object.values(sim.settlements).some((q) => q.cell === k)) { cell = k; break; } }
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]]) { const k = (j0 + dj) * w.nx + i0 + di; if (k >= 0 && k < w.N && w.t.land[k] === 1 && !Object.values(sim.settlements).some((q) => q.cell === k) && mayStand(sim, w, k, "village", yearOf(sim), 3500) && !reclaimedCell(sim, k)) { cell = k; break; } }
       const city = w.cities.filter((c) => c.island === w.t.island[mid]).sort((p2, q2) => cellDistKm(w, p2.cell, mid) - cellDistKm(w, q2.cell, mid))[0];
       if (cell >= 0 && city) {
         const id = `s.${String(1 + Object.keys(sim.settlements).reduce((m, k) => Math.max(m, parseInt(k.slice(2), 10) || 0), 0)).padStart(4, "0")}`;

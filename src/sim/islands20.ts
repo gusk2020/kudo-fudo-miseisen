@@ -53,7 +53,11 @@ export function withIslets(t: TerrainResult, version: 1 | 2 | 3 = 1): TerrainRes
     out.push({ islet: s, pos: p, cells: mine, cell: mine.length ? cen : c0, island: mine.length ? id : (c0 >= 0 ? island[c0] : id), existing: !mine.length, areaKm2: s.area });
   });
   const top = t.stats.fujiTopCell, stats = top >= 0 ? { ...t.stats, fujiTopCell: (((top / nx) | 0) + sy) * nx2 + (top % nx) + sx } : t.stats;   // (the one cell index the terrain keeps in its stats)
-  return { ...t, stats, isletVersion: version, grid: { x0: X0, y0: Y0, cell, nx: nx2, ny: ny2 }, land, island, pref, plains, elev, ridge, barrier, islets: out };
+  // Stage 39: the original elevation and the flat zones follow the wider grid (their cell numbers are the old grid's)
+  const mapK = (k: number) => (((k / nx) | 0) + sy) * nx2 + (k % nx) + sx;
+  let elev0: Float32Array | undefined; if (t.elev0) { elev0 = new Float32Array(N2).fill(-200); for (let j = 0; j < ny; j++) elev0.set(t.elev0.subarray(j * nx, j * nx + nx), (j + sy) * nx2 + sx); for (const o of out) for (const k of o.cells) elev0[k] = elev[k]; }
+  const flat = t.flat?.map((z) => ({ ...z, seeds: z.seeds.map((sd) => ({ ...sd, cell: mapK(sd.cell) })) }));
+  return { ...t, stats, isletVersion: version, grid: { x0: X0, y0: Y0, cell, nx: nx2, ny: ny2 }, land, island, pref, plains, elev, ridge, barrier, islets: out, ...(elev0 ? { elev0 } : {}), ...(flat ? { flat } : {}) };
 }
 
 const inPoly = (p: Vec, poly: Vec[]) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) c = !c; } return c; };

@@ -9,6 +9,7 @@
 import { cycleOf } from "./cycle27";
 import { ev, rand } from "./engine";
 import { buildIndex, nodeAtCell, pad } from "./network";
+import { mayStand, reclaimedCell } from "./muni39sim";
 import { homeCity, subCity } from "./ceremony";
 import { SUB2_SHARE } from "./subs36";
 import type { SimState } from "./types";
@@ -68,7 +69,7 @@ function maybeSatellite(sim: SimState, w: World, s: SeatTarget, fill: number, bu
   const used = new Set(Object.values(sim.settlements).map((v) => v.cell)); let cell = -1;
   for (let tries = 0; tries < 24 && cell < 0; tries++) {
     const ang = rand(sim) * Math.PI * 2, r = SAT_MIN_KM + rand(sim) * (SAT_MAX_KM - SAT_MIN_KM), q = w.cellOf([s.city.pos[0] + Math.cos(ang) * r, s.city.pos[1] + Math.sin(ang) * r]);
-    if (q >= 0 && w.t.land[q] === 1 && w.lm[q] === w.lm[s.city.cell] && !used.has(q) && !w.cityByCell.has(q)) cell = q;
+    if (q >= 0 && w.t.land[q] === 1 && w.lm[q] === w.lm[s.city.cell] && !used.has(q) && !w.cityByCell.has(q) && !reclaimedCell(sim, q) && mayStand(sim, w, q, "village", Math.floor(sim.startYear + sim.month / 12), SAT_POP_MIN)) cell = q;   // (Stage 39: no town on made land, and none on ground a 村 may not be founded on)
   }
   if (cell < 0) return 0;
   const pop = Math.min(Math.round(budget), Math.round(SAT_POP_MIN + rand(sim) * SAT_POP_SPAN)), id = `s.${pad(1 + Object.keys(sim.settlements).reduce((m, k) => Math.max(m, parseInt(k.slice(2), 10) || 0), 0), 4)}`;

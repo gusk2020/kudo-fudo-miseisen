@@ -11,6 +11,7 @@ import { ev } from "./engine";
 import { homeCity, subCity } from "./ceremony";
 import { basePop } from "./roles";
 import { seatFloor37 } from "./devseat37";
+import { cityMayShow } from "./muni39sim";
 import type { Analysis } from "./demand";
 import type { SimState } from "./types";
 import type { World } from "./world";
@@ -48,12 +49,13 @@ export function suitability(sim: SimState, w: World, an: Analysis, i: number, pa
   const t = Math.min(an.T[i * nc + parent], an.TT[i * nc + parent]), hours = isFinite(t) ? t : 3;
   let near = 0; for (const s of seats) near = Math.max(near, Math.exp(-Math.hypot(s.pos[0] - c.pos[0], s.pos[1] - c.pos[1]) / SEAT_REACH_KM));
   const plain = 0.5 + c.plains, access = 0.6 + 0.8 * clamp(an.acc[i], 0, 1), commute = clamp(1.5 - 0.6 * hours, 0.4, 1.5), industry = 0.8 + 0.5 * st.industry, seat = 1 + 0.5 * near;
-  return clamp(plain * access * commute * industry * seat, 0.15, 2.5);
+  const zone = c.zone ? 1 + 0.5 * (1 - Math.min(1, c.zone.factor / 0.3)) : 1;   // Stage 39 (D): a range worn right down to plain (factor 0) develops best; its original height has already bounded its room (apt)
+  return clamp(plain * access * commute * industry * seat * zone, 0.15, 2.5);
 }
 /** Yearly: move people between each prefecture's capital city and its candidates, then update who is shown. Zero-sum within the prefecture. */
 export function settleCities(sim: SimState, w: World, an: Analysis, y: number): void {
   const pot = sim.pot17; if (!pot) return; const idx = new Map(w.cities.map((c, i) => [c.id, i])), cap = new Map<string, number>(), by = new Map<string, number[]>();
-  const hold = prefHolders(w); w.cities.forEach((c, i) => { if (!c.pref) return; if (hold.get(c.pref) === i) cap.set(c.pref, i); else (by.get(c.pref) ?? by.set(c.pref, []).get(c.pref)!).push(i); });
+  const hold = prefHolders(w), dead = sim.abolished39 ?? {}; w.cities.forEach((c, i) => { if (!c.pref || dead[c.id]) return; if (hold.get(c.pref) === i) cap.set(c.pref, i); else (by.get(c.pref) ?? by.set(c.pref, []).get(c.pref)!).push(i); });
   const hc = homeCity(w, sim.capital), sc = subCity(w, sim.subCapital), seats = [sim.capitalPos ? { pos: sim.capitalPos as number[] } : hc, sim.subPos ? { pos: sim.subPos as number[] } : sc, ...(sim.subCapital2 ? [sim.subPos2 ? { pos: sim.subPos2 as number[] } : subCity(w, sim.subCapital2)] : [])].filter(Boolean) as { pos: number[] }[];   // (Stage 36: and the second sub-capital)   // (Stage 19: from the point a seat was put at)
   for (const [pref, list] of by) {
     const p = cap.get(pref); if (p === undefined) continue; const capSt = sim.cities[w.cities[p].id];
@@ -67,9 +69,9 @@ export function settleCities(sim: SimState, w: World, an: Analysis, y: number): 
   }
   // who is shown: a place appears when it is big enough and has grown, and loses its name when it shrinks well below that; the people stay either way
   for (const c of w.cities) {
-    if (isCapitalCity(c) || (c.former && pot.shown[c.id] === undefined) || y <= sim.startYear) continue; const st = sim.cities[c.id], was = pot.shown[c.id] !== undefined && pot.shown[c.id] > 0;
+    if (isCapitalCity(c) || dead[c.id] || (c.former && pot.shown[c.id] === undefined) || y <= sim.startYear) continue; const st = sim.cities[c.id], was = pot.shown[c.id] !== undefined && pot.shown[c.id] > 0;
     const born = startOf(sim, w, c);
-    if (!was && st.pop >= SHOW_ON && st.pop >= SHOW_GROWTH * born) { pot.shown[c.id] = y; ev(sim, "city", `${c.name}が都市として現れた(人口${Math.round(st.pop / 1000)}千人)`, `${c.pref ? "同じ府県の県庁所在地から人が移り、" : ""}平地・交通・産業の条件がそろった`, { city: c.id }); }
+    if (!was && st.pop >= SHOW_ON && st.pop >= SHOW_GROWTH * born && cityMayShow(sim, w, c, y)) { /* Stage 39: a 市 is not founded on ground of 1300 m or more, 1950 relaxations aside */ pot.shown[c.id] = y; ev(sim, "city", `${c.name}が都市として現れた(人口${Math.round(st.pop / 1000)}千人)`, `${c.pref ? "同じ府県の県庁所在地から人が移り、" : ""}平地・交通・産業の条件がそろった`, { city: c.id }); }
     else if (was && st.pop < SHOW_OFF) { pot.shown[c.id] = -y; ev(sim, "city", `${c.name}の人口が減り、都市の表示を外れた(人口${Math.round(st.pop / 1000)}千人)`, "条件が悪化し、人は周辺や県庁所在地へ移った(住民は残っている)", { city: c.id }); }
   }
   void idx;
