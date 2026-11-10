@@ -16,6 +16,10 @@ def parse(path):
         for pl in c.iter("{%s}posList" % NS["gml"]):
             v = [float(x) for x in pl.text.split()]; pts += [(v[i + 1], v[i]) for i in range(0, len(v) - 1, 2)]   # (lon, lat): the file lists lat first
         curves[c.get(GID)] = pts
+    orient = {}   # OrientableCurve id -> (base curve id, reversed?)
+    for o in root.iter("{%s}OrientableCurve" % NS["gml"]):
+        b = [e.get(HREF) for e in o.iter() if e.get(HREF)]
+        if b: orient[o.get(GID)] = (b[0][1:], o.get("orientation") == "-")
     surfaces = {}
     for s in root.iter("{%s}Surface" % NS["gml"]):
         rings = []
@@ -24,8 +28,11 @@ def parse(path):
                 pts = []
                 for r in el.iter():
                     h = r.get(HREF)
-                    if h and h.startswith("#") and h[1:] in curves:
-                        cp = curves[h[1:]]; pts += cp[::-1] if r.get("orientation") == "-" else cp
+                    if not (h and h.startswith("#")): continue
+                    cid, rev = h[1:], r.get("orientation") == "-"
+                    if cid in orient: cid, r2 = orient[cid]; rev = rev != r2
+                    if cid in curves:
+                        cp = curves[cid]; pts += cp[::-1] if rev else cp
                 rings.append((ln(el.tag), pts))
         surfaces[s.get(GID)] = rings
     out = []

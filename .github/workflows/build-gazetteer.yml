@@ -34,4 +34,4 @@ jobs:
       - name: commit
         run: |
           git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
-          git add src/data/gazetteer2000.json; git commit -m "Stage 40: gazetteer of the 2000-10-01 municipalities (N03 v2.2), built by Actions" && git push origin HEAD:claude/stage40
+          git add src/data/gazetteer2000.json; if git diff --cached --quiet; then echo "unchanged"; else git commit -m "Stage 40: gazetteer of the 2000-10-01 municipalities (N03 v2.2), built by Actions" && git push origin HEAD:claude/stage40; fi
