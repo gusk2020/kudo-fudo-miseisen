@@ -8,22 +8,14 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: fetch pages
-        run: |
-          set -x
-          curl -sSL -m 60 -o n03.html https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html; echo "rc=$?"; wc -c n03.html
-          python3 - <<'P'
+      - run: |
+          curl -sSL -m 60 -o n03.html https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html
+          echo "=== 2000 / 平成12 rows"; grep -n -E "2000|平成12|H12|N03-0[0-9]|_GML" n03.html | cut -c1-260 | head -30
+          echo "=== ALL zip hrefs/onclicks"; grep -o -E "[A-Za-z0-9_./:-]*N03[A-Za-z0-9_./-]*\.zip" n03.html | sort -u | head -40
+          echo "=== DLs"; grep -o -E "DownLd\([^)]*\)" n03.html | head -12
+          curl -sSL -m 60 -o ag.html https://nlftp.mlit.go.jp/ksj/other/agreement.html
+          echo "=== agreement"; python3 - <<'P'
           import re,html
-          s=open('n03.html',encoding='utf-8',errors='replace').read()
-          t=re.sub(r'<script.*?</script>|<style.*?</style>','',s,flags=re.S)
-          print(html.unescape(re.sub(r'<[^>]+>',' ',t))[:3500].replace('\n',' '))
-          for m in re.findall(r'(?:href|onclick)="[^"]*(?:N03|zip)[^"]*"',s)[:60]: print(m)
+          s=html.unescape(re.sub(r'<script.*?</script>|<style.*?</style>|<[^>]+>',' ',open('ag.html',encoding='utf-8',errors='replace').read(),flags=re.S))
+          s=re.sub(r'\s+',' ',s); i=s.find('利用規約'); print(s[i:i+2600])
           P
-      - name: license
-        run: |
-          curl -sSL -m 60 https://nlftp.mlit.go.jp/ksj/other/agreement.html -o ag.html; echo rc=$?; python3 -c "
-          import re,html;s=open('ag.html',encoding='utf-8',errors='replace').read();print(html.unescape(re.sub(r'<[^>]+>',' ',s))[:3500])"
-      - name: geoshape
-        run: |
-          curl -sSL -m 60 -o g.html https://geoshape.ex.nii.ac.jp/city/; echo rc=$?; wc -c g.html; python3 -c "
-          import re,html;s=open('g.html',encoding='utf-8',errors='replace').read();print(html.unescape(re.sub(r'<[^>]+>',' ',s))[:2500])"
