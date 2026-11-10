@@ -65,16 +65,18 @@ def rep_point(ext, holes):
         if best is None or xs[i + 1] - xs[i] > best[1] - best[0]: best = (xs[i], xs[i + 1])
     return ((best[0] + best[1]) / 2, y) if best else ext[len(ext) // 2]
 def main(zdir, outp):
-    recs = {}
+    recs = {}; drop = {"nocode": [], "nocity": [], "noring": []}
     for z in sorted(glob.glob(os.path.join(zdir, "*.zip"))):
         for r in parse(z):
-            if not r["code"] or not r["city"]: continue
+            if not r["code"]: drop["nocode"].append((r["pref"], r["county"], r["city"])); continue
+            if not r["city"]: drop["nocity"].append((r["code"], r["pref"], r["county"], r["sub"])); continue
             ext = [p for k, p in r["rings"] if k == "exterior" and len(p) >= 3]; holes = [p for k, p in r["rings"] if k == "interior" and len(p) >= 3]
-            if not ext: continue
+            if not ext: drop["noring"].append((r["code"], r["pref"], r["city"], len(r["rings"]))); continue
             big = max(ext, key=lambda p: abs(area_km2(p))); pt = rep_point(big, [h for h in holes if inside(h[0], big)])
             e = recs.setdefault((r["code"], r["city"]), {"code": r["code"], "pref": r["pref"], "sub": r["sub"], "county": r["county"], "city": r["city"], "area": 0.0, "n": 0, "best": -1.0, "pt": None})
             ar = abs(area_km2(big)); e["area"] += sum(abs(area_km2(p)) for p in ext); e["n"] += 1
             if ar > e["best"]: e["best"] = ar; e["pt"] = pt
+    print("dropped", {k: len(v) for k, v in drop.items()}); [print(" ", k, v[:6]) for k, v in drop.items() if v]
     items = []
     for e in sorted(recs.values(), key=lambda e: (e["code"], e["city"])):
         items.append([e["code"], e["pref"], e["city"], e["county"], e["sub"], round(e["pt"][0], 4), round(e["pt"][1], 4), round(e["area"], 1), e["n"]])

@@ -74,7 +74,7 @@ function components(sim: SimState, w: World): Map<number, number> {
   const out = new Map<number, number>(); for (let k = 0; k < w.N; k++) if (w.t.land[k] === 1 && !out.has(w.lm[k])) out.set(w.lm[k], find(w.lm[k])); return out;
 }
 /** The cells of the road network's nodes, by land mass (built once a year). */
-const nodesByMass = (sim: SimState, w: World) => { const m = new Map<number, number[]>(); for (const n of Object.values(sim.nodes)) (m.get(w.lm[n.cell]) ?? m.set(w.lm[n.cell], []).get(w.lm[n.cell])!).push(n.cell); return m; };
+const nodesByMass = (sim: SimState, w: World) => { const m = new Map<number, number[]>(), add = (cell: number) => (m.get(w.lm[cell]) ?? m.set(w.lm[cell], []).get(w.lm[cell])!).push(cell); for (const n of Object.values(sim.nodes)) add(n.cell); if (sim.rules1800) for (const v of Object.values(sim.settlements)) if (!v.gone) add(v.cell); return m; };   /* (Stage 40: an 1800 start's villages have no road node, but a settlement near a shore is still the demand this rule asks for) */
 const nearNode = (w: World, nodes: Map<number, number[]>, cell: number, km: number) => { for (const c of nodes.get(w.lm[cell]) ?? []) if (dist(w.cellPos(c), w.cellPos(cell)) <= km) return true; return false; };
 export interface LinkEval { ok: boolean; why: string; pair: ShorePair; fac?: "bridge" | "tunnel"; cost?: number; score?: number }
 /** Pairs of land masses a link was given up on (project abolished) within COOLING_YEARS: not tried again at once. */
