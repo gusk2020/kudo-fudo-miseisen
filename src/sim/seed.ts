@@ -1,5 +1,5 @@
 /** 1950 starting network: thin ordinary roads already exist all over the country (synthetic, deterministic from the seed). */
-import { seedKaido1800 } from "./kaido1800";
+import { seedKaido1800, seedLocalAccess1800 } from "./kaido1800";
 import { basePop, capitalPref } from "./roles";
 import { dist } from "../core/geom";
 import { FU_PREFS, type Grade, type SimState } from "./types";
@@ -39,12 +39,14 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
       if (cell < 0) continue;
       used.add(cell); const id = `s.${pad(++sid, 4)}`;
       sim.settlements[id] = { id, name: `${c.name.replace(/市$/, "")}近郊${k + 1}`, cell, city: c.id, pop: popv, pop0: popv, isolatedYears: 0, gone: false };
-      nodeAtCell(sim, w, idx, cell, "village");
+      if (!sim.rules1800) nodeAtCell(sim, w, idx, cell, "village");   /* Stage 40: in an 1800 start a village has no road node yet (walking and pack-horse access is not a drawn road); only post towns get one */
     }
     yield 0.05;
   }
+  let nRoutes = 0; const links: [WCity, WCity][] = [];
+  if (!sim.rules1800) {   /* Stage 40: the 1950-style nationwide city-to-city and feeder network is a 1950 start's. An 1800 start gets the highways and a sparse local network below. */
   // 2) city-to-city roads: minimum spanning forest per island, plus each city's nearest unlinked neighbour
-  const links: [WCity, WCity][] = [], key = new Set<string>(), add = (a: WCity, b: WCity) => { const k = a.id < b.id ? a.id + b.id : b.id + a.id; if (key.has(k)) return; key.add(k); links.push([a, b]); };
+  const key = new Set<string>(), add = (a: WCity, b: WCity) => { const k = a.id < b.id ? a.id + b.id : b.id + a.id; if (key.has(k)) return; key.add(k); links.push([a, b]); };
   for (const isl of [...new Set(w.cities.map((c) => c.island))].sort((a, b) => a - b)) {
     const cs = w.cities.filter((c) => c.island === isl); if (cs.length < 2) continue; const inT = new Set([cs[0].id]);
     while (inT.size < cs.length) {
@@ -54,7 +56,6 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
     }
     for (const a of cs) { let nb: WCity | null = null, nd = Infinity; for (const b of cs) if (b !== a && !key.has(a.id < b.id ? a.id + b.id : b.id + a.id)) { const d = dist(a.pos, b.pos); if (d < nd) { nd = d; nb = b; } } if (nb && nd <= 90) add(a, nb); }
   }
-  let nRoutes = 0;
   for (const [a, b] of links) {
     const path = pathfind(w, a.cell, b.cell, sim.stage3 ? { margin: 16, bias: refBias(referenceGrids(w).road) } : { margin: 16 }); if (!path) continue;
     if (w.land12 && !terrainGate(w, sim, "road", path, sim.startYear).ok) continue;   // Stage 12: a link that would need a tunnel longer than 1950 can dig does not exist in 1950
@@ -75,8 +76,9 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
     else rand(sim);
     yield 0.9;
   }
+  }
   ev(sim, "seed", `1950年の既存道路網: 都市間${links.length}線・集落${Object.keys(sim.settlements).length}か所(合成)・路線${nRoutes}本`, "初期条件(実在の道路網ではない)", {});
   void newId;
-  if (sim.rules1800) seedKaido1800(sim, w);   // Stage 36: the main highways and their post towns
+  if (sim.rules1800) { seedKaido1800(sim, w); seedLocalAccess1800(sim, w); }   // Stage 36: the main highways and their post towns
   if (sim.stage3) { if (!sim.rules1800) yield* seedRailGen(sim, w);   /* Stage 36: 1800 has no railway */ openStraits(sim, w, sim.startYear, true); if (sim.crossings) { seedFerries(sim, w); if (sim.roles) seedInnerSeaFerries(sim, w); seedLakeFerries(sim, w); if (sim.tech?.wk !== undefined) seedBayFerries(sim, w, BAY_FIRST); } yield 0.95; }
 }

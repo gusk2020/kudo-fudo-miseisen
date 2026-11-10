@@ -77,9 +77,10 @@ def main(zdir, outp):
             if ar > e["best"]: e["best"] = ar; e["pt"] = pt
     items = []
     for e in sorted(recs.values(), key=lambda e: (e["code"], e["city"])):
-        items.append({"c": e["code"], "p": e["pref"], "n": e["city"], "g": e["county"], "s": e["sub"], "x": round(e["pt"][0], 4), "y": round(e["pt"][1], 4), "a": round(e["area"], 2), "k": e["n"]})
+        items.append([e["code"], e["pref"], e["city"], e["county"], e["sub"], round(e["pt"][0], 4), round(e["pt"][1], 4), round(e["area"], 1), e["n"]])
     doc = {"source": "国土数値情報 行政区域データ N03 v2.2 (2000-10-01, 平成12年) -- 国土交通省", "url": "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v2_2.html",
            "license": "公共データ利用規約(PDL1.0) / 出典: 国土交通省国土数値情報ダウンロードサイト", "note": "編集・加工: 市区町村ごとに名称・コード・所属・代表点(最大のポリゴンの重心。外側なら最長の水平弦の中点)・面積(km2)・ポリゴン数だけを抽出。境界ポリゴンは含まない。基準日の名称は国土数値情報の表記のままで、史実の1800年の行政区分ではない",
-           "count": len(items), "items": items}
+           "fields": ["code", "pref", "name", "county", "subPref", "lon", "lat", "areaKm2", "polygons"], "count": len(items), "items": items}
+    os.makedirs(os.path.dirname(outp) or ".", exist_ok=True)
     json.dump(doc, open(outp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":")); print("municipalities", len(items), "bytes", os.path.getsize(outp))
 if __name__ == "__main__": main(sys.argv[1], sys.argv[2])
