@@ -9,10 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          curl -sSL -m 120 -o t.zip https://nlftp.mlit.go.jp/ksj/gml/data/N03/N03-2000/N03-001001_13_GML.zip; ls -l t.zip
-          unzip -o -q t.zip -d t; find t -type f | head -20
-          f=$(find t -iname "*.xml" | head -1); echo "=== $f"; wc -c "$f"; head -c 2500 "$f"; echo
-          echo "=== distinct feature tags"; grep -o -E "<ksj:[A-Za-z0-9]+" "$f" | sort | uniq -c | head
-          echo "=== sample AdministrativeArea"; grep -n -m3 -A12 "<ksj:AdministrativeArea " "$f" | cut -c1-200 | head -40
-          echo "=== readme/spec"; find t -iname "*.txt" -o -iname "*readme*" | head
-          python3 -c "import sys;print(sys.version)"; ogrinfo --version 2>&1 | head -1
+          curl -sSL -m 120 -o t.zip https://nlftp.mlit.go.jp/ksj/gml/data/N03/N03-2000/N03-001001_13_GML.zip
+          unzip -o -q t.zip -d t; f=$(find t -iname "*.xml" | head -1); echo "=== $f"; find t -type f
+          echo "=== structure (coords stripped)"; grep -v -E "^[0-9. -]+$" "$f" | sed -E 's/[0-9]+\.[0-9]+ [0-9]+\.[0-9]+/<c>/g' | cut -c1-160 | head -75
+          echo "=== one full area record"; grep -n -m1 -B2 -A16 "<ksj:administrativeAreaCode" "$f" | cut -c1-170
+          echo "=== counts"; for t in "gml:Curve " "gml:Surface" "ksj:AdministrativeBoundary " "ksj:AdministrativeArea"; do echo "$t $(grep -c "<$t" "$f")"; done
