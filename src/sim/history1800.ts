@@ -47,7 +47,7 @@ export const MOVABLE: Record<string, { id: TechId; early: number }> = {
   "car-exp": { id: "car", early: EARLY_EXPERIMENT_YEARS }, "car-spread": { id: "car", early: EARLY_SERVICE_YEARS },
   "plane-exp": { id: "plane", early: EARLY_EXPERIMENT_YEARS }, "plane-svc": { id: "plane", early: EARLY_SERVICE_YEARS }, "hwy-svc": { id: "expressway", early: EARLY_SERVICE_YEARS },
 };
-type SimYears = Pick<SimState, "startYear" | "kaigen"> & Partial<Pick<SimState, "events">>;
+type SimYears = { startYear: number; kaigen?: { eras: readonly { start: number; stance: string }[] }; events?: SimState["events"] };
 /** Has this row's milestone been reached by `year` in this game? */
 export function reached(sim: SimYears, m: Milestone, year: number): boolean { const g = MOVABLE[m.id]; return g ? gateOpen(sim, g.id, m.year, g.early, year) : year >= m.year; }
 
