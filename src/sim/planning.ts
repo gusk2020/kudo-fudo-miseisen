@@ -1,4 +1,4 @@
-import { mayScheduleService } from "./rules1800";
+import { mayScheduleServiceFor } from "./rules1800";
 /**
  * Yearly planning. Every prefecture keeps its own queue and purse, so many regions build at the same time.
  * Cost control ("performance budget"): at most MAX_PATHFINDS route searches per year, regions take turns.
@@ -178,7 +178,7 @@ export const RAIL_UNIT: Record<Standard, number> = { rural: 1.6, standard: 2.8, 
 const baseName = (n: string) => n.replace(/市$/, "");
 /** Railway planning, once a year: new lines where the demand is not served by rail, electrification/high-speed where lines are full, revival where demand returned. */
 export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
-  if (sim.rules1800 && !mayScheduleService("rail", y)) return;   // Stage 36: no public railway before 1830 (1810-29 is experiments only)
+  if (sim.rules1800 && !mayScheduleServiceFor(sim, "rail", y)) return;   // Stage 36: no public railway before 1830 (1810-29 is experiments only)
   const dl = sim.dials; if (dl.railBuild < 0.05) return;
   const live = Object.values(sim.projects).filter((p) => modeOf(p) === "rail" && (p.status === "concept" || p.status === "planned" || p.status === "building" || p.status === "suspended"));
   const liveNew = live.filter((p) => p.kind === "new" && !p.reason.startsWith(LOCAL_TAG)).length, liveUp = live.filter((p) => p.kind !== "new").length, maxNew = 1 + Math.round(dl.railBuild * 2), maxUp = 2 + Math.round(dl.railBuild * 2);
@@ -262,7 +262,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
   if (c.kind === "upgrade" && c.edge) { const e = c.edge, cost = e.lengthKm * 0.5; if (cost > purse) return false; const p = createProject(sim, "upgrade", region, e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], cost, c.reason, c.score); ev(sim, "project", `舗装化計画: ${projLabel(sim, p)}(${KIND_LABEL.upgrade})`, c.reason, { project: p.id, edge: e.id }); return true; }
   if (c.kind === "restore" && c.edge) { const e = c.edge, cost = e.lengthKm * (e.state === "lost" ? 1.2 : 0.4); if (cost > purse) return false; const p = createProject(sim, "restore", region, e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], cost, c.reason, c.score); ev(sim, "project", `復旧計画: ${projLabel(sim, p)}`, c.reason, { project: p.id, edge: e.id }); return true; }
   if ((c.kind === "improve" || c.kind === "bypass") && c.edge) {
-    const e = c.edge, target: Standard = e.standard === "rural" ? "standard" : "highgrade"; if (target === "highgrade" && sim.rules1800 && !mayScheduleService("expressway", y)) return false;   // Stage 36: no expressway before 1930
+    const e = c.edge, target: Standard = e.standard === "rural" ? "standard" : "highgrade"; if (target === "highgrade" && sim.rules1800 && !mayScheduleServiceFor(sim, "expressway", y)) return false;   // Stage 36: no expressway before 1930
     if (c.kind === "bypass" && canSpend()) {
       const old = new Set(e.cells.slice(1, -1)), near = new Set<number>(); for (const k of old) near.add(k);
       if (!spend()) return false;
@@ -335,7 +335,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
 }
 function planImprove(sim: SimState, w: World, e: SimEdge, region: string, purse: number, c: Cand): boolean {
   const target: Standard = e.standard === "rural" ? "standard" : "highgrade", cost = e.lengthKm * UNIT[target] * 0.6 * mtnCost(w, sim, "road", e.cells, yearOf(sim)); if (cost > purse * 1.5) return false;
-  if (target === "highgrade" && sim.rules1800 && !mayScheduleService("expressway", yearOf(sim))) return false;   // Stage 36: a road is not raised to an expressway before 1930
+  if (target === "highgrade" && sim.rules1800 && !mayScheduleServiceFor(sim, "expressway", yearOf(sim))) return false;   // Stage 36: a road is not raised to an expressway before 1930
   const p = createProject(sim, "improve", region, e.a, e.b, [e.id], [{ edgeId: e.id, dir: 1 }], cost, c.reason, c.score);
   ev(sim, "project", `改良計画: ${nodeName(sim, e.a)}〜${nodeName(sim, e.b)}(${target === "standard" ? "2車線化" : "高規格化"})`, c.reason, { project: p.id, edge: e.id }); return true;
 }

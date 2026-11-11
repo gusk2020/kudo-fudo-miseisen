@@ -57,7 +57,7 @@ describe("Stage 39 G (simulation): a municipality whose office the new lake cove
   it("it is abolished at the start: no people, on record, with its roads untouched and a timeline entry; the rest of the nation holds exactly the people it held", () => {
     const rec = sim.abolished39?.[pick.id]; expect(rec).toBeTruthy(); expect(rec!.pop).toBeGreaterThan(0); expect(isAbolished(sim, pick.id)).toBe(true); expect(sim.cities[pick.id].pop).toBe(0);
     expect(Math.abs(total(sim, w) - total(ref, base.w))).toBeLessThanOrEqual(2); expect(sim.events.some((e) => e.kind === "muni39" && e.refs?.city === pick.id)).toBe(true);
-    const edges = Object.keys(sim.edges).length; expect(edges).toBeGreaterThan(500); expect(abolishSubmerged(sim, w)).toBe(0); expect(Object.keys(sim.edges).length).toBe(edges);   // abolishing again does nothing, and takes no road away
+    const edges = Object.keys(sim.edges).length; expect(edges).toBeGreaterThan(150);   /* (Stage 40: an 1800 start is a sparse network, about 230 sections; the point is that abolishing takes none away) */ expect(abolishSubmerged(sim, w)).toBe(0); expect(Object.keys(sim.edges).length).toBe(edges);   // abolishing again does nothing, and takes no road away
   });
   it("it stays abolished through the years (never revived, never counted again) and the nation's people keep adding up", () => {
     const sim2 = createSim(w, "m", t.hash, 7, opts); sim2.policy!.mode = "auto"; advance(sim2, w, 12 * 30);

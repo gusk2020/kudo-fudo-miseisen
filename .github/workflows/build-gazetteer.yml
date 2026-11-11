@@ -1,0 +1,37 @@
+name: build-gazetteer
+# Stage 40: fetches the 国土数値情報 N03 (2000-10-01) GML from MLIT and commits a compact name/point gazetteer. Not part of the app build.
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/stage40]
+    paths: ['.github/workflows/build-gazetteer.yml', 'tools/build_gazetteer.py']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: claude/stage40 }
+      - name: download 47 prefectures
+        run: |
+          mkdir -p z; for i in $(seq -w 1 47); do
+            curl -sSL --retry 3 -m 300 -o z/N03-$i.zip https://nlftp.mlit.go.jp/ksj/gml/data/N03/N03-2000/N03-001001_${i}_GML.zip || exit 1
+            unzip -tq z/N03-$i.zip >/dev/null || { echo "bad zip $i"; exit 1; }; done; ls z | wc -l; du -sh z
+      - name: build
+        run: python3 tools/build_gazetteer.py z src/data/gazetteer2000.json
+      - name: sanity
+        run: |
+          python3 - <<'P'
+          import json,collections
+          d=json.load(open('src/data/gazetteer2000.json',encoding='utf-8')); it=[dict(zip(['c','p','n','g','s','x','y','a','k'],r)) for r in d['items']]; print('count',d['count'])
+          c=collections.Counter(i['p'] for i in it); print(len(c),'prefectures'); print(sorted(c.items(),key=lambda x:-x[1])[:5])
+          for n in ['千代田区','札幌市','横浜市','平塚市','日光市','今市市','田老町','六ヶ所村']:
+              print(n,[ (i['c'],i['p'],i['x'],i['y']) for i in it if i['n']==n][:3])
+          print('suffix',collections.Counter(i['n'][-1] for i in it).most_common(8))
+          print('empty/odd',[i for i in it if not i['n'] or i['x']<122 or i['x']>154 or i['y']<20 or i['y']>46][:5])
+          P
+      - name: commit
+        run: |
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git add src/data/gazetteer2000.json; if git diff --cached --quiet; then echo "unchanged"; else git commit -m "Stage 40: gazetteer of the 2000-10-01 municipalities (N03 v2.2), built by Actions" && git push origin HEAD:claude/stage40; fi

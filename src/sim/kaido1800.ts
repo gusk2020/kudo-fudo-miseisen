@@ -4,8 +4,10 @@
  * (the game has 55 cities, not every post town), and the post towns are the nearest real places along the line, one about every POST_KM. No railway and no air route exists.
  */
 import { nearestPlace } from "../core/gazetteer";
-import { designate, ev } from "./engine";
-import { buildIndex, layPath } from "./network";
+import { nearestOld } from "../core/gazetteer2000";
+import { usedNames } from "./names2000";
+import { designate, ev, rand } from "./engine";
+import { buildIndex, layPath, nodeAtCell } from "./network";
 import { pathfind, type World } from "./world";
 import type { SimState, RouteEdgeRef } from "./types";
 
@@ -21,7 +23,7 @@ export const POST_KM = 28, POST_REACH_KM = 12;
 
 /** Lays the highways and names their post towns. Returns what it made. */
 export function seedKaido1800(sim: SimState, w: World): { routes: number; posts: number; km: number } {
-  let routes = 0, posts = 0, km = 0; const taken = new Set<string>(w.cities.map((c) => c.name)), claimed = new Set<string>();
+  let routes = 0, posts = 0, km = 0; const taken = usedNames(sim, w), claimed = new Set<string>();
   for (const k of KAIDO_1800) {
     const cities = k.via.map((n) => w.cities.find((c) => c.name === n)).filter((c): c is NonNullable<typeof c> => !!c), cells: number[] = [], hold = { id: "r.kaido-hold", edges: [] as RouteEdgeRef[], oldEdges: [] as string[], active: false } as unknown as SimState["routes"][string];   // (a later leg can split an edge an earlier leg already laid: the chain is kept in a route-shaped holder while laying, so splitEdge rewrites it too -- a plain array went stale and broke the route's chain)
     sim.routes[hold.id] = hold;
@@ -40,10 +42,31 @@ export function seedKaido1800(sim: SimState, w: World): { routes: number; posts:
       run += Math.hypot(w.cellPos(c)[0] - w.cellPos(prev)[0], w.cellPos(c)[1] - w.cellPos(prev)[1]); prev = c; if (run < POST_KM) continue; run = 0;
       const p = w.cellPos(c); let best: (typeof sim.settlements)[string] | null = null, bd = POST_REACH_KM;
       for (const s of Object.values(sim.settlements)) { if (claimed.has(s.id) || s.post) continue; const d = Math.hypot(w.cellPos(s.cell)[0] - p[0], w.cellPos(s.cell)[1] - p[1]); if (d < bd) { bd = d; best = s; } }
-      if (!best) continue; const np = nearestPlace(w.cellPos(best.cell), taken); if (!np) continue;
-      taken.add(np.name); claimed.add(best.id); best.name = `${np.name}宿`; best.post = k.name; posts++;
+      if (!best) continue; const old = nearestOld(w.cellPos(best.cell), taken); const np = old ? { name: old.stem } : nearestPlace(w.cellPos(best.cell), taken); if (!np) continue;   /* Stage 40: a post town is named after the nearest unused municipality of the 2000-10-01 list (the real-place list is the fallback) */
+      taken.add(np.name); if (old) { taken.add(old.stem); taken.add(old.name); best.origin = { code: old.code, name: old.name, pref: old.pref }; } claimed.add(best.id); best.name = `${np.name.replace(/市$/, "")}宿`; best.post = k.name; posts++;
     }
   }
   ev(sim, "seed", `1800年の主要街道: ${routes}本(約${Math.round(km)}km)・宿場${posts}か所`, "初期条件(ゲーム上の簡略化。鉄道・空路はない)", {});
   return { routes, posts, km };
+}
+
+/** Stage 40: the few local tracks an 1800 start has besides the highways. Each city off the highways is joined to the nearest joined city on its island if one is within LOCAL_MAX_KM (a cart track, not a numbered road); each post town gets a short lane to its highway; every other village has no road node at all (walking / pack-horse / boat access is a game abstraction, not a drawn line). */
+export const LOCAL_MAX_KM = 45, POST_LANE_KM = 16;
+export function seedLocalAccess1800(sim: SimState, w: World): { tracks: number; lanes: number } {
+  let tracks = 0, lanes = 0; const joined = new Set<string>(), near = (c: { cell: number }, roadCells: ReadonlySet<number>) => { if (roadCells.has(c.cell)) return true; for (const d of [1, -1, w.nx, -w.nx]) if (roadCells.has(c.cell + d)) return true; return false; };
+  let idx = buildIndex(sim); for (const c of w.cities) if (near(c, idx.roadCells)) joined.add(c.id);
+  for (;;) {
+    let best: [(typeof w.cities)[number], (typeof w.cities)[number]] | null = null, bd = LOCAL_MAX_KM;
+    for (const a of w.cities) { if (joined.has(a.id)) continue; for (const b of w.cities) { if (!joined.has(b.id) || w.t.island[a.cell] !== w.t.island[b.cell]) continue; const d = Math.hypot(a.pos[0] - b.pos[0], a.pos[1] - b.pos[1]); if (d < bd) { bd = d; best = [a, b]; } } }
+    if (!best) break; joined.add(best[0].id); idx = buildIndex(sim);
+    const path = pathfind(w, best[0].cell, best[1].cell, { roadCells: idx.roadCells, margin: 16 }); if (!path) continue;
+    if (layPath(sim, w, path, { open: true, surface: "unpaved", quality: 25 + rand(sim) * 15, built: 1, month: 0, standard: "rural" }).chain.length) tracks++;
+  }
+  for (const v of Object.values(sim.settlements)) {
+    if (!v.post) continue; idx = buildIndex(sim); const c = w.cityById.get(v.city); if (!c) continue;
+    nodeAtCell(sim, w, idx, v.cell, "village"); const path = pathfind(w, v.cell, c.cell, { roadCells: buildIndex(sim).roadCells, margin: 10 }); if (!path) continue;
+    if (layPath(sim, w, path, { open: true, surface: "unpaved", quality: 30, built: 1, month: 0, standard: "rural" }).chain.length) lanes++;
+  }
+  ev(sim, "seed", `1800年の地方の道: 荷車道${tracks}本・宿場の脇道${lanes}本`, "初期条件(徒歩・馬・舟の移動は描かれた道ではなくゲーム上のアクセスとして扱う)", {});
+  return { tracks, lanes };
 }

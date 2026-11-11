@@ -29,7 +29,7 @@ describe("Stage 37 B1/B2: a capital put on a plain that had no city starts a lar
     const before = everyone(g); const moved = developSeats37(g.sim, g.w, 1830 + 0); expect(Math.abs(everyone(g) - before)).toBeLessThan(200); expect(moved).toBeGreaterThanOrEqual(0);
   });
   it("satellite towns grow up round the new capital (the commuter belt), on the same land, 12-40 km out, with people who came from elsewhere", () => {
-    const sats = Object.values(g.sim.settlements).filter((v) => v.city === cap.id && !v.gone && /近郊/.test(v.name)); expect(sats.length).toBeGreaterThanOrEqual(3);
+    const sats = Object.values(g.sim.settlements).filter((v) => v.city === cap.id && !v.gone && (/近郊/.test(v.name) || !!v.origin)); expect(sats.length).toBeGreaterThanOrEqual(3);
     for (const v of sats) { expect(g.w.lm[v.cell]).toBe(g.w.lm[cap.cell]); expect(g.w.t.land[v.cell]).toBe(1); const d = Math.hypot(g.w.cellPos(v.cell)[0] - cap.pos[0], g.w.cellPos(v.cell)[1] - cap.pos[1]); expect(d).toBeGreaterThan(8); expect(d).toBeLessThan(60); }
     expect(new Set(Object.values(g.sim.settlements).map((v) => v.id)).size).toBe(Object.keys(g.sim.settlements).length);
   });

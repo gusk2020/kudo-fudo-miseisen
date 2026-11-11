@@ -75,7 +75,7 @@ export interface SimProject {
 export interface SimEvent { id: number; month: number; kind: string; text: string; cause: string; refs: Record<string, string> }
 export interface CityState { pop: number; industry: number; popSource: "ne" | "synthetic"; lowAccessYears: number; airport?: number /* year the airport opened (Stage 3) */ }
 /** 集落: 合成の小さな居住地(実在の集落ではない)。旧道の「地域内需要」と孤立判定の根拠。 */
-export interface Settlement { id: string; name: string; cell: number; city: string; pop: number; pop0: number; isolatedYears: number; gone: boolean; /** Stage 36: a post town (宿場) on one of the 1800 start's main highways */ post?: string }
+export interface Settlement { /** Stage 40: the designation the place has earned (村 / 町 / 市) */ rank?: "village" | "town" | "city"; /** Stage 40: the 2000-10-01 municipality this name was taken from (国土数値情報 N03). Absent = a generated name or an older game */ origin?: { code: string; name: string; pref: string }; id: string; name: string; cell: number; city: string; pop: number; pop0: number; isolatedYears: number; gone: boolean; /** Stage 36: a post town (宿場) on one of the 1800 start's main highways */ post?: string }
 export interface SimLink { id: string; kind: "bypass"; newEdges: string[]; oldEdges: string[]; month: number; routeId: string | null }
 export interface StatSample { year: number; routes: number; km: number; building: number; unbuilt: number; open: number; lost: number; budget: number; pop?: number; villagePop?: number; dormant?: number; closed?: number; bypass?: number; regionsBuilding?: number; prefsWithRoad?: number; railKm?: number; roadKm?: number; airShare?: number; seaShare?: number; paxRail?: number; frRail?: number; ports?: number; airports?: number; hubs?: number; seaCargo?: number; airPax?: number; airIntl?: number; seaLanes?: number; airLanes?: number }   // paxRail / frRail (Stage 7): the railway's share of passenger-km and of freight on land
 
@@ -121,6 +121,8 @@ export interface SimState {
   city12?: Record<string, { p: number[]; h: number[]; adv: number }>;   // Stage 12: per city, the parts of its yearly migration advantage and its size every 5 years (econ.ts)
   metro?: import("./metro").MetroState;   // Stage 13: the metropolitan areas (metro.ts), rebuilt every year. Absent = older saves; created at the next yearly step
   /** Stage 39 (G): municipalities abolished because the player's terrain put their office points under a lake (kept as a record; never revived) */
+  /** Stage 40: a new 1800 game founds and promotes old municipalities in stages (oldmuni40.ts); absent = an older game */
+  oldmuni40?: true;
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
   dev37?: Record<string, number>;
