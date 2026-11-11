@@ -172,6 +172,13 @@ export function planConvert(sim: SimState, y: number) {
   ev(sim, "project", `廃線跡の転用計画: ${sim.nodes[e.a]?.name ?? "地点"}〜${sim.nodes[e.b]?.name ?? "地点"}(道路へ)`, p.reason, { project: p.id, edge: e.id }); void y;
 }
 export const MAX_RAIL_PATHFINDS = 5;
+/**
+ * Stage 40 (Issue #66): a new line that failed the technology check (a stretch of range only a tunnel longer than the year's technology could cross) is not tried again for RAIL_RETRY_YEARS. Without this the same top-ranked, still
+ * unbuildable corridors took every one of the MAX_RAIL_PATHFINDS tries of every year, so buildable lines further down the list were never reached (measured in a 鉄道重視 1800 game: 3-4 technology failures a year, no new line for 40 years).
+ * Only 1800-start games (rules1800) use it: a 1950 start is left exactly as it was.
+ */
+export const RAIL_RETRY_YEARS = 6;
+const railFailKey = (c: { a?: number; b?: number; toCell?: number; fromCell?: number }) => `${c.a ?? ""}:${c.b ?? ""}:${c.toCell ?? ""}:${c.fromCell ?? ""}`;
 /** Stage 7: a corridor between two cities of at least this size and at most this far apart may be built by a private company even in the national railway's era (was 250,000 / 110 km). */
 export const PRIVATE_MIN_POP = 150000, PRIVATE_MAX_KM = 130;
 export const RAIL_UNIT: Record<Standard, number> = { rural: 1.6, standard: 2.8, highgrade: 6 };
@@ -241,11 +248,11 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
       ev(sim, "project", `${c.kind === "restore" ? "復活計画" : e.standard === "rural" ? "電化・複線化計画" : "高速化計画"}: ${projLabel(sim, p)}`, c.reason, { project: p.id, edge: e.id }); made++; if (c.pol) nPol++; else nUp++; yield; continue;
     }
     if ((globalThis as any).__DBG) console.log("cand", c.kind, c.score.toFixed(2), c.a, c.b, "pf", pf, "nNew", nNew, nUp);
-    if (c.kind === "new" && c.a !== undefined && (c.b !== undefined || c.toCell !== undefined) && pf-- > 0) {
+    if (c.kind === "new" && c.a !== undefined && (c.b !== undefined || c.toCell !== undefined) && !(sim.rules1800 && sim.railFail?.[railFailKey(c)] !== undefined && y - sim.railFail[railFailKey(c)] < RAIL_RETRY_YEARS) && pf-- > 0) {
       const a = w.cities[c.a], aCell = c.fromCell ?? a.cell, aName = c.fromName ?? a.name, b = c.b !== undefined ? w.cities[c.b] : null, bCell = b ? b.cell : c.toCell!, bName = b ? b.name : c.toName ?? "既設線", idx = buildIndex(sim, "rail"), ref = referenceGrids(w), std = c.std ?? "rural";
       const path = pathfind(w, aCell, bCell, { rail: true, ease: crossingEase(sim.tech, y), bias: (k) => refBias(ref.rail)(k) * (idx.roadCells.has(k) ? 1.6 : 1), margin: 16 }); yield; if (!path) continue;   // a new line is a direct one: existing track is not discounted
       const newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) continue;
-      const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) continue;   // not buildable with this year's tunnelling (yet)
+      const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) { if (sim.rules1800) (sim.railFail ??= {})[railFailKey(c)] = y; continue; }   // not buildable with this year's tunnelling (yet)
       if (!affordable(sim, w, "rail", path, newKm, RAIL_UNIT[std], railPurse(sim), y)) continue;
       const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > PRIVATE_MIN_POP && dist(a.pos, b.pos) < PRIVATE_MAX_KM,   /* Stage 7: private companies enter the busier corridors the national railway serves poorly, so the two compete */ localPrivate = !!c.local && !jnrEra;
       let op = "jnr"; if (c.local && !localPrivate) op = "jnr"; else if (!jnrEra || privateOk) { const anchorIsA = !b || basePop(sim, w, a) >= basePop(sim, w, b), id = `p.${anchorIsA ? a.id : b!.id}`, anchor = anchorIsA ? a : b!; if (!sim.operators[id]) sim.operators[id] = { id, name: `${baseName(anchor.name)}${jnrEra ? "電鉄" : "鉄道"}`, kind: "private", since: y, note: "新規参入の鉄道事業者(架空の事業者名)" } as Operator; op = id; }

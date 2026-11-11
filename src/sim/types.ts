@@ -123,6 +123,8 @@ export interface SimState {
   /** Stage 39 (G): municipalities abolished because the player's terrain put their office points under a lake (kept as a record; never revived) */
   /** Stage 40: a new 1800 game founds and promotes old municipalities in stages (oldmuni40.ts); absent = an older game */
   oldmuni40?: true;
+  /** Stage 40 (Issue #66): new railway lines that failed the technology check, by candidate, with the year (planning.ts RAIL_RETRY_YEARS). 1800-start games only */
+  railFail?: Record<string, number>;
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
   dev37?: Record<string, number>;
