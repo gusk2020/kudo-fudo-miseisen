@@ -15,8 +15,8 @@ describe("Issue #66 A: rail-priority games keep building", () => {
     const fails = Object.entries(g.sim.railFail ?? {}); expect(fails.length).toBeGreaterThan(0); for (const [, y] of fails) { expect(y).toBeGreaterThanOrEqual(1810); expect(y).toBeLessThanOrEqual(1900); }   // (the cooldown memory is used, and holds years)
     const back = JSON.parse(JSON.stringify(g.sim)) as SimState; expect(back.railFail).toEqual(g.sim.railFail); expect(RAIL_RETRY_YEARS).toBe(6);
   }, 900000);
-  it("a balanced 1800 game is unchanged until 1900 (fixed seed 7: 1860 -> 1365 km, 1900 -> 2275 km, as measured before the change) and a 1950 game never uses the memory", () => {
-    const g = make(7, 0, true); g.sim.policy!.mode = "auto"; advance(g.sim, g.w, 12 * (1860 - yearOf(g.sim))); expect(Math.round(railKm(g.sim))).toBe(1365); advance(g.sim, g.w, 12 * (1900 - yearOf(g.sim))); expect(Math.round(railKm(g.sim))).toBe(2275);
+  it("a balanced 1800 game keeps its railway (fixed seed 7: 1860 -> 1343 km, 1900 -> 2181 km; 1365 / 2275 before the ship upgrades of #66 B changed every ferry speed) and a 1950 game never uses the memory", () => {
+    const g = make(7, 0, true); g.sim.policy!.mode = "auto"; advance(g.sim, g.w, 12 * (1860 - yearOf(g.sim))); expect(Math.round(railKm(g.sim))).toBe(1343); advance(g.sim, g.w, 12 * (1900 - yearOf(g.sim))); expect(Math.round(railKm(g.sim))).toBe(2181);
     const h = make(7, 0, false); h.sim.policy!.mode = "auto"; advance(h.sim, h.w, 12 * 30); expect(h.sim.railFail).toBeUndefined();
   }, 900000);
 });

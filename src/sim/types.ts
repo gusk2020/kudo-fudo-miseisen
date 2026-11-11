@@ -34,7 +34,7 @@ export type NodeKind = "city" | "junction" | "pass" | "end" | "village";
 export interface SimNode { id: string; kind: NodeKind; cell: number; pos: Vec; cityId?: string; name?: string }
 
 /** A physical road section between two nodes. Carries only physical state: no route number, no grade. */
-export interface SimEdge {
+export interface SimEdge { /** Stage 40 (#66 B): the grade of the ships on a ferry edge (0 sail, 1 steam, 2 steel); set yearly in 1800 games. Absent = 0 */ shipGrade?: number;
   id: string; a: string; b: string; cells: number[]; lengthKm: number;
   surface: Surface; quality: number; weathering: number; built: number; // built 0..1
   open: boolean;      // in service (state === "open"); kept for older code paths and saves

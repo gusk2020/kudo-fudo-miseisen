@@ -19,13 +19,14 @@ export function econProgress(year: number): number {
 
 /** 交通技術: 固定の登場年。`service` は実際に旅客が使える段階、`experimental` は試験・実験のみ(定期路線を作ってはいけない)。 */
 export type TechStage = "none" | "experimental" | "service";
-export type TechId = "rail" | "airship" | "car" | "plane" | "expressway";
+export type TechId = "rail" | "airship" | "car" | "plane" | "expressway" | "ship";
 const T: Record<TechId, { year: number; stage: Exclude<TechStage, "none"> }[]> = {
   rail: [{ year: 1810, stage: "experimental" }, { year: 1830, stage: "service" }],   // 1850 は本線の拡大(段階ではなく普及度の話)
   airship: [{ year: 1860, stage: "experimental" }, { year: 1900, stage: "experimental" }],   // 1860 動力飛行船の試験 / 1900 硬式飛行船の実験。定期運航は仕様にない
   car: [{ year: 1890, stage: "experimental" }, { year: 1910, stage: "service" }],   // 1890 自動車・試験道路 / 1910 舗装拡大
   plane: [{ year: 1910, stage: "experimental" }, { year: 1920, stage: "service" }],   // 1920 定期航空
   expressway: [{ year: 1930, stage: "service" }],
+  ship: [{ year: 1830, stage: "service" }, { year: 1880, stage: "service" }],   // Stage 40 (#66 B): the sea itself is in service from 1800 (sail ferries and ports); these are its two upgrades, see shipGrade
 };
 export function techStage(id: TechId, year: number): TechStage { let s: TechStage = "none"; for (const e of T[id]) if (year >= e.year) s = e.stage; return s; }
 
@@ -34,11 +35,11 @@ export function techStage(id: TechId, year: number): TechStage { let s: TechStag
  * but only in proportion to how long the game has lived under such eras (EXPOSURE_FULL_YEARS of exposure = the full shift), and never before the start year. 均衡 shifts nothing.
  * It is monotone: exposure only ever grows, so a gate once open stays open whatever era comes later, and a later era change speeds up (or stops speeding up) what comes after, it never undoes anything.
  * The 30-year shift is NOT used: diffusion (how fast lines, paving and airports spread) stays with the existing budgets, demand and geography; only the date a technology may be used moves.
- * Sea transport (ships, ports, ferries) is already in service in 1800: it has no gate to move; its stance acts through the existing policy dials.
+ * Sea transport (ships, ports, ferries) is already in service in 1800 as sail: that is never gated. Its two UPGRADES (蒸気船 1830, 鋼鉄の汽船 1880, `shipGrade`) move like any other gate under 海路重視, and make the ferries faster (demand.ts edgeSpeed), which changes travel times, route choice, ferry demand and what the planners build.
  * (A FICTION/GAME RULE, not history: the 10/20-year maxima are a recommendation adopted provisionally with the user.)
  */
 export const EARLY_EXPERIMENT_YEARS = 10, EARLY_SERVICE_YEARS = 20, EXPOSURE_FULL_YEARS = 20;
-export const STANCE_TECHS: Record<string, readonly TechId[]> = { shubun: ["car", "expressway"], shoka: ["rail"], kuuro: ["plane", "airship"] };
+export const STANCE_TECHS: Record<string, readonly TechId[]> = { shubun: ["car", "expressway"], shoka: ["rail"], kuuro: ["plane", "airship"], kairo: ["ship"] };
 type EraLike = { start: number; stance: string };
 type SimTech = { startYear: number; kaigen?: { eras: readonly EraLike[] } };
 /** Years of the game before `year` that were lived under an era whose stance favours `id`. */
@@ -79,3 +80,7 @@ export function pickEraName(used: ReadonlySet<string>, historic: readonly string
   for (const n of random) if (!used.has(n)) return n;
   let i = seq; for (;;) { const n = `新${i}`; if (!used.has(n)) return n; i++; }
 }
+
+/** Stage 40 (#66 B): the grade of the ships on the ferry routes in `year`: 0 = sail (1800), 1 = steam service, 2 = steel steamers. Moves with 海路重視 like every other gate (monotone). */
+export const SHIP_SPEED_FACTOR = [1, 1.35, 1.8] as const;
+export function shipGrade(sim: SimTech, year: number): 0 | 1 | 2 { return gateOpen(sim, "ship", T.ship[1].year, EARLY_SERVICE_YEARS, year) ? 2 : gateOpen(sim, "ship", T.ship[0].year, EARLY_SERVICE_YEARS, year) ? 1 : 0; }
