@@ -367,6 +367,7 @@ test("琵琶湖・富士山のタッチ操作: 1本指で移動、2本指で拡�
   const pos1 = await app(page, "a => a.s.features.biwa.pos") as [number, number] | null; expect(pos1).toBeTruthy();
   expect(await app(page, "a => a.issues.filter((i) => i.severity === 'error' && i.step === 'features').length")).toBe(0);
   // two fingers: pinch in (smaller) and twist -> scale and rotation change in ONE undo step
+  await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 });   // (the move above regenerates the terrain: a second gesture made while that is still running was sometimes not taken -- scale came back undefined on a slow CI runner)
   const rot0 = await app(page, "a => a.s.features.biwa.rot") as number, n0 = await app(page, "a => a.store.undoStack.length") as number;
   const q = await screenOf(page, await app(page, "a => a.s.features.biwa.pos") as [number, number]), Q = (dx: number, dy: number, id: number) => ({ x: off.x + q[0] + dx, y: off.y + q[1] + dy, id });
   const ang = 0.4, r0 = 60, r1 = 42;
