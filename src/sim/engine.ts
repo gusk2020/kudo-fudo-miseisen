@@ -30,6 +30,7 @@ import { reviewRailLines } from "./railecon";
 import { reviewWorks } from "./freeze";
 import { carryOver, finishCrossing, isCrossingProject, planCrossings } from "./crossing";
 import { planIslandLinks } from "./islandlink37";
+import { foundOldMunicipalities, promoteSettlements } from "./oldmuni40";
 import { developSeats37 } from "./devseat37";
 import { abolishSubmerged, mayStand, reclaimedCell } from "./muni39sim";
 import { homeCity, seatCity, subCity, tokyoCity } from "./ceremony";
@@ -55,7 +56,7 @@ export const MS_PER_MONTH_X1 = MONTHS_PER_YEAR_X1_MS / 12;
 export const CATCHUP_CAP_MONTHS = 360;            // at most 30 years are simulated on return; the rest is reported as skipped
 export const EVENT_CAP = 600, EVENT_CAP_S3 = 1000;
 /** Everyday noise is dropped first when the timeline is full, so the history that matters (world, policy, reforms, openings, closures) survives a century. */
-const KEEP_EVENTS = new Set(["tech", "seatdev", "muni39"]);
+const KEEP_EVENTS = new Set(["tech", "seatdev", "muni39", "muni40"]);
 const MINOR_EVENTS = new Set(["village", "boom", "city", "dormant", "reopen", "lost", "skip", "project", "lane"]);
 export const CAPITAL_BONUS = 1.35, CAPITAL_LOSS = 0.85, SUB_CAPITAL_BONUS = 1.15;   // pop multipliers for a capital that is not Tokyo (provisional)
 /** Stage 9: リニア -- not before this calendar year, nor before the technology clock reaches MAGLEV_TECH_YEAR, and only for long new high-speed lines. */
@@ -128,7 +129,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
     operators: { jnr: opts.start1800 ? { id: "jnr", name: "官営鉄道", kind: "jnr", since: 1830, note: "国有(官営)の鉄道(架空史: 1830年の鉄道営業開始とともに)" } : { id: "jnr", name: "国鉄", kind: "jnr", since: 1950, note: "国有の鉄道" } }, dials: null as never, mods: [], ...(opts.stage3 ? { stage3: true, policy: defaultPolicy() } : {}), ...(firstCand ? { kaigen: newKaigen(firstCand, opts.firstEra!, seed >>> 0, !!opts.start1800) } : {}), ...(opts.stage3 && (firstCand || opts.techK !== undefined) ? { tech: { k: opts.techK ?? TECH_K, ...(firstCand && opts.waterK !== 0 ? { wk: opts.waterK ?? WATER_K } : {}) } } : {}),
     ...(opts.relocFirst || (opts.stage3 && firstCand) ? { relocFirst: opts.relocFirst || (opts.start1800 ? START_YEAR_1800 + RELOC_STEP_1800 : relocFirstOf(startYear)), relocOrigin: "new" as const } : {}),   // Stage 35: the origin is the game's own start year + 150 (an explicit one is kept as given)
     ...(prefOfSeat(opts.capital) && prefOfSeat(opts.capital) !== DEFAULT_CAPITAL ? { capital: prefOfSeat(opts.capital)! } : {}), ...(prefOfSeat(opts.subCapital) ? { subCapital: prefOfSeat(opts.subCapital)! } : {}), ...(opts.palace ? { palace: opts.palace } : {}), ...(opts.capitalPos ? { capitalPos: opts.capitalPos } : {}), ...(opts.subPos ? { subPos: opts.subPos } : {}),
-    ...(firstCand ? { crossings: true as const } : {}), ...(opts.start1800 ? { rules1800: true as const } : {}), ...(prefOfSeat(opts.subCapital2) ? { subCapital2: prefOfSeat(opts.subCapital2)! } : {}), ...(opts.subPos2 ? { subPos2: opts.subPos2 } : {}),
+    ...(firstCand ? { crossings: true as const } : {}), ...(opts.start1800 ? { rules1800: true as const, oldmuni40: true as const } : {}), ...(prefOfSeat(opts.subCapital2) ? { subCapital2: prefOfSeat(opts.subCapital2)! } : {}), ...(opts.subPos2 ? { subPos2: opts.subPos2 } : {}),
   };
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
@@ -203,6 +204,7 @@ const edgeName = (sim: SimState, e: SimEdge) => `${sim.nodes[e.a]?.name ?? "地�
 function* yearlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
   if (sim.rec34) { const n = stepReclaim(sim, w, y).length; if (n) ev(sim, "reclaim", `${y}年: 首都・副首都の埋め立てで${n}マス(約${n * w.cell * w.cell}km²)の陸地が増えた`, "埋め立ては年間の面積をためておき、1マス(25km²)分になった時に1マスずつ海岸に足す。別の島とは陸続きにならない", {}); }   // Stage 34
+  if (sim.oldmuni40 && y > sim.startYear) { foundOldMunicipalities(sim, w, y); promoteSettlements(sim, w, y); }   // Stage 40: old municipalities come into being and are promoted in stages
   if (sim.rules1800 && y > sim.startYear) fireHistory1800(sim, y);   // Stage 36: the technology rows and the fictional history of an 1800 game
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, hubYear(sim, y)); }
   // Stage 13: the rest of the 1950s bay and strait ferries come in a few at a time (ferry.ts: BAY_FIRST)

@@ -47,7 +47,6 @@ export function* seedInitialNetworkGen(sim: SimState, w: World): Generator<numbe
   if (sim.rules1800) { const taken = usedNames(sim, w); for (const v of Object.values(sim.settlements)) nameFromOld(sim, w, v, taken); }   /* Stage 40: an 1800 start's villages carry the names of the 2000-10-01 municipalities nearest to them (a pool of names, not 1800's own history) */
   let nRoutes = 0; const links: [WCity, WCity][] = [];
   if (!sim.rules1800) {   /* Stage 40: the 1950-style nationwide city-to-city and feeder network is a 1950 start's. An 1800 start gets the highways and a sparse local network below. */
-  if (sim.rules1800) { const taken = usedNames(sim, w); for (const v of Object.values(sim.settlements)) nameFromOld(sim, w, v, taken); }   /* Stage 40: an 1800 start's villages carry the names of the 2000-10-01 municipalities nearest to them (the pool of names; not 1800's own history) */
   // 2) city-to-city roads: minimum spanning forest per island, plus each city's nearest unlinked neighbour
   const key = new Set<string>(), add = (a: WCity, b: WCity) => { const k = a.id < b.id ? a.id + b.id : b.id + a.id; if (key.has(k)) return; key.add(k); links.push([a, b]); };
   for (const isl of [...new Set(w.cities.map((c) => c.island))].sort((a, b) => a - b)) {
