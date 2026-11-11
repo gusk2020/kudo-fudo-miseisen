@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { displayName, openStraits, STRAITS } from "../../src/sim/straits";
+import { chainContinuous, displayName, openStraits, shoreAnchorCandidates, STRAITS } from "../../src/sim/straits";
 import { fixedLink } from "../../src/sim/ferry";
 import { checkIntegrity } from "../../src/sim/network";
-import { stage3Sim } from "./simhelp";
+import { realWorld, stage3Sim, stage3SimOn } from "./simhelp";
+import { pathfind } from "../../src/sim/world";
 import type { SimEdge, SimState } from "../../src/sim/types";
 
 /** Issue #61: a scripted crossing is a short facility between two shore anchors, with ordinary land lines from each city centre to its anchor. */
@@ -36,5 +37,28 @@ describe("Issue #61: the straits of the scripted crossings (関門・青函・�
     for (const r of rows.filter((x) => x.e)) { const f = fixedLink(sim, w, w.lm[r.e!.cells[0]], w.lm[r.e!.cells[1]], r.e!.mode === "rail" ? "rail" : "road"); expect(f, r.s.id).toBeTruthy(); expect(f!.facility === "bridge" || f!.facility === "tunnel").toBe(true); }   /* (found by the two land masses; the 西瀬戸 shares its masses with the 瀬戸大橋, so the first of them answers) */
     expect(openStraits(sim, w, 2100, true)).toBe(0); expect(checkIntegrity(sim)).toEqual([]);
     const back = JSON.parse(JSON.stringify(sim)) as SimState; for (const r of rows.filter((x) => x.e)) expect(back.edges[r.e!.id].lengthKm).toBe(r.e!.lengthKm); expect(openStraits(back, w, 2100, true)).toBe(0);
+  });
+});
+
+describe("Issue #61 fail-safe: a facility is never left with an anchor cut off from its city", () => {
+  const fresh = () => { const g = stage3Sim("heisei", 7, true, 0, 2, true); delete (g.sim as { crossings?: boolean }).crossings; return g; };
+  const routeOf = (sim: SimState, e: SimEdge) => Object.values(sim.routes).find((q) => q.edges.some((x) => x.edgeId === e.id))!;
+  it("every crossing's route is one continuous chain (each edge shares a node with the next), not just 'connected through other edges'", () => {
+    const { sim, w } = fresh(); openStraits(sim, w, 2100, true); let n = 0;
+    for (const s of STRAITS) { const e = fac(sim, s.id); if (!e) continue; n++; const r = routeOf(sim, e); expect(chainContinuous(sim, r.edges), s.id).toBe(true); expect(r.edges.length, s.id).toBeGreaterThanOrEqual(3); } expect(n).toBeGreaterThanOrEqual(6);
+  });
+  it("if no land line can be drawn at all, the old city-to-city facility is used and the history says so (nothing is half built)", () => {
+    const { sim, w } = fresh(); const before = Object.keys(sim.edges).length; openStraits(sim, w, 2100, true, () => null);
+    for (const s of STRAITS) { const e = fac(sim, s.id), ca = w.cityById.get(s.a), cb = w.cityById.get(s.b); if (!e || !ca || !cb) continue; if (e.cells[0] === ca.cell || e.cells[0] === cb.cell) { expect(e.cells).toEqual([ca.cell, cb.cell]); expect(e.hist.some((h) => h.t.includes("代用")), s.id).toBe(true); expect(routeOf(sim, e).edges.length).toBe(1); } }
+    expect(Object.keys(sim.edges).length).toBeGreaterThan(before);
+  });
+  it("if the first candidate's land line fails, the next candidate shore pair is used (a different place on the shore) and both lines exist", () => {
+    const { sim, w } = fresh(); let calls = 0; const pf: typeof pathfind = (ww, a, b, o) => (calls++ < 2 ? null : pathfind(ww, a, b, o)); openStraits(sim, w, 2100, true, pf);
+    const e = fac(sim, "kanmon-road")!, ca = w.cityById.get("C-JP-35")!;   /* (the rail one opened at the start, before the failing finder was in place) */ const first = shoreAnchorCandidates(w, ca.cell, w.cityById.get("C-1159141097")!.cell, 3);
+    expect(first.length).toBeGreaterThanOrEqual(2); expect(e.cells[0] === first[0].a && e.cells[1] === first[0].b).toBe(false); expect(e.hist.some((h) => h.t.includes("代用"))).toBe(false); expect(chainContinuous(sim, routeOf(sim, e).edges)).toBe(true);
+  });
+  it("on the island-enlarged real map (島拡大) every crossing that opens has a continuous route and a short facility", () => {
+    const base = realWorld(true, true, 3), g = stage3SimOn(base, 0, 7, {}) as unknown as { sim: SimState; w: import("../../src/sim/world").World }; delete (g.sim as { crossings?: boolean }).crossings; openStraits(g.sim, g.w, 2100, true);
+    let n = 0; for (const s of STRAITS) { const e = fac(g.sim, s.id); if (!e) continue; n++; expect(e.lengthKm, s.id).toBeLessThanOrEqual(30); expect(chainContinuous(g.sim, routeOf(g.sim, e).edges), s.id).toBe(true); } expect(n).toBeGreaterThanOrEqual(4);
   });
 });
