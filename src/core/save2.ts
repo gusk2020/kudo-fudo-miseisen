@@ -130,6 +130,7 @@ export function validateSimAgainstWorld(sim: SimState, w: World, terrainHash: st
   if (JSON.stringify(sim.moves20 ?? null) !== JSON.stringify(w.moveSpec ?? null)) return "県庁所在地の移転が保存時と一致しません";   // Stage 20
   if ((sim.isl36 ? 3 : sim.isl22 ? 2 : sim.isl20 ? 1 : 0) !== (w.islets ? w.t.isletVersion ?? 1 : 0)) return "島のデータの版(Stage 20の楕円か実際の輪郭か)が保存時と一致しません";   // Stage 22
   if (!!sim.isl20 !== !!w.islets) return "島のデータの種類(離島の有無)が保存時と一致しません";   // Stage 20
+  for (const d of sim.oldCities40 ?? []) if (!Number.isInteger(d.cell) || d.cell < 0 || d.cell >= w.N || w.t.land[d.cell] !== 1) return `昇格した旧市町村(${d.id})の位置が地形と一致しません`;   // Issue #67
   if (!!sim.rec34 !== !!w.g34) return "埋め立て・島拡大のデータ(Stage 34)が保存時と一致しません";   // Stage 34
   for (const e of sim.rec34?.log ?? []) if (e.k >= w.N || w.t.land[e.k] !== 1) return "埋め立て済みの土地が地形と一致しません";
   return null;

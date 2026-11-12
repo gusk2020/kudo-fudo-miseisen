@@ -7,6 +7,7 @@ import { LAKE_LIST } from "../render/lakes";
 import { adoptRelocSchedule, adoptWorld, relocDiag, apply2200, close2200, placePalace, waiting2200, type Choice2200 } from "../sim/event2200";
 import { buildE2200, buildRwReview, e22Draft } from "./e2200";
 import { nearestPlace } from "../core/gazetteer";
+import { restoreOldCities } from "../sim/oldcity40";
 import { movesOfSettings, type SeatMove } from "../sim/seatmove20";
 import { realToWorld, worldToPostOps, worldParts } from "../core/body";
 import { axisFrame, tOf } from "../core/constraints";
@@ -228,6 +229,7 @@ export class App {
   private attachPendingSim() {
     if (!this.pendingSim) return; if (this.terrain) this.worldKey = "\u0000attach";   // Stage 38 (A): the world is built again from THIS game's land log. The cache key only said "a log exists", and a world made a moment earlier from the screen's old (or empty) log was kept -- a save made later than that failed on land the world did not have ("道路が地形の外にあります") and came back as a map without its roads
     const w = this.ensureWorld(), sim = this.pendingSim; if (!w || !this.terrain) return; this.pendingSim = null; this.bootPending = false;
+    if (sim.oldCities40?.length) restoreOldCities(sim, w);   // Issue #67: the promoted old municipalities are put back into the freshly built world before the game is checked
     const err = mapStateHash(this.s) !== sim.mapHash ? "地図が道路データと一致しません" : validateSimAgainstWorld(sim, w, this.terrain.hash);
     if (err) { putRaw(this.saveKey + ":quarantine", { savedAt: Date.now(), reason: err, sim }); this.saveLocked = true; this.toast(`道路データは読み込まず退避しました(保存データは上書きしません): ${err}`); return; }
     ensureIdentity(sim); finishMigration(sim, w); adoptRelocSchedule(sim); placePalace(sim, w, true); this.sim = sim; if (this.saveAfterAttach) { this.saveAfterAttach = false; void this.persist(true); }   /* a game the player loaded is written as the running game at once: a reload right after must not bring back the one it replaced */ setActiveEra(eraKeyOf(sim.era)); setActiveTimeline(sim.kaigen?.eras ?? null); this.runner = new SimRunner(sim, w);
