@@ -13,7 +13,7 @@ const o1800 = { start1800: true } as never;
 describe("Stage 40 (1): an 1800 start does not begin with the 1950-style national road network", () => {
   const a = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, o1800), b = stage3Sim("heisei", 7, true, 0, 2, true);
   it("the 1950 start is exactly what it was (805 sections, 152 routes), and the 1800 start has far fewer sections, less road and fewer routes", () => {
-    expect(Object.values(b.sim.edges).filter((e) => e.built >= 1 && e.state === "open").length).toBe(805); expect(Object.keys(b.sim.routes).length).toBe(152);
+    expect(Object.values(b.sim.edges).filter((e) => e.built >= 1 && e.state === "open").length).toBe(807);   /* (Fix #61: 805 + the two land lines of the 1942 関門 railway, which no longer runs city centre to city centre) */ expect(Object.keys(b.sim.routes).length).toBe(152);
     const ea = Object.values(a.sim.edges).filter((e) => e.built >= 1 && e.state === "open");
     expect(ea.length).toBeLessThan(805 * 0.4); expect(km(a.sim)).toBeLessThan(km(b.sim) * 0.6); expect(Object.keys(a.sim.routes).length).toBeLessThan(15);
   });
