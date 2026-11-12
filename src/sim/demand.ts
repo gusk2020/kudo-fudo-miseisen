@@ -4,6 +4,7 @@
  *  - local   (沿線): trips of the settlements along the road and village-to-city trips (these stay on an old road)
  * All figures are synthetic "vehicles/day"; they are not statistics.
  */
+import { SHIP_SPEED_FACTOR } from "./rules1800";
 import { goodsPull, paxPull } from "./sites";
 import { virtualTrips } from "./waterlink";
 import { airportMap, hubDemand, JET_YEAR, type HubTotals } from "./hubs";
@@ -31,7 +32,7 @@ const SURF: Record<Surface, number> = { unpaved: 0.6, gravel: 0.8, paved: 1 };
 const curveFactor = (e: SimEdge, k: number) => 1 - Math.min(0.35, (e.curv ?? 0) * k);
 export const FERRY_SPEED = 28, FERRY_WAIT_H = 0.7, FERRY_PORT_PAX = 0.3;   // Stage 10: a ferry's vehicles count this much each toward its ports' traffic (beside its freight)   // a ferry is slow and waits for its sailing (the same for cars and for the rail steamer)
 export const MAGLEV_SPEED = 420;
-export const edgeSpeed = (e: SimEdge) => e.facility === "ferry" ? FERRY_SPEED : e.maglev && modeOf(e) === "rail" ? MAGLEV_SPEED * (0.7 + 0.3 * e.quality / 100) : modeOf(e) === "rail"
+export const edgeSpeed = (e: SimEdge) => e.facility === "ferry" ? FERRY_SPEED * (SHIP_SPEED_FACTOR[e.shipGrade ?? 0] ?? 1) : e.maglev && modeOf(e) === "rail" ? MAGLEV_SPEED * (0.7 + 0.3 * e.quality / 100) : modeOf(e) === "rail"
   ? RAIL_SPEED[e.standard] * (0.6 + 0.4 * e.quality / 100) * (1 - Math.min(0.3, e.maxGradePct / 40)) * curveFactor(e, 0.35)
   : BASE_SPEED[e.standard] * SURF[e.surface] * (0.5 + 0.5 * e.quality / 100) * (1 - Math.min(0.4, e.maxGradePct / 50)) * curveFactor(e, 0.2);
 export const passable = (e: SimEdge) => (e.state === "open" || e.state === "dormant") && e.built >= 1 && !e.lost;

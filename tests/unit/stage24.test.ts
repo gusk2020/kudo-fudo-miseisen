@@ -12,7 +12,11 @@ import { prefName } from "../../src/core/seat";
 
 const tot = (s: ReturnType<typeof run14>["sim"]) => Object.values(s.cities).reduce((a, c) => a + c.pop, 0);
 const share = (r: ReturnType<typeof run14>, pref: string) => r.w.cities.filter((c) => c.pref === pref).reduce((a, c) => a + r.sim.cities[c.id].pop, 0) / tot(r.sim);
+const memo = new Map<string, ReturnType<typeof run14>>();
+/** One 2230 run per (seed, destination or "keep"): the two tests below share them (a run is about 90 s). */
+const runOf = (seed: number, dest: "keep" | typeof MOVE | typeof MOVE2) => { const k = seed + ":" + (dest === "keep" ? "keep" : dest.capital); let r = memo.get(k); if (!r) { r = run14({ seed, until: 2230, islets: true, ...(dest === "keep" ? {} : { e2200: dest as never }) }); memo.set(k, r); } return r; };
 const MOVE = { era: 1, stance: "heisei" as const, coast: "neutral" as const, focus: "concentrate" as const, capital: "JP-40", sub: "JP-04", palace: "JP-40" };
+const MOVE2 = { era: 1, stance: "heisei" as const, coast: "neutral" as const, focus: "concentrate" as const, capital: "JP-23", sub: "JP-27", palace: "JP-23" };
 
 describe("Stage 24: the 2200 event", () => {
   it("time waits for 国道0号 (drawn, or given up) after the choice; giving it up is recorded; a fast-forward stops there too", () => {
@@ -26,13 +30,43 @@ describe("Stage 24: the 2200 event", () => {
     expect(r.sim.capital).toBe("JP-40"); expect(r.sim.subCapital).toBe("JP-04"); const m = slotMetaOf(makeSave(s, r.sim)); expect(m.capital).toBe(prefName("JP-40")); expect(m.sub).toBe(prefName("JP-04"));
   }, 300000);
   it("the development order is drawn again from the new seats by the starting rule, and it works: the new capital grows, the old one eases, nobody is created", () => {
-    const keep = run14({ seed: 5, until: 2230, islets: true }), move = run14({ seed: 5, until: 2230, islets: true, e2200: MOVE as never });
+    const keep = runOf(5, "keep"), move = runOf(5, MOVE);
     const o = move.sim.pot17!.order; expect(new Set(o).size).toBe(PREF_IDS.length); expect(o.length).toBe(PREF_IDS.length); expect([...o].sort()).toEqual([...PREF_IDS].sort()); expect(o.slice(0, 3)).toEqual(["JP-40", "JP-04", "JP-40"].filter((x, i, a) => a.indexOf(x) === i).concat(o.slice(2, 3)).slice(0, 3));
     const w = potentialWeights(o), mean = Object.values(w).reduce((a, b) => a + b, 0) / PREF_IDS.length; expect(mean).toBeCloseTo(1, 6); expect(w["JP-40"]).toBeGreaterThan(w["JP-47"]);
     expect(move.sim.pot17!.hist.some((h) => h.y >= 2200 && h.order[0] === "JP-40")).toBe(true);
-    expect(share(move, "JP-40")).toBeGreaterThan(share(keep, "JP-40") * 10);   /* Stage 36: with the 50th prefecture the new capital still grows more than tenfold (11.6x measured; it was 15x+ with 49) */ expect(share(move, "JP-13")).toBeLessThan(share(keep, "JP-13"));   // the move acts on the people
+    expect(share(move, "JP-13")).toBeLessThan(share(keep, "JP-13"));   // the move acts on the people (the size of the effect is checked over several seeds and destinations in the next test)
     const a = tot(keep.sim), b = tot(move.sim); expect(Math.abs(a - b) / a).toBeLessThan(0.01);   // moved, not made: the nation is the same size
     for (const c of move.w.cities) expect(move.sim.cities[c.id].pop).toBeGreaterThanOrEqual(2000 - 1);
+  }, 900000);
+  /**
+   * Issue #65 (owner's decision 2026-11-12, option 1). This replaces the old single-seed bound "the new capital (福岡) holds more than ten times its no-move share" (seed 5 measured 9.93x after the 関門 crossing was repaired,
+   * 11.55x before). That ratio divides by the no-move share of a small prefecture (0.3-1.1%), which the model splits into two discrete branches from tiny traffic differences (docs/ISSUE65.md), and it cannot hold for a destination that is already big (愛知: 1.6x).
+   * What a move of the capital MUST do is checked instead, over three seeds and two destinations, as sizes with a stated margin. Observed (2230, seeds 5/11/23 -> 福岡, seed 11 -> 愛知): the new capital becomes the largest prefecture (rank 1 in all four);
+   * its share 0.108-0.130; its gain over no-move 0.048-0.113; 東京 loses 0.216-0.287 of the nation; the people moved (half the sum of |change|) 0.296-0.406; totals equal. The bounds below keep 15-30% of margin under the smallest observation.
+   * Counter-examples that must fail: no move at all (gain 0, nothing moved), a move that only adds people (total changes), a move that leaves 東京 the largest.
+   */
+  const cases: [number, typeof MOVE | typeof MOVE2][] = [[5, MOVE], [11, MOVE], [23, MOVE], [11, MOVE2]];
+  const rank1 = (r: ReturnType<typeof run14>, pref: string) => { const m = new Map<string, number>(); for (const c of r.w.cities) m.set(c.pref ?? "?", (m.get(c.pref ?? "?") ?? 0) + r.sim.cities[c.id].pop); return [...m.values()].filter((v) => v > (m.get(pref) ?? 0)).length + 1; };
+  for (const [seed, dest] of cases) it(`a move of the capital to ${dest.capital} (seed ${seed}) moves a large share of the nation's people to it, out of 東京, and creates nobody`, () => {
+    const keep = runOf(seed, "keep"), move = runOf(seed, dest), nc = dest.capital, k = share(keep, nc), m = share(move, nc), gain = m - k, loss = share(keep, "JP-13") - share(move, "JP-13");
+    const prefs = [...new Set(keep.w.cities.map((c) => c.pref ?? "?"))], moved = prefs.reduce((a, p) => a + Math.abs(share(move, p) - share(keep, p)), 0) / 2;
+    const diag = `seed ${seed} -> ${nc}: share ${k.toFixed(4)} -> ${m.toFixed(4)} (x${(m / k).toFixed(1)}, rank ${rank1(move, nc)}), gain ${gain.toFixed(4)}, 東京 loss ${loss.toFixed(4)}, moved ${moved.toFixed(4)}`;
+    expect(rank1(move, nc), diag).toBe(1);                       // the new capital is the largest prefecture
+    expect(m, diag).toBeGreaterThanOrEqual(0.09);                // its share (observed 0.108-0.130)
+    expect(gain, diag).toBeGreaterThanOrEqual(0.04);             // a real gain over no move (observed 0.048-0.113), not one more person
+    expect(loss, diag).toBeGreaterThanOrEqual(0.15);             // the old capital gives up a large share of the nation (observed 0.216-0.287)
+    expect(loss, diag).toBeGreaterThanOrEqual(gain);             // and at least what the new one gains: the people come from the old capital's region first
+    expect(rank1(move, "JP-13"), diag).toBeGreaterThan(1);       // 東京 is no longer the largest
+    expect(moved, diag).toBeGreaterThanOrEqual(0.2);             // the amount of people that moved is large (observed 0.296-0.406)
+    expect(Math.abs(tot(keep.sim) - tot(move.sim)) / tot(keep.sim), diag).toBeLessThan(0.01);   // moved, not made
+    for (const c of move.w.cities) expect(move.sim.cities[c.id].pop, diag).toBeGreaterThanOrEqual(2000 - 1);
+  }, 900000);
+  it("the invariants really fail for a move that does nothing, and for the move read backwards (so they measure a move, not just any run)", () => {
+    const keep = runOf(5, "keep"), move = runOf(5, MOVE), eff = (a: ReturnType<typeof run14>, b: ReturnType<typeof run14>, nc: string) => ({ gain: share(b, nc) - share(a, nc), loss: share(a, "JP-13") - share(b, "JP-13"), rank: rank1(b, nc), tokyoRank: rank1(b, "JP-13") });
+    const none = eff(keep, keep, "JP-40"), back = eff(move, keep, "JP-40"), real = eff(keep, move, "JP-40");
+    expect(none.gain).toBe(0); expect(none.loss).toBe(0); expect(none.rank).toBeGreaterThan(1); expect(none.tokyoRank).toBe(1);   // no move: nothing gained, nothing lost, 東京 still largest
+    expect(back.gain).toBeLessThan(0); expect(back.rank).toBeGreaterThan(1);                                                      // the move undone: the share falls
+    expect(real.gain).toBeGreaterThanOrEqual(0.04); expect(real.rank).toBe(1);                                                    // the real move passes the same measures
   }, 900000);
 });
 

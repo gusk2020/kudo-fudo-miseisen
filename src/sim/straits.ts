@@ -1,21 +1,23 @@
 /**
- * Crossings between the four main islands. The 5 km land grid cannot lay a path across water, so a crossing is a ready-made
- * facility (a tunnel or a bridge) that joins two city nodes directly and opens in a given year.
+ * Crossings between the four main islands. The 5 km land grid cannot lay a path across water, so a crossing is a ready-made facility (a tunnel or a bridge) that opens in a given year.
+ * Issue #61: the facility is only the water crossing, between two shore anchors found on the grid (see `shoreAnchorCandidates`); the road or railway from each city to its anchor is an ordinary land line, and the three
+ * parts form one route. (They used to be one facility from city centre to city centre, e.g. 83.5 km for the 関門: that was the bug.) If the land lines cannot be made, the old city-to-city facility is the fallback.
  *
  * 史実/架空: the opening years on 平成 are the real ones (関門鉄道トンネル 1942 is already there in 1950); the other world lines open the
  * same crossings in different, fictional years: 修文 gets road crossings earlier and 正化 the railway ones. The names and the
- * geometry are the model's (a crossing joins two city centres), not a survey.
+ * geometry are the model's (the 5 km grid cannot show a strait under a kilometre wide: the facility's length is the distance between the two anchor cells), not a survey.
  */
 import { capitalPref } from "./roles";
 import { TABLE_STANCE, type EraKey } from "./eras";
 import { stanceAt } from "./kaigen";
-import { buildIndex, newEdgeDefaults, newId, nodeAtCell, pushHist } from "./network";
+import { buildIndex, layPath, newEdgeDefaults, newId, nodeAtCell, pushHist } from "./network";
 import { designate, ev, yearOf } from "./engine";
 import { successorOperator } from "./reform";
 import { fixedLink } from "./ferry";
 import { carryOver } from "./crossing";
 import type { Mode, SimEdge, SimState } from "./types";
-import type { World } from "./world";
+import { pathfind, type World } from "./world";
+import type { RouteEdgeRef } from "./types";
 
 interface Strait { id: string; name: string; a: string; b: string; mode: Mode; fac: "tunnel" | "bridge"; year: Partial<Record<EraKey, number>>; needs?: string; unless?: string }   // needs/unless: a city id that must / must not be on the map
 export const STRAITS: Strait[] = [
@@ -30,27 +32,72 @@ export const STRAITS: Strait[] = [
   { id: "akashi", name: "明石海峡・鳴門の橋", a: "C-JP-28", b: "C-JP-36", mode: "road", fac: "bridge", year: { heisei: 1998, shubun: 1985, shoka: 2005 }, unless: "X-AWAJI" },
   { id: "nishiseto", name: "西瀬戸の橋", a: "C-JP-34", b: "C-JP-38", mode: "road", fac: "bridge", year: { heisei: 1999, shubun: 1988, shoka: 2008 } },
 ];
+/**
+ * Issue #61: the facility (tunnel / bridge) is only the crossing of the water. Its two ends are anchors on the shores of the two land masses, found on the 5 km grid as the closest pair of land cells within CORRIDOR_KM
+ * of the straight line between the two city centres; the road or railway from each city centre to its anchor is an ordinary land line. The grid cannot resolve a real strait (the 関門 is under 1 km wide, a cell is 5 km): the facility's length is the
+ * distance between the two anchor cells, so it is never shorter than one cell and not the real tunnel's length. Returns null when the two masses have no land cell near the line (the caller then keeps the old city-to-city facility).
+ */
+export const CORRIDOR_KM = 40, ANCHOR_TRIES = 5;
+export function shoreAnchorCandidates(w: World, ca: number, cb: number, n = 1): { a: number; b: number; km: number }[] {
+  const la = w.lm[ca], lb = w.lm[cb], pa = w.cellPos(ca), pb = w.cellPos(cb), dx = pb[0] - pa[0], dy = pb[1] - pa[1], len2 = dx * dx + dy * dy || 1, direct = Math.hypot(dx, dy);
+  const near = (c: number) => { const p = w.cellPos(c), t = Math.max(0, Math.min(1, ((p[0] - pa[0]) * dx + (p[1] - pa[1]) * dy) / len2)); return Math.hypot(p[0] - (pa[0] + dx * t), p[1] - (pa[1] + dy * t)) <= CORRIDOR_KM; };
+  const A: number[] = [], B: number[] = [];
+  for (let c = 0; c < w.N; c++) { if (w.t.land[c] !== 1) continue; const m = w.lm[c]; if ((m === la || m === lb) && near(c)) (m === la ? A : B).push(c); }
+  const all: { a: number; b: number; km: number }[] = [];
+  for (const a of A) { const p = w.cellPos(a); for (const b of B) { const q = w.cellPos(b), d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d < direct) all.push({ a, b, km: d }); } }
+  all.sort((x, y) => x.km - y.km || x.a - y.a || x.b - y.b); const out: { a: number; b: number; km: number }[] = [], usedA = new Set<number>(), usedB = new Set<number>();
+  for (const c of all) { if (out.length >= n) break; if (usedA.has(c.a) || usedB.has(c.b)) continue; usedA.add(c.a); usedB.add(c.b); out.push({ ...c, km: Math.round(c.km * 10) / 10 }); }   /* (the next candidates differ at both ends: a different place on the shore, not a neighbour cell) */
+  return out;
+}
+export const shoreAnchors = (w: World, ca: number, cb: number) => shoreAnchorCandidates(w, ca, cb, 1)[0] ?? null;
+/** The ends the chain of a route really joins up: every edge shares a node with the next (the direction of each is its `dir`). */
+export function chainContinuous(sim: SimState, chain: RouteEdgeRef[]): boolean {
+  let at: string | null = null;
+  for (const r of chain) { const e = sim.edges[r.edgeId]; if (!e) return false; const from = r.dir === 1 ? e.a : e.b, to = r.dir === 1 ? e.b : e.a; if (at !== null && at !== from) return false; at = to; }
+  return true;
+}
 const opened = (sim: SimState, id: string) => Object.values(sim.edges).some((e) => e.facilityName?.startsWith(id + ":"));
 /** Open every crossing due by `year` (all that are due at the start, one year at a time afterwards). Returns how many opened. */
-export function openStraits(sim: SimState, w: World, year: number, atStart = false): number {
+export function openStraits(sim: SimState, w: World, year: number, atStart = false, pf: typeof pathfind = pathfind): number {   // (`pf` is the land path finder; a test passes one that fails)
   const era = stanceAt(sim, year); if (era === "kobun") return 0; let n = 0;
   for (const s of STRAITS) {
     if ((s.needs && !w.cityById.has(s.needs)) || (s.unless && w.cityById.has(s.unless))) continue;
     const due = s.year[TABLE_STANCE(era) as "heisei"]; if (due === undefined || opened(sim, s.id) || (atStart || sim.kaigen ? due > year : due !== year)) continue;
     const ca = w.cityById.get(s.a), cb = w.cityById.get(s.b); if (!ca || !cb) continue;
     if (sim.crossings && fixedLink(sim, w, w.lm[ca.cell], w.lm[cb.cell], s.mode, true)) continue;   // already joined by a fixed link of this mode (the game planned one earlier)
-    const idx = buildIndex(sim, s.mode), a = nodeAtCell(sim, w, idx, ca.cell, "junction"), b = nodeAtCell(sim, w, idx, cb.cell, "junction"), id = newId(sim, "edge");
     const rail = s.mode === "rail", real = era === "heisei" || due <= 1950;
     let op: string | undefined; if (rail) op = sim.operators.jnr?.until !== undefined ? "" : "jnr";
-    const e: SimEdge = {
-      ...newEdgeDefaults(), id, a, b, cells: [ca.cell, cb.cell], lengthKm: Math.round(Math.hypot(ca.pos[0] - cb.pos[0], ca.pos[1] - cb.pos[1]) * 10) / 10,
-      surface: "paved", quality: 92, built: 1, open: true, state: "open", standard: "standard", maxGradePct: 1, builtMonth: sim.month, region: w.prefOf(ca.cell) ?? capitalPref(sim),
-      facility: s.fac, facilityName: `${s.id}:${s.name}`, ...(rail ? { mode: "rail" as const, op: op || "jnr" } : {}),
+    /* Issue #61: the land lines first (city centre -> shore anchor on each side), then the short facility between the anchors; one route runs through all three.
+       Fail-safe: both land lines are worked out BEFORE anything is laid, for a few candidate anchor pairs in turn; a pair whose line cannot be drawn on either side is not used. If none of them works, the old
+       city-to-city facility is used (and the history says so): a facility is never left with an anchor cut off from its city. */
+    let an: { a: number; b: number; km: number } | null = null, legs: [number[] | null, number[] | null] = [null, null];
+    for (const c of shoreAnchorCandidates(w, ca.cell, cb.cell, ANCHOR_TRIES)) {
+      const pa = c.a === ca.cell ? [] : pf(w, ca.cell, c.a, { margin: 12 }), pb = c.b === cb.cell ? [] : pf(w, cb.cell, c.b, { margin: 12 });
+      if (pa && pb) { an = c; legs = [pa, pb]; break; }
+    }
+    /* All or nothing: the roads, nodes and edges a crossing makes are laid as one attempt. The network is kept as it was (a snapshot); if either land line comes back empty, or the three parts (land line, facility, land line) do not
+       join into one continuous chain, the snapshot is restored -- no half-built access road or stray node stays -- and the old city-to-city facility is made instead (the history says so). */
+    const snap = JSON.stringify({ edges: sim.edges, nodes: sim.nodes, routes: sim.routes, projects: sim.projects });   /* (a land line that touches an existing edge splits it, and the routes and projects that name the edge are rewritten: they are part of the snapshot) */
+    const attempt = (anchor: typeof an) => {
+      const land: RouteEdgeRef[][] = [[], []], made: string[] = []; let broken = false;
+      if (anchor) for (const k of [0, 1] as const) { const path = legs[k]!; if (path.length < 2) continue;
+        const l = layPath(sim, w, path, { open: true, surface: "paved", quality: 80, built: 1, month: sim.month, standard: "standard", mode: s.mode, ...(rail ? { op: op || "jnr" } : {}) }); land[k] = l.chain; made.push(...l.created); if (!l.chain.length) broken = true; }
+      const idx = buildIndex(sim, s.mode), fa = anchor ? anchor.a : ca.cell, fb = anchor ? anchor.b : cb.cell, a = nodeAtCell(sim, w, idx, fa, "junction"), b = nodeAtCell(sim, w, idx, fb, "junction"), id = newId(sim, "edge");
+      const e: SimEdge = {
+        ...newEdgeDefaults(), id, a, b, cells: [fa, fb], lengthKm: anchor ? anchor.km : Math.round(Math.hypot(ca.pos[0] - cb.pos[0], ca.pos[1] - cb.pos[1]) * 10) / 10,
+        surface: "paved", quality: 92, built: 1, open: true, state: "open", standard: "standard", maxGradePct: 1, builtMonth: sim.month, region: w.prefOf(ca.cell) ?? capitalPref(sim),
+        facility: s.fac, facilityName: `${s.id}:${s.name}`, ...(rail ? { mode: "rail" as const, op: op || "jnr" } : {}),
+      };
+      sim.edges[id] = e; const chain: RouteEdgeRef[] = [...land[0], { edgeId: id, dir: 1 }, ...[...land[1]].reverse().map((r) => ({ ...r, dir: (r.dir === 1 ? -1 : 1) as 1 | -1 }))];
+      if (anchor && (broken || !chainContinuous(sim, chain))) { const s0 = JSON.parse(snap) as { edges: typeof sim.edges; nodes: typeof sim.nodes; routes: typeof sim.routes; projects: typeof sim.projects }; sim.edges = s0.edges; sim.nodes = s0.nodes; sim.routes = s0.routes; sim.projects = s0.projects; return null; }
+      return { e, id, chain, made };
     };
-    sim.edges[id] = e; if (sim.crossings) carryOver(sim, w, e);
-    if (rail && op === "") { e.op = successorOperator(sim, w, e, year); }
-    pushHist(sim, e, `${s.name}が開通(${real ? "史実に沿う" : "この世界線の架空の開通年"})`);
-    const grade = rail ? (e.op === "jnr" ? "jnr" : "priv") : "national", r = designate(sim, [{ edgeId: id, dir: 1 }], grade, rail ? (e.op === "jnr" ? "JP" : e.op!) : "JP", `${ca.name}〜${cb.name}(${s.name})`, "島をまたぐ路線", true);
+    const built = (an ? attempt(an) : null) ?? attempt(null)!, { e, id, chain, made } = built;
+    const usedAnchor = !!an && e.cells[0] === an.a && e.cells[1] === an.b;
+    if (sim.crossings) carryOver(sim, w, e);
+    if (rail && op === "") { e.op = successorOperator(sim, w, e, year); for (const m of made) { const x = sim.edges[m]; if (x) x.op = e.op; } }
+    pushHist(sim, e, `${s.name}が開通(${real ? "史実に沿う" : "この世界線の架空の開通年"})${usedAnchor ? "" : "。海峡の両岸から都市への陸上の線を引けず、都市間の施設で代用した"}`);
+    const grade = rail ? (e.op === "jnr" ? "jnr" : "priv") : "national", r = designate(sim, chain, grade, rail ? (e.op === "jnr" ? "JP" : e.op!) : "JP", `${ca.name}〜${cb.name}(${s.name})`, "島をまたぐ路線", true);
     ev(sim, "facility", `${atStart ? "" : real ? "【史実】" : "【架空】"}${s.name}が開通(${ca.name}〜${cb.name})${r ? `。${r.name}` : ""}`, atStart ? "1950年にはすでに開通していた島間の連絡" : `島をまたぐ${rail ? "鉄道" : "道路"}が結ばれた。${real ? "実際の開通年" : "世界線ごとに開通年が違う(架空)"}`, { edge: id });
     n++;
   }

@@ -24,8 +24,7 @@ describe("Stage 37 C3-C5/C8: from 1950 every island is considered", () => {
     const biggest = [...masses.entries()].sort((a, b) => b[1] - a[1])[0][0]; const ends = isl.map((p) => { const e = g.sim.edges[p.edgeIds[0]]; return e ? [g.w.lm[e.cells[0]], g.w.lm[e.cells[e.cells.length - 1]]] : null; }).filter((x): x is number[] => !!x);
     expect(ends.length).toBeGreaterThan(8); expect(ends.filter((x) => !x.includes(biggest)).length).toBeGreaterThan(3);
   });
-  it("the far north is reached: a link ends on 樺太 or a Kuril island (Stage 40: an 1800 start no longer begins with 1950-style roads on Hokkaido's coast, so this comes up to 30 years later than at Stage 39: it is checked in 2030)", () => {
-    advance(g.sim, g.w, 12 * (2030 - yearOf(g.sim))); const isl = Object.values(g.sim.projects).filter((p) => p.reason.includes("島間接続"));
+  it("the far north is reached: a link ends on 樺太 or a Kuril island", () => {
     const far = new Set<number>(); for (const c of g.w.cities) if (c.island === 10) far.add(g.w.lm[c.cell]);
     const hit = isl.some((p) => { const e = g.sim.edges[p.edgeIds[0]]; return !!e && (far.has(g.w.lm[e.cells[0]]) || far.has(g.w.lm[e.cells[e.cells.length - 1]])); });
     expect(hit).toBe(true);

@@ -1,5 +1,5 @@
 import { fireHistory1800 } from "./history1800";
-import { POP_1800_FACTOR, RELOC_STEP_1800, START_YEAR_1800, airShiftYears, mayScheduleServiceFor } from "./rules1800";
+import { POP_1800_FACTOR, RELOC_STEP_1800, START_YEAR_1800, airShiftYears, mayScheduleServiceFor, shipGrade } from "./rules1800";
 /**
  * Monthly road-network simulation. Pure and deterministic: (sim, world) -> sim, all randomness from sim.rngState.
  * Every change that matters appends an event with its cause and, for roads, an entry in the edge's own history.
@@ -204,6 +204,7 @@ const edgeName = (sim: SimState, e: SimEdge) => `${sim.nodes[e.a]?.name ?? "地�
 function* yearlyGen(sim: SimState, w: World): Generator<void> {
   const y = yearOf(sim);
   if (sim.rec34) { const n = stepReclaim(sim, w, y).length; if (n) ev(sim, "reclaim", `${y}年: 首都・副首都の埋め立てで${n}マス(約${n * w.cell * w.cell}km²)の陸地が増えた`, "埋め立ては年間の面積をためておき、1マス(25km²)分になった時に1マスずつ海岸に足す。別の島とは陸続きにならない", {}); }   // Stage 34
+  if (sim.rules1800) { const g = shipGrade(sim, y); for (const e of Object.values(sim.edges)) if (e.facility === "ferry" && (e.shipGrade ?? 0) !== g) e.shipGrade = g; }   // Stage 40 (#66 B): the ships of the ferry routes follow the year's grade (monotone)
   if (sim.oldmuni40 && y > sim.startYear) { foundOldMunicipalities(sim, w, y); promoteSettlements(sim, w, y); }   // Stage 40: old municipalities come into being and are promoted in stages
   if (sim.rules1800 && y > sim.startYear) fireHistory1800(sim, y);   // Stage 36: the technology rows and the fictional history of an 1800 game
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, hubYear(sim, y)); }
