@@ -61,4 +61,18 @@ describe("Issue #61 fail-safe: a facility is never left with an anchor cut off f
     const base = realWorld(true, true, 3), g = stage3SimOn(base, 0, 7, {}) as unknown as { sim: SimState; w: import("../../src/sim/world").World }; delete (g.sim as { crossings?: boolean }).crossings; openStraits(g.sim, g.w, 2100, true);
     let n = 0; for (const s of STRAITS) { const e = fac(g.sim, s.id); if (!e) continue; n++; expect(e.lengthKm, s.id).toBeLessThanOrEqual(30); expect(chainContinuous(g.sim, routeOf(g.sim, e).edges), s.id).toBe(true); } expect(n).toBeGreaterThanOrEqual(4);
   });
+  it("all or nothing: if a land line comes back empty after the other was laid, the network is restored (no stray road, edge or node) and only the old city-to-city facility is made", () => {
+    const { sim, w } = fresh(); const e0 = Object.keys(sim.edges).length, n0 = Object.keys(sim.nodes).length; let calls = 0;
+    const pf: typeof pathfind = (ww, a, b, o) => { const p = pathfind(ww, a, b, o); calls++; return p && calls % 2 === 0 ? [p[0], p[0]] : p; };   // every second line is a degenerate path: layPath lays nothing for it
+    const n = openStraits(sim, w, 2100, true, pf); expect(n).toBeGreaterThanOrEqual(6);
+    expect(Object.keys(sim.edges).length - e0, "exactly one new edge per crossing: the facility").toBe(n); expect(Object.keys(sim.nodes).length - n0, "at most the two city nodes per crossing").toBeLessThanOrEqual(2 * n);
+    for (const st of STRAITS) { const e = fac(sim, st.id); if (!e || e.hist.every((h) => !h.t.includes("代用"))) continue; const ca = w.cityById.get(st.a)!, cb = w.cityById.get(st.b)!; expect(e.cells, st.id).toEqual([ca.cell, cb.cell]); expect(routeOf(sim, e).edges.length).toBe(1); }
+    expect(checkIntegrity(sim)).toEqual([]);
+  });
+  it("one failing crossing does not spoil the others: the first falls back whole, the rest are made with their anchors and continuous routes", () => {
+    const { sim, w } = fresh(); let calls = 0; const pf: typeof pathfind = (ww, a, b, o) => { const p = pathfind(ww, a, b, o); calls++; return p && calls === 2 ? [p[0], p[0]] : p; };   // only the second line of the very first pair
+    openStraits(sim, w, 2100, true, pf); const first = fac(sim, "kanmon-road")!; expect(first.hist.some((h) => h.t.includes("代用"))).toBe(true);
+    for (const st of STRAITS) { const e = fac(sim, st.id); if (!e || st.id === "kanmon-road") continue; const ca = w.cityById.get(st.a)!; expect(e.cells[0] === ca.cell, st.id).toBe(false); expect(chainContinuous(sim, routeOf(sim, e).edges), st.id).toBe(true); }
+    expect(checkIntegrity(sim)).toEqual([]);
+  });
 });
