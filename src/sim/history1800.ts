@@ -18,6 +18,8 @@ export interface Milestone { year: number; id: string; tech: string; phase: Phas
 export const TECH_MILESTONES: readonly Milestone[] = [
   { year: 1810, id: "rail-exp", tech: "鉄道", phase: "experiment", text: "産業用・実験的な鉄道が試みられた(旅客は乗れない)", cause: "仕様: 1810年は産業用・実験の段階。定期の旅客路線は作られない", real: false },
   { year: 1830, id: "rail-svc", tech: "鉄道", phase: "service", text: "鉄道の旅客営業が始まった(官営鉄道)", cause: "仕様: 1830年に公共の鉄道。これ以後、鉄道の計画が立つ", real: false },
+  { year: 1830, id: "ship-steam", tech: "船舶", phase: "service", text: "蒸気船の定期航路が始まり、渡船と港の輸送が速くなった(帆船の渡船は1800年から)", cause: "仕様(Stage 40): 海路は1800年から実用。蒸気船は1830年(海路重視の元号では最大20年早まる)。渡船の速さ×1.35", real: false },
+  { year: 1880, id: "ship-steel", tech: "船舶", phase: "spread", text: "鋼鉄の汽船が広まり、渡船と港の輸送がさらに速くなった", cause: "仕様(Stage 40): 鋼鉄の汽船は1880年(海路重視の元号では最大20年早まる)。渡船の速さ×1.8", real: false },
   { year: 1850, id: "rail-spread", tech: "鉄道", phase: "spread", text: "本線の鉄道が各地へ広がり始めた", cause: "仕様: 1850年から本線の拡大期。島をまたぐ鉄道の固定連絡も計画できる", real: false },
   { year: 1860, id: "airship-exp", tech: "飛行船", phase: "experiment", text: "動力つきの飛行船が試験飛行された(定期の運航はない)", cause: "仕様: 1860年は試験段階。空路は作られない", real: false },
   { year: 1890, id: "car-exp", tech: "自動車", phase: "experiment", text: "自動車と試験用の道路が現れた", cause: "仕様: 1890年は自動車・試験道路の段階", real: false },
@@ -45,7 +47,7 @@ export const MOVABLE: Record<string, { id: TechId; early: number }> = {
   "rail-exp": { id: "rail", early: EARLY_EXPERIMENT_YEARS }, "rail-svc": { id: "rail", early: EARLY_SERVICE_YEARS }, "rail-spread": { id: "rail", early: EARLY_SERVICE_YEARS },
   "airship-exp": { id: "airship", early: EARLY_EXPERIMENT_YEARS }, "airship-rigid": { id: "airship", early: EARLY_EXPERIMENT_YEARS },
   "car-exp": { id: "car", early: EARLY_EXPERIMENT_YEARS }, "car-spread": { id: "car", early: EARLY_SERVICE_YEARS },
-  "plane-exp": { id: "plane", early: EARLY_EXPERIMENT_YEARS }, "plane-svc": { id: "plane", early: EARLY_SERVICE_YEARS }, "hwy-svc": { id: "expressway", early: EARLY_SERVICE_YEARS },
+  "plane-exp": { id: "plane", early: EARLY_EXPERIMENT_YEARS }, "plane-svc": { id: "plane", early: EARLY_SERVICE_YEARS }, "ship-steam": { id: "ship", early: EARLY_SERVICE_YEARS }, "ship-steel": { id: "ship", early: EARLY_SERVICE_YEARS }, "hwy-svc": { id: "expressway", early: EARLY_SERVICE_YEARS },
 };
 type SimYears = { startYear: number; kaigen?: { eras: readonly { start: number; stance: string }[] }; events?: SimState["events"] };
 /** Has this row's milestone been reached by `year` in this game? */
@@ -57,7 +59,7 @@ export function techNow(tech: string, year: number, sim?: SimYears): { phase: Ph
   const real = cur && sim?.events?.find((e) => e.kind === "tech" && e.refs?.milestone === cur!.id);   /* the year it really came in this game (the row's own year moves with the era stance) */
   return cur ? { phase: cur.phase, since: real ? sim!.startYear + Math.floor(real.month / 12) : cur.year, label: PHASE_LABEL[cur.phase] } : { phase: "none", label: "まだない" };
 }
-export const TECHS_1800 = ["鉄道", "飛行船", "自動車", "飛行機", "高速道路"] as const;
+export const TECHS_1800 = ["鉄道", "飛行船", "自動車", "飛行機", "高速道路", "船舶"] as const;
 
 /** Records the rows of `year` in the timeline (once each; an 1800 game only). */
 export function fireHistory1800(sim: SimState, y: number): number {
