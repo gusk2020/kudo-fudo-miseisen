@@ -124,6 +124,8 @@ export interface SimState {
   /** Stage 40: a new 1800 game founds and promotes old municipalities in stages (oldmuni40.ts); absent = an older game */
   oldmuni40?: true;
   /** Stage 40 / Issue #67 (first stage): definitions of old municipalities promoted to simulated cities; restored into the world on load (oldcity40.ts). Absent = none */
+  /** Issue #67 second stage: the promotion of old municipalities to simulated cities is on (oldpromote40.ts). Set for new 1800 games only after the measurements allowed it */
+  promote40?: true;
   oldCities40?: import("./oldcity40").OldCityDef[];
   /** Stage 40 (Issue #66): new railway lines that failed the technology check, by candidate (city ids and cells), with [year, the longest tunnel that year's technology could dig] (planning.ts RAIL_RETRY_YEARS). 1800-start games only */
   railFail?: Record<string, [number, number]>;
