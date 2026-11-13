@@ -11,9 +11,9 @@
 import { gameName, oldPlaces } from "../core/gazetteer2000";
 import { CITY_FROM } from "../core/muni39";
 import { ev } from "./engine";
-import { buildIndex, layPath } from "./network";
+import { layPath } from "./network";
 import { mayStand, reclaimedCell } from "./muni39sim";
-import { addOldCity, oldCityId, removeOldCityFromWorld, OLDCITY_MAX } from "./oldcity40";
+import { addOldCity, conflictOf, oldCityId, removeOldCityFromWorld, OLDCITY_MAX } from "./oldcity40";
 import { pathfind, type World } from "./world";
 import type { SimState } from "./types";
 
@@ -41,13 +41,16 @@ export function promoteOldCities(sim: SimState, w: World, year: number, pf: type
     if (n >= PROMOTE_PER_STEP || (sim.oldCities40?.length ?? 0) >= PROMOTE_MAX) break;
     const v = Object.values(sim.settlements).find((x) => x.origin?.code === c.id.slice(2) && !x.gone)!, place = oldPlaces().find((p) => p.code === v.origin!.code); if (!v || !place) continue;
     const near = w.cityById.get(c.near)!, path = pf(w, v.cell, near.cell, { margin: 12 }); if (!path || path.length < 2) continue;   // no road can be drawn: no promotion, nothing changed
-    const snap = JSON.stringify({ edges: sim.edges, nodes: sim.nodes, routes: sim.routes, projects: sim.projects, cities: sim.cities, settlements: sim.settlements, defs: sim.oldCities40 ?? null });
-    const undo = () => { const s0 = JSON.parse(snap) as Record<string, any>; sim.edges = s0.edges; sim.nodes = s0.nodes; sim.routes = s0.routes; sim.projects = s0.projects; sim.cities = s0.cities; sim.settlements = s0.settlements; if (s0.defs) sim.oldCities40 = s0.defs; else delete sim.oldCities40; removeOldCityFromWorld(w, c.id); };
-    const name = gameName(place, "city"), pop = v.pop;
-    const err = addOldCity(sim, w, { id: c.id, code: place.code, name, pref: w.prefOf(v.cell)!, cell: v.cell, year, pop0: pop }); if (err) { undo(); continue; }
-    const lay = layPath(sim, w, path, { open: true, surface: "paved", quality: 70, built: 1, month: sim.month, standard: "standard" }); buildIndex(sim);
-    if (!lay.chain.length) { undo(); continue; }
-    sim.settlements[v.id].pop = 0; sim.settlements[v.id].gone = true;   // the people are the city's now (counted once)
+    /* Order: everything that can fail comes first and is undone as one piece; the people and the city are committed last. The snapshot holds every part of the game the road laying or the definition can touch: the network (edges, nodes, routes,
+       projects), the id counters (`next`), the random state, the people table, the settlements and the definitions; the world's index and caches are put back by removeOldCityFromWorld. */
+    const snap = JSON.stringify({ edges: sim.edges, nodes: sim.nodes, routes: sim.routes, projects: sim.projects, next: sim.next, rngState: sim.rngState, cities: sim.cities, settlements: sim.settlements, defs: sim.oldCities40 ?? null });
+    const undo = () => { const s0 = JSON.parse(snap) as Record<string, any>; sim.edges = s0.edges; sim.nodes = s0.nodes; sim.routes = s0.routes; sim.projects = s0.projects; sim.next = s0.next; sim.rngState = s0.rngState; sim.cities = s0.cities; sim.settlements = s0.settlements; if (s0.defs) sim.oldCities40 = s0.defs; else delete sim.oldCities40; removeOldCityFromWorld(w, c.id); };
+    const name = gameName(place, "city"), pop = v.pop, def = { id: c.id, code: place.code, name, pref: w.prefOf(v.cell)!, cell: v.cell, year, pop0: pop };
+    if (conflictOf(w, def)) continue;                                   // nothing has been touched yet
+    const lay = layPath(sim, w, path, { open: true, surface: "paved", quality: 70, built: 1, month: sim.month, standard: "standard" });
+    if (!lay.chain.length) { undo(); continue; }                         // the road comes back empty: the network and counters are put back
+    const err = addOldCity(sim, w, def); if (err) { undo(); continue; }   // (the definition conflicts: the road is undone too)
+    sim.settlements[v.id].pop = 0; sim.settlements[v.id].gone = true;     // the people are the city's now (counted once)
     n++; if (names.length < 3) names.push(name);
     ev(sim, "muni40", `${year}年: ${v.name}が都市になった(${name})`, `人口${Math.round(pop / 1000)}千人に達した旧${place.pref}${place.name}の地が、道路で${near.name}につながる都市になった(ゲーム上の昇格。史実ではない)`, { city: c.id });
   }

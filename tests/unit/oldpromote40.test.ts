@@ -62,12 +62,5 @@ describe("Issue #67 second stage: promotion of old municipalities to simulated c
     const h = stage3Sim("heisei", 7, true, 0, 2, true); h.sim.policy!.mode = "auto"; advance(h.sim, h.w, 12 * 25); expect(h.sim.oldCities40).toBeUndefined(); expect(h.w.cities.some((c) => c.id.startsWith("O-"))).toBe(false);
     const k = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true } as never); expect(k.sim.promote40).toBe(true); expect(h.sim.promote40).toBeUndefined(); expect(promoteOldCities(h.sim, h.w, 1960)).toBe(0);
   }, 600000);
-  it("failures leave nothing: no road can be drawn, a degenerate road, the cap, a taken id -- the game is byte-identical afterwards", () => {
-    const f = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true } as never); f.sim.policy!.mode = "auto"; advance(f.sim, f.w, 12 * (2000 - yearOf(f.sim)));
-    const y = yearOf(f.sim) - ((yearOf(f.sim) - f.sim.startYear) % 10) + 10; const cands = promotionCandidates(f.sim, f.w, y); if (!cands.length) return;
-    const snap = () => JSON.stringify([f.sim, f.w.cities.length]); const before = snap();
-    expect(promoteOldCities(f.sim, f.w, y, () => null)).toBe(0); expect(snap()).toBe(before);
-    expect(promoteOldCities(f.sim, f.w, y, (ww, a, b, o) => { const p = pathfind(ww, a, b, o); return p ? [p[0], p[0]] : p; })).toBe(0); expect(snap(), "a road that lays nothing is undone").toBe(before);
-    f.sim.oldCities40 = Array.from({ length: OLDCITY_MAX }, (_, i) => ({ id: "O-9" + String(i).padStart(4, "0"), code: "9" + i, name: "x", pref: "JP-01", cell: 0, year: 1900, pop0: 1 })); const full = JSON.stringify(f.sim); expect(promoteOldCities(f.sim, f.w, y)).toBe(0); expect(JSON.stringify(f.sim)).toBe(full);
-  }, 900000);
+  // (the failure paths are in oldpromote40fail.test.ts, with a candidate that is certain to exist)
 });

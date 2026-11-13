@@ -633,7 +633,7 @@ export function settleKaigen(sim: SimState, idx: number, auto = false) {
 const STANCE_NAME: Record<string, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kobun: "旧版" };
 export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
 /** Fast-forward with no player (tests, tools): a policy window that opens is resolved by the world's own scores. */
-export function advance(sim: SimState, w: World, months: number) { for (let i = 0; i < months; i++) { stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (waiting2200(sim)) break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
+export function advance(sim: SimState, w: World, months: number) { if (sim.oldmuni40) syncOldCities(sim, w); for (let i = 0; i < months; i++) {   /* Issue #67: two games on one world (tests only) each get their own promoted cities back before they run */ stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (waiting2200(sim)) break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };
