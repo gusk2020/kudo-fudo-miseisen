@@ -53,7 +53,7 @@ test("Issue #67: promoted old-municipality cities in the real app: drawn on the 
   console.log("P67 ledger", JSON.stringify(led)); if (led.box) { expect(led.box[0]).toBeGreaterThanOrEqual(-1); expect(led.box[0] + led.box[2]).toBeLessThanOrEqual(413); }
   await page.screenshot({ path: "test-results/promote67-ledger.png" }); await kfm(page, "a => { a.sheet = null; return 1; }");
   // ---- slot 2 holds the later state; slot 1 the earlier one ----
-  await page.click("#slot-2 .slot-save"); await page.waitForTimeout(3000);
+  await menu(page); await page.waitForSelector("#slot-2 .slot-save"); await page.click("#slot-2 .slot-save"); await page.waitForTimeout(3000);
   // ---- reload the page, load slot 1 with the real button ----
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 120000 }); await page.waitForTimeout(2000);
   await menu(page); await page.waitForSelector("#slot-1 .slot-load"); await page.click("#slot-1 .slot-load"); await page.waitForTimeout(9000);
