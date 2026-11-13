@@ -42,6 +42,16 @@ test("Issue #67: promoted old-municipality cities in the real app: drawn on the 
   await page.setViewportSize({ width: 1280, height: 800 }); await page.waitForTimeout(500); await drawnCheck("pc-1280x800"); await page.setViewportSize({ width: 412, height: 915 }); await page.waitForTimeout(500);
   // the buttons of the screen are still usable with the extra cities (the menu opens, the slot buttons are in view and tappable)
   await menu(page); await page.waitForSelector("#slot-1 .slot-save"); const bb = (await page.locator("#slot-1 .slot-save").boundingBox())!; expect(bb.x).toBeGreaterThanOrEqual(0); expect(bb.x + bb.width).toBeLessThanOrEqual(412); expect(bb.width).toBeGreaterThan(20);
+  // ---- cost of drawing with the promoted cities on the map (numbers are logged, not a threshold: this is a software-GL Chromium, not a Pixel 7a) ----
+  const redraw: number[] = (await kfm(page, "a => { const t = []; for (let i = 0; i < 10; i++) { const s = performance.now(); a.r.roads.redraw(a.r.view.zoom); t.push(performance.now() - s); } return t; }")) as number[];
+  console.log("P67 redraw ms (10 runs, median)", [...redraw].sort((x, y) => x - y)[5].toFixed(1), "promoted", promoted.n);
+  // the buttons of the dock are not covered by anything (the element at the centre of each is the button itself), with the promoted cities on the map
+  const covered = (await kfm(page, "a => [...document.querySelectorAll('#dock button, .dock button')].filter((b) => { const r = b.getBoundingClientRect(); if (r.width < 2) return false; const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !(e && (e === b || b.contains(e))); }).length")) as number; expect(covered, "no dock button is covered").toBe(0);
+  // the ledger opens and stays inside the screen; whether it names the promoted city is logged
+  await kfm(page, "a => { a.sheet = null; a.openSheet('ledger'); return 1; }"); await page.waitForTimeout(800);
+  const led: any = await kfm(page, `a => { const sh = document.querySelector('.sheet, #sheet'); const r = sh ? sh.getBoundingClientRect() : null; return { box: r ? [r.x, r.y, r.width, r.height] : null, has: document.body.innerText.includes(a.world.cityById.get('${shownId}').name) }; }`);
+  console.log("P67 ledger", JSON.stringify(led)); if (led.box) { expect(led.box[0]).toBeGreaterThanOrEqual(-1); expect(led.box[0] + led.box[2]).toBeLessThanOrEqual(413); }
+  await page.screenshot({ path: "test-results/promote67-ledger.png" }); await kfm(page, "a => { a.sheet = null; return 1; }");
   // ---- slot 2 holds the later state; slot 1 the earlier one ----
   await page.click("#slot-2 .slot-save"); await page.waitForTimeout(3000);
   // ---- reload the page, load slot 1 with the real button ----
