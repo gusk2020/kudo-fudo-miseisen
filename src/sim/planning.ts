@@ -182,6 +182,14 @@ export const RAIL_RETRY_YEARS = 6;
 export const railFailKey = (w: World, c: { a?: number; b?: number; toCell?: number; fromCell?: number }) => `${c.a !== undefined ? w.cities[c.a]?.id ?? c.a : ""}:${c.b !== undefined ? w.cities[c.b]?.id ?? c.b : ""}:${c.toCell ?? ""}:${c.fromCell ?? ""}`;
 /** Still cooling down? Only while the same technology stands: a year that can dig a longer tunnel than the failed try allowed is tried again at once. */
 export const railFailCooling = (sim: SimState, w: World, c: { a?: number; b?: number; toCell?: number; fromCell?: number }, y: number): boolean => { const f = sim.railFail?.[railFailKey(w, c)]; if (!sim.rules1800 || !f) return false; return y - f[0] < RAIL_RETRY_YEARS && (!sim.tech || techAt(sim.tech.k, y).tunnelKm <= f[1]); };
+/**
+ * Stage 40 (Issue #66, priority 3): a new line whose path search finds almost nothing new to build (under 15 km of track that is not already there: the two cities are already joined by rail) is not searched again for RAIL_RETRY_YEARS
+ * *unless the railway network has changed since*. Measured (11 seeds x 3 stances, docs/ISSUE66.md): these "short" outcomes and the technology failures together took all MAX_RAIL_PATHFINDS searches of every year in a 鉄道重視 game,
+ * so lines that could be built were never tried (new lines: 0-1 per five years while about 294 city pairs stayed unserved). The result is a function of the pair and the network, so it is repeated only after the network changed or the wait ended.
+ * The memory is bounded (entries older than the wait are dropped) and, like railFail, only 1800-start games use it (a 1950 start is exactly as it was).
+ */
+export const railNetVersion = (sim: SimState): number => { let n = 0, c = 0; for (const e of Object.values(sim.edges)) if (e.mode === "rail" && e.facility !== "ferry") { n++; c += e.cells.length; } return n * 1e6 + c; };
+export const railShortWaiting = (sim: SimState, w: World, c: { a?: number; b?: number; toCell?: number; fromCell?: number }, y: number, ver: number): boolean => { const f = sim.railShort?.[railFailKey(w, c)]; return !!sim.rules1800 && !!f && f[1] === ver && y - f[0] < RAIL_RETRY_YEARS; };
 /** Stage 7: a corridor between two cities of at least this size and at most this far apart may be built by a private company even in the national railway's era (was 250,000 / 110 km). */
 export const PRIVATE_MIN_POP = 150000, PRIVATE_MAX_KM = 130;
 export const RAIL_UNIT: Record<Standard, number> = { rural: 1.6, standard: 2.8, highgrade: 6 };
@@ -238,6 +246,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
   let made = 0, pf = MAX_RAIL_PATHFINDS, nNew = 0, nUp = 0, nLocal = 0; const liveLocal = live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length, maxLocal = 1 + Math.round(dl.railBuild * 3); const wantNew = dl.railBuild > 0.9 ? 2 : 1, wantUp = Math.max(1, Math.round(0.3 + 1.2 * dl.railBuild));
   // Stage 16: the policy's own trunk upgrades have a turn of their own (one a year, two at a time), or the jammed Pacific belt's never-ending list of congested lines takes every turn there is
   const livePol = live.filter((p) => p.kind !== "new" && p.reason.includes("復興方針")).length; let nPol = 0;
+  const netVer = railNetVersion(sim); if (sim.railShort) for (const k of Object.keys(sim.railShort)) if (y - sim.railShort[k][0] >= RAIL_RETRY_YEARS) delete sim.railShort[k];   // (Issue #66: the wait is over: the entry goes)
   const ranked = [...cands.filter((c) => c.kind === "new" && !c.local).slice(0, 25), ...cands.filter((c) => c.local).slice(0, 8), ...cands.filter((c) => c.kind !== "new" && !c.pol).slice(0, 12), ...cands.filter((c) => c.pol).slice(0, 6)].sort((p, q) => q.score - p.score);
   for (const c of ranked) {
     if (nNew >= wantNew && nUp >= wantUp && nLocal >= 1) break;
@@ -251,10 +260,10 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
       ev(sim, "project", `${c.kind === "restore" ? "復活計画" : e.standard === "rural" ? "電化・複線化計画" : "高速化計画"}: ${projLabel(sim, p)}`, c.reason, { project: p.id, edge: e.id }); made++; if (c.pol) nPol++; else nUp++; yield; continue;
     }
     if ((globalThis as any).__DBG) console.log("cand", c.kind, c.score.toFixed(2), c.a, c.b, "pf", pf, "nNew", nNew, nUp);
-    if (c.kind === "new" && c.a !== undefined && (c.b !== undefined || c.toCell !== undefined) && !railFailCooling(sim, w, c, y) && pf-- > 0) {
+    if (c.kind === "new" && c.a !== undefined && (c.b !== undefined || c.toCell !== undefined) && !railFailCooling(sim, w, c, y) && !railShortWaiting(sim, w, c, y, netVer) && pf-- > 0) {
       const a = w.cities[c.a], aCell = c.fromCell ?? a.cell, aName = c.fromName ?? a.name, b = c.b !== undefined ? w.cities[c.b] : null, bCell = b ? b.cell : c.toCell!, bName = b ? b.name : c.toName ?? "既設線", idx = buildIndex(sim, "rail"), ref = referenceGrids(w), std = c.std ?? "rural";
       const path = pathfind(w, aCell, bCell, { rail: true, ease: crossingEase(sim.tech, y), bias: (k) => refBias(ref.rail)(k) * (idx.roadCells.has(k) ? 1.6 : 1), margin: 16 }); yield; if (!path) continue;   // a new line is a direct one: existing track is not discounted
-      const newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) continue;
+      const newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) { if (sim.rules1800) (sim.railShort ??= {})[railFailKey(w, c)] = [y, netVer]; continue; }
       const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) { if (sim.rules1800) (sim.railFail ??= {})[railFailKey(w, c)] = [y, sim.tech ? techAt(sim.tech.k, y).tunnelKm : 0]; continue; }   // not buildable with this year's tunnelling (yet)
       if (!affordable(sim, w, "rail", path, newKm, RAIL_UNIT[std], railPurse(sim), y)) continue;
       const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > PRIVATE_MIN_POP && dist(a.pos, b.pos) < PRIVATE_MAX_KM,   /* Stage 7: private companies enter the busier corridors the national railway serves poorly, so the two compete */ localPrivate = !!c.local && !jnrEra;
