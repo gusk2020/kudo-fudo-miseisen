@@ -68,9 +68,9 @@ export function boostAt(sites: Site[], pos: Vec, pref: string | null): Boost {
   for (const d of Object.keys(b) as Dim[]) b[d] = Math.min(BOOST_CAP, b[d]);
   return b;
 }
-const cache = new WeakMap<SimState, { w: World; sites: Site[]; city: Map<string, Boost>; pax: Map<string, number>; goods: Map<string, number> }>();
+const cache = new WeakMap<SimState, { w: World; n: number; sites: Site[]; city: Map<string, Boost>; pax: Map<string, number>; goods: Map<string, number> }>();
 function entry(sim: SimState, w: World) {
-  let e = cache.get(sim); if (e && e.w === w) return e;
+  let e = cache.get(sim); if (e && e.w === w && e.n === w.cities.length) return e;   /* Issue #67: the city list changes when old municipalities are promoted: a table made for the old list is rebuilt */
   const sites = sitesOf(sim, w), city = new Map<string, Boost>(); for (const c of w.cities) city.set(c.id, boostAt(sites, c.pos, c.pref));
   // The pull on passengers and goods REDISTRIBUTES demand toward the sites rather than adding to the nation's total: the multipliers are rescaled so that the sum of the
   // gravity masses over every city pair (the thing the flow model adds up) is what it was without the sites. (Measured: without this, the sites alone made every line busier by
@@ -82,7 +82,7 @@ function entry(sim: SimState, w: World) {
     const k = boosted > 0 ? Math.pow(base / boosted, 1 / 1.2) : 1; for (const x of m) out.set(x.id, x.a * k);
   };
   norm((b) => 1 + b.commerce + b.tourism, pax); norm((b) => 1 + b.manufacturing, goods);
-  e = { w, sites, city, pax, goods }; cache.set(sim, e); return e;
+  e = { w, n: w.cities.length, sites, city, pax, goods }; cache.set(sim, e); return e;
 }
 /** Stage 23: the facilities changed -- the next ask rebuilds the sites. */
 export const invalidateSites = (sim: SimState) => { cache.delete(sim); };

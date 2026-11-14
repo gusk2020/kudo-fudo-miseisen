@@ -43,3 +43,22 @@ export function addOldCity(sim: SimState, w: World, d: OldCityDef): string | nul
   const defs = (sim.oldCities40 ??= []); if (defs.some((x) => x.id === d.id || x.cell === d.cell)) return `${d.id}: already defined`; if (defs.length >= OLDCITY_MAX) return "limit reached";
   const bad = conflictOf(w, d); if (bad) return bad; defs.push({ ...d }); const r = restoreOldCities(sim, w); return r.problems[0] ?? null;
 }
+
+/** Takes a promoted city (and its definition) out of the world again. Used to refuse a half-made promotion and by the sync below. */
+export function removeOldCityFromWorld(w: World, id: string): void {
+  const c = w.cityById.get(id); if (!c) return; w.cityById.delete(id); if (w.cityByCell.get(c.cell) === c) w.cityByCell.delete(c.cell);
+  const i = w.cities.indexOf(c); if (i >= 0) w.cities.splice(i, 1); resetWorldCaches(w);
+}
+/**
+ * Makes the world hold exactly the promoted cities of THIS game: any promoted city that is in the world but not in the game (a world shared with another game, as a test's cached world is) is taken out, and the game's own are put in.
+ * Called when a game is created and once a year. In the app every game has its own world, so this does nothing there.
+ */
+export function syncOldCities(sim: SimState, w: World): void {
+  const mine = new Set((sim.oldCities40 ?? []).map((d) => d.id)); let foreign = 0;
+  for (const c of [...w.cities]) if (c.id.startsWith("O-") && !mine.has(c.id)) { removeOldCityFromWorld(w, c.id); foreign++; }
+  if (sim.oldCities40?.length) restoreOldCities(sim, w);
+  void foreign;
+}
+
+/** For a game being created: takes every promoted city out of the world (a new game has none; a world shared with an earlier game may still hold that game's). */
+export function dropForeignOldCities(w: World): void { for (const c of [...w.cities]) if (c.id.startsWith("O-")) removeOldCityFromWorld(w, c.id); }
