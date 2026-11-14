@@ -48,7 +48,7 @@ async function drag(cdp: CDPSession, a: [number, number], b: [number, number], s
   for (let i = 1; i <= steps; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: a[0] + ((b[0] - a[0]) * i) / steps, y: a[1] + ((b[1] - a[1]) * i) / steps }] }); await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 }
 const view = (page: Page) => kfm(page, "a => ({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: a.r.view.zoom })") as Promise<{ cx: number; cy: number; zoom: number }>;
-const show = (page: Page, cx: number, cy: number, zoom: number) => kfm(page, `a => { a.r.setView({ cx: ${cx}, cy: ${cy}, zoom: ${zoom} }, true); a.sheet = null; a.render(); a.renderRoads(); return 1; }`);
+const show = (page: Page, cx: number, cy: number, zoom: number) => kfm(page, `a => { a.r.setView({ cx: ${cx}, cy: ${cy}, zoom: ${zoom} }, true); a.openSheet(null); a.render(); a.renderRoads(); return 1; }`);
 
 test("Issue #67 A: promoted cities on a phone-size screen (Pixel 7 emulation): labels, tap targets, touch pinch/drag, save and load", async ({ page }) => {
   test.setTimeout(3000000); await page.setViewportSize({ width: 412, height: 915 }); const errs: string[] = []; page.on("pageerror", (e) => errs.push(String(e))); page.on("dialog", (d) => void d.accept());
@@ -59,7 +59,7 @@ test("Issue #67 A: promoted cities on a phone-size screen (Pixel 7 emulation): l
   // ---- labels: the densest region (Tokyo) at four zooms, and over each promoted city that is drawn (two zooms) ----
   const tokyo: any = await kfm(page, "a => a.world.cities.find((c) => c.name === '東京').pos"), worst = { overlaps: 0, cut: 0, minH: 99 };
   for (const z of [1.2, 2.5, 5, 10]) { await show(page, tokyo[0], tokyo[1], z); await page.waitForTimeout(500); const s = await labelStats(page, `Tokyo zoom ${z}`); worst.overlaps = Math.max(worst.overlaps, s.overlaps); worst.cut = Math.max(worst.cut, s.cut); if (s.n) worst.minH = Math.min(worst.minH, s.minH); if (z === 2.5) await page.screenshot({ path: "test-results/m67-tokyo-z2.5.png" }); }
-  for (const id of info.shown.slice(0, 4)) for (const z of [2.5, 6, 10]) { await kfm(page, `a => { const c = a.world.cityById.get('${id}'); a.r.setView({ cx: c.pos[0], cy: c.pos[1], zoom: ${z} }, true); a.sheet = null; a.render(); a.renderRoads(); return 1; }`); await page.waitForTimeout(400);
+  for (const id of info.shown.slice(0, 4)) for (const z of [2.5, 6, 10]) { await kfm(page, `a => { const c = a.world.cityById.get('${id}'); a.r.setView({ cx: c.pos[0], cy: c.pos[1], zoom: ${z} }, true); a.openSheet(null); a.render(); a.renderRoads(); return 1; }`); await page.waitForTimeout(400);
     const s = await labelStats(page, `${id} zoom ${z}`); worst.overlaps = Math.max(worst.overlaps, s.overlaps); worst.cut = Math.max(worst.cut, s.cut); if (s.n) worst.minH = Math.min(worst.minH, s.minH);
     const nm = (await kfm(page, `a => a.world.cityById.get('${id}').name`)) as string; const L: any = await kfm(page, LABELS); const mine = L.out.find((l: any) => l.text === nm); console.log(`M67 name of ${nm} (${id}) drawn at zoom ${z}: ${!!mine}`);   // (Stage 23 rule, roads.ts: with the tiers on, only seats, 政令指定都市 and 政令特区 are NAMED; every other city keeps its circle only. So most promoted cities show a circle and no name -- by the existing design, not by this feature; recorded in docs/MOBILE_PERF67.md)
     if (mine) { expect(mine.x + mine.w, `${nm} is not cut by the left edge`).toBeGreaterThan(0); }
@@ -68,16 +68,16 @@ test("Issue #67 A: promoted cities on a phone-size screen (Pixel 7 emulation): l
   expect(worst.overlaps, "city-name labels do not overlap each other (measured 0 on this build)").toBe(0); expect(worst.minH, "the smallest city name box is at least 12 CSS px high (measured ~15)").toBeGreaterThanOrEqual(12);
   // ---- tap targets: the map screen, then each sheet ----
   await show(page, tokyo[0], tokyo[1], 2.5); const tMap = await targets(page, "map screen"); expect(tMap.bad, "no control is off screen or covered (map screen)").toEqual([]);
-  for (const sh of ["menu", "roads", "history", "issues", "legend"]) { await kfm(page, `a => { a.sheet = null; a.openSheet('${sh}'); return 1; }`); await page.waitForTimeout(500); await page.screenshot({ path: `test-results/m67-sheet-${sh}.png` }); const t = await targets(page, `sheet ${sh}`); expect(t.bad, `no control is off screen or covered (${sh})`).toEqual([]); }
-  await kfm(page, "a => { a.sheet = null; a.render(); return 1; }");
+  for (const sh of ["menu", "roads", "history", "issues", "legend"]) { await kfm(page, `a => { a.openSheet(null); a.openSheet('${sh}'); return 1; }`); await page.waitForTimeout(500); await page.screenshot({ path: `test-results/m67-sheet-${sh}.png` }); const t = await targets(page, `sheet ${sh}`); expect(t.bad, `no control is off screen or covered (${sh})`).toEqual([]); }
+  await kfm(page, "a => { a.openSheet(null); a.render(); return 1; }");
   // ---- touch: pinch zoom, drag pan ----
   await show(page, tokyo[0], tokyo[1], 2.5); const v0 = await view(page); await pinch(cdp, 206, 450, 80, 220); const v1 = await view(page); console.log("M67 pinch zoom", v0.zoom.toFixed(2), "->", v1.zoom.toFixed(2)); expect(v1.zoom, "two-finger spread zooms in").toBeGreaterThan(v0.zoom * 1.3);
   await pinch(cdp, 206, 450, 220, 80); const v2 = await view(page); expect(v2.zoom, "two-finger pinch zooms out").toBeLessThan(v1.zoom * 0.8);
   const v3 = await view(page); await drag(cdp, [300, 600], [120, 400]); const v4 = await view(page); expect(Math.hypot(v4.cx - v3.cx, v4.cy - v3.cy), "a one-finger drag moves the map").toBeGreaterThan(0);
   // ---- save with the real slot button, reload, load, the same game ----
   const SIG = `a => JSON.stringify([Object.keys(a.sim.cities).sort().map((k) => [k, a.sim.cities[k].pop]), Object.keys(a.sim.routes).length, Object.keys(a.sim.projects).length, Object.keys(a.sim.edges).length, a.sim.rngState, (a.sim.oldCities40 || []).map((d) => d.id)])`;
-  const before = (await kfm(page, SIG)) as string; await kfm(page, "a => { a.sheet = null; a.openSheet('menu'); return 1; }"); await page.waitForSelector("#slot-1 .slot-save"); await page.click("#slot-1 .slot-save"); await page.waitForTimeout(3000);
-  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await kfm(page, "a => { a.sheet = null; a.openSheet('menu'); return 1; }"); await page.waitForSelector("#slot-1 .slot-load"); await page.click("#slot-1 .slot-load");
+  const before = (await kfm(page, SIG)) as string; await kfm(page, "a => { a.openSheet(null); a.openSheet('menu'); return 1; }"); await page.waitForSelector("#slot-1 .slot-save"); await page.click("#slot-1 .slot-save"); await page.waitForTimeout(3000);
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.world, null, { timeout: 90000 }); await kfm(page, "a => { a.openSheet(null); a.openSheet('menu'); return 1; }"); await page.waitForSelector("#slot-1 .slot-load"); await page.click("#slot-1 .slot-load");
   await page.waitForFunction(() => !!(window as any).__kfm.sim, null, { timeout: 90000 }); await page.waitForTimeout(1500); expect((await kfm(page, SIG)) as string, "the loaded game is the game that was saved").toBe(before);
   const tAfter = await targets(page, "after load"); expect(tAfter.bad).toEqual([]); expect(errs, "no page errors").toEqual([]);
 });
