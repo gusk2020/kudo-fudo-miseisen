@@ -18,7 +18,7 @@ async function newGame(page: Page) {
   await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
 }
 const LABELS = `a => { const r = a.r, names = new Set(a.world.cities.map((c) => c.name)), vw = innerWidth, vh = innerHeight, out = [];
-  for (const t of r.labels.children) { if (!t.visible || t.text === undefined) continue; const b = t.getBounds().rectangle; if (b.width < 1 || b.height < 1) continue; out.push({ text: String(t.text), city: names.has(String(t.text)), x: b.x, y: b.y, w: b.width, h: b.height }); }
+  for (const t of [...r.labels.children, ...r.roads.names]) {   /* the base map's names AND the road layer's city names (roads.ts): the second list is where promoted cities are named */ if (!t.visible || t.text === undefined) continue; const b = t.getBounds().rectangle; if (b.width < 1 || b.height < 1) continue; out.push({ text: String(t.text), city: names.has(String(t.text)), x: b.x, y: b.y, w: b.width, h: b.height }); }
   const inView = out.filter((l) => l.x + l.w > 0 && l.x < vw && l.y + l.h > 0 && l.y < vh); return { vw, vh, all: inView, drawn: r.roads.drawnCircles.map((c) => c.id) }; }`;
 async function pinch(cdp: CDPSession, cx: number, cy: number, d0: number, d1: number) {
   const pts = (d: number) => [{ x: cx - d / 2, y: cy, id: 1 }, { x: cx + d / 2, y: cy, id: 2 }]; await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: pts(d0) });
