@@ -30,6 +30,7 @@ import { RANGES, RANGE_LIMITS, RANGE_STEP, clampRange, nextRange, rangeLabel, ra
 import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
+import { cityCard } from "./cityCard";
 import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, performRoad0, snapKmFor, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
 import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, skippedLabel, skippedWallMsOf, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
@@ -298,8 +299,18 @@ export class App {
       multiBegin: (a: Vec, b: Vec) => this.featureMultiBegin(a, b),
       multiMove: (a: Vec, b: Vec) => this.featureMultiMove(a, b),
       multiEnd: (c: boolean) => this.featureMultiEnd(c),
+      tap: (_w: Vec, sc: Vec) => this.mapTap(sc),
     };
   }
+  /** Issue #67: a tap on the live map. If it lands on a city circle (at least a 44 px wide target) the city's card opens; a tap on empty map closes it. Nothing else happens on a tap, so panning, pinching, the edit tools and the relocation panels are as before. */
+  private mapTap(sc: Vec) {
+    const sim = this.sim, w = this.world; if (!this.real || !sim || !w || this.editable() || this.relocOpen() || this.sheet) { this.hideCityCard(); return; }
+    let best: { id: string; rel: number; d: number } | null = null;
+    for (const c of this.r.roads.drawnCircles) { const p = this.r.worldToScreen([c.x, c.y]), d = Math.hypot(p[0] - sc[0], p[1] - sc[1]); if (d <= Math.max(c.radPx, 22) && (!best || d < best.d)) best = { id: c.id, rel: c.rel, d }; }
+    const card = best ? cityCard(sim, w, best.id, best.rel) : null; if (!card) { this.hideCityCard(); return; }
+    const el = document.getElementById("city-card")!; document.getElementById("city-card-title")!.textContent = card.title; const body = document.getElementById("city-card-body")!; body.replaceChildren(...card.lines.map((t) => h("div", {}, t))); const dock = document.getElementById("dock"); el.style.bottom = `${Math.ceil((dock?.getBoundingClientRect().height ?? 60) + 8)}px`; el.hidden = false;   // (just above the dock, whatever height the dock has on this device)
+  }
+  hideCityCard() { const el = document.getElementById("city-card"); if (el) el.hidden = true; }
   // ---- Issue #18: Lake Biwa / Mt. Fuji by touch -- one finger moves, two fingers scale and twist ----
   private fpose: { which: "biwa" | "fuji"; a0: Vec; b0: Vec; pos0: Vec; rot0: number; k0: number; ky0: number; cur: { pos: Vec; rot: number; scale: number; sy: number } | null } | null = null;
   /** Would this pose be a valid map (anchor on land, whole outline on the same landmass, off the coast and off the other feature)? */
@@ -922,6 +933,7 @@ export class App {
     $("btn-fit").onclick = () => { this.r.fit(this.s); };
     if (this.real) this.buildRealDock(); else document.querySelectorAll<HTMLButtonElement>("#dock [data-sheet]").forEach((b) => (b.onclick = () => this.openSheet(b.dataset.sheet!)));
     $("sheet-close").onclick = () => this.openSheet(null);
+    $("city-card-close").onclick = () => this.hideCityCard();
   }
   setLite(on: boolean) { this.lite = on; this.slowTicks = 0; try { localStorage.setItem(lsKey("lite"), on ? "1" : "0"); } catch { /* ignore */ } this.renderRoads(); this.buildSheet(); }
   saveUi() { try { localStorage.setItem(lsKey("ui"), JSON.stringify({ hide: [...this.hide], names: this.names, legendOpen: this.legendOpen, legendShown: this.legendShown, legendSide: this.legendSide })); } catch { /* ignore */ } }
@@ -960,7 +972,7 @@ export class App {
   placeLegend() { const el = this.legendEl; if (!el) return; const st = document.getElementById("status")?.getBoundingClientRect(), tw = document.getElementById("tools-wrap")?.getBoundingClientRect(); el.style.top = Math.round((st?.bottom ?? 120) + 4) + "px"; el.style.bottom = Math.round(window.innerHeight - (tw?.top ?? window.innerHeight - 200) + 4) + "px"; }
   clearHl(redraw = true) { if (!this.hl && !this.ledgerMini) return; this.hl = null; this.ledgerMini = false; if (redraw) { this.renderRoads(); this.buildSheet(); } }
   stepHl(dir: 1 | -1) { const l = this.hlList; if (!this.hl || !l.length) return; const i = l.findIndex((x) => x.id === this.hl!.id), n = l[i < 0 ? (dir > 0 ? 0 : l.length - 1) : (i + dir + l.length) % l.length]; this.hl = n; this.renderRoads(); this.buildSheet(); }
-  openSheet(name: string | null) { if (this.hl && name !== "ledger") this.clearHl(false); this.sheet = this.sheet === name ? null : name; this.buildSheet(); this.renderRoads(); }
+  openSheet(name: string | null) { this.hideCityCard(); if (this.hl && name !== "ledger") this.clearHl(false); this.sheet = this.sheet === name ? null : name; this.buildSheet(); this.renderRoads(); }
   buildUI() {
     const i = this.s.step;
     $("step-title").textContent = this.real ? (this.sim ? "酷道・腐道・未成線" : "酷道・腐道・未成線 — 開通の儀") : `${STEP_LABELS[this.stepId]}  (${i + 1}/${STEPS.length})`;
