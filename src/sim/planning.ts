@@ -189,11 +189,13 @@ export const railFailCooling = (sim: SimState, w: World, c: { a?: number; b?: nu
  * The memory is bounded (entries older than the wait are dropped) and, like railFail, only 1800-start games use it (a 1950 start is exactly as it was).
  */
 export const railNetVersion = (sim: SimState): string => {
-  if (((globalThis as any).__R66VER ?? "all") === "rail") {   // EXPERIMENT variant V2: a signature of the rail edges only (order independent; computed once per year, never per candidate)
-    const h32 = (str: string) => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193); return h >>> 0; };
-    let n = 0, acc = 0; for (const e of Object.values(sim.edges)) { if (e.mode !== "rail") continue; n++; const c = e.cells, x = (h32(e.id) ^ Math.imul(c.length, 0x9e3779b1) ^ Math.imul(c[0] + 1, 0x85ebca6b) ^ Math.imul(c[c.length - 1] + 1, 0xc2b2ae35)) >>> 0; acc = (acc + Math.imul(x ^ (x >>> 15), 0x2c1b3c6d)) >>> 0; } return `r${n}:${acc}`;
-  }
-  return `${sim.next.edge}:${sim.next.node}:${sim.netGone ?? 0}`;   // V1: exactly what network.ts buildIndex keys its cache on (ids ever issued, plus removals)
+  // A signature of the rail edges and nothing else: how many there are, and an order-independent sum of a hash of each one's id, length and two end cells (ids are never reused, so two different edge sets do not collide for want of the same count or the same cell total;
+  // a split, a new line, a removal and a replacement all change it). Computed ONCE per yearly planning call, never per candidate: a few thousand edges at most. What path searches also read -- where the roads are -- only tilts the choice between near-equal paths and
+  // is not part of it: the wait is bounded (RAIL_RETRY_YEARS) and a pair is searched again after it. (Measured: keying on every edge, roads and ferries included, changed nearly every year and kept the memory from ever holding: stalls 2/11 against 0/11.)
+  const h32 = (str: string) => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193); return h >>> 0; };
+  let n = 0, acc = 0;
+  for (const e of Object.values(sim.edges)) { if (e.mode !== "rail") continue; n++; const c = e.cells, x = (h32(e.id) ^ Math.imul(c.length, 0x9e3779b1) ^ Math.imul(c[0] + 1, 0x85ebca6b) ^ Math.imul(c[c.length - 1] + 1, 0xc2b2ae35)) >>> 0; acc = (acc + Math.imul(x ^ (x >>> 15), 0x2c1b3c6d)) >>> 0; }
+  return `r${n}:${acc}`;
 };
 export const railShortWaiting = (sim: SimState, w: World, c: { a?: number; b?: number; toCell?: number; fromCell?: number }, y: number, ver: string): boolean => { const f = sim.railShort?.[railFailKey(w, c)]; return !!sim.rules1800 && !!f && f[1] === ver && y - f[0] < RAIL_RETRY_YEARS; };
 /** Stage 7: a corridor between two cities of at least this size and at most this far apart may be built by a private company even in the national railway's era (was 250,000 / 110 km). */
@@ -267,15 +269,14 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     }
     if ((globalThis as any).__DBG) console.log("cand", c.kind, c.score.toFixed(2), c.a, c.b, "pf", pf, "nNew", nNew, nUp);
     if (c.kind === "new" && c.a !== undefined && (c.b !== undefined || c.toCell !== undefined) && !railFailCooling(sim, w, c, y) && !railShortWaiting(sim, w, c, y, netVer) && pf-- > 0) {
-      ((globalThis as any).__R66 && (globalThis as any).__R66("pf"));
       const a = w.cities[c.a], aCell = c.fromCell ?? a.cell, aName = c.fromName ?? a.name, b = c.b !== undefined ? w.cities[c.b] : null, bCell = b ? b.cell : c.toCell!, bName = b ? b.name : c.toName ?? "既設線", idx = buildIndex(sim, "rail"), ref = referenceGrids(w), std = c.std ?? "rural";
       const path = pathfind(w, aCell, bCell, { rail: true, ease: crossingEase(sim.tech, y), bias: (k) => refBias(ref.rail)(k) * (idx.roadCells.has(k) ? 1.6 : 1), margin: 16 }); yield; if (!path) continue;   // a new line is a direct one: existing track is not discounted
-      const newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) { ((globalThis as any).__R66 && (globalThis as any).__R66("short")); if (sim.rules1800) (sim.railShort ??= {})[railFailKey(w, c)] = [y, netVer]; continue; }
-      const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) { ((globalThis as any).__R66 && (globalThis as any).__R66("tech")); if (sim.rules1800) (sim.railFail ??= {})[railFailKey(w, c)] = [y, sim.tech ? techAt(sim.tech.k, y).tunnelKm : 0]; continue; }   // not buildable with this year's tunnelling (yet)
+      const newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) { if (sim.rules1800) (sim.railShort ??= {})[railFailKey(w, c)] = [y, netVer]; continue; }
+      const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) { if (sim.rules1800) (sim.railFail ??= {})[railFailKey(w, c)] = [y, sim.tech ? techAt(sim.tech.k, y).tunnelKm : 0]; continue; }   // not buildable with this year's tunnelling (yet)
       if (!affordable(sim, w, "rail", path, newKm, RAIL_UNIT[std], railPurse(sim), y)) continue;
       const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > PRIVATE_MIN_POP && dist(a.pos, b.pos) < PRIVATE_MAX_KM,   /* Stage 7: private companies enter the busier corridors the national railway serves poorly, so the two compete */ localPrivate = !!c.local && !jnrEra;
       let op = "jnr"; if (c.local && !localPrivate) op = "jnr"; else if (!jnrEra || privateOk) { const anchorIsA = !b || basePop(sim, w, a) >= basePop(sim, w, b), id = `p.${anchorIsA ? a.id : b!.id}`, anchor = anchorIsA ? a : b!; if (!sim.operators[id]) sim.operators[id] = { id, name: `${baseName(anchor.name)}${jnrEra ? "電鉄" : "鉄道"}`, kind: "private", since: y, note: "新規参入の鉄道事業者(架空の事業者名)" } as Operator; op = id; }
-      const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 88, built: 0, month: sim.month, standard: std, mode: "rail", op }); if (!l.created.length) continue; ((globalThis as any).__R66 && (globalThis as any).__R66("newLine"));
+      const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 88, built: 0, month: sim.month, standard: std, mode: "rail", op }); if (!l.created.length) continue;
       const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s2, x) => s2 + x.lengthKm * RAIL_UNIT[std] * (1 + x.maxGradePct * 0.08) * facCost(x, sim) * mtnCost(w, sim, "rail", x.cells, y), 0);
       const p = createProject(sim, "new", "JP", nodeAtCell(sim, w, idx, aCell, "junction"), nodeAtCell(sim, w, idx, bCell, "junction"), l.created, l.chain, cost, c.reason, c.score); p.mode = "rail"; p.op = op; p.status = "concept"; techRoll(sim, p, tcR.hard, y, `${aName}〜${bName}`);
       ev(sim, "project", `${std === "highgrade" ? "高速新線" : "新線"}構想: ${aName}〜${bName}(${Math.round(es.reduce((s2, x) => s2 + x.lengthKm, 0))}km・${sim.operators[op]?.name ?? "国鉄"})`, c.reason, { project: p.id }); made++; if (c.local) nLocal++; else nNew++; yield;

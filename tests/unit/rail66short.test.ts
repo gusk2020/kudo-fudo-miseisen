@@ -12,22 +12,34 @@ const W = { cities: [{ id: "A" }, { id: "B" }] } as unknown as World, C = { a: 0
 const S = (o: Partial<SimState>) => ({ rules1800: true, ...o }) as unknown as SimState;
 describe("Issue #66: the memory of 'short' rail searches", () => {
   it("waits only while the rail network is the same and fewer than RAIL_RETRY_YEARS have passed; never in a 1950 game; an absent memory waits for nothing", () => {
-    const s = S({ railShort: { "A:B::": [1925, 7000123] } });
-    expect(railShortWaiting(s, W, C, 1925, 7000123), "same year, same network").toBe(true); expect(railShortWaiting(s, W, C, 1925 + RAIL_RETRY_YEARS - 1, 7000123), "last year of the wait").toBe(true);
-    expect(railShortWaiting(s, W, C, 1925 + RAIL_RETRY_YEARS, 7000123), "the wait is over").toBe(false); expect(railShortWaiting(s, W, C, 1926, 7000124), "the network changed: search again at once").toBe(false);
-    expect(railShortWaiting(S({}), W, C, 1925, 7000123), "no memory").toBe(false); expect(railShortWaiting({ ...s, rules1800: undefined } as SimState, W, C, 1925, 7000123), "a 1950 start never waits").toBe(false);
-    expect(railShortWaiting(s, W, { a: 1, b: 0 }, 1925, 7000123), "another pair is not held back").toBe(false);
+    const s = S({ railShort: { "A:B::": [1925, "r7:123"] } });
+    expect(railShortWaiting(s, W, C, 1925, "r7:123"), "same year, same network").toBe(true); expect(railShortWaiting(s, W, C, 1925 + RAIL_RETRY_YEARS - 1, "r7:123"), "last year of the wait").toBe(true);
+    expect(railShortWaiting(s, W, C, 1925 + RAIL_RETRY_YEARS, "r7:123"), "the wait is over").toBe(false); expect(railShortWaiting(s, W, C, 1926, "r7:124"), "the network changed: search again at once").toBe(false);
+    expect(railShortWaiting(S({}), W, C, 1925, "r7:123"), "no memory").toBe(false); expect(railShortWaiting({ ...s, rules1800: undefined } as SimState, W, C, 1925, "r7:123"), "a 1950 start never waits").toBe(false);
+    expect(railShortWaiting(s, W, { a: 1, b: 0 }, 1925, "r7:123"), "another pair is not held back").toBe(false);
   });
-  it("the network version changes when rail is added, and ignores roads and ferries", () => {
-    const e = (o: object) => ({ cells: [1, 2, 3], ...o }), a = S({ edges: { r1: e({ mode: "rail" }), x: e({}), f: e({ mode: "rail", facility: "ferry" }) } as never }), b = S({ edges: { r1: e({ mode: "rail" }), r2: e({ mode: "rail" }), x: e({}) } as never });
-    void 0;
+  it("the rail signature: changes with any change of the rail edges (new line, split, removal, replacement by an equally long line), is the same for the same edges in any order, and ignores roads and every other field", () => {
+    const e = (id: string, cells: number[], o: object = {}) => ({ id, cells, mode: "rail", ...o }), sig = (edges: object[]) => railNetVersion(S({ edges: Object.fromEntries(edges.map((x: any) => [x.id, x])) as never }));
+    const a = e("e1", [1, 2, 3, 4]), b = e("e2", [4, 5, 6]), base = sig([a, b]);
+    expect(sig([b, a]), "order does not matter").toBe(base); expect(sig([a, b, { id: "r9", cells: [7, 8, 9] }]), "a road (no mode) is not part of it").toBe(base); expect(sig([a, b, e("x", [1, 2], { facility: "ferry", mode: undefined })]), "nor is a non-rail edge").toBe(base);
+    expect(sig([a, b, e("e3", [6, 7, 8])]), "a new rail line").not.toBe(base); expect(sig([a]), "a removal").not.toBe(base);
+    expect(sig([e("e1", [1, 2]), e("e1b", [2, 3, 4]), b]), "a split of e1 (same total cells plus the shared one)").not.toBe(base);
+    expect(sig([a, e("e2", [4, 5, 9])]), "the same count and the same cell total, another end cell").not.toBe(base); expect(sig([a, e("e7", [4, 5, 6])]), "the same count and the same cell total, another edge id").not.toBe(base);
+    expect(sig([e("e1", [1, 2, 3, 4], { state: "closed", built: 0.5 }), b]), "a state or progress change that moves no track does not").toBe(base);
   });
   it("fixed seed 7, 鉄道重視 1800 game: the railway keeps growing 1925 -> 1950 (+106 km before the memory), the memory is saved and restored, entries stay bounded, and a 1950 game never creates it", () => {
     const g = stage3Sim("heisei", 7, true, 2, 2, true, undefined, undefined, { start1800: true } as never); g.sim.policy!.mode = "auto";
     advance(g.sim, g.w, 12 * (1925 - yearOf(g.sim))); const k25 = railKm(g.sim); advance(g.sim, g.w, 12 * (1950 - yearOf(g.sim))); const k50 = railKm(g.sim);
     expect(k50 - k25, `1925 ${Math.round(k25)} -> 1950 ${Math.round(k50)} km (measured +1104; +106 before)`).toBeGreaterThan(500);
-    const mem = g.sim.railShort ?? {}; expect(Object.keys(mem).length, "entries older than the wait are dropped").toBeLessThan(400); for (const [k, [y, v]] of Object.entries(mem)) { expect(k).toMatch(/^[A-Za-z0-9._-]*:[A-Za-z0-9._-]*:\d*:\d*$/); expect(1950 - y).toBeLessThanOrEqual(RAIL_RETRY_YEARS); expect(v).toBeGreaterThan(0); }
+    const mem = g.sim.railShort ?? {}; expect(Object.keys(mem).length, "entries older than the wait are dropped").toBeLessThan(400); for (const [k, [y, v]] of Object.entries(mem)) { expect(k).toMatch(/^[A-Za-z0-9._-]*:[A-Za-z0-9._-]*:\d*:\d*$/); expect(1950 - y).toBeLessThanOrEqual(RAIL_RETRY_YEARS); expect(v).toMatch(/^r[0-9]+:[0-9]+$/); }
     expect(JSON.parse(JSON.stringify(g.sim)).railShort).toEqual(g.sim.railShort);
     const h = stage3Sim("heisei", 7, true, 0, 2, true); h.sim.policy!.mode = "auto"; advance(h.sim, h.w, 12 * 30); expect(h.sim.railShort).toBeUndefined();
   }, 900000);
+  it("save -> load -> keep going is the game that never stopped, memory included; and going back to an older save and playing on reaches the same state again", () => {
+    const g = stage3Sim("heisei", 7, true, 2, 2, true, undefined, undefined, { start1800: true } as never); g.sim.policy!.mode = "auto"; advance(g.sim, g.w, 12 * (1925 - yearOf(g.sim)));
+    const snap = JSON.stringify(g.sim), has = Object.keys(g.sim.railShort ?? {}).length + Object.keys(g.sim.railFail ?? {}).length; expect(has, "there is a memory to carry").toBeGreaterThan(0);
+    advance(g.sim, g.w, 12 * 20); const never = JSON.stringify(g.sim);
+    const a = JSON.parse(snap) as SimState; a.policy!.mode = "auto"; advance(a, g.w, 12 * 20); expect(JSON.stringify(a), "loaded from the 1925 save").toBe(never);
+    const b = JSON.parse(snap) as SimState; b.policy!.mode = "auto"; advance(b, g.w, 12 * 5); const mid = JSON.stringify(b); const c = JSON.parse(mid) as SimState; c.policy!.mode = "auto"; advance(c, g.w, 12 * 15); expect(JSON.stringify(c), "saved again on the way and loaded").toBe(never);
+  }, 1800000);
 });
