@@ -933,6 +933,7 @@ export class App {
     $("btn-fit").onclick = () => { this.r.fit(this.s); };
     if (this.real) this.buildRealDock(); else document.querySelectorAll<HTMLButtonElement>("#dock [data-sheet]").forEach((b) => (b.onclick = () => this.openSheet(b.dataset.sheet!)));
     $("sheet-close").onclick = () => this.openSheet(null);
+    $("city-card-close").onclick = () => this.hideCityCard();
   }
   setLite(on: boolean) { this.lite = on; this.slowTicks = 0; try { localStorage.setItem(lsKey("lite"), on ? "1" : "0"); } catch { /* ignore */ } this.renderRoads(); this.buildSheet(); }
   saveUi() { try { localStorage.setItem(lsKey("ui"), JSON.stringify({ hide: [...this.hide], names: this.names, legendOpen: this.legendOpen, legendShown: this.legendShown, legendSide: this.legendSide })); } catch { /* ignore */ } }
