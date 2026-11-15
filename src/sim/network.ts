@@ -37,7 +37,7 @@ export interface NetIndex { nodeByCell: Map<number, string>; anyNode: Map<number
  */
 const indexCache = new WeakMap<SimState, { key: string; byMode: Partial<Record<Mode, NetIndex>> }>(), netEpoch = new WeakMap<SimState, number>();
 /** Call after removing an edge or a node from the network: a removal changes no id counter, so it must be announced. (Only three places remove one.) */
-export const netRemoved = (sim: SimState): void => { netEpoch.set(sim, (netEpoch.get(sim) ?? 0) + 1); };
+export const netRemoved = (sim: SimState): void => { netEpoch.set(sim, (netEpoch.get(sim) ?? 0) + 1); if (sim.rules1800) sim.netGone = (sim.netGone ?? 0) + 1; };   // (netGone: the part of netEpoch that is saved, for planning.ts railNetVersion; 1800-start games only so that a 1950 game's save is unchanged)
 /** A step from cell a to cell b as one number (a map keyed by numbers is several times cheaper to build than one keyed by "a:b" strings, and it is built thousands of times a game). */
 export const stepKey = (a: number, b: number): number => a * 4194304 + b;
 export function buildIndex(sim: SimState, mode: Mode = "road"): NetIndex {

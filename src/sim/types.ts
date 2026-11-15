@@ -130,7 +130,9 @@ export interface SimState {
   /** Stage 40 (Issue #66): new railway lines that failed the technology check, by candidate (city ids and cells), with [year, the longest tunnel that year's technology could dig] (planning.ts RAIL_RETRY_YEARS). 1800-start games only */
   railFail?: Record<string, [number, number]>;
   /** Stage 40 (Issue #66, priority 3): new railway lines whose path search found under 15 km of new track, by candidate (same key as railFail), with [year, the rail network's version then] (planning.ts railShortWaiting). 1800-start games only */
-  railShort?: Record<string, [number, number]>;
+  railShort?: Record<string, [number, string]>;
+  /** Issue #66: how many times an edge was taken out of the network (network.ts netRemoved); the saved counterpart of the in-memory index epoch. 1800-start games only. Absent = 0 */
+  netGone?: number;
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
   dev37?: Record<string, number>;

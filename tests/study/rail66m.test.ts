@@ -8,7 +8,7 @@ import { stage3Sim } from "../unit/simhelp";
 /** Issue #66 work B (study, not CI): one cell of the matrix seed x stance x variant. Appends a JSON line to $OUT/matrix.jsonl.
  *  STUDY=1 SEED=7 ERA=2 VAR=AB OUT=dir npx vitest run tests/study/rail66m.test.ts */
 describe.skipIf(!process.env.STUDY)("rail66m", () => { it("x", () => {
-  const seed = +(process.env.SEED ?? 7), era = +(process.env.ERA ?? 0), V = process.env.VAR ?? ""; (globalThis as any).__R66V = V;   // (only the temporary experiment code in planning.ts read this; the shipped code ignores it)
+  const seed = +(process.env.SEED ?? 7), era = +(process.env.ERA ?? 0), V = process.env.VAR ?? ""; (globalThis as any).__R66V = V; (globalThis as any).__R66VER = process.env.VER ?? "all";   // (only the temporary experiment code in planning.ts read this; the shipped code ignores it)
   const { sim, w } = stage3Sim("heisei", seed, true, era, 2, true, undefined, undefined, { start1800: true } as never); sim.policy!.mode = "auto";
   let cnt: Record<string, number> = {}; (globalThis as any).__R66 = (k: string) => { cnt[k] = (cnt[k] ?? 0) + 1; };
   const km = (m: "rail" | "road") => Math.round(Object.values(sim.edges).filter((e) => (e.mode ?? "road") === m && e.facility !== "ferry" && e.built >= 1 && e.state === "open").reduce((a, e) => a + e.lengthKm, 0));
