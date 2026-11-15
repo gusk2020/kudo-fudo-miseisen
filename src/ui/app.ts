@@ -305,9 +305,13 @@ export class App {
   /** Issue #67: a tap on the live map. If it lands on a city circle (at least a 44 px wide target) the city's card opens; a tap on empty map closes it. Nothing else happens on a tap, so panning, pinching, the edit tools and the relocation panels are as before. */
   private mapTap(sc: Vec) {
     const sim = this.sim, w = this.world; if (!this.real || !sim || !w || this.editable() || this.relocOpen() || this.sheet) { this.hideCityCard(); return; }
-    let best: { id: string; rel: number; d: number } | null = null;
-    for (const c of this.r.roads.drawnCircles) { const p = this.r.worldToScreen([c.x, c.y]), d = Math.hypot(p[0] - sc[0], p[1] - sc[1]); if (d <= Math.max(c.radPx, 22) && (!best || d < best.d)) best = { id: c.id, rel: c.rel, d }; }
-    const card = best ? cityCard(sim, w, best.id, best.rel) : null; if (!card) { this.hideCityCard(); return; }
+    // What a finger can hit: the road layer's city circles AND the base map's yellow dots of the 49 prefectural capitals (those are not circles of the road layer: most small capitals have only the dot -- measured: 12 of 54 taps on the dot-only capitals and on circle-less towns did nothing).
+    // The nearest marker within max(its own radius, 22 px) wins; a capital that has both is one candidate (its circle's radius and growth reading).
+    const px = (p: Vec) => this.r.worldToScreen(p), seen = new Set<string>(), hit: { id: string; rel: number | null; d: number }[] = [];
+    const take = (id: string, p: Vec, rad: number, rel: number | null) => { const q = px(p), d = Math.hypot(q[0] - sc[0], q[1] - sc[1]); if (d <= Math.max(rad, 22) && (!hit.length || d < hit[0].d)) hit[0] = { id, rel, d }; };
+    for (const c of this.r.roads.drawnCircles) { seen.add(c.id); take(c.id, [c.x, c.y], c.radPx, c.rel); }
+    for (const c of w.cities) if (c.kind === "capital" && !seen.has(c.id) && sim.cities[c.id]) take(c.id, c.pos, 3.2, null);
+    const best = hit[0], card = best ? cityCard(sim, w, best.id, best.rel) : null; if (!card) { this.hideCityCard(); return; }
     const el = document.getElementById("city-card")!; document.getElementById("city-card-title")!.textContent = card.title; const body = document.getElementById("city-card-body")!; body.replaceChildren(...card.lines.map((t) => h("div", {}, t))); const dock = document.getElementById("dock"); el.style.bottom = `${Math.ceil((dock?.getBoundingClientRect().height ?? 60) + 8)}px`; el.hidden = false;   // (just above the dock, whatever height the dock has on this device)
   }
   hideCityCard() { const el = document.getElementById("city-card"); if (el) el.hidden = true; }
