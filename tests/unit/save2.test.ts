@@ -51,3 +51,11 @@ describe("road data protection", () => {
     expect(validateSimAgainstWorld(sanitizeSim(j).sim ?? j, w, sim.terrainHash)).toContain("地形の外");
   });
 });
+describe("the saved first relocation boundary (relocFirst)", () => {
+  test("an 1800-start game keeps its own 1900 across a save and a load; a boundary below the floor of a 1950-start game is still dropped; a 1950 value is kept by both", async () => {
+    const { stage3Sim } = await import("./simhelp"), g = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true } as never), raw = JSON.parse(JSON.stringify(g.sim));
+    expect(raw.rules1800).toBe(true); expect(raw.relocFirst).toBe(1900); expect(sanitizeSim(raw).sim?.relocFirst, "1800 start: 1900 is its own first boundary and survives").toBe(1900);
+    const old = JSON.parse(JSON.stringify(raw)); delete old.rules1800; expect(sanitizeSim(old).sim?.relocFirst, "not an 1800 game: 1900 is below the floor and is dropped as before").toBeUndefined();
+    const k = JSON.parse(JSON.stringify(raw)); k.relocFirst = 1950; expect(sanitizeSim(k).sim?.relocFirst).toBe(1950); delete k.rules1800; expect(sanitizeSim(k).sim?.relocFirst).toBe(1950);
+  });
+});
