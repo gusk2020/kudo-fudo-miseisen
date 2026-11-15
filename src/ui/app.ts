@@ -308,7 +308,7 @@ export class App {
     let best: { id: string; rel: number; d: number } | null = null;
     for (const c of this.r.roads.drawnCircles) { const p = this.r.worldToScreen([c.x, c.y]), d = Math.hypot(p[0] - sc[0], p[1] - sc[1]); if (d <= Math.max(c.radPx, 22) && (!best || d < best.d)) best = { id: c.id, rel: c.rel, d }; }
     const card = best ? cityCard(sim, w, best.id, best.rel) : null; if (!card) { this.hideCityCard(); return; }
-    const el = document.getElementById("city-card")!; document.getElementById("city-card-title")!.textContent = card.title; const body = document.getElementById("city-card-body")!; body.replaceChildren(...card.lines.map((t) => h("div", {}, t))); el.hidden = false;
+    const el = document.getElementById("city-card")!; document.getElementById("city-card-title")!.textContent = card.title; const body = document.getElementById("city-card-body")!; body.replaceChildren(...card.lines.map((t) => h("div", {}, t))); const dock = document.getElementById("dock"); el.style.bottom = `${Math.ceil((dock?.getBoundingClientRect().height ?? 60) + 8)}px`; el.hidden = false;   // (just above the dock, whatever height the dock has on this device)
   }
   hideCityCard() { const el = document.getElementById("city-card"); if (el) el.hidden = true; }
   // ---- Issue #18: Lake Biwa / Mt. Fuji by touch -- one finger moves, two fingers scale and twist ----

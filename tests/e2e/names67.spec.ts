@@ -42,14 +42,12 @@ for (const vp of [{ name: "Pixel 7 size 412x915 (touch)", width: 412, height: 91
     const D: any = await kfm(page, LABELS), cities = D.all.filter((l: any) => l.city); let ov = 0; for (let i = 0; i < cities.length; i++) for (let j = i + 1; j < cities.length; j++) { const p = cities[i], q = cities[j]; if (Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x) > 1 && Math.min(p.y + p.h, q.y + q.h) - Math.max(p.y, q.y) > 1) ov++; }
     const promotedNames = new Set((await kfm(page, "a => (a.sim.oldCities40 || []).map((d) => a.world.cityById.get(d.id).name)")) as string[]); const pn = cities.filter((l: any) => promotedNames.has(l.text)).length;
     console.log(`N67 Tokyo 2.5: city names ${cities.length} (promoted ${pn}), overlapping pairs ${ov}, smallest name height ${Math.min(...cities.map((l: any) => l.h)).toFixed(1)} px`); expect(ov, "no two city names overlap").toBe(0); expect(cities.length, "at most 45 names").toBeLessThanOrEqual(45);
-    await page.screenshot({ path: `test-results/names67-${vp.width}-tokyo.png` });
     // ---- the tap card ----
     const id = sample[0]; const nm = await center(page, id, 6); await page.waitForTimeout(450); const sc: any = await kfm(page, `a => a.r.worldToScreen(a.world.cityById.get('${id}').pos)`);
     expect(await page.locator("#city-card").isHidden(), "no card before the tap").toBe(true); await tapAt(page, sc[0], sc[1], vp.touch); await page.waitForSelector("#city-card:not([hidden])", { timeout: 5000 });
     const title = await page.textContent("#city-card-title"), body = await page.textContent("#city-card-body"); console.log("N67 card", title, "|", body); expect(title).toContain(nm); expect(body).toContain("所属:"); expect(body).toContain("人口:"); expect(body).toContain("交通:"); expect(body, "a promoted city says where it came from").toContain("昇格");
     const box = (await page.locator("#city-card").boundingBox())!, dock = (await page.locator("#dock").boundingBox())!, close = (await page.locator("#city-card-close").boundingBox())!;
-    expect(box.x, "the card is on screen").toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(vp.width); expect(box.y).toBeGreaterThanOrEqual(0); expect(box.y + box.height, "the card does not cover the dock").toBeLessThanOrEqual(dock.y + 1); expect(close.width).toBeGreaterThanOrEqual(44); expect(close.height).toBeGreaterThanOrEqual(44);
-    await page.screenshot({ path: `test-results/names67-${vp.width}-card.png` });
+    expect(box.x, "the card is on screen").toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(vp.width); expect(box.y).toBeGreaterThanOrEqual(0); expect(box.y + box.height, "the card does not cover the dock").toBeLessThanOrEqual(dock.y); expect(close.width).toBeGreaterThanOrEqual(44); expect(close.height).toBeGreaterThanOrEqual(44);
     // the ordinary gestures still work with the card open
     const v0: any = await kfm(page, "a => ({ cx: a.r.view.cx, cy: a.r.view.cy, zoom: a.r.view.zoom })");
     if (vp.touch) { await pinch(cdp, vp.width / 2, 300, 80, 220); const v1: any = await kfm(page, "a => a.r.view.zoom"); expect(v1, "pinch still zooms").toBeGreaterThan(v0.zoom * 1.3); }
