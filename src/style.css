@@ -157,3 +157,10 @@ body #sheet.mini h3 { display: none; }
 .wiz-review { width:100%; display:flex; flex-direction:column; gap:4px; }
 .wiz-row { display:grid; grid-template-columns:1fr auto auto; grid-template-areas:"name st btn" "sum sum btn"; gap:0 8px; align-items:center; background:#14283c; border-radius:8px; padding:4px 8px; }
 .wiz-row.bad { outline:2px solid #e0a030; } .wiz-name { grid-area:name; font-weight:700; } .wiz-sum { grid-area:sum; font-size:12px; opacity:.85; } .wiz-st { grid-area:st; } .wiz-row button { grid-area:btn; min-height:40px; }
+
+/* Issue #67: the card a tap on a city circle opens. It sits just above the dock, never over it, and is dismissed by its own button or by a tap on the empty map. */
+#city-card { position:fixed; left:8px; right:8px; bottom:calc(60px + env(safe-area-inset-bottom)); max-width:420px; margin:0 auto; background:#0b1b2bf5; border:1px solid var(--accent); border-radius:10px; padding:10px 52px 10px 12px; z-index:7; font-size:14px; line-height:1.45; }
+#city-card[hidden] { display:none; }
+#city-card h4 { margin:0 0 4px; font-size:16px; color:var(--accent); }
+#city-card-close { position:absolute; top:4px; right:4px; width:44px; height:44px; font-size:20px; }
+#city-card-body div { padding:1px 0; }

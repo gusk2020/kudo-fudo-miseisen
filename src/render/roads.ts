@@ -8,7 +8,7 @@ import type { World } from "../sim/world";
 import { hubsAt } from "../sim/hubs";
 import { pickCityCircles } from "./cityCircles";
 import { tierOf } from "../sim/tier23";
-import { LINE, nameWidth, placeNames, type Box, type NameCircle } from "./cityNames";
+import { LINE, nameWidth, PROMOTED_NAME_ZOOM, placeNames, type Box, type NameCircle } from "./cityNames";
 import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
@@ -135,15 +135,17 @@ export class RoadLayer {
    */
   private drawCityCircles(sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
     const g = this.g.cityTop, circles = pickCityCircles(sim, w, zoom, year, lite);
-    const drawn: NameCircle[] = [], tiers: number[] = [];
+    const drawn: NameCircle[] = [], tiers: number[] = [], promoted = year === null && zoom >= PROMOTED_NAME_ZOOM ? new Set((sim.oldCities40 ?? []).map((d) => d.id)) : null;
+    this.drawnCircles = [];   // (what a tap can hit: the circles of THIS drawing, live view only)
     for (const r of circles) {
       const col = r.rel > 1.08 ? 0x2fbf5f : r.rel < 0.93 ? 0xe0463c : 0x9aa4ad, rad = Math.min(px(3 + 4 * Math.sqrt(r.p / 1e5)), px(r.seat ? 34 : 28));
       g.circle(r.x, -r.y, rad).fill({ color: col, alpha: 0.3 }).stroke({ width: px(1.6), color: col, alpha: 1 });
       if (r.seat) g.circle(r.x, -r.y, rad + px(2.5)).stroke({ width: px(1.8), color: 0xffc83a, alpha: 0.95 });
       const tier = year === null ? tierOf(sim, r.id) : 0;
       if (tier) { g.circle(r.x, -r.y, rad + px(tier === 2 ? 4.6 : 3.4)).stroke({ width: px(tier === 2 ? 2.2 : 1.4), color: tier === 2 ? 0x3b1f6e : 0x7a4fb5, alpha: 0.95 }); }   // Stage 23: 政令指定都市 a heavy violet ring, 政令特区 a light one
+      if (year === null) this.drawnCircles.push({ id: r.id, x: r.x, y: r.y, radPx: rad * zoom, p: r.p, rel: r.rel, seat: r.seat });
       const wc = w.cityById.get(r.id); tiers.push(tier);
-      drawn.push({ x: r.x * zoom, y: -r.y * zoom, rad: rad * zoom, name: wc && wc.kind !== "capital" && sim.pot17 && (!sim.tier23 || year !== null || tier > 0 || r.seat) ? wc.name : null, seat: r.seat });   // (Stage 23: with the tiers only the 特区・政令指定都市 and the seats are named; the others keep their circle)
+      drawn.push({ x: r.x * zoom, y: -r.y * zoom, rad: rad * zoom, name: wc && wc.kind !== "capital" && sim.pot17 && (!sim.tier23 || year !== null || tier > 0 || r.seat || !!promoted?.has(r.id)) ? wc.name : null, seat: r.seat });   // (Stage 23: with the tiers only the 特区・政令指定都市 and the seats are named; the others keep their circle)
     }
     // Stage 18/19: names of the places that grew into cities (cityNames.ts): no overlaps, biggest first, fewer when zoomed out; the base map's names of the capitals (drawn from zoom 0.55) are in the way too
     if (zoom >= 0.55 && sim.pot17) {
@@ -166,10 +168,12 @@ export class RoadLayer {
     if (showP) for (const p of at.ports) { const big = p.tier >= 3; if (far && !big) continue; const c = pos(p.city); if (!c) continue; const s = px(big ? PORT_SIZE[1] : PORT_SIZE[0]); nodes.rect(c[0] + px(5), -c[1] + px(2), s, s).fill({ color: big ? PORT_COL2[1] : PORT_COL2[0] }).stroke({ width: px(1.2), color: 0xffffff }); }
     if (showA) for (const x of at.airports) { const hub = x.kind === "hub" && (year === null || !x.build); if (far && !hub) continue; const c = pos(x.city); if (!c) continue; const s = hub && x.site !== w.cityById.get(x.city)?.cell ? w.cellPos(x.site) : c; plane(nodes, s[0], s[1], px(hub ? 2 : 1.2), hub ? 0xffc83a : 0xffffff); }
   }
+  /** The city circles of the last drawing (world position, radius in CSS px): the map's tap handler asks which one a finger hit. */
+  drawnCircles: { id: string; x: number; y: number; radPx: number; p: number; rel: number; seat: boolean }[] = [];
   set(a: RoadArgs, zoom: number) { this.last = a; const sg = RoadLayer.signature(a, zoom); if (sg === this.sig) return false; this.sig = sg; this.draw(a, zoom); return true; }
   redraw(zoom: number) { if (this.last) { this.sig = ""; this.set(this.last, zoom); } }
   private draw(a: RoadArgs, zoom: number) {
-    for (const k of Object.keys(this.g)) this.g[k].clear(); for (const t of this.names) t.visible = false;
+    for (const k of Object.keys(this.g)) this.g[k].clear(); for (const t of this.names) t.visible = false; this.drawnCircles = [];
     let count = 0;
     const px = (n: number) => n / zoom, { sim, w } = a;
     if (sim && w) {

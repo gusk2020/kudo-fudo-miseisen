@@ -7,6 +7,7 @@
  * Colour is the city's own growth against the nation over twenty years (green / red / grey); the radius grows with the square root of its people. No triangles.
  */
 import { homeCity, subCity } from "../sim/ceremony";
+import { PROMOTED_NAME_ZOOM } from "./cityNames";
 import { SHOW_ON, isCapitalCity, isShown } from "../sim/city17";
 import type { SimState } from "../sim/types";
 import type { World } from "../sim/world";
@@ -33,6 +34,7 @@ export function pickCityCircles(sim: SimState, w: World, zoom: number, year: num
     for (const m of top) if (m.members.some((id) => seat.has(id))) for (const id of m.members) { const r = byId.get(id); if (r && r.p >= (w.cityById.get(id)?.kind === "town" ? SATELLITE_MIN : 150000)) keep.add(r); }
   }
   const bySize = [...rows].sort((p, q) => q.p - p.p); for (const r of bySize.slice(0, lite ? 10 : zoom < 0.5 ? 18 : 36)) keep.add(r);
+  if (year === null && zoom >= PROMOTED_NAME_ZOOM) for (const d of sim.oldCities40 ?? []) { const r = byId.get(d.id); if (r) keep.add(r); }   // Issue #67: a promoted city has its circle when one looks closely (and is then tappable)
   for (const r of [...rows].sort((p, q) => q.rel - p.rel).slice(0, 4)) if (r.rel > 1.1 && r.p > 5e4) keep.add(r);
   for (const r of [...rows].sort((p, q) => p.rel - q.rel).slice(0, 4)) if (r.rel < 0.9 && r.p > 5e4) keep.add(r);
   return [...keep].sort((p, q) => q.p - p.p).map((r) => ({ ...r, seat: seat.has(r.id) }));

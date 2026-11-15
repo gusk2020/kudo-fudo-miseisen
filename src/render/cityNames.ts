@@ -6,6 +6,8 @@
 export interface NameCircle { x: number; y: number; rad: number; name: string | null; seat: boolean }
 export type Box = [number, number, number, number];   // left, top, right, bottom
 export const FONT = 12, LINE = FONT + 4;
+/** Issue #67 (names of promoted cities): from this zoom on, the cities that were promoted from old municipalities always get a circle, and a NAME too -- after the seats, the 政令 cities and the places named by the Stage 23 rule, by size, and only where the text finds a free side (the layout below leaves the rest out). Below it nothing changes. */
+export const PROMOTED_NAME_ZOOM = 2;
 export const nameWidth = (s: string) => s.length * FONT + 4;
 /** Most names shown at a zoom: none in the far view, then 7 / 18 / 45 as one looks closer (Stage 22: a little fewer than Stage 19's 10 / 24 / 60; the places themselves are all still simulated). */
 export const maxNames = (zoom: number) => (zoom < 0.55 ? 0 : zoom < 1 ? 7 : zoom < 2 ? 18 : 45);
