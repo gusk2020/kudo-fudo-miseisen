@@ -36,6 +36,7 @@ import { RANGES, RANGE_LIMITS, RANGE_STEP, clampRange, nextRange, rangeLabel, ra
 import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, validate } from "../core/validate";
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
+import { tapDiag } from "./gestures";
 import { cityCard } from "./cityCard";
 import { currentPolicy, initialPolicy, policyText } from "../sim/stance41";
 import { prepareDecisionLoad, setDecisionSink, type DecisionPoint } from "../sim/decision41";
@@ -336,6 +337,8 @@ export class App {
     const best = hit[0], card = best ? cityCard(sim, w, best.id, best.rel) : null; if (!card) { this.hideCityCard(); return; }
     const el = document.getElementById("city-card")!; document.getElementById("city-card-title")!.textContent = card.title; const body = document.getElementById("city-card-body")!; body.replaceChildren(...card.lines.map((t) => h("div", {}, t))); const dock = document.getElementById("dock"); el.style.bottom = `${Math.ceil((dock?.getBoundingClientRect().height ?? 60) + 8)}px`; el.hidden = false;   // (just above the dock, whatever height the dock has on this device)
   }
+  /** (tests, diagnosis) why the last touch was not a tap */
+  get tapMiss() { return tapDiag.miss; }
   hideCityCard() { const el = document.getElementById("city-card"); if (el) el.hidden = true; }
   // ---- Issue #18: Lake Biwa / Mt. Fuji by touch -- one finger moves, two fingers scale and twist ----
   private fpose: { which: "biwa" | "fuji"; a0: Vec; b0: Vec; pos0: Vec; rot0: number; k0: number; ky0: number; cur: { pos: Vec; rot: number; scale: number; sy: number } | null } | null = null;
