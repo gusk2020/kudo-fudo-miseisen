@@ -49,7 +49,8 @@ test("Pixel 7a-size touch: intro -> terrain -> era -> seats on the map -> 国道
   // 6b. Stage 36: an 1800 game -- the atlas says rail does not exist yet, the timeline has the technology / fictional-history rows (by touch)
   await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; });
   expect(await app(page, "a => [a.sim.startYear, !!a.sim.rules1800]")).toEqual([1800, true]);
-  await tap(page, "#dock-atlas"); await page.waitForSelector("#atlas-tech"); expect(await page.textContent("#atlas-tech-鉄道")).toContain("まだない"); expect(await page.textContent("#atlas-tech-飛行船")).toContain("まだない"); await tap(page, "#sheet-close");
+  // Stage 41: the technology stages are in the 路線帳 behind the 交通グラフ button
+  await tap(page, "#dock-ledger"); if ((await page.getAttribute("#led-graph", "aria-pressed")) !== "true") await tap(page, "#led-graph"); await page.waitForSelector("#atlas-tech"); expect(await page.textContent("#atlas-tech-鉄道")).toContain("まだない"); expect(await page.textContent("#atlas-tech-飛行船")).toContain("まだない"); await tap(page, "#sheet-close");
   await tap(page, "#dock-timeline"); await tap(page, "#tl-tech"); expect(await page.locator("#sheet .issue", { hasText: "架空" }).count()).toBeGreaterThan(0); await tap(page, "#sheet-close");
   // 7. save, reload, and the same game is back (seats, month, the road)
   await page.evaluate(() => { (window as any).__kfm.sim.speed = 0; }); const before = await app(page, "a => [a.sim.capital, !!a.sim.capitalPos, a.sim.month, Object.keys(a.sim.routes).length]") as [string, boolean, number, number];

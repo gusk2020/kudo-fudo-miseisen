@@ -188,7 +188,7 @@ test("time controls, road layer updates without rebuilding terrain, status HUD",
   await page.waitForFunction(() => (window as any).__kfm.sim.month >= 40, null, { timeout: 30000 });
   expect(await app(page, "a => a.r.base.children.length")).toBe(sprite0);   // terrain layers untouched by ticks
   await page.click("#speed-0"); const m = await app(page, "a => a.sim.month") as number; await page.waitForTimeout(800); expect(await app(page, "a => a.sim.month")).toBe(m);
-  const hud = await page.textContent("#status"); expect(hud).toContain("停止中"); expect(hud).toContain("路線"); expect(hud).toContain("建設中"); expect(hud).toContain("状態");
+  const hud = await page.textContent("#status"); expect(hud, "Stage 41: the top line no longer shows the speed, the skipped time or the check").not.toContain("停止中"); expect(hud).not.toContain("速度"); expect(hud).not.toContain("検証"); expect(hud).not.toContain("省略"); expect(hud, "it shows the policy the game started with and the one in force").toContain("初期方針"); expect(hud).toContain("現在の方針"); expect(hud).toContain("路線"); expect(hud).toContain("建設中"); expect(hud).toContain("状態");
   await page.click("#btn-history"); expect(await page.locator("#sheet .issue").count()).toBeGreaterThan(0); expect(await page.textContent("#sheet")).toContain("原因"); await page.click("#sheet-close");
   await page.click("#tool-pick"); const spot = await screenOf(page, tokyo); await page.mouse.click(spot[0], spot[1]);
   expect(JSON.parse((await page.textContent("#scenery-json"))!).schema).toBe("kfm.scenery.v1");
@@ -241,7 +241,8 @@ test("long absence: catch-up is capped, reported, and never freezes the page", a
   await page.waitForFunction(() => !(window as any).__kfm.catching && (window as any).__kfm.sim.skippedMonths > 0, null, { timeout: 60000 });
   const r = await page.evaluate(() => { const s = (window as any).__kfm.sim; return { month: s.month, skipped: s.skippedMonths, ev: s.events.some((e: any) => e.kind === "skip") }; });
   expect(r.month).toBeGreaterThanOrEqual(360); expect(r.month).toBeLessThan(420); expect(r.skipped).toBeGreaterThan(0); expect(r.ev).toBe(true);
-  expect(await page.textContent("#status")).toMatch(/省略 約\d+(\.\d)?時間/);   // Stage 31: hours of real time, not simulated years
+  expect(await page.textContent("#status"), "Stage 41: the 省略 pill is no longer on the top line").not.toMatch(/省略 約/);
+  await page.click("#btn-history"); expect(await page.textContent("#sheet"), "the figure is still there, in the 年表 sheet (Stage 31: hours of real time, not simulated years)").toMatch(/省略 約\d+(\.\d)?時間/); await page.click("#sheet-close");
   const wall = await page.evaluate(() => (window as any).__kfm.sim.skippedWallMs) as number; expect(wall).toBeGreaterThan(100 * 3600000); expect(wall).toBeLessThanOrEqual(7 * 24 * 3600000 + 60000);   // of the 7 real days away, all but the ~30 simulated years' worth
   expect(await page.textContent("#status")).not.toMatch(/省略\d+年/); expect(errs).toEqual([]);
 });

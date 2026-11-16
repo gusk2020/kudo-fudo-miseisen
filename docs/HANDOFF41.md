@@ -8,7 +8,7 @@
 | 公開中（Pages run 158） | `claude/release-pages-8b1de5b` = PR #75 の HEAD `8b1de5b` | #75 | Draft。都市タップ（県庁所在地の点）修正まで公開済み。実機未確認 |
 | 巻き戻し先 | `claude/release-pages-4d933e8`、さらに前は `claude/rollback-pages-ef5e8c7` | | Actions → Pages → Run workflow で枝を選ぶ |
 | **Stage 41 (1/3) 保存の安全性** | `claude/s41-save-safety` | **#76** | Draft、base `claude/fix-city-tap`。エラーA修正・エラーB説明・判断直前のセーブ・遷都周期の表示修正。詳細は `docs/SAVE41.md` |
-| **Stage 41 (2/3) 画面再編** | `claude/s41-ui` | （作成の有無は GitHub で確認） | #76 の枝を土台にした Draft。上部の方針表示、年表の統合、路線帳・都市・交通グラフ |
+| **Stage 41 (2/3) 画面再編** | `claude/s41-ui` | **#77** | Draft、base `claude/s41-save-safety`（#76 の枝）。上部の方針表示、年表の統合、路線帳・都市・交通グラフ。ローカルE2E（app・techui37・mobile35・real）で見つかった不具合は修正済みで、最後の確認結果は PR #77 のコメントとCIを見ること |
 | 鉄道改善案V2（採否保留） | `claude/issue66-pathfind-budget` | #73 | **取り込んでいない。無断で取り込まないこと**（全方針で1950年の鉄道延長が12〜19%増える。ユーザーの採否判断待ち） |
 | 都市昇格・名前表示 | #71 → #74 → #75 → #76 → `claude/s41-ui` の順に積んである | | |
 系統: #59 → #62 → #69 → #70 → #71 → #74 → #75 → #76 → s41-ui。main は空の初期コミットのまま（公開は各枝からの `workflow_dispatch`）。
@@ -34,6 +34,8 @@
 - `advance()`（テスト・ツール用の早送り）は開いた政策の窓を自分で解決する。アプリの時計は解決しない。時間が止まることをテストするときは `stepMonth` を直接呼ぶこと。
 - 自動モードでは遷都（`unattended`）は**イベントを開かず飛ばす**（`skip2200`）。判断直前のセーブはその直前に `open2200` を写しに適用して作る。
 - 既存E2Eは**遅い**（CI で全体 約45〜80分。`real.spec.ts` だけで約20〜30分）。ローカルの Chromium は `/opt/pw-browsers`（`CHROMIUM_PATH=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux*/chrome)`）。PlaywrightのスクリーンショットはCI（ソフトウェア描画）で20秒を超えて失敗することがある: E2E に記録用のスクリーンショットを入れない。
+- **コードやテストの行の途中に `// コメント` を足さない。** 同じ行の後ろにある処理が丸ごと無効になる。今回、上部の表示（路線数・建設中のピル）と、E2E の確認と「閉じる」操作を、これで一度ずつ消してしまい、E2E が捕まえた（`app.spec.ts` と `techui37.spec.ts`）。コメントは行末か別の行に書き、機械で確かめるなら「`)   // ...` の後ろに文が続く行」を検索する。
+- 交通グラフのボタン（`#led-graph`）は**押すたびに入り切りする**。E2E では `aria-pressed` を見て、切れているときだけ押す。
 - 時刻の扱い: 状態行の時刻は `TZ=Asia/Tokyo date` の値だけを使う。**推定の時刻を書かない**（この会話で一度やって訂正した）。
 - 浅い clone では `git push` が「未pushのコミットがある」とフックに言われることがある（リモート追跡の設定が無いため）。`git fetch --depth=1 origin <枝>` と `git branch --set-upstream-to` で直る。
 
@@ -71,3 +73,9 @@
 2. 保存互換: `node tools/compat-check.mjs <旧dist> <新dist> --base /kudo-fudo-miseisen/`（同じ origin の IndexedDB を旧版→新版→旧版と渡す）。旧dist は `git worktree add ../x <sha>` で作って `BASE_PATH=/kudo-fudo-miseisen/ npx vite build --outDir ...`。**不合格5件（Stage 31〜35 移行用の項目）は前提が合わないもので、Stage 38 以降の旧版では常にそうなる**（`docs/RELEASE67.md`）。
 3. 公開手順（承認がある場合のみ）: 固定枝 `claude/release-pages-<短いsha>` を push → `mcp__github__actions_run_trigger`（`pages.yml`、`ref` はその枝）→ ジョブで build（`npm test`・ビルド）と deploy の成功を確認 → `https://gusk2020.github.io/kudo-fudo-miseisen/` が HTTP 200、公開中の `index-*.js` の SHA-256 がローカルビルドと一致、ヘッドレス Chromium で起動、を確認。この環境のネットワーク許可に `gusk2020.github.io` を足してある（Default 環境）。
 4. 実機（Pixel 7a）は Claude にはできない。実機未確認と、エミュレーションでの合格を区別して報告する。
+
+## Audit round (after PR #76/#77, Stage 41 continuation)
+- **国道0号 repair false positives**: `repairRoad0Years` now takes a predicate; `sanitizeSim` passes "a year a relocation can fall in" (`origin + k*step`, from `originOf`/`relocStepOf`). A stray second 0号 without a year made in any other year (test: 1950 in an 1800 game) is still refused and nothing is changed. Real duplicates (same year) were already refused.
+- **Decision-save loading**: tests in `decision41.test.ts` cover: same choice reproduces the never-stopped game; another choice gives another record; mode is held back while the decision is open and restored by `resumeAfterDecision`. Still **not verified on a real device**.
+- **tap67 retry**: up to 3 taps kept, but the test now counts places that needed a second tap and fails if more than 2% did (the hit test, not the runner, is then at fault); the count and names are logged as `T67 RETRY SUMMARY`.
+- **旧地形保存②**: NOT restored and cannot be with the current method (SAVE41.md). Originals are quarantined and never overwritten. Do not write "repaired" anywhere for it.

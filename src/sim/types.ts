@@ -130,6 +130,8 @@ export interface SimState {
   /** Stage 40 (Issue #66): new railway lines that failed the technology check, by candidate (city ids and cells), with [year, the longest tunnel that year's technology could dig] (planning.ts RAIL_RETRY_YEARS). 1800-start games only */
   railFail?: Record<string, [number, number]>;
   /** Stage 41: set on a game loaded from a 判断直前 save point: the automatic mode it was saved in, held back (policy.mode is 'priority') until the decision is made (decision41.ts). Absent = none */
+  /** Stage 41: the policy the game was started with (stance of the first era, and its coast / focus); absent in a game made before. See stance41.ts */
+  initPolicy?: { stance: import("./eras").EraKey; coast?: "japansea" | "pacific" | "neutral"; focus?: "concentrate" | "disperse" };
   resumeMode?: "auto" | "autoReloc" | "idleAuto";
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
