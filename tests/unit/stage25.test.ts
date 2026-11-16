@@ -138,7 +138,7 @@ import { homeCity, performRoad0, previewNational, subCity } from "../../src/sim/
 import type { Vec } from "../../src/core/types";
 describe("Stage 25: every 国道0号 is its own build", () => {
   it("a second 国道0号 is a route of its own, named by its year; the first keeps its number, edges and history; the number register is not touched", () => {
-    const r = run14({ seed: 5, until: 1955, islets: true }), { sim, w } = r;
+    const r = run14({ seed: 5, until: 1955, islets: true }), { sim, w } = r; delete sim.special41;   // (the rule of a game saved before Stage 41 #8: a new game names the later ones A号, 元号 ... -- special41.test.ts)
     const line = (a: Vec, b: Vec, n = 20): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
     const go = (c: string, s: string) => { const p = previewNational(w, line(homeCity(w, c)!.pos, subCity(w, s)!.pos), c, s); expect(p.ok, p.reasons?.join("|")).toBe(true); return performRoad0(sim, w, p); };
     const a = go("JP-40", "JP-41"), firstId = a!.routeId, first = sim.routes[firstId], edges0 = JSON.stringify(first.edges), hist0 = first.history.length;

@@ -24,3 +24,14 @@ Status: implemented and unit-tested. **Not verified on a real Pixel 7a.** Source
 - When road/rail/balanced priority returns, the cap is lifted at the next month and planning may resume (tested: sea → air → road).
 - Bridges: the model's own limit (40 km by 2150) is already below every record, so no extra cap is added. Under an unverified bridge record this is stated, not assumed.
 - Caveats: the cap is a module-level value set by the stepping game (the app runs one game); a tool previewing another game's tech between steps sees the last value. It limits the **length** only, not the existing too-long tunnels already built before the stance changed.
+
+## Second round (2026-11-17): bridges
+| item | value | status / source |
+|---|---|---|
+| Japan's longest bridge | 東京湾アクアブリッジ 4,384 m (tabi-mag.jp, car-me.jp) / 4,424 m (yomuno.jp) / 4,425 m (trafficnews.jp), 1997 | ◐ counts differ; **4.425 km (largest)** used |
+| 明石海峡大橋 | 3,911 m, opened 1998-04-05 (kobe-np.co.jp; MLIT papers) | ✔ (Japan's 2nd; not the threshold) |
+| World's longest continuous bridge over water | Lake Pontchartrain Causeway 38.28 km (own definition) / 38,442 m (Guinness list entry), 1969 | ◐ **38.44 km (largest)** used |
+| Jiaozhou Bay Bridge | 41.58 km total, 25.9 km over water (Britannica) | ✔ not used as threshold (aggregate, not continuous) |
+- `bridgeFiction`: a bridge facility longer than 4.425 km → 【架空・日本初】; longer than 38.44 km → 【架空・世界初】. No by-year table for bridges (earlier records unverified), same conservative rule as tunnels.
+- #7 now also caps **bridges** at 38.44 km while sea/air is the priority (the model's own limit reaches 40 km); lifted with the tunnel cap. Existing facilities are never touched: the cap only limits what `techAt` says can be built now.
+- Still NOT done: earlier tunnel/bridge records by year, other technologies (ports, airports, rolling stock).

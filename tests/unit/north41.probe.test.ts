@@ -24,7 +24,8 @@ const GROUPS: Record<string, string[]> = { 札幌県: ["HK-SAP"], 函館県: ["H
         const ports = (sim.hubs ? Object.values(sim.hubs.ports) : []).filter((p) => !p.until).map((p) => w.prefOf(w.cityById.get(p.city)?.cell ?? -1) ?? "?"), air = (sim.hubs ? Object.values(sim.hubs.airports) : []).filter((p) => !p.until).map((p) => w.prefOf(w.cityById.get(p.city)?.cell ?? -1) ?? "?");
         const others = Object.keys(popBy).filter((p) => !Object.values(GROUPS).flat().includes(p)).map((p) => popBy[p] + (townBy[p] ?? 0)).sort((a, b) => a - b), med = others.length ? others[others.length >> 1] : 0;
         const north: Record<string, unknown> = {}; for (const [n, ids] of Object.entries(GROUPS)) { const p = ids[0]; north[n] = { pop: Math.round((popBy[p] ?? 0) + (townBy[p] ?? 0)), roadKm: Math.round(km[p]?.road ?? 0), railKm: Math.round(km[p]?.rail ?? 0), ports: ports.filter((x) => x === p).length, airports: air.filter((x) => x === p).length }; }
-        rows.push({ cap, seed, year: y, otherPrefMedianPop: Math.round(med), north, secs: Math.round((Date.now() - t0) / 1000) });
+        const all = Object.keys(popBy).map((p) => [p, Math.round(popBy[p] + (townBy[p] ?? 0))] as [string, number]).sort((a, b) => b[1] - a[1]);
+        rows.push({ cap, seed, year: y, national: all.reduce((a, b) => a + b[1], 0), top5: all.slice(0, 5), otherPrefMedianPop: Math.round(med), north, secs: Math.round((Date.now() - t0) / 1000) });
       }
     }
     writeFileSync(out!, JSON.stringify(rows, null, 1));

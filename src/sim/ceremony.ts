@@ -17,7 +17,7 @@ export const TOKYO = "JP-13";
 export interface CerPreview { ok: boolean; reasons: string[]; cells: number[]; path: Vec[]; lengthKm: number; passes: string[]; maxGradePct: number; endName: string }
 
 /** Points every `step` km along the line, each with its distance from the start. */
-function resampleT(pts: Vec[], step: number): { p: Vec; t: number }[] {
+export function resampleT(pts: Vec[], step: number): { p: Vec; t: number }[] {
   const out = [{ p: pts[0], t: 0 }]; let acc = 0, tot = 0;
   for (let i = 1; i < pts.length; i++) { const d = dist(pts[i - 1], pts[i]); acc += d; tot += d; if (acc >= step) { out.push({ p: pts[i], t: tot }); acc = 0; } }
   if (dist(out[out.length - 1].p, pts[pts.length - 1]) > 1) out.push({ p: pts[pts.length - 1], t: tot }); return out;
@@ -27,7 +27,7 @@ function resample(pts: Vec[], step: number): Vec[] {
   for (let i = 1; i < pts.length; i++) { acc += dist(pts[i - 1], pts[i]); if (acc >= step) { out.push(pts[i]); acc = 0; } }
   if (dist(out[out.length - 1], pts[pts.length - 1]) > 1) out.push(pts[pts.length - 1]); return out;
 }
-const lineDist = (p: Vec, line: Vec[]) => { let m = Infinity; for (let i = 0; i + 1 < line.length; i++) m = Math.min(m, pointSegDist(p, line[i], line[i + 1])); return m; };
+export const lineDist = (p: Vec, line: Vec[]) => { let m = Infinity; for (let i = 0; i + 1 < line.length; i++) m = Math.min(m, pointSegDist(p, line[i], line[i + 1])); return m; };
 export function tokyoCity(w: World) { return w.cities.find((c) => c.pref === TOKYO && c.kind === "capital") ?? null; }
 /** The prefectural capital (県庁所在地) city of a prefecture, or null. */
 export const seatCity = (w: World, prefId: string) => w.cities.find((c) => c.pref === prefId && c.kind === "capital") ?? null;
@@ -38,7 +38,7 @@ export const seatCity = (w: World, prefId: string) => w.cities.find((c) => c.pre
 export function homeCity(w: World, v?: string) { const p = prefOfSeat(v); return (p ? seatCity(w, p) : null) ?? tokyoCity(w); }
 export function subCity(w: World, v?: string) { const p = prefOfSeat(v); return p ? seatCity(w, p) : null; }
 export const cerLabel = (kind: CerKind, home?: { name: string } | null, sub?: { name: string } | null): string => kind === "kokudo1" ? `国道1号(${(home?.name ?? "東京").replace(/市$/, "")}→${(sub?.name ?? "大阪市").replace(/市$/, "")})` : "府道1号(旧版)";
-function nearestLandCell(w: World, p: Vec, ok: (k: number) => boolean): number {
+export function nearestLandCell(w: World, p: Vec, ok: (k: number) => boolean): number {
   const k0 = w.cellOf(p); if (k0 < 0) return -1; const i0 = k0 % w.nx, j0 = (k0 / w.nx) | 0; let best = -1, bd = Infinity;
   for (let r = 0; r < 8 && best < 0; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
     if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue; const a = i0 + di, b = j0 + dj; if (a < 0 || b < 0 || a >= w.nx || b >= w.ny) continue;

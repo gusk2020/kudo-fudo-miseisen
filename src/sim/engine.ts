@@ -50,7 +50,7 @@ import { realToLonLat } from "../core/data";
 import type { Vec } from "../core/types";
 import { autoEraIdx } from "./simple41";
 import { isSpecialSym, specialOfficial } from "./special41";
-import { SEA_AIR_TUNNEL_CAP_KM, seaAirPriority } from "./fiction41";
+import { BRIDGE_RECORD, SEA_AIR_TUNNEL_CAP_KM, seaAirPriority } from "./fiction41";
 import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, relocFirstOf, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
@@ -616,7 +616,7 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
 /** One simulated month as a series of short atoms (yield between them). */
 export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
   if (sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) return;   // waiting for the player at a policy window or an era change: time does not move
-  setTunnelCap(seaAirPriority(sim) ? SEA_AIR_TUNNEL_CAP_KM : null);   // Stage 41 #7: sea / air priority: no tunnel longer than any that exists in 2026 (plans and holds stay; road/rail priority lifts it)
+  setTunnelCap(seaAirPriority(sim) ? SEA_AIR_TUNNEL_CAP_KM : null, BRIDGE_RECORD.worldWaterKm);   // Stage 41 #7: sea / air priority: no tunnel longer than any that exists in 2026 (plans and holds stay; road/rail priority lifts it)
   resumeAfterDecision(sim);   // Stage 41: a game loaded from a 判断直前 save point goes back to its automatic mode once the decision is made
   if (sim.month % 12 === 0) {
     if (due2200(sim)) { if (unattended(sim)) { noteDecision("reloc", yearOf(sim), sim, (c) => open2200(c)); skip2200(sim); } else { open2200(sim); return; } }   // Stage 22 / 23: time stops here in every mode (auto and away included) until the player chooses -- 現状維持 too is a choice

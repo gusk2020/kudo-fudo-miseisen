@@ -26,9 +26,9 @@ describe("Stage 41 #8: special routes", () => {
   it("a relocation that is skipped builds nothing: the same symbol waits, it is not taken by the calendar", () => {
     const g = game(); expect(nextSpecial(g.sim)).toBe("0"); /* 1900 skipped */ const r = relocRoad(g, 2000)!; expect(routeOfficial(g.sim.routes[r.routeId])).toBe("国道0号"); expect(g.sim.routes[r.routeId].special).toBeUndefined(); expect(nextSpecial(g.sim)).toBe("A");
   }, 900000);
-  it("the next one needs the previous to be COMPLETE: a closed section of 国道0号 refuses A号 (and says why)", () => {
+  it("the next one needs the previous to be COMPLETE: an unfinished section of 国道0号 refuses A号 (and says why); a finished section that was later closed does not", () => {
     const g = game(), { sim } = g; const r0 = relocRoad(g, 1900)!; const route = sim.routes[r0.routeId]; expect(routeComplete(sim, route)).toBe(true); expect(canBuildNext(sim).ok).toBe(true);
-    const e = sim.edges[route.edges.find((x) => !sim.edges[x.edgeId].facility)!.edgeId]; e.state = "closed"; e.open = false; expect(routeComplete(sim, route)).toBe(false);
+    const e = sim.edges[route.edges.find((x) => !sim.edges[x.edgeId].facility)!.edgeId]; e.state = "closed"; e.open = false; expect(routeComplete(sim, route), "closed later: still a completed route").toBe(true); e.built = 0.5; expect(routeComplete(sim, route)).toBe(false);
     const gate = canBuildNext(sim); expect(gate.ok).toBe(false); expect(gate.sym).toBe("A"); expect(gate.reason).toContain("完成していません"); expect(relocRoad(g, 2000)).toBeNull(); expect(nextSpecial(sim)).toBe("A");
   }, 900000);
   it("one-stroke rule over the whole line: a path and a loop pass; a branch, a split line and a star do not; two loops meeting at one place do", () => {

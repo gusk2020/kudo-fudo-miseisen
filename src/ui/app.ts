@@ -3,8 +3,10 @@ const START_1800 = typeof location === "undefined" || new URLSearchParams(locati
 import { lsKey } from "../core/ns";
 import { nightField } from "../sim/night41";
 import { installGlyphCheck } from "./glyph41";
-import { canBuildNext, nextSpecial, specialFullName } from "../sim/special41";
-import { fictionMark, tunnelFiction } from "../sim/fiction41";
+import { SPECIAL_SYMS, canBuildNext, nextSpecial, specialFullName, specialRoutes, specialOfficial as specialOfficialOf0 } from "../sim/special41";
+import { checkExtension, checkLoop, performExtension, performLoop, previewExtension, splitLoop, type ExtPreview } from "../sim/specialDraw41";
+const specialOfficialOf = (sym: string) => (sym === "1" || sym === "0" ? `国道${sym}号` : specialOfficialOf0(sym));
+import { facilityFiction, fictionMark } from "../sim/fiction41";
 import type { RecLog } from "../sim/reclaim34";
 import { buildIndex } from "../sim/network";
 import { LAKE_LIST } from "../render/lakes";
@@ -725,7 +727,10 @@ export class App {
     return { capital: homeCity(w, a.capital)?.pos ?? pos(a.capital), sub: subCity(w, a.sub)?.pos ?? pos(a.sub), sub2: sim.subCapital2 ? subCity(w, sim.subCapital2)?.pos ?? pos(sim.subCapital2) : null, palace: sim.palace?.pos ?? pos(a.palace) };
   }
   /** Stage 41 #8: what this relocation's line is called: 国道0号 (the first), or the next special symbol of the game (A号 ...). `done` = after it was opened (the symbol just used) */
-  road0Name(): string { const sim = this.sim; if (!sim?.special41) return "国道0号"; const sym = nextSpecial(sim) ?? "0"; return sym === "0" || sym === "1" ? "国道0号" : specialFullName(sym); }
+  road0Name(): string { const sim = this.sim; if (!sim?.special41) return "国道0号"; if (this.spMode === "extend" && this.spSym) return `${specialFullName(this.spSym)}の延長`; const sym = nextSpecial(sim) ?? "0"; return sym === "0" || sym === "1" ? "国道0号" : specialFullName(sym); }
+  /** Stage 41 #8: at a relocation the player may build the next special route (a line, or a loop when the line comes back to the capital) or EXTEND one that exists */
+  spMode: "new" | "extend" = "new"; spSym: string | null = null;
+  setSpMode(mode: "new" | "extend", sym: string | null = null) { this.spMode = mode; this.spSym = sym; delete this.cerDraft.kokudo0; this.cerSel = null; this.renderRoads(); this.buildUI(); }
   road0Told = false; e22: Choice2200 | null = null; e22Pick: "capital" | "sub" | "sub2" | "palace" | null = null;
   startE22Map(role: "capital" | "sub" | "sub2" | "palace") { { const d = this.e22, pf = d?.[role === "sub" ? "sub" : role], ps = d ? (role === "capital" ? d.capitalPos : role === "sub" ? d.subPos : role === "sub2" ? d.subPos2 : d.palacePos) : null; if (pf) this.centerOnPref(pf, ps ?? null); } this.e22Pick = role; this.seatPick = null; this.r.seatPending = null; this.tool = "seatpick"; this.sheet = null; this.buildSheet(); this.buildToolbar(); this.render(); }
   endE22Map() { this.e22Pick = null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.sheet = "e2200"; this.buildSheet(); this.buildToolbar(); this.render(); }
@@ -773,8 +778,14 @@ export class App {
     const sim = this.sim, w = this.world; if (!sim || !w || sim.e2200?.state !== "road0") return;
     if (skip) { close2200(sim); delete this.cerDraft.kokudo0; this.tool = "view"; this.buildUI(); this.renderRoads(); void this.persist(true); void this.takeCheckpoint(); return; }
     const d = this.cerDraft.kokudo0; if (!d?.prev.ok) return; this.runner?.settle();
-    const gate0 = sim.special41 ? canBuildNext(sim) : null; if (gate0 && !gate0.ok) { this.toast(`${gate0.reason}。このまま見送って確定してください`); return; }
-    const nm = this.road0Name(); const info = performRoad0(sim, w, d.prev as NatPreview); if (!info) { this.toast(`${this.road0Name()}を開通できませんでした`); return; }
+    const nm = this.road0Name(), done = () => { this.spMode = "new"; this.spSym = null; };
+    if (sim.special41 && (d.prev as ExtPreview).ext) {   // an extension: no new symbol, and no need for the previous route to be complete
+      const x = performExtension(sim, w, d.prev as ExtPreview), r = specialRoutes(sim)[(d.prev as ExtPreview).sym]; if (!x.ok || !r) { this.toast(`延長できませんでした: ${x.reason}`); return; }
+      close2200(sim, { routeId: r.id, reusedKm: x.reusedKm, restoredKm: 0, newKm: x.newKm, costBu: 0, spurs: 0 }); delete this.cerDraft.kokudo0; this.tool = "view"; done(); this.toast(`${nm}が開通(転用${x.reusedKm}km・新設${x.newKm}km${x.loop ? "・環状になりました" : ""})`); this.renderRoads(); this.buildUI(); void this.persist(true); void this.takeCheckpoint(); return;
+    }
+    const gate0 = sim.special41 ? canBuildNext(sim) : null; if (gate0 && !gate0.ok) { this.toast(`${gate0.reason}。延長を選ぶか、このまま見送って確定してください`); return; }
+    const back = (d.prev as NatPreview & { loopBack?: Vec[] }).loopBack, lr = back ? performLoop(sim, w, d.prev as NatPreview, back) : null; if (lr && !lr.ok) { this.toast(`環状にできませんでした: ${lr.reason}`); return; }
+    const info = lr ? lr.info : performRoad0(sim, w, d.prev as NatPreview); if (!info) { this.toast(`${nm}を開通できませんでした`); return; } done();
     close2200(sim, info); delete this.cerDraft.kokudo0; this.tool = "view"; this.toast(`${nm}が開通(転用${info.reusedKm}km・復旧${info.restoredKm}km・新設${info.newKm}km)`); this.renderRoads(); this.buildUI(); void this.persist(true); void this.takeCheckpoint();   // (Stage 29: the save after the event is taken as soon as 国道0号 is done)
   }
   /** Stage 21: 戻る in the map choice: back to the prefecture list, nothing changed. */
@@ -819,8 +830,13 @@ export class App {
     if (!d.strokes.length && !d.past.length && !d.redo.length) { delete this.cerDraft[kind]; this.saveCer(); return; }
     if (!d.strokes.length) { d.pts = []; d.prev = { ok: false, reasons: ["線がありません。描いてください"], cells: [], path: [], lengthKm: 0, passes: [], maxGradePct: 0, endName: "" }; this.saveCer(); return; }
     d.pts = d.strokes.flat(); const st = seatsOf(this.s);
+    if (kind === "kokudo0" && this.sim?.special41 && this.spMode === "extend" && this.spSym) {   // Stage 41 #8: an extension of an existing special route (tried on a copy: a line that breaks the one-stroke rule is refused here, with the reason)
+      const p = previewExtension(this.sim, w, this.spSym, d.pts, { snapKm: snapKmFor(this.r.view.zoom) }); if (p.ok) { const c = checkExtension(this.sim, w, p); if (!c.ok) { p.ok = false; p.reasons = [c.reason]; } else p.note = c.loop ? "環状になります" : p.closes ? "路線に戻ってつながります" : ""; } d.prev = p; return; }
     if (kind === "kokudo0" && this.sim) { const sim0 = this.sim, ends = [d.pts[0], d.pts[d.pts.length - 1]].filter(Boolean), subFor = sim0.subCapital2 && ends.length ? [sim0.subCapital, sim0.subCapital2].map((p) => ({ p, c: p ? subCity(w, p) : null })).filter((x) => x.c).sort((a, b) => Math.min(...ends.map((q) => Math.hypot(a.c!.pos[0] - q[0], a.c!.pos[1] - q[1]))) - Math.min(...ends.map((q) => Math.hypot(b.c!.pos[0] - q[0], b.c!.pos[1] - q[1]))))[0]?.p : sim0.subCapital;   /* Stage 36 M3: with two sub-capitals 国道0号 runs from the capital to whichever of them the line was drawn to */
-    d.prev = previewNational(w, d.pts, this.sim.capital, subFor ?? this.sim.subCapital, { snapKm: snapKmFor(this.r.view.zoom), roadside: true, roadCells: buildIndex(this.sim, "road").roadCells }); return; }   // Stage 22: along the roads that are there
+    const natOpts = { snapKm: snapKmFor(this.r.view.zoom), roadside: true, roadCells: buildIndex(this.sim, "road").roadCells }, home0 = homeCity(w, sim0.capital), sub0 = subCity(w, subFor ?? sim0.subCapital), lp = sim0.special41 && home0 && sub0 ? splitLoop(d.pts, home0.pos, sub0.pos, natOpts.snapKm) : null;
+    if (lp) {   // Stage 41 #8: the line comes back to the capital: a loop (outward part as ever, the way back joined on; tried on a copy first)
+      const nat = previewNational(w, lp.out, sim0.capital, subFor ?? sim0.subCapital, natOpts); if (nat.ok) { const c = checkLoop(sim0, w, nat, lp.back, natOpts.snapKm); if (!c.ok) { nat.ok = false; nat.reasons = [c.reason]; } else (nat as NatPreview & { loopBack?: Vec[] }).loopBack = lp.back; } d.prev = nat; return; }
+    d.prev = previewNational(w, d.pts, this.sim.capital, subFor ?? this.sim.subCapital, natOpts); return; }   // Stage 22: along the roads that are there
     d.prev = this.real ? previewNational(w, d.pts, st.capital, st.sub, { snapKm: snapKmFor(this.r.view.zoom), roadside: true }) : previewCeremony(w, kind, d.pts, this.s.capital); this.saveCer();
   }
   cerUndo(kind: CerKind) { const d = this.cerDraft[kind]; if (!d || !d.past.length) return; d.redo.push(d.strokes); d.strokes = d.past.pop()!; this.cerSel = null; this.replanCer(kind); this.renderRoads(); this.buildUI(); }
@@ -1249,9 +1265,15 @@ export class App {
     if (this.sim.e2200?.state === "road0") {   // Stage 22: 国道0号 -- drawn like 国道1号, either way round; opened by its own ceremony
       const d0 = this.cerDraft.kokudo0, nat0 = d0?.prev as NatPreview | undefined, g0 = h("div", { class: "grp", id: "road0-row" });
       g0.append(this.tbtn(`${this.road0Name()}を描く` + (d0 ? (d0.prev.ok ? " 済" : " 要修正") : ""), this.tool === "cer-kokudo0", () => this.setTool("cer-kokudo0"), "tool-cer-kokudo0"), h("button", { id: "road0-skip", type: "button", onclick: () => this.rwSkipRoad() }, "国道0号はつくらない"));
+      if (this.sim.special41) {   // Stage 41 #8: the next special route, or an extension of one that exists
+        const have = specialRoutes(this.sim), gate = canBuildNext(this.sim), row = h("div", { class: "grp", id: "sp-row" });
+        row.append(this.tbtn(`新規: ${gate.sym ? specialFullName(gate.sym) : "なし"}`, this.spMode === "new", () => this.setSpMode("new"), "sp-new"));
+        for (const sym of SPECIAL_SYMS) if (have[sym]?.active) row.append(this.tbtn(`延長: ${specialOfficialOf(sym)}`, this.spMode === "extend" && this.spSym === sym, () => this.setSpMode("extend", sym), "sp-ext-" + SPECIAL_SYMS.indexOf(sym)));
+        tb.append(row); tb.append(h("div", { class: "note", id: "sp-help" }, this.spMode === "extend" ? "延長: 路線の端(または路線上)から描き始めます。路線に戻ると環状になります。枝分かれは一筆書きにできないため作れません。" : gate.ok ? "新規: 首都から副首都へ描きます。寄り道は描いたとおりに通ります。首都へ戻るように描くと環状になります。" : `新規は作れません: ${gate.reason}`));
+      }
       if (this.rwStage < 3) tb.append(h("div", { class: "grp", id: "rw-nav" }, h("span", { id: "rw-head", class: "note", role: "status", "aria-live": "polite" }, "遷都 3/4  国道0号"), h("button", { id: "rw-back", type: "button", onclick: () => this.rwBack() }, "‹ 戻る"), h("button", { id: "rw-review", type: "button", class: "mode on", disabled: d0?.prev.ok ? null : "", onclick: () => this.rwReview() }, "最終確認 ›")));   // (the review sheet has its own 戻る / 確定)
       if (d0) g0.append(h("button", { id: "road0-undo", type: "button", disabled: !d0.past.length, onclick: () => this.cerUndo("kokudo0") }, "↶"), h("button", { id: "road0-restart", type: "button", onclick: () => this.cerRestart("kokudo0") }, "描き直す"));
-      tb.append(g0); if (d0) tb.append(h("div", { id: "cer-status-kokudo0", class: "note " + (d0.prev.ok ? "okc" : "badc") }, d0.prev.ok ? `✓ 国道0号: 約${d0.prev.lengthKm}km${nat0?.ferries?.length ? `／フェリー${nat0.ferries.length}本` : ""}${nat0?.through?.length ? `／経由: ${nat0.through.map((n) => n.replace(/市$/, "")).join("・")}` : ""}(既存の道・旧道・廃道を優先して転用)` : `✗ ${d0.prev.reasons[0] ?? "経路を作れません"}`));
+      tb.append(g0); if (d0) tb.append(h("div", { id: "cer-status-kokudo0", class: "note " + (d0.prev.ok ? "okc" : "badc") }, d0.prev.ok ? `✓ ${this.road0Name()}: 約${d0.prev.lengthKm}km${(d0.prev as NatPreview & { loopBack?: Vec[] }).loopBack ? "+戻り(環状)" : ""}${(d0.prev as ExtPreview).note ? `／${(d0.prev as ExtPreview).note}` : ""}${nat0?.ferries?.length ? `／フェリー${nat0.ferries.length}本` : ""}${nat0?.through?.length ? `／経由: ${nat0.through.map((n) => n.replace(/市$/, "")).join("・")}` : ""}(既存の道・旧道・廃道を優先して転用)` : `✗ ${d0.prev.reasons[0] ?? "経路を作れません"}`));
     }
     const g = h("div", { class: "grp" });
     if (this.real) {
@@ -1390,7 +1412,7 @@ export class App {
     line(`行政指定: ${routes.length ? routes.map((r) => routeOfficial(r) + (r.oldEdges.includes(e.id) ? "の旧道" : "")).join("・") : "市町村道(指定なし)"}${e.nick && routes[0] ? ` ／ 通称: ${NICK_LABEL[routes[0].grade]}(細く荒れた道に後から付いた呼び名)` : ""}`, "why-designation");
     const rail = e.mode === "rail", unit = rail ? "人/日" : "台/日";
     if (rail) line(`事業者: ${sim.operators[e.op ?? "jnr"]?.name ?? "国鉄"}${e.nick ? " ／ 通称: " + (e.op === "jnr" ? "酷鉄" : "死鉄") + "(利用が少なく保守が行き届かない線に後から付く呼び名)" : ""}`, "why-operator");
-    line(`規格: ${rail ? STANDARD_LABEL_RAIL[e.standard] : STANDARD_LABEL[e.standard]}${rail ? "" : ` ／ 路面: ${SURFACE_LABEL[e.surface]}`} ／ 品質${Math.round(e.quality)}・${rail ? "荒廃" : "風化"}${Math.round(e.weathering)}・最大勾配${e.maxGradePct}%${e.curv ? `・曲がり${e.curv}rad/km` : ""}${e.facility ? ` ／ 施設: ${e.facilityName ? displayName(e) : ""}(${e.facility === "tunnel" ? "トンネル" : "橋"})${e.facility === "tunnel" ? fictionMark(tunnelFiction(e, e.builtMonth !== null ? monthToYM(sim.startYear, e.builtMonth).year : yearOf(sim))) : ""}` : ""}`);
+    line(`規格: ${rail ? STANDARD_LABEL_RAIL[e.standard] : STANDARD_LABEL[e.standard]}${rail ? "" : ` ／ 路面: ${SURFACE_LABEL[e.surface]}`} ／ 品質${Math.round(e.quality)}・${rail ? "荒廃" : "風化"}${Math.round(e.weathering)}・最大勾配${e.maxGradePct}%${e.curv ? `・曲がり${e.curv}rad/km` : ""}${e.facility ? ` ／ 施設: ${e.facilityName ? displayName(e) : ""}(${e.facility === "tunnel" ? "トンネル" : "橋"})${fictionMark(facilityFiction(e, e.builtMonth !== null ? monthToYM(sim.startYear, e.builtMonth).year : yearOf(sim)))}` : ""}`);
     line(`状態: ${e.built < 1 ? `工事中(${Math.round(e.built * 100)}%)` : STATE_LABEL[e.state]}${e.builtMonth !== null ? ` ／ 供用${monthToYM(sim.startYear, e.builtMonth).year}年〜` : ""}`, "why-state");
     line(`需要(${unit}): 旅客の通過${Math.round(e.through)}・沿線${Math.round(e.local)}${sim.stage3 ? ` ／ 貨物${Math.round(e.freight)}` : ""} ／ 通過のピーク${Math.round(e.peakThrough)} ／ 需要ゼロ${e.zeroYears}年`, "why-demand");
     if (e.bypassedBy.length) line(`旧道: ${e.bypassedBy.map((id) => `${nm(sim.edges[id]?.a)}〜${nm(sim.edges[id]?.b)}`).join("、")}のバイパス開通で通過交通が移った。沿線需要${Math.round(e.local)}台/日${e.local >= 40 ? "が残るため管理継続" : "は小さい"}`, "why-old");

@@ -8,7 +8,7 @@
  * Display: the symbol is text, and a phone font may have no glyph for it (ᚠ Ⰰ ꀀ ᚛ 𓃀 ꙮ ...). `setGlyphCheck` lets the app say which symbols it can draw; any it cannot are shown by their katakana reading instead of an empty box -- the meaning, the key and the saved data never depend on a font.
  * Only games made with the flag (`sim.special41`) use this; a game saved before keeps the old rule (every relocation makes another dated 国道0号).
  */
-import { modeOf, type SimEdge, type SimRoute, type SimState } from "./types";
+import { type SimEdge, type SimRoute, type SimState } from "./types";
 import type { Vec } from "../core/types";
 import type { World } from "./world";
 import { homeCity, subCity } from "./ceremony";
@@ -41,10 +41,10 @@ export function specialRoutes(sim: SimState): Record<string, SimRoute> {
   return out;
 }
 export const nextSpecial = (sim: SimState): string | null => { const have = specialRoutes(sim); return SPECIAL_SYMS.find((s) => !have[s]) ?? null; };
-/** In service and every section built and open. */
+/** COMPLETE = built through: the route exists and every one of its sections has been finished (built to 100%). A section that was finished and later closed, or fell into disuse a century on, does not un-complete the route -- "完成" is about the construction, not about today's traffic. */
 export function routeComplete(sim: SimState, r: SimRoute): boolean {
-  if (!r.active) return false; if (!r.edges.length) return false;
-  return r.edges.every((ref) => { const e = sim.edges[ref.edgeId]; return !!e && e.state === "open" && e.open && !e.lost && e.built >= 1; });
+  if (!r.edges.length) return false;
+  return r.edges.every((ref) => { const e = sim.edges[ref.edgeId]; return !!e && e.built >= 1; });
 }
 export interface Gate { ok: boolean; sym: string | null; reason: string }
 /** May the next special route be made now? (The first symbol needs nothing before it; every later one needs the previous to be complete.) */
@@ -52,7 +52,7 @@ export function canBuildNext(sim: SimState): Gate {
   const sym = nextSpecial(sim); if (!sym) return { ok: false, sym: null, reason: "13本の特殊路線はすべて作られています" };
   const i = SPECIAL_SYMS.indexOf(sym); if (i === 0) return { ok: true, sym, reason: "" };
   const prev = specialRoutes(sim)[SPECIAL_SYMS[i - 1]]; if (!prev) return { ok: false, sym, reason: `前の特殊路線(${specialFullName(SPECIAL_SYMS[i - 1])})がまだありません` };
-  if (!routeComplete(sim, prev)) return { ok: false, sym, reason: `前の特殊路線(${specialFullName(SPECIAL_SYMS[i - 1])})が完成していません(供用中で全区間が開通していることが条件です)` };
+  if (!routeComplete(sim, prev)) return { ok: false, sym, reason: `前の特殊路線(${specialFullName(SPECIAL_SYMS[i - 1])})が完成していません(全区間の工事が終わっていることが条件です)` };
   return { ok: true, sym, reason: "" };
 }
 
@@ -97,6 +97,19 @@ export function canExtend(sim: SimState, sym: string, newEdgeIds: string[]): Ext
 /** Add the sections to the route (the number/symbol stays). Returns false and changes nothing when canExtend refuses. Sections are chained in route order only as far as the graph allows: the route keeps its list, new ones are appended with their direction as stored. */
 export function extendSpecial(sim: SimState, sym: string, newEdgeIds: string[], month = sim.month): ExtendResult {
   const c = canExtend(sim, sym, newEdgeIds); if (!c.ok) return c; const r = specialRoutes(sim)[sym]!;
-  for (const id of newEdgeIds) r.edges.push({ edgeId: id, dir: 1 }); r.history.push({ month, grade: r.grade, number: r.number, text: `${specialFullName(sym)}を${newEdgeIds.length}区間延長`, scope: r.scope });
+  const order = eulerOrder([...r.edges.map((x) => x.edgeId), ...newEdgeIds].map((id) => sim.edges[id]).filter((e): e is SimEdge => !!e), sim.edges[r.edges[0]?.edgeId]?.a); if (!order) return { ok: false, reason: "一筆書きの順に並べられません" };
+  r.edges.splice(0, r.edges.length, ...order);   // the sections are kept as ONE walk over the whole line (each section once), which is what a route is everywhere else in the game
+  r.history.push({ month, grade: r.grade, number: r.number, text: `${specialFullName(sym)}を${newEdgeIds.length}区間延長`, scope: r.scope });
   return { ok: true, reason: "" };
+}
+
+/** One walk over every section exactly once (Hierholzer): from an end when the line has two, else from `prefer` (a loop). null when there is none (strokeCheck says why). */
+export function eulerOrder(edges: SimEdge[], prefer?: string): { edgeId: string; dir: 1 | -1 }[] | null {
+  if (!strokeCheck(edges).ok) return null;
+  const adj = new Map<string, { id: string; to: string; dir: 1 | -1 }[]>(), deg = new Map<string, number>();
+  for (const e of edges) { (adj.get(e.a) ?? adj.set(e.a, []).get(e.a)!).push({ id: e.id, to: e.b, dir: 1 }); (adj.get(e.b) ?? adj.set(e.b, []).get(e.b)!).push({ id: e.id, to: e.a, dir: -1 }); deg.set(e.a, (deg.get(e.a) ?? 0) + 1); deg.set(e.b, (deg.get(e.b) ?? 0) + 1); }
+  const odd = [...deg].filter(([, d]) => d % 2).map(([n]) => n).sort(), start = odd.length ? (prefer && odd.includes(prefer) ? prefer : odd[0]) : prefer && adj.has(prefer) ? prefer : edges[0].a;
+  const used = new Set<string>(), stack: { node: string; via: { edgeId: string; dir: 1 | -1 } | null }[] = [{ node: start, via: null }], out: { edgeId: string; dir: 1 | -1 }[] = [];
+  while (stack.length) { const top = stack[stack.length - 1], list = adj.get(top.node)!; let nx; while ((nx = list.pop()) && used.has(nx.id)); if (nx && !used.has(nx.id)) { used.add(nx.id); stack.push({ node: nx.to, via: { edgeId: nx.id, dir: nx.dir } }); } else { stack.pop(); if (top.via) out.push(top.via); } }
+  return out.length === edges.length ? out.reverse() : null;
 }
