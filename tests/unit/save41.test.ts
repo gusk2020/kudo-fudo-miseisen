@@ -46,4 +46,9 @@ describe("Stage 41 B: a terrain that differs from the saved one is refused with 
     const cur = { ...sim, isl36: true } as typeof sim, other = validateSimAgainstWorld(cur, w, "deadbeef"); expect(other, "a different terrain hash is refused").toContain("地形ハッシュ不一致"); expect(other).toContain("地図の編集");   // (a save of the current generation: it is the 'edit or version' case)
     const old = { ...sim, isl36: undefined } as typeof sim; const msg = explainTerrainMismatch(old); expect(msg).toContain("Stage 36より前"); expect(msg).toContain("元の保存は消えて"); expect(validateSimAgainstWorld(old, w, "deadbeef")).toBe(msg);
   }, 600000);
+  it("the menu names the relocation cycle of the game: 100 years for an 1800 start (it used to say 150 for every game), 150 for a 1950 start", async () => {
+    const { relocDiag } = await import("../../src/sim/event2200");
+    const g = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true } as never); expect(relocDiag(g.sim)).toContain("+100年ごと"); expect(relocDiag(g.sim)).not.toContain("150");
+    const h = stage3Sim("heisei", 7, true, 0, 2, true); expect(relocDiag(h.sim)).toContain("+150年ごと");
+  }, 600000);
 });

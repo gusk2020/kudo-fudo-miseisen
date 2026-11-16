@@ -124,6 +124,6 @@ export function adoptRelocSchedule(sim: SimState): boolean {
 }
 /** What the menu tells about the schedule: the next event's year and where the schedule came from (so "is this a new game?" can be answered by looking). */
 export function relocDiag(sim: SimState): string {
-  const first = originOf(sim), origin = sim.relocOrigin === "new" ? `新しいゲーム: 開始${sim.startYear}年+150年ごと` : sim.relocOrigin === "migrated" ? `旧ゲームから移行済み: 開始${sim.startYear}年の履歴に合わせた起点` : `開始${sim.startYear}年+150年ごと`, open = sim.e2200 && sim.e2200.state !== "done";
+  const first = originOf(sim), origin = sim.relocOrigin === "new" ? `新しいゲーム: 開始${sim.startYear}年+${relocStepOf(sim)}年ごと` : sim.relocOrigin === "migrated" ? `旧ゲームから移行済み: 開始${sim.startYear}年の履歴に合わせた起点` : `開始${sim.startYear}年+${relocStepOf(sim)}年ごと`, open = sim.e2200 && sim.e2200.state !== "done";
   return open ? `遷都: ${sim.e2200!.year}年の遷都を選択中(起点${first}年・${origin})` : `遷都: 次は${nextYear2200(sim)}年(起点${first}年・${origin})`;
 }
