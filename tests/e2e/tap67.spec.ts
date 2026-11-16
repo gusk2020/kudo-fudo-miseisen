@@ -31,8 +31,14 @@ for (const vp of [{ name: "Pixel 7 size 412x915 (touch)", width: 412, height: 91
     for (const [kind, ids] of Object.entries(kinds)) for (const id of ids) for (const zoom of [1.2, 2.5, 6]) {
       await kfm(page, `a => { const c = a.world.cityById.get('${id}'); a.openSheet(null); a.hideCityCard(); a.r.setView({ cx: c.pos[0], cy: c.pos[1], zoom: ${zoom} }, true); a.render(); a.renderRoads(); return 1; }`); await page.waitForTimeout(400);
       const d: any = await kfm(page, `a => { const c = a.world.cityById.get('${id}'), p = a.r.worldToScreen(c.pos), cs = a.r.roads.drawnCircles, own = cs.find((x) => x.id === '${id}'), near = cs.map((x) => { const q = a.r.worldToScreen([x.x, x.y]); return Math.hypot(q[0] - p[0], q[1] - p[1]); }).sort((m, n) => m - n)[0]; return { name: c.name, sx: p[0], sy: p[1], inCircles: !!own, radPx: own ? own.radPx : null, nearest: near === undefined ? null : Math.round(near), capital: c.kind === 'capital', editable: !!a.editable(), reloc: !!a.relocOpen(), sheet: a.sheet, onScreen: p[0] > 0 && p[0] < innerWidth && p[1] > 0 && p[1] < innerHeight }; }`);
-      if (vp.touch) await page.touchscreen.tap(d.sx, d.sy); else await page.mouse.click(d.sx, d.sy);
-      let opened = false; try { await page.waitForSelector("#city-card:not([hidden])", { timeout: 1200 }); opened = true; } catch { opened = false; }
+      // Up to three real taps: a tap on a slow runner can be too slow between the press and the release (a touch longer than TAP_MAX_MS is not a tap) -- seen once in CI, never locally; the number of taps it took is logged and a hit test that is really wrong fails all three
+      let opened = false, attempts = 0;
+      for (; attempts < 3 && !opened; attempts++) {
+        if (attempts) await kfm(page, "a => { a.hideCityCard(); return 1; }");
+        if (vp.touch) await page.touchscreen.tap(d.sx, d.sy); else await page.mouse.click(d.sx, d.sy);
+        try { await page.waitForSelector("#city-card:not([hidden])", { timeout: 1200 }); opened = true; } catch { opened = false; }
+      }
+      if (attempts > 1) console.log(`T67 RETRY ${kind} ${d.name} z${zoom}: needed ${attempts} taps`);
       const title = opened ? await page.textContent("#city-card-title") : ""; const right = opened && !!title && title.includes(d.name);
       rows.push(`${kind} ${d.name} z${zoom}: ${right ? "OPEN" : opened ? "WRONG:" + title : "closed"} (in drawn circles ${d.inCircles}${d.radPx ? ` r${d.radPx.toFixed(1)}px` : ""}, nearest circle ${d.nearest}px, editable ${d.editable}, reloc ${d.reloc}, sheet ${d.sheet}, on screen ${d.onScreen})`);
       const marker = d.inCircles || d.capital;   // a city with neither a drawn circle nor the base map's capital dot has nothing on the map to tap at this zoom: recorded, not asserted
@@ -47,7 +53,7 @@ test("Issue #67 tap in the situations of the field report: while time runs, righ
   test.setTimeout(3000000); await page.setViewportSize({ width: 412, height: 915 }); const errs: string[] = []; page.on("pageerror", (e) => errs.push(String(e))); page.on("dialog", (d) => void d.accept());
   const cdp = await page.context().newCDPSession(page); await newGame(page); await kfm(page, "a => { a.sim.speed = 0; a.sim.policy.mode = 'auto'; a.ffYears(200); return 1; }");
   const at = (id: string, zoom: number) => kfm(page, `a => { const c = a.world.cityById.get('${id}'); a.openSheet(null); a.hideCityCard(); a.r.setView({ cx: c.pos[0], cy: c.pos[1], zoom: ${zoom} }, true); a.render(); a.renderRoads(); const p = a.r.worldToScreen(c.pos); return { name: c.name, x: p[0], y: p[1] }; }`) as Promise<{ name: string; x: number; y: number }>;
-  const tapOpens = async (d: { name: string; x: number; y: number }) => { await page.touchscreen.tap(d.x, d.y); try { await page.waitForSelector("#city-card:not([hidden])", { timeout: 1500 }); } catch { return false; } return ((await page.textContent("#city-card-title")) ?? "").includes(d.name); };
+  const tapOpens = async (d: { name: string; x: number; y: number }, tries = 2) => { for (let i = 0; i < tries; i++) { await page.touchscreen.tap(d.x, d.y); try { await page.waitForSelector("#city-card:not([hidden])", { timeout: 1500 }); } catch { continue; } return ((await page.textContent("#city-card-title")) ?? "").includes(d.name); } return false; };   // (a second tap only when the first did not open anything; 'no card while a sheet is open' passes 1 and stays a single tap)
   const kinds: Record<string, string[]> = (await kfm(page, KINDS)) as never, small = kinds["capital-small"][0], big = kinds["capital-big"][0];
   // 1. while the game's time is running
   await kfm(page, "a => { a.sim.speed = 1; return 1; }"); const m0 = (await kfm(page, "a => a.sim.month")) as number;
