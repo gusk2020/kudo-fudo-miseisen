@@ -23,6 +23,7 @@ import { applyYearEvents } from "./events";
 import { openStraits } from "./straits";
 import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./reform";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
+import { noteDecision, resumeAfterDecision } from "./decision41";
 import { isWaterTunnel, techAt, techYear, TECH_K, WATER_K, waterTechAt } from "./tech";
 import { BAY_PER_YEAR, BAY_YEARS, LAKE_BRIDGE_TAG, isBayFerry, reviewLakeFerries, seedBayFerries } from "./ferry";
 import { ensureHubs, hubBoost, hubStats, reviewHubs } from "./hubs";
@@ -610,8 +611,9 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
 /** One simulated month as a series of short atoms (yield between them). */
 export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
   if (sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) return;   // waiting for the player at a policy window or an era change: time does not move
+  resumeAfterDecision(sim);   // Stage 41: a game loaded from a 判断直前 save point goes back to its automatic mode once the decision is made
   if (sim.month % 12 === 0) {
-    if (due2200(sim)) { if (unattended(sim)) skip2200(sim); else { open2200(sim); return; } }   // Stage 22 / 23: time stops here in every mode (auto and away included) until the player chooses -- 現状維持 too is a choice
+    if (due2200(sim)) { if (unattended(sim)) { noteDecision("reloc", yearOf(sim), sim, (c) => open2200(c)); skip2200(sim); } else { open2200(sim); return; } }   // Stage 22 / 23: time stops here in every mode (auto and away included) until the player chooses -- 現状維持 too is a choice
     if (kaigenDue(sim.kaigen, yearOf(sim))) { startKaigen(sim, yearOf(sim)); if (sim.kaigen!.pending) return; }
     if (windowDue(sim, yearOf(sim))) { openWindow(sim, w, yearOf(sim)); if (sim.policy!.pending) return; }
     yield* yearlyGen(sim, w);
@@ -621,7 +623,7 @@ export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
 /** An era change is due: open it; if nobody is there to choose (or the setting says so) the first candidate (the real one for 1989/2019, else fewest strokes) is taken. */
 export function startKaigen(sim: SimState, year: number) {
   const k = sim.kaigen!; openKaigen(k, year); const pol = sim.policy, auto = !!pol && (pol.mode === "auto" || pol.mode === "autoReloc" || (pol.mode === "idleAuto" && pol.away));
-  if (auto) { settleKaigen(sim, 0, true); return; }
+  if (auto) { noteDecision("kaigen", year, sim); settleKaigen(sim, 0, true); return; }   // (Stage 41: the era change is kept as a save point with the choice still open)
   ev(sim, "kaigen", `${year}年: 改元の時を迎えた(候補${k.pending!.cands.length}案)`, "元号を選んでください。時間は止まっています", {});
 }
 export function settleKaigen(sim: SimState, idx: number, auto = false) {

@@ -250,7 +250,7 @@ export function checkIntegrity(sim: SimState): string[] {
   }
   const seen = new Set<string>();
   for (const r of Object.values(sim.routes)) {
-    const key = `${r.grade}:${r.scope}:${r.number}`;
+    const key = `${r.grade}:${r.scope}:${r.number}${r.gen ? `:${r.gen}` : ""}`;   // (Stage 41: a LATER 国道0号 is a route of its own, told by its year -- one per relocation, so two are a valid game; the same number AND year twice is still a duplicate)
     if (r.active) { if (seen.has(key)) bad.push(`route number duplicated: ${key}`); seen.add(key); }
     let prev: string | null = null;
     for (const ref of r.edges) {
@@ -263,4 +263,18 @@ export function checkIntegrity(sim: SimState): string[] {
   for (const r of Object.values(sim.routes)) for (const id of r.oldEdges ?? []) if (!sim.edges[id]) bad.push(`route ${r.id}: missing old edge ${id}`);
   for (const p of Object.values(sim.projects)) for (const id of p.edgeIds) if (!sim.edges[id]) bad.push(`project ${p.id}: missing edge ${id}`);
   return bad;
+}
+
+/**
+ * Stage 41: a save made before the integrity check knew that every relocation makes its own 国道0号 may hold two or more of them without a year on the later ones. The first (earliest) keeps its plain name; each later one is given the year it was made in
+ * (from its own history) and named like the ones made today, 国道0号(年). Nothing is removed. A later one whose year cannot be told, or that shares its year with another, is left alone (and the integrity check refuses the save as before).
+ * Returns how many routes were given a year.
+ */
+export function repairRoad0Years(sim: SimState): number {
+  const zeros = Object.values(sim.routes).filter((r) => r.active && r.grade === "national" && r.scope === "JP" && r.number === 0 && !r.gen);
+  if (zeros.length < 2) return 0;
+  const made = (r: (typeof zeros)[number]) => (r.history?.length ? Math.min(...r.history.map((h) => h.month)) : Number.POSITIVE_INFINITY);
+  zeros.sort((a, b) => made(a) - made(b) || (a.id < b.id ? -1 : 1)); let n = 0; const used = new Set<number>(Object.values(sim.routes).filter((r) => r.grade === "national" && r.scope === "JP" && r.number === 0 && r.gen).map((r) => r.gen!));
+  for (const r of zeros.slice(1)) { const m = made(r); if (!Number.isFinite(m)) continue; const year = sim.startYear + Math.floor(m / 12); if (used.has(year)) continue; used.add(year); r.gen = year; r.name = `国道0号(${year}年)`; n++; }
+  return n;
 }
