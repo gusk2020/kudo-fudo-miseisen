@@ -31,6 +31,7 @@ import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, valid
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
 import { cityCard } from "./cityCard";
+import { currentPolicy, initialPolicy, policyText } from "../sim/stance41";
 import { prepareDecisionLoad, setDecisionSink, type DecisionPoint } from "../sim/decision41";
 import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, performRoad0, snapKmFor, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
 import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, skippedLabel, skippedWallMsOf, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
@@ -260,17 +261,16 @@ export class App {
     if (this.building > 0) add(`1950年の道路網を生成中 ${Math.round(this.building * 100)}%`, "bad");
     if (this.s.step === 6 && this.sim) {
       const m = summary(this.sim), sp = this.sim.speed;
-      add(`${m.ym}`, "ok"); add(sp ? `速度 ×${sp}` : "停止中"); add(this.sim.stage3 ? `路線${m.routes}本 道路${m.roadKm.toLocaleString()}km・鉄道${m.railKm.toLocaleString()}km` : `路線${m.routes}本 総延長${m.km.toLocaleString()}km`); if (this.sim.policy?.pending) add("政策介入の待機中", "bad"); add(`建設中${m.building} 未成${m.unbuilt}`);
+      add(`${m.ym}`, "ok"); void sp;   // (Stage 41: the speed is no longer a pill of the top line; the speed buttons are unchanged) add(this.sim.stage3 ? `路線${m.routes}本 道路${m.roadKm.toLocaleString()}km・鉄道${m.railKm.toLocaleString()}km` : `路線${m.routes}本 総延長${m.km.toLocaleString()}km`); if (this.sim.policy?.pending) add("政策介入の待機中", "bad"); add(`建設中${m.building} 未成${m.unbuilt}`);
       add(`状態 良${m.good}/可${m.fair}/悪${m.poor}`); add(`休止${m.dormant} 閉鎖${m.closed} 廃道${m.lost}`);
+      { const ini = initialPolicy(this.sim), cur = currentPolicy(this.sim); if (ini && cur) { const a = policyText(ini), b = policyText(cur); add(`初期方針 ${a}`); add(`現在の方針 ${b}`, a === b ? "" : "ok"); } }   // Stage 41: what the game started with, and what is stressed now (differs after an era change, a relocation or an intervention)
       const last = this.sim.events[this.sim.events.length - 1]; if (last) add(`最近: ${last.text}`);
       if (this.catching) add(this.catchInfo, "bad");
       if (this.behind) add("端末の処理が追いつかず、速度を自動で落としています", "bad");
       if (this.safeMode) add("安全モード", "bad");
-      if (this.sim.skippedMonths) add(skippedLabel(this.sim), "bad");
-    }
+    }   // (Stage 41: the 省略 pill is gone from the top line; the same figure stays in the information sheet)
     if (this.generating) add(`地形生成中 ${Math.round(this.genProgress * 100)}%`);
-    if (errs.length) add(`⚠ 不正 ${errs.length}件`, "bad");
-    else if (this.s.step > 0) add("✓ 検証OK", "ok");
+    if (errs.length && this.s.step !== 6) add(`⚠ 不正 ${errs.length}件`, "bad");   // Stage 41: no 検証 pill on the top line (the 検証 button of the dock carries the count)
     if (this.s.finalized && this.s.step !== 6) add("確定済み🔒", "ok");
     $("dock-issues").classList.toggle("warn", errs.length > 0);
     $("dock-issues").textContent = errs.length ? `検証(${errs.length})` : "検証";
