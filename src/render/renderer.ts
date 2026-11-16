@@ -16,6 +16,8 @@ import type { IslandId, Issue, Op, Place, ProjectState, Vec } from "../core/type
 import { ISLAND_IDS } from "../core/types";
 import { featureWorld } from "../core/validate";
 import { RoadLayer, type RoadArgs } from "./roads";
+import { NightLayer } from "./night";
+import type { NightField } from "../sim/night41";
 
 export interface Pending { body?: { id: IslandId; op?: Op; place?: Place }; ridge?: { key: "sw" | "ne"; pts: Vec[]; si?: number /* Stage 9: which stroke (0 = first, -1 = a new one) */ }; feature?: { which: "biwa" | "fuji"; pos: Vec; rot?: number; scale?: number; scaleY?: number; bad?: boolean } }
 export interface View { cx: number; cy: number; zoom: number } // centre in world km (y up), zoom = px per km
@@ -78,6 +80,10 @@ export class Renderer {
   /** Stage 9: show the points of the drawn ranges (while a range tool is in use), so they can be grabbed and moved. */
   ridgeHandles = false;
   roads = new RoadLayer(); private roadArgs: RoadArgs | null = null;
+  /** Stage 41 #2: the night view (a dark sheet and one sprite of light between the roads and the labels); while it is on the road drawing is hidden, its data and hit-testing untouched */
+  night = new NightLayer();
+  setNight(on: boolean) { this.night.setOn(on); this.roads.container.visible = !on; }
+  drawNight(f: NightField, g: { x0: number; y0: number; cell: number }) { this.night.update(f, g); }
   private lakeG: ReturnType<typeof buildLakeGraphics> | null = null; private biwaIsl: Graphics | null = null; private biwaIslBg = ""; private landSprite: Sprite | null = null; private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
   private lastArgs: [ProjectState, TerrainResult | null, Issue[], Pending | null] | null = null;
   private rebuildTimer: any = 0;
@@ -94,7 +100,7 @@ export class Renderer {
     r.app.canvas.style.touchAction = "none";
     r.app.canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); r.onContextLost?.(); });
     r.app.canvas.addEventListener("webglcontextrestored", () => { r.roads.redraw(r.view.zoom); r.onContextRestored?.(); });
-    r.root.addChild(r.base, r.overlay, r.roads.container, r.labels); r.app.stage.addChild(r.root);
+    r.root.addChild(r.base, r.overlay, r.roads.container, r.night.container, r.labels); r.app.stage.addChild(r.root);
     r.app.renderer.on("resize", () => r.applyView());
     return r;
   }

@@ -164,3 +164,8 @@ body #sheet.mini h3 { display: none; }
 #city-card h4 { margin:0 0 4px; font-size:16px; color:var(--accent); }
 #city-card-close { position:absolute; top:4px; right:4px; width:44px; height:44px; font-size:20px; }
 #city-card-body div { padding:1px 0; }
+
+/* Stage 41 #2: the night-view button (a round moon at the right end of the title bar, clear of the information line) */
+#btn-night { position: fixed; right: 8px; top: calc(env(safe-area-inset-top, 0px) + 4px); width: 40px; height: 40px; border-radius: 20px; z-index: 7; font-size: 22px; line-height: 1; padding: 0; background: var(--panel); border: 1px solid #5d7a95; color: #e8eef4; }
+#btn-night.on { background: #1b2748; border-color: #ffd27a; color: #ffd27a; }
+#btn-night[hidden] { display: none; }
