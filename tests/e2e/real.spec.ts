@@ -110,6 +110,19 @@ test("policy window: time stops at 1960 in 介入優先, points are spent with d
   expect(errs).toEqual([]);
 });
 
+test("Stage 41 simple intervention: three questions decide the window, the detailed mode is one button away, the choice sticks", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.runner.settle(); a.sim.month = 12 * 10 - 1; a.sim.speed = 20; a.acc = 0; });
+  await page.waitForFunction(() => (window as any).__kfm.sim.policy.pending, null, { timeout: 60000 });
+  await page.click("#pol-simple"); expect(await page.isVisible("#sx-transport")).toBe(true); expect(await page.locator("#dom-politics").count(), "the detailed domain buttons are not shown in the simple mode").toBe(0);
+  await page.click("#sx-transport-rail"); await page.click("#sx-city-disperse"); await page.click("#sx-coast-japansea"); expect(await page.textContent("#sx-preview")).toContain("鉄道");
+  await page.check("#sx-keep"); await page.click("#sx-go"); await page.waitForTimeout(200);
+  expect(await app(page, "a => a.sim.policy.pending")).toBeNull(); expect(await app(page, "a => a.sim.simple41")).toEqual({ transport: "rail", city: "disperse", coast: "japansea", keep: true });
+  expect(await app(page, "a => a.sim.policy.history.at(-1).adopted.map((x) => x.id)")).toContain("p-rail");
+  await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.simple41.keep")).toBe(true);
+  expect(errs).toEqual([]);
+});
+
 test("the real-Japan game survives a reload; if the latest save is corrupt the backup is restored and the broken copy is kept", async ({ page }) => {
   const errs = watchErrors(page); await startReal(page, "shubun");
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.ffYears(6); });

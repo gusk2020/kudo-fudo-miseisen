@@ -132,6 +132,8 @@ export interface SimState {
   /** Stage 41: set on a game loaded from a 判断直前 save point: the automatic mode it was saved in, held back (policy.mode is 'priority') until the decision is made (decision41.ts). Absent = none */
   /** Stage 41: the policy the game was started with (stance of the first era, and its coast / focus); absent in a game made before. See stance41.ts */
   initPolicy?: { stance: import("./eras").EraKey; coast?: "japansea" | "pacific" | "neutral"; focus?: "concentrate" | "disperse" };
+  /** Stage 41 #4: the answers of the simple intervention mode (kept for the automatic modes when `keep`) */
+  simple41?: import("./simple41").Simple41;
   resumeMode?: "auto" | "autoReloc" | "idleAuto";
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
