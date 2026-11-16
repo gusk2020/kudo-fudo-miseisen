@@ -270,11 +270,11 @@ export function checkIntegrity(sim: SimState): string[] {
  * (from its own history) and named like the ones made today, 国道0号(年). Nothing is removed. A later one whose year cannot be told, or that shares its year with another, is left alone (and the integrity check refuses the save as before).
  * Returns how many routes were given a year.
  */
-export function repairRoad0Years(sim: SimState): number {
+export function repairRoad0Years(sim: SimState, isBoundaryYear?: (year: number) => boolean): number {
   const zeros = Object.values(sim.routes).filter((r) => r.active && r.grade === "national" && r.scope === "JP" && r.number === 0 && !r.gen);
   if (zeros.length < 2) return 0;
   const made = (r: (typeof zeros)[number]) => (r.history?.length ? Math.min(...r.history.map((h) => h.month)) : Number.POSITIVE_INFINITY);
   zeros.sort((a, b) => made(a) - made(b) || (a.id < b.id ? -1 : 1)); let n = 0; const used = new Set<number>(Object.values(sim.routes).filter((r) => r.grade === "national" && r.scope === "JP" && r.number === 0 && r.gen).map((r) => r.gen!));
-  for (const r of zeros.slice(1)) { const m = made(r); if (!Number.isFinite(m)) continue; const year = sim.startYear + Math.floor(m / 12); if (used.has(year)) continue; used.add(year); r.gen = year; r.name = `国道0号(${year}年)`; n++; }
+  for (const r of zeros.slice(1)) { const m = made(r); if (!Number.isFinite(m)) continue; const year = sim.startYear + Math.floor(m / 12); if (used.has(year)) continue; if (isBoundaryYear && !isBoundaryYear(year)) continue; used.add(year); r.gen = year; r.name = `国道0号(${year}年)`; n++; }
   return n;
 }

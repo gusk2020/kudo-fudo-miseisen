@@ -73,3 +73,9 @@
 2. 保存互換: `node tools/compat-check.mjs <旧dist> <新dist> --base /kudo-fudo-miseisen/`（同じ origin の IndexedDB を旧版→新版→旧版と渡す）。旧dist は `git worktree add ../x <sha>` で作って `BASE_PATH=/kudo-fudo-miseisen/ npx vite build --outDir ...`。**不合格5件（Stage 31〜35 移行用の項目）は前提が合わないもので、Stage 38 以降の旧版では常にそうなる**（`docs/RELEASE67.md`）。
 3. 公開手順（承認がある場合のみ）: 固定枝 `claude/release-pages-<短いsha>` を push → `mcp__github__actions_run_trigger`（`pages.yml`、`ref` はその枝）→ ジョブで build（`npm test`・ビルド）と deploy の成功を確認 → `https://gusk2020.github.io/kudo-fudo-miseisen/` が HTTP 200、公開中の `index-*.js` の SHA-256 がローカルビルドと一致、ヘッドレス Chromium で起動、を確認。この環境のネットワーク許可に `gusk2020.github.io` を足してある（Default 環境）。
 4. 実機（Pixel 7a）は Claude にはできない。実機未確認と、エミュレーションでの合格を区別して報告する。
+
+## Audit round (after PR #76/#77, Stage 41 continuation)
+- **国道0号 repair false positives**: `repairRoad0Years` now takes a predicate; `sanitizeSim` passes "a year a relocation can fall in" (`origin + k*step`, from `originOf`/`relocStepOf`). A stray second 0号 without a year made in any other year (test: 1950 in an 1800 game) is still refused and nothing is changed. Real duplicates (same year) were already refused.
+- **Decision-save loading**: tests in `decision41.test.ts` cover: same choice reproduces the never-stopped game; another choice gives another record; mode is held back while the decision is open and restored by `resumeAfterDecision`. Still **not verified on a real device**.
+- **tap67 retry**: up to 3 taps kept, but the test now counts places that needed a second tap and fails if more than 2% did (the hit test, not the runner, is then at fault); the count and names are logged as `T67 RETRY SUMMARY`.
+- **旧地形保存②**: NOT restored and cannot be with the current method (SAVE41.md). Originals are quarantined and never overwritten. Do not write "repaired" anywhere for it.

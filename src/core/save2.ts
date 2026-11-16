@@ -7,6 +7,7 @@ import { checkIntegrity, repairRoad0Years, repairRouteChains } from "../sim/netw
 import { DIAL_KEYS, composeDials } from "../sim/eras";
 import { defaultPolicy } from "../sim/policy";
 import { hashString } from "../sim/engine";
+import { originOf, relocStepOf } from "../sim/event2200";
 import type { SimState } from "../sim/types";
 import type { World } from "../sim/world";
 import { parseState } from "./save";
@@ -119,7 +120,8 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
     const n = repairRouteChains(sim); bad = checkIntegrity(sim); if (!bad.length) note = [`路線${n}本の途中が切れていたため、つながる部分だけ残して読み込みました`];
   }
   if (bad.length && bad.every((b) => b === "route number duplicated: national:JP:0")) {   // Stage 41: later 国道0号 saved without their year (one per relocation) get it from their own history
-    const n = repairRoad0Years(sim); bad = checkIntegrity(sim); if (!bad.length) note = [`国道0号が${n + 1}本あったため、後のものに作成年を付けて読み込みました(路線は消していません)`];
+    const o = originOf(sim), st = relocStepOf(sim);   /* only a year a relocation can really fall in: a stray duplicate made in any other year is NOT taken for one */
+    const n = repairRoad0Years(sim, (y) => y >= o && (y - o) % st === 0); bad = checkIntegrity(sim); if (!bad.length) note = [`国道0号が${n + 1}本あったため、後のものに作成年を付けて読み込みました(路線は消していません)`];
   }
   if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
   return { sim, problems: note };

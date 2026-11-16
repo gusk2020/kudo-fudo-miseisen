@@ -39,6 +39,13 @@ describe("Stage 41 A: two 国道0号 (one per relocation) are a valid game and s
 });
 
 import { explainTerrainMismatch, validateSimAgainstWorld } from "../../src/core/save2";
+describe("Stage 41 audit: the repair does not take a stray duplicate for a relocation", () => {
+  it("a second 国道0号 without a year, made in a year no relocation can fall in (1950 of an 1800 game), is still refused and nothing is changed", () => {
+    const { sim } = twoRoad0(); const raw = JSON.parse(JSON.stringify(sim)); const later = Object.values(raw.routes as Record<string, any>).find((r: any) => r.number === 0 && r.scope === "JP" && r.gen)!; delete (later as any).gen; (later as any).name = "国道0号";
+    for (const h of (later as any).history ?? []) h.month = (1950 - raw.startYear) * 12 + 3;
+    const back = sanitizeSim(JSON.parse(JSON.stringify(raw))); expect(back.sim, "refused").toBeNull(); expect(back.problems.join()).toContain("route number duplicated");
+  }, 600000);
+});
 describe("Stage 41 B: a terrain that differs from the saved one is refused with a reason, and nothing is restored onto it", () => {
   it("the message names the cause for a save from before Stage 36 and for a save of the current generation; the check itself still refuses", () => {
     const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true } as never);
