@@ -88,7 +88,7 @@ test("rail and road layers, road-map background, and the year atlas never change
   expect(await app(page, "a => a.s.layers.rail")).toBe(false); await page.check("#layer-rail");
   await page.check("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(true); await page.waitForTimeout(200); await page.uncheck("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(false);
   // Stage 26: the atlas has no past-year slider any more (no snapshots); it shows the present
-  await page.click("#dock-atlas"); expect(await page.locator("#atlas-slider").count()).toBe(0); expect(await page.isVisible("#atlas-summary")).toBe(true); expect(await app(page, "a => a.viewYear")).toBeUndefined(); expect(month).toBeGreaterThan(0); void hash;
+  await page.click("#dock-ledger"); await page.click("#led-graph"); expect(await page.locator("#atlas-slider").count()).toBe(0); expect(await page.isVisible("#atlas-summary")).toBe(true); expect(await app(page, "a => a.viewYear")).toBeUndefined(); expect(month).toBeGreaterThan(0); void hash;
   expect(errs).toEqual([]);
 });
 
@@ -132,9 +132,9 @@ test("the real-Japan game survives a reload; if the latest save is corrupt the b
 test("ledger rows open the number history and focus the map; the timeline filters and shows reasons", async ({ page }) => {
   const errs = watchErrors(page); await startReal(page, "heisei");
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.ffYears(40); });
-  await page.click("#dock-timeline"); expect(await page.isVisible("#tl-world")).toBe(true); await page.click("#tl-world");
+  await page.click("#dock-timeline"); expect(await page.locator("#tl-world").count(), "Stage 41: no 世界 button").toBe(0); expect(await page.isVisible("#tl-domestic")).toBe(true); await page.click("#tl-all");
   expect(await page.locator("#sheet-body .issue").count()).toBeGreaterThan(5); expect(await page.textContent("#sheet-body")).toContain("【史実】");
-  await page.click("#tl-policy"); await page.click("#dock-ledger"); await page.click("#led-rail");
+  await page.click("#tl-domestic"); await page.click("#dock-ledger"); await page.click("#led-rail");   // (Stage 41: 国内 and 政治 are one button)
   await page.locator("#sheet-body button[id^=hist-]").first().click(); expect(await page.locator("#sheet-body .hist").count()).toBeGreaterThan(0);   // Stage 23: a tap on the row highlights the line; 履歴 opens its history
   await page.locator("#sheet-body button[id^=focus-]").first().click(); expect(await app(page, "a => a.selEdge")).not.toBeNull();
   await page.click("#led-fac"); expect(await page.textContent("#sheet-body")).toContain("トンネル・橋");
@@ -455,7 +455,7 @@ test("Stage 7: 地形編集は1行の小さなメニュー(対象を選んだ時
 test("Stage 7: 地図帳に交通の移り変わり(道路・鉄道の延長と鉄道の分担のグラフ、最近の転機)が出る", async ({ page }) => {
   const errs = watchErrors(page); await startReal(page, "shubun");
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "auto"; a.ffYears(40); });
-  await page.click("#dock-atlas");
+  await page.click("#dock-ledger"); await page.click("#led-graph");   // Stage 41: the traffic graph is in the 路線帳 now
   await expect(page.locator("#trends")).toBeVisible();
   expect(await page.locator("#trend-km polyline").count()).toBe(2); expect(await page.locator("#trend-share polyline").count()).toBe(3);
   const pts = await page.locator("#trend-km polyline").first().getAttribute("points"); expect((pts ?? "").split(" ").length).toBeGreaterThan(30);
@@ -501,7 +501,7 @@ test("Stage 8: 港湾・空港・航路がレイヤーで切り替わり(シミ�
   for (const k of ["ports", "airports", "lanes"]) await page.check("#layer-" + k);
   expect(await app(page, "a => JSON.stringify(a.sim.hubs).length + ':' + a.sim.month")).toBe(h0);
   await closeSheet(page);
-  await page.click("#dock-atlas"); await expect(page.locator("#hubs")).toBeVisible(); await expect(page.locator("#hub-summary")).toContainText("国際ハブ");
+  await page.click("#dock-ledger"); await page.click("#led-graph"); await expect(page.locator("#hubs")).toBeVisible(); await expect(page.locator("#hub-summary")).toContainText("国際ハブ");
   expect(await page.locator("#trend-hubs polyline").count()).toBe(3);
   await page.click("#hub-airports summary"); await expect(page.locator("#hub-airports")).toContainText("国際ハブ空港");
   await page.click("#dock-timeline"); await page.click("#tl-hub");
@@ -920,7 +920,7 @@ test("Stage 26: 凡例は新幹線・リニアが1項目で劣化段階を出さ
   await page.evaluate(() => (window as any).__kfm.ffYears(55)); await page.waitForTimeout(500);
   const air = await app(page, "a => { const g = a.r.roads.g.lanes; const n = a.sim.hubs ? a.sim.hubs.routes.filter((r) => r.mode === 'air' && !r.intl && r.state === 'open').length : 0; return { routes: n, drawn: g.getLocalBounds().width > 0 }; }") as { routes: number; drawn: boolean };
   expect(air.routes).toBeGreaterThan(0); expect(air.drawn).toBe(true);
-  await page.click("#dock-atlas"); expect(await page.locator("#atlas-slider").count()).toBe(0); expect(errs).toEqual([]);
+  await page.click("#dock-ledger"); await page.click("#led-graph"); expect(await page.locator("#atlas-slider").count()).toBe(0); expect(errs).toEqual([]);
 });
 
 test("Stage 26: 自動セーブポイント(50年ごと・遷都の直前)は①〜⑤と別に作られ、一覧から再開でき、再読込しても残る", async ({ page }) => {

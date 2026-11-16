@@ -22,7 +22,7 @@ import { AIR_KIND_LABEL, PORT_CAP, PORT_TIER_LABEL, airName, foreignName, hubsAt
 import { DOMAIN_LABEL, POLICIES, skipWindow, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
 
-export const ui3 = { tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerMode: "normal" as "normal" | "numbers", numClass: "road" as NumClass, numPage: 0, ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null };
+export const ui3 = { graph: false, tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerMode: "normal" as "normal" | "numbers", numClass: "road" as NumClass, numPage: 0, ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null };
 const ym = (sim: SimState, m: number) => { const { year, month } = monthToYM(sim.startYear, m); return `${year}年${month}月`; };
 const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) * 10)) + "□".repeat(10 - Math.round(Math.max(0, Math.min(1, v)) * 10));
 
@@ -66,10 +66,11 @@ export function buildKaigen(app: App, body: HTMLElement) {
 }
 
 const KIND_FILTER: Record<string, (k: string) => boolean> = {
-  all: () => true, world: (k) => k === "world", domestic: (k) => k === "domestic" || k === "reform", policy: (k) => k === "policy",
+  all: () => true, domestic: (k) => k === "domestic" || k === "reform" || k === "policy",   // Stage 41: one button for what were 国内 and 政治; the 世界 button is gone (world events still appear under すべて)
+  
   road: (k) => ["bypass", "route", "demote", "promote", "close", "dormant", "reopen", "crossing"].includes(k), rail: (k) => ["abolish", "reform"].includes(k), hub: (k) => ["port", "air", "lane", "ferry"].includes(k), tech: (k) => k === "tech", city: (k) => k === "city" || k === "village" || k === "boom" || k === "seatdev" || k === "muni39",
 };
-const FILTER_LABEL: Record<string, string> = { all: "すべて", world: "世界", domestic: "国内", policy: "政策", road: "道路", rail: "鉄道・事業者", hub: "港湾・空港", tech: "技術・架空史", city: "人口" };
+const FILTER_LABEL: Record<string, string> = { all: "すべて", domestic: "国内・政治", road: "道路", rail: "鉄道・事業者", hub: "港湾・空港", tech: "技術・架空史", city: "人口" };
 export function buildTimeline(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "年表(新しい順・原因つき)")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
   if (sim.kaigen) body.append(h("div", { class: "issue", id: "era-line" }, "元号: " + sim.kaigen.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → "), h("br"), h("small", {}, sim.kaigen.pending ? "改元の選択待ち" : `次の改元: ${sim.kaigen.next}年ごろ`)));
@@ -85,11 +86,13 @@ export function buildTimeline(app: App, body: HTMLElement) {
 
 function routeKm(sim: SimState, r: SimRoute) { return Math.round(r.edges.reduce((a, x) => a + (sim.edges[x.edgeId]?.lengthKm ?? 0), 0)); }
 export function buildLedger(app: App, body: HTMLElement) {
-  body.append(h("h3", {}, "路線台帳")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
+  body.append(h("h3", {}, "路線帳")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに記録されます")); return; }
   if (app.hl && app.ledgerMini) {   // Stage 23/24: a line is chosen -- the ledger is a small window until 通常サイズ; the number list stays a number list (with its own scroll)
     buildMini(app, body); if (ui3.ledgerMode === "numbers") buildNumberList(app, body, ui3, true); return;
   }
   body.append(modeBar(app, ui3.ledgerMode, (m) => { ui3.ledgerMode = m; }));
+  body.append(h("div", { class: "row" }, h("button", { id: "led-graph", type: "button", class: ui3.graph ? "mode on" : "mode", "aria-pressed": ui3.graph ? "true" : "false", onclick: () => { ui3.graph = !ui3.graph; app.buildSheet(); } }, "交通グラフ")));   // Stage 41: what the 地図帳 showed above 都市の栄枯盛衰 is here, behind this button
+  if (ui3.graph) { buildTrafficGraph(app, sim, body); return; }
   if (ui3.ledgerMode === "numbers") { buildNumberList(app, body, ui3); return; }
   const tabs = h("div", { class: "row" }), list: HlTarget[] = [];
   for (const [k, l] of [["road", "道路"], ["rail", "鉄道"], ["fac", "トンネル・橋・航路"], ["gone", "計画・廃止・廃墟跡"]] as const) tabs.append(h("button", { id: "led-" + k, class: ui3.ledger === k ? "mode on" : "mode", "aria-pressed": ui3.ledger === k ? "true" : "false", onclick: () => { app.clearHl(false); ui3.ledger = k; ui3.ledgerN = 40; app.buildSheet(); } }, l));
@@ -141,14 +144,20 @@ export function buildTechAtlas(sim: SimState, body: HTMLElement) {
   box.append(h("small", {}, "技術の登場年は固定。広がり方は人口・経済・地形・需要で変わります。"));
   body.append(box);
 }
-export function buildAtlas(app: App, body: HTMLElement) {
-  body.append(h("h3", {}, "交通地図帳")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
-  // Stage 26: no past-year slider and no stored snapshots any more -- what the game was in an earlier year is reached through the 自動セーブポイント (menu), and what happened is in the 年表 and the 台帳
+/** Stage 41: what the 地図帳 showed above 都市の栄枯盛衰 -- the figures, the technology stages of an 1800 game, 交通の移り変わり and the ports and airports -- now in the 路線帳, behind its 交通グラフ button. Same functions, same ids. */
+export function buildTrafficGraph(app: App, sim: NonNullable<App["sim"]>, body: HTMLElement) {
   let rk = 0, rl = 0, plan = 0, lost = 0;
   for (const e of Object.values(sim.edges)) { const rail = modeOf(e) === "rail"; if (e.built < 1) plan++; else if (e.state === "lost") lost++; else if (e.state === "open") rail ? (rl += e.lengthKm) : (rk += e.lengthKm); }
+  body.append(h("h3", { id: "traffic-graph" }, "交通グラフ"));
   body.append(h("div", { class: "issue", id: "atlas-summary" }, `現在: 道路${Math.round(rk).toLocaleString()}km・鉄道${Math.round(rl).toLocaleString()}km(供用中) ／ 計画・工事中${plan}区間 ／ 廃道・廃線跡${lost}区間`));
   if (sim.rules1800) buildTechAtlas(sim, body);
-  buildTrends(sim, body); buildHubAtlas(app, sim, body, null); buildCityEconomy(app, sim, body, null); buildCityTiers(app, sim, body);
+  buildTrends(sim, body); buildHubAtlas(app, sim, body, null);
+}
+/** Stage 41: 都市 (was 地図帳): from 都市の栄枯盛衰 on. The part above it moved to the 路線帳 (交通グラフ). */
+export function buildAtlas(app: App, body: HTMLElement) {
+  body.append(h("h3", {}, "都市")); const sim = app.sim; if (!sim) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
+  // Stage 26: no past-year slider and no stored snapshots any more -- what the game was in an earlier year is reached through the 自動セーブポイント (menu), and what happened is in the 年表 and the 路線帳
+  buildCityEconomy(app, sim, body, null); buildCityTiers(app, sim, body);
 }
 
 /**

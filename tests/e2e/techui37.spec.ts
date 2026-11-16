@@ -13,7 +13,7 @@ test("技術・架空史 filter and the atlas 技術 block, on a Pixel 7a-size s
     await page.click("#dock-timeline"); await page.waitForSelector("#tl-tech"); await page.click("#tl-tech"); await page.waitForTimeout(300);
     expect(await page.getAttribute("#tl-tech", "aria-pressed"), label).toBe("true"); const rows = await page.locator("#sheet .issue").count(); expect(rows, label).toBeGreaterThanOrEqual(minRows);
     expect(await page.locator("#sheet .issue", { hasText: "架空" }).count(), label).toBeGreaterThan(0); await page.click("#tl-all"); expect(await page.locator("#sheet .issue").count(), label).toBeGreaterThan(rows - 1); await page.click("#sheet-close");
-    await page.click("#dock-atlas"); await page.waitForSelector("#atlas-tech"); expect(await page.textContent("#atlas-tech"), label).toContain("技術"); expect(await page.textContent("#atlas-tech-鉄道"), label).toBeTruthy(); await page.click("#sheet-close");
+    await page.click("#dock-ledger"); await page.click("#led-graph"); await page.waitForSelector("#atlas-tech");   // (Stage 41: the technology stages are in the 路線帳 behind 交通グラフ) expect(await page.textContent("#atlas-tech"), label).toContain("技術"); expect(await page.textContent("#atlas-tech-鉄道"), label).toBeTruthy(); await page.click("#sheet-close");
   };
   await check(2, "at the start");
   await kfm("a => { a.sim.speed = 0; a.sim.policy.mode = 'auto'; a.ffYears(60); return 1; }"); await check(6, "after 60 years");

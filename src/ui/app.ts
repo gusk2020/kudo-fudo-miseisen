@@ -962,7 +962,7 @@ export class App {
   private buildRealDock() {
     const dock = $("dock"), fit = $("btn-fit");   // the old buttons stay in the DOM (other code reads them) but are hidden
     for (const b of Array.from(dock.children)) if (b !== fit) (b as HTMLElement).hidden = true;
-    for (const [id, label] of [["layers", "レイヤー"], ["timeline", "年表"], ["ledger", "台帳"], ["atlas", "地図帳"], ["policy", "介入"], ["menu", "保存"]] as [string, string][]) dock.insertBefore(h("button", { id: "dock-" + id, onclick: () => this.openSheet(id) }, label), fit);
+    for (const [id, label] of [["layers", "レイヤー"], ["timeline", "年表"], ["ledger", "路線帳"], ["atlas", "都市"], ["policy", "介入"], ["menu", "保存"]] as [string, string][]) dock.insertBefore(h("button", { id: "dock-" + id, onclick: () => this.openSheet(id) }, label), fit);
   }
   // ---- Stage 23: the line chosen in the ledger / number list, drawn in its own colour ----
   sheetKey = ""; hl: HlTarget | null = null; hlList: HlTarget[] = []; ledgerMini = false;
@@ -1321,9 +1321,9 @@ export class App {
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.national)}" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4"/>`, "赤茶の縁: 国道"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.ken)}" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4"/>`, "緑の縁: 県道"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.fu)}" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="4"/>`, "紫の縁: 府道"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="${hex(CASING.none)}" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#ffe14a" stroke-width="3"/>`, "灰の縁・細め: 市町村道(指定なし)");
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#2f8fd8" stroke-width="3" stroke-dasharray="7 5"/>`, "青の破線: フェリー航路(海の上。道路ではありません)"); row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#1b3f8f" stroke-width="2.4" stroke-dasharray="7 5"/>`, "紺の破線: 鉄道連絡船");
     body.append(h("h3", {}, "道路・鉄道の種類"));
-    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#3d3d3d" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#5bd66b" stroke-width="3.5"/>`, "道路(国道・府県道などの区分は台帳と路線の詳細に記録)");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#3d3d3d" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#5bd66b" stroke-width="3.5"/>`, "道路(国道・府県道などの区分は路線帳と路線の詳細に記録)");
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#0b7a3e" stroke-width="8"/><line x1="2" y1="7" x2="62" y2="7" stroke="#5bd66b" stroke-width="4.5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="1"/>`, "高速道路(緑の縁取り＋白い中心線)");
-    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#12284d" stroke-width="3.5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="2.5" stroke-dasharray="4 5"/>`, "鉄道(国鉄・私鉄の区別は台帳と路線の詳細に記録)");
+    row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="6"/><line x1="2" y1="7" x2="62" y2="7" stroke="#12284d" stroke-width="3.5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="2.5" stroke-dasharray="4 5"/>`, "鉄道(国鉄・私鉄の区別は路線帳と路線の詳細に記録)");
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="7"/><line x1="2" y1="7" x2="62" y2="7" stroke="#1e6fd9" stroke-width="5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="1.2"/>`, "新幹線(青＋白い中心線)");
     row(`<line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="7"/><line x1="2" y1="7" x2="62" y2="7" stroke="#a52fd0" stroke-width="5"/><line x1="2" y1="7" x2="62" y2="7" stroke="#fff" stroke-width="1.6" stroke-dasharray="6 4"/>`, "リニア(紫＋白い破線。2000年以降、技術が追いつけば)");
     body.append(h("h3", {}, "港湾・空港・航路"));
