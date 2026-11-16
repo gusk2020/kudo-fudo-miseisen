@@ -8,6 +8,7 @@ import { techAt } from "./tech";
 import { DEFAULT_SUB, prefOfSeat } from "../core/seat";
 import { ERA, eraLabel, modeOf, type SimState } from "./types";
 import { ERAS, eraKeyOf } from "./eras";
+import { SPECIAL_SYMS, canBuildNext, specialFullName, specialOfficial } from "./special41";
 import { cellDistKm, mountainCost, pathfind, type World } from "./world";
 
 export type CerKind = "kokudo1" | "fudo1" | "kokudo0";
@@ -16,7 +17,7 @@ export const TOKYO = "JP-13";
 export interface CerPreview { ok: boolean; reasons: string[]; cells: number[]; path: Vec[]; lengthKm: number; passes: string[]; maxGradePct: number; endName: string }
 
 /** Points every `step` km along the line, each with its distance from the start. */
-function resampleT(pts: Vec[], step: number): { p: Vec; t: number }[] {
+export function resampleT(pts: Vec[], step: number): { p: Vec; t: number }[] {
   const out = [{ p: pts[0], t: 0 }]; let acc = 0, tot = 0;
   for (let i = 1; i < pts.length; i++) { const d = dist(pts[i - 1], pts[i]); acc += d; tot += d; if (acc >= step) { out.push({ p: pts[i], t: tot }); acc = 0; } }
   if (dist(out[out.length - 1].p, pts[pts.length - 1]) > 1) out.push({ p: pts[pts.length - 1], t: tot }); return out;
@@ -26,7 +27,7 @@ function resample(pts: Vec[], step: number): Vec[] {
   for (let i = 1; i < pts.length; i++) { acc += dist(pts[i - 1], pts[i]); if (acc >= step) { out.push(pts[i]); acc = 0; } }
   if (dist(out[out.length - 1], pts[pts.length - 1]) > 1) out.push(pts[pts.length - 1]); return out;
 }
-const lineDist = (p: Vec, line: Vec[]) => { let m = Infinity; for (let i = 0; i + 1 < line.length; i++) m = Math.min(m, pointSegDist(p, line[i], line[i + 1])); return m; };
+export const lineDist = (p: Vec, line: Vec[]) => { let m = Infinity; for (let i = 0; i + 1 < line.length; i++) m = Math.min(m, pointSegDist(p, line[i], line[i + 1])); return m; };
 export function tokyoCity(w: World) { return w.cities.find((c) => c.pref === TOKYO && c.kind === "capital") ?? null; }
 /** The prefectural capital (県庁所在地) city of a prefecture, or null. */
 export const seatCity = (w: World, prefId: string) => w.cities.find((c) => c.pref === prefId && c.kind === "capital") ?? null;
@@ -37,7 +38,7 @@ export const seatCity = (w: World, prefId: string) => w.cities.find((c) => c.pre
 export function homeCity(w: World, v?: string) { const p = prefOfSeat(v); return (p ? seatCity(w, p) : null) ?? tokyoCity(w); }
 export function subCity(w: World, v?: string) { const p = prefOfSeat(v); return p ? seatCity(w, p) : null; }
 export const cerLabel = (kind: CerKind, home?: { name: string } | null, sub?: { name: string } | null): string => kind === "kokudo1" ? `国道1号(${(home?.name ?? "東京").replace(/市$/, "")}→${(sub?.name ?? "大阪市").replace(/市$/, "")})` : "府道1号(旧版)";
-function nearestLandCell(w: World, p: Vec, ok: (k: number) => boolean): number {
+export function nearestLandCell(w: World, p: Vec, ok: (k: number) => boolean): number {
   const k0 = w.cellOf(p); if (k0 < 0) return -1; const i0 = k0 % w.nx, j0 = (k0 / w.nx) | 0; let best = -1, bd = Infinity;
   for (let r = 0; r < 8 && best < 0; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
     if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue; const a = i0 + di, b = j0 + dj; if (a < 0 || b < 0 || a >= w.nx || b >= w.ny) continue;
@@ -281,6 +282,7 @@ export function performNational(sim: SimState, w: World, prev: NatPreview, o: { 
  */
 export function performRoad0(sim: SimState, w: World, prev: NatPreview): { routeId: string; reusedKm: number; restoredKm: number; newKm: number; costBu: number; spurs: number } | null {
   if (!prev.ok) return null;
+  const gate = sim.special41 ? canBuildNext(sim) : null; if (gate && !gate.ok) return null;   // Stage 41 #8: the previous special route must be complete (the app shows gate.reason before it comes to this)
   const before = new Set(Object.keys(sim.edges)), chain: { edgeId: string; dir: 1 | -1 }[] = [];
   const TMP = "r.__national0"; sim.routes[TMP] = { id: TMP, edges: chain, active: false, oldEdges: [] } as unknown as SimState["routes"][string];
   { const idx = buildIndex(sim, "road"); for (const s of prev.segments) if (s.ferry || s.lake) for (const k of s.cells) nodeSplitAt(sim, w, idx, k); }
@@ -303,7 +305,13 @@ export function performRoad0(sim: SimState, w: World, prev: NatPreview): { route
   let spurs = 0;
   for (const sp of prev.spurs ?? []) { const c = w.cityById.get(sp.city); if (!c || Object.values(sim.edges).some((e) => e.state === "open" && modeOf(e) === "road" && !e.facility && e.cells.includes(c.cell))) continue; layPath(sim, w, sp.cells, { facilities: w.land12, open: true, surface: "gravel", quality: 50, built: 1, month: sim.month }); spurs++; }
   const costBu = Math.round((newKm * ROAD0_NEW_BU + restoredKm * ROAD0_RESTORE_BU) * 100) / 100;
-  const later = Object.values(sim.routes).some((q) => q.grade === "national" && q.scope === "JP" && q.number === 0);   // Stage 25: a second (third ...) 国道0号 is a route of its own, named by its year; the first one is never touched
+  if (gate?.sym && gate.sym !== "0" && gate.sym !== "1") {   // Stage 41 #8: a later special route (A 元 始 ...): a route of its own by symbol, not a numbered one
+    const sp = designate(sim, chain, "national", "JP", `${prev.from.replace(/市$/, "")}〜${prev.to.replace(/市$/, "")}`, `遷都後の開通の儀(${specialFullName(gate.sym)})`, false, 0); if (!sp) return null;
+    sp.special = gate.sym; sp.gen = sim.startYear + Math.floor(sim.month / 12); sp.name = specialFullName(gate.sym);
+    ev(sim, "ceremony", `${specialOfficial(gate.sym)}が開通(既存道路の転用${Math.round(reusedKm)}km・廃道/旧道の復旧${Math.round(restoredKm)}km・新設${Math.round(newKm)}km)`, `特殊路線の${SPECIAL_SYMS.indexOf(gate.sym) + 1}本目(${specialFullName(gate.sym)})。新首都(${prev.from})と新副首都(${prev.to})を通る。工事費相当${Math.round((newKm * ROAD0_NEW_BU + restoredKm * ROAD0_RESTORE_BU) * 100) / 100}`, { route: sp.id });
+    return { routeId: sp.id, reusedKm: Math.round(reusedKm), restoredKm: Math.round(restoredKm), newKm: Math.round(newKm), costBu: Math.round((newKm * ROAD0_NEW_BU + restoredKm * ROAD0_RESTORE_BU) * 100) / 100, spurs };
+  }
+  const later = !gate && Object.values(sim.routes).some((q) => q.grade === "national" && q.scope === "JP" && q.number === 0);   // Stage 25: a second (third ...) 国道0号 is a route of its own, named by its year; the first one is never touched
   const r = designate(sim, chain, "national", "JP", `${prev.from.replace(/市$/, "")}〜${prev.to.replace(/市$/, "")}`, "遷都後の開通の儀(国道0号)", false, 0); if (!r) return null;
   if (later) { r.gen = sim.startYear + Math.floor(sim.month / 12); r.name = `国道0号(${r.gen}年)`; }
   ev(sim, "ceremony", `${routeOfficial(r)}が開通(既存道路の転用${Math.round(reusedKm)}km・廃道/旧道の復旧${Math.round(restoredKm)}km・新設${Math.round(newKm)}km)`, `新首都(${prev.from})と新副首都(${prev.to})を結ぶ。工事費相当${costBu}(開通の儀として一括で供用)`, { route: r.id });

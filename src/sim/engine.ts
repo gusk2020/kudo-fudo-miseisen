@@ -24,7 +24,7 @@ import { openStraits } from "./straits";
 import { PRIVATIZE_YEAR, reassignRoute, reformJnr, successorOperator } from "./reform";
 import { autoResolve, defaultPolicy, openWindow, windowDue } from "./policy";
 import { noteDecision, resumeAfterDecision } from "./decision41";
-import { isWaterTunnel, techAt, techYear, TECH_K, WATER_K, waterTechAt } from "./tech";
+import { isWaterTunnel, setTunnelCap, techAt, techYear, TECH_K, WATER_K, waterTechAt } from "./tech";
 import { BAY_PER_YEAR, BAY_YEARS, LAKE_BRIDGE_TAG, isBayFerry, reviewLakeFerries, seedBayFerries } from "./ferry";
 import { ensureHubs, hubBoost, hubStats, reviewHubs } from "./hubs";
 import { reviewRailLines } from "./railecon";
@@ -48,6 +48,9 @@ import { reconGrowth, reconIndustry, reconMeanCore, reconOf, reconShare } from "
 import { DEFAULT_CAPITAL, DEFAULT_SUB, DEFAULT_PALACE, prefOfSeat } from "../core/seat";
 import { realToLonLat } from "../core/data";
 import type { Vec } from "../core/types";
+import { autoEraIdx } from "./simple41";
+import { isSpecialSym, specialOfficial } from "./special41";
+import { BRIDGE_RECORD, SEA_AIR_TUNNEL_CAP_KM, seaAirPriority } from "./fiction41";
 import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, relocFirstOf, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
@@ -90,7 +93,7 @@ export function ev(sim: SimState, kind: string, text: string, cause: string, ref
 }
 export const prefName = (id: string) => JAPAN.prefectures.find((p) => p.id === id)?.name ?? id;
 /** Official name only (国道N号). */
-export const routeOfficial = (r: SimRoute) => r.kaido ? `${r.kaido}(${GRADE_LABEL[r.grade]}${r.number}号)` : GRADE_MODE[r.grade] === "rail" ? `${r.opName ?? GRADE_LABEL[r.grade]}${r.number}号線` : `${r.scope === "JP" ? "" : prefName(r.scope) + " "}${GRADE_LABEL[r.grade]}${r.number}号${r.gen ? `(${r.gen}年)` : ""}`;
+export const routeOfficial = (r: SimRoute) => r.special && isSpecialSym(r.special) ? specialOfficial(r.special) : r.kaido ? `${r.kaido}(${GRADE_LABEL[r.grade]}${r.number}号)` : GRADE_MODE[r.grade] === "rail" ? `${r.opName ?? GRADE_LABEL[r.grade]}${r.number}号線` : `${r.scope === "JP" ? "" : prefName(r.scope) + " "}${GRADE_LABEL[r.grade]}${r.number}号${r.gen ? `(${r.gen}年)` : ""}`;
 /** Official name plus the earned nickname, if any: 国道N号(通称:酷道). */
 export const routeLabel = (r: SimRoute) => routeOfficial(r) + (r.nick ? `(通称:${NICK_LABEL[r.grade]})` : "");
 export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).year;
@@ -137,6 +140,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
   if (firstCand) sim.initPolicy = { stance: firstCand.stance, ...(firstCand.recon ? { coast: firstCand.recon.coast, focus: firstCand.recon.focus } : {}) };   // Stage 41: what the game was started with (the top line shows it beside the policy now)
+  if (opts.stage3 && firstCand) sim.special41 = true;   // Stage 41 #8: the special-route rules (special41.ts) for every new game; a game saved before keeps the old rule
   if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false, sim.subCapital2); }
   if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.g34new) sim.rec34 = { sites: [], log: [...w.g34new.log], done: [...w.g34new.done] }; if (w.islets) { sim.isl20 = true; if (w.t.isletVersion === 3) sim.isl36 = true; if (w.t.isletVersion === 2 || w.t.isletVersion === 3) { sim.isl22 = true; sim.sea22 = true; sim.tier23 = newTier23(); } } if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
   const tokyoId = sim.roles ? undefined : tokyoCity(w)?.id;
@@ -612,6 +616,7 @@ function completeProject(sim: SimState, w: World, p: SimProject) {
 /** One simulated month as a series of short atoms (yield between them). */
 export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
   if (sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) return;   // waiting for the player at a policy window or an era change: time does not move
+  setTunnelCap(seaAirPriority(sim) ? SEA_AIR_TUNNEL_CAP_KM : null, BRIDGE_RECORD.worldWaterKm);   // Stage 41 #7: sea / air priority: no tunnel longer than any that exists in 2026 (plans and holds stay; road/rail priority lifts it)
   resumeAfterDecision(sim);   // Stage 41: a game loaded from a 判断直前 save point goes back to its automatic mode once the decision is made
   if (sim.month % 12 === 0) {
     if (due2200(sim)) { if (unattended(sim)) { noteDecision("reloc", yearOf(sim), sim, (c) => open2200(c)); skip2200(sim); } else { open2200(sim); return; } }   // Stage 22 / 23: time stops here in every mode (auto and away included) until the player chooses -- 現状維持 too is a choice
@@ -624,7 +629,7 @@ export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
 /** An era change is due: open it; if nobody is there to choose (or the setting says so) the first candidate (the real one for 1989/2019, else fewest strokes) is taken. */
 export function startKaigen(sim: SimState, year: number) {
   const k = sim.kaigen!; openKaigen(k, year); const pol = sim.policy, auto = !!pol && (pol.mode === "auto" || pol.mode === "autoReloc" || (pol.mode === "idleAuto" && pol.away));
-  if (auto) { noteDecision("kaigen", year, sim); settleKaigen(sim, 0, true); return; }   // (Stage 41: the era change is kept as a save point with the choice still open)
+  if (auto) { noteDecision("kaigen", year, sim); settleKaigen(sim, autoEraIdx(sim, sim.kaigen!.pending!.cands), true); return; }   // (Stage 41: the era change is kept as a save point with the choice still open)
   ev(sim, "kaigen", `${year}年: 改元の時を迎えた(候補${k.pending!.cands.length}案)`, "元号を選んでください。時間は止まっています", {});
 }
 export function settleKaigen(sim: SimState, idx: number, auto = false) {
@@ -636,7 +641,7 @@ export function settleKaigen(sim: SimState, idx: number, auto = false) {
 const STANCE_NAME: Record<string, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kobun: "旧版" };
 export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
 /** Fast-forward with no player (tests, tools): a policy window that opens is resolved by the world's own scores. */
-export function advance(sim: SimState, w: World, months: number) { if (sim.oldmuni40) syncOldCities(sim, w); for (let i = 0; i < months; i++) {   /* Issue #67: two games on one world (tests only) each get their own promoted cities back before they run */ stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (waiting2200(sim)) break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
+export function advance(sim: SimState, w: World, months: number) { if (sim.oldmuni40) syncOldCities(sim, w); for (let i = 0; i < months; i++) {   /* Issue #67: two games on one world (tests only) each get their own promoted cities back before they run */ stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, autoEraIdx(sim, sim.kaigen.pending.cands), true); stepMonth(sim, w); } if (waiting2200(sim)) break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };

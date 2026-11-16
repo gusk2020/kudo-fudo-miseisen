@@ -32,11 +32,21 @@ export const TUNNEL_KM: Key = [[1950, 8], [1960, 13], [1975, 22], [1990, 40], [2
 export const BRIDGE_KM: Key = [[1950, 1.5], [1960, 3], [1975, 6], [1990, 12], [2010, 20], [2050, 30], [2150, 40]];
 /** Chance a tunnel through hard rock goes ahead without trouble, by technology year (capped at 1). */
 export const ROCK_P: Key = [[1950, 0.4], [1975, 0.6], [2000, 0.8], [2025, 0.92], [2060, 1]];
+/**
+ * Stage 41 #7: while sea or air is the priority (the engine sets this each month from the game's stance), no tunnel longer than the longest one that exists in 2026 can be dug -- a plan or a hold is still allowed (the tunnel simply "cannot be built yet", as with any too-long
+ * run), and when road or rail is the priority again the limit is lifted and construction may resume. Bridges likewise: none longer than the longest continuous bridge over water of 2026.
+ */
+let capKm: number | null = null, bridgeCapKm: number | null = null;
+/** `bridgeKm`: the same for bridges (the longest continuous bridge over water of 2026); given together with the tunnel cap, lifted together. */
+export const setTunnelCap = (km: number | null, bridgeKm: number | null = null) => { capKm = km; bridgeCapKm = km === null ? null : bridgeKm; };
+export const bridgeCap = () => bridgeCapKm;
+export const tunnelCap = () => capKm;
+const capped = (km: number) => (capKm === null ? km : Math.min(km, capKm));
 export const techYear = (k: number, year: number) => 1950 + k * (year - 1950);
 export interface TechNow { yEff: number; tunnelKm: number; bridgeKm: number; rockP: number; costMult: number; timeMult: number }
 export function techAt(k: number, year: number): TechNow {
   const yEff = techYear(k, year);
-  return { yEff, tunnelKm: at(TUNNEL_KM, yEff), bridgeKm: at(BRIDGE_KM, yEff), rockP: Math.min(1, Math.max(0, at(ROCK_P, yEff))), costMult: 1 / k, timeMult: 1 / k };
+  return { yEff, tunnelKm: capped(at(TUNNEL_KM, yEff)), bridgeKm: bridgeCapKm === null ? at(BRIDGE_KM, yEff) : Math.min(at(BRIDGE_KM, yEff), bridgeCapKm), rockP: Math.min(1, Math.max(0, at(ROCK_P, yEff))), costMult: 1 / k, timeMult: 1 / k };
 }
 /** A cell stretch is "hard rock" when it stays high: the rock-success roll applies to tunnels that run above this elevation. */
 export const HARD_ROCK_M = 1200;
@@ -51,7 +61,7 @@ export const crossingEase = (tech: TechState | undefined, year: number): number 
 export interface WaterTechNow { yEff: number; reachKm: number; costMult: number; timeMult: number }
 export function waterTechAt(wk: number, year: number): WaterTechNow {
   const yEff = techYear(wk, year), f = 1 / (1 + (wk - 1) / 2);
-  return { yEff, reachKm: wk * at(TUNNEL_KM, yEff), costMult: f, timeMult: f };
+  return { yEff, reachKm: capped(wk * at(TUNNEL_KM, yEff)), costMult: f, timeMult: f };
 }
 /** True for the edges the water-tunnel rule governs: a tunnel that is a fixed link across water (named link:...). */
 export const isWaterTunnel = (e: { facility?: string; facilityName?: string }) => e.facility === "tunnel" && (e.facilityName ?? "").startsWith("link:");

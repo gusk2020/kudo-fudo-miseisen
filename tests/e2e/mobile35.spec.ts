@@ -115,3 +115,23 @@ test("Pixel 7a-size touch: the relocation wizard (back, snapshot, mid-wizard rel
   expect(await app(page, "a => a.sim.relocSkipped")).toEqual([2250]); const mm = (await app(page, "a => a.sim.month")) as number; await page.waitForTimeout(1500); expect(await app(page, "a => a.sim.month")).toBe(mm);   // stopped, not skipped
   expect(errs).toEqual([]);
 });
+
+test("Stage 41 #8, Pixel 7a-size touch: at a relocation an existing special route is EXTENDED by a drawn line (symbol kept, no new symbol used), and it survives a reload", async ({ page }) => {
+  test.setTimeout(480000); const errs = watchErrors(page); await startQuick(page); const cdp = await page.context().newCDPSession(page);
+  expect(await app(page, "a => a.sim.special41")).toBe(true);
+  await jump(page, 2100, "priority"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 90000 }); await page.waitForSelector("#e22-box");
+  await tap(page, "#e22-era-1"); await tap(page, "#e22-next"); await tap(page, "#e22-decide"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "road0", null, { timeout: 60000 });
+  await page.waitForSelector("#sp-row"); expect(await page.textContent("#sp-new")).toContain("国道0号"); expect(await page.textContent("#sp-ext-0")).toContain("国道1号");
+  const before = (await app(page, "a => { const r = Object.values(a.sim.routes).find((q) => q.grade === 'national' && q.scope === 'JP' && q.number === 1 && !q.gen); return [r.id, r.edges.length]; }")) as [string, number];
+  await tap(page, "#sp-ext-0"); expect(await page.textContent("#sp-help")).toContain("延長"); expect(await page.textContent("#tool-cer-kokudo0")).toContain("延長");
+  // draw from the sub-capital end of 国道1号 (大阪) on toward 姫路
+  const a = await cityPos(page, "大阪市"), b = await cityPos(page, "姫路市"); await page.evaluate(([p, q]) => (window as any).__kfm.r.setView({ cx: (p[0] + q[0]) / 2, cy: (p[1] + q[1]) / 2, zoom: 2.2 }), [a, b] as const); await page.waitForTimeout(500);
+  if ((await page.getAttribute("#tool-cer-kokudo0", "aria-pressed")) !== "true") await tap(page, "#tool-cer-kokudo0");
+  await touchDrag(cdp, lerp(await screenOf(page, a), await screenOf(page, b), 16)); await page.waitForSelector("#cer-status-kokudo0");
+  const status = (await page.textContent("#cer-status-kokudo0"))!; console.log("T41 extension status: " + status); expect(status, "the drawn extension is accepted").toContain("✓"); expect(status).toContain("の延長");
+  await tap(page, "#rw-review"); await tap(page, "#rw-confirm"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "done", null, { timeout: 60000 });
+  const after = (await app(page, `a => { const r = a.sim.routes['${before[0]}']; return [r.edges.length, r.number, Object.values(a.sim.routes).filter((q) => q.grade === 'national' && q.scope === 'JP' && q.number === 0).length]; }`)) as number[];
+  expect(after[0], "国道1号 has more sections").toBeGreaterThan(before[1]); expect(after[1]).toBe(1); expect(after[2], "no 国道0号 was made: the symbol waits").toBe(0);
+  await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
+  expect(await app(page, `a => a.sim.routes['${before[0]}'].edges.length`), "the extended route loads (the save passes the integrity check)").toBe(after[0]); expect(errs).toEqual([]);
+});

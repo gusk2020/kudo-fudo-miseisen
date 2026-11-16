@@ -18,11 +18,12 @@ import { ECO_LABEL, ECO_PARTS, mainCause } from "../sim/econ";
 import { displayName } from "../sim/straits";
 import { FACILITY_LABEL, ZONE_LABEL, facLevel, tierHistory, wardPops } from "../sim/tier23";
 import { yearOf } from "../sim/engine";
+import { CITY_LABEL, COAST_LABEL2, TRANSPORT_LABEL, resolveSimple, simpleItems, type Concentration, type Coast, type Transport } from "../sim/simple41";
 import { AIR_KIND_LABEL, PORT_CAP, PORT_TIER_LABEL, airName, foreignName, hubsAt, portName } from "../sim/hubs";
 import { DOMAIN_LABEL, POLICIES, skipWindow, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
 
-export const ui3 = { graph: false, tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerMode: "normal" as "normal" | "numbers", numClass: "road" as NumClass, numPage: 0, ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null };
+export const ui3 = { graph: false, tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerMode: "normal" as "normal" | "numbers", numClass: "road" as NumClass, numPage: 0, ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null, simple: (() => { try { return localStorage.getItem("kfm.polSimple") === "1"; } catch { return false; } })(), sKeep: undefined as boolean | undefined, sAns: {} as { transport?: Transport; city?: Concentration; coast?: Coast } };
 const ym = (sim: SimState, m: number) => { const { year, month } = monthToYM(sim.startYear, m); return `${year}年${month}月`; };
 const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) * 10)) + "□".repeat(10 - Math.round(Math.max(0, Math.min(1, v)) * 10));
 
@@ -186,6 +187,24 @@ export function buildTrends(sim: NonNullable<App["sim"]>, body: HTMLElement) {
   const turns = sim.events.filter((e) => /赤字ローカル線の廃止|工事凍結|工事再開|国鉄を分割|海峡連絡が開通|開業:|地方道の計画|国際ハブ空港|港の拡張が完成|開港|閉港|廃港|湖上大橋/.test(e.text)).slice(-6).reverse();
   if (turns.length) body.append(h("div", { class: "issue", id: "trend-turns" }, h("b", {}, "最近の転機"), ...turns.map((e) => h("div", {}, h("small", {}, `${sim.startYear + Math.floor(e.month / 12)}年 ${e.text}`)))));
 }
+const setSimple = (v: boolean) => { ui3.simple = v; try { localStorage.setItem("kfm.polSimple", v ? "1" : "0"); } catch { /* storage may be unavailable */ } };
+/** Stage 41 #4: the simple intervention window -- three questions; the detailed window stays one button away. */
+function buildSimpleWindow(app: App, body: HTMLElement, sim: SimState) {
+  const sp = sim.simple41, a = ui3.sAns, keep = ui3.sKeep ?? sp?.keep ?? false;
+  body.append(h("small", { id: "simple-help" }, "3つの質問に答えるだけで、この10年の方針が決まります。選ばない項目は、世界の流れに任せます。"));
+  const axis = <T extends string>(title: string, id: string, labels: Record<T, string>, cur: T | undefined, set: (v: T | undefined) => void) => {
+    const r = h("div", { class: "row", id }); r.append(h("small", {}, title));
+    for (const k of Object.keys(labels) as T[]) r.append(h("button", { id: `${id}-${k}`, class: cur === k ? "mode on" : "mode", "aria-pressed": cur === k ? "true" : "false", onclick: () => { set(cur === k ? undefined : k); app.buildSheet(); } }, `${cur === k ? "✓ " : ""}${labels[k]}`));
+    body.append(r);
+  };
+  axis("交通", "sx-transport", TRANSPORT_LABEL, a.transport, (v) => { a.transport = v; });
+  axis("都市", "sx-city", CITY_LABEL, a.city, (v) => { a.city = v; });
+  axis("地域", "sx-coast", COAST_LABEL2, a.coast, (v) => { a.coast = v; });
+  const items = simpleItems(sim, a); if (items.length) body.append(h("div", { class: "issue", id: "sx-preview" }, ...items.flatMap((it) => [`${it.label}${it.block ? `(⚠ ${it.block}:見送り)` : ""}`, h("br")]), h("small", {}, a.coast ? `${COAST_LABEL2[a.coast]}の重視は次の改元の候補選びに効きます。` : "")));
+  body.append(h("label", { class: "row", id: "sx-keep-l" }, h("input", { type: "checkbox", id: "sx-keep", checked: keep, onchange: (e: Event) => { ui3.sKeep = (e.target as HTMLInputElement).checked; } }), " 今後の自動(放置・常に自動)でもこの答えを続ける"));
+  body.append(h("div", { class: "row", id: "pol-actions" }, h("button", { id: "sx-go", class: "primary", onclick: () => { const ans = { ...ui3.sAns, keep: ui3.sKeep ?? sp?.keep ?? false }; sim.simple41 = ans; const rec = resolveSimple(sim, ans); ui3.sKeep = undefined; ui3.sAns = {}; if (rec) app.toast(`採用${rec.adopted.length}件・見送り${rec.declined.length}件`); app.afterPolicy(); } }, "この答えで決定"),
+    h("button", { id: "pol-none", class: "mode none", onclick: () => { skipWindow(sim); ui3.sAns = {}; app.toast("点を使わず決定しました。持ち点は繰り越されます"); app.afterPolicy(); } }, "何もせず決定")));
+}
 export function buildPolicy(app: App, body: HTMLElement) {
   body.append(h("h3", {}, "政策介入(10年ごと)")); const sim = app.sim, pol = sim?.policy; if (!sim || !pol) { body.append(h("small", {}, "開通の儀のあとに使えます")); return; }
   body.append(h("div", { class: "issue", id: "pol-points" }, `共通の持ち点: ${pol.points}点(毎回+${POINTS_PER_WINDOW}点。使わなかった分は全額繰り越し、無制限)`, h("br"), h("small", {}, "同じ政策に点を足すほど効果は逓減します(1点目が最も効き、10点目はごくわずか)。")));
@@ -196,6 +215,8 @@ export function buildPolicy(app: App, body: HTMLElement) {
   else {
     const env = computeEnv(sim), dom = ui3.domain, win = pol.pending;
     body.append(h("div", { class: "issue warn", id: "pol-window" }, `${win.year}年: 介入する分野を選んでください。時間は止まっています。`));
+    body.append(h("div", { class: "row", id: "pol-style" }, ...([[true, "かんたん"], [false, "詳細"]] as [boolean, string][]).map(([v, l]) => h("button", { id: v ? "pol-simple" : "pol-detail", class: ui3.simple === v ? "mode on" : "mode", "aria-pressed": ui3.simple === v ? "true" : "false", onclick: () => { setSimple(v); app.buildSheet(); } }, `${ui3.simple === v ? "✓ " : ""}${l}`))));
+    if (ui3.simple) buildSimpleWindow(app, body, sim); else {
     const row = h("div", { class: "row" }); for (const d of ["politics", "economy", "opinion"] as Domain[]) row.append(h("button", { id: "dom-" + d, class: dom === d ? "mode on" : "mode", "aria-pressed": dom === d ? "true" : "false", onclick: () => { ui3.domain = ui3.domain === d ? null : d; ui3.spend = {}; app.buildSheet(); } }, `${dom === d ? "✓ " : ""}${DOMAIN_LABEL[d]}`));
     row.append(h("button", { id: "pol-none", class: "mode none", onclick: () => { skipWindow(sim); ui3.spend = {}; ui3.domain = null; app.toast("点を使わず決定しました。持ち点は繰り越されます"); app.afterPolicy(); } }, "点を使わず決定"));
     body.append(row);
@@ -211,6 +232,7 @@ export function buildPolicy(app: App, body: HTMLElement) {
       };
       body.append(h("h3", {}, `${DOMAIN_LABEL[dom]}の方針 上位5`)); for (const t of topFive(env, dom)) body.append(rowOf(t.p, t.base));
       body.append(h("h3", {}, "その他(持ち点で押し上げると候補に入ります)")); for (const t of baseScores(env, dom)) if (!top.has(t.p.id)) body.append(rowOf(t.p, t.base));
+    }
     }
   }
   if (pol.history.length) { body.append(h("h3", {}, "これまでの決定")); for (const r of [...pol.history].reverse()) body.append(h("div", { class: "issue" }, `${r.year}年 ${r.none ? "点を使わず決定" : DOMAIN_LABEL[r.domain]}${r.auto ? "(自動)" : ""}: 採用 ${r.adopted.map((a) => a.label).join("・") || "なし"}`, h("br"), h("small", {}, [...r.adopted.map((a) => `${a.label}: ${a.reason}`), ...r.declined.map((d) => `見送り ${d.label}: ${d.reason}`)].join(" ／ ")))); }
