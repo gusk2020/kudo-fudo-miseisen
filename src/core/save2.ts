@@ -3,7 +3,7 @@ import { PREF_IDS } from "./seat";
 /** Save format v2: { map, sim } with integrity checks. v1 (map only) is migrated, never rejected. Nothing here throws. */
 import { validMetro } from "../sim/metro";
 import { STANCES } from "../sim/kaigen";
-import { checkIntegrity, repairRouteChains } from "../sim/network";
+import { checkIntegrity, repairRoad0Years, repairRouteChains } from "../sim/network";
 import { DIAL_KEYS, composeDials } from "../sim/eras";
 import { defaultPolicy } from "../sim/policy";
 import { hashString } from "../sim/engine";
@@ -117,6 +117,9 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   let bad = checkIntegrity(sim), note: string[] = [];
   if (bad.length && bad.every((b) => /^route r\.\d+: (chain broken|missing edge)/.test(b))) {   // Stage 37: a stale route chain is repaired in memory (the stored text is untouched); anything else is still refused
     const n = repairRouteChains(sim); bad = checkIntegrity(sim); if (!bad.length) note = [`路線${n}本の途中が切れていたため、つながる部分だけ残して読み込みました`];
+  }
+  if (bad.length && bad.every((b) => b === "route number duplicated: national:JP:0")) {   // Stage 41: later 国道0号 saved without their year (one per relocation) get it from their own history
+    const n = repairRoad0Years(sim); bad = checkIntegrity(sim); if (!bad.length) note = [`国道0号が${n + 1}本あったため、後のものに作成年を付けて読み込みました(路線は消していません)`];
   }
   if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
   return { sim, problems: note };
