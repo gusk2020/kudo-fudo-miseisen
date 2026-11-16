@@ -1,6 +1,7 @@
 /** Stage 36: a new game starts in 1800 (the fictional timeline); ?start=1950 starts the older 1950 game (kept for its own tests and for comparison) */
 const START_1800 = typeof location === "undefined" || new URLSearchParams(location.search).get("start") !== "1950";
 import { lsKey } from "../core/ns";
+import { fictionMark, tunnelFiction } from "../sim/fiction41";
 import type { RecLog } from "../sim/reclaim34";
 import { buildIndex } from "../sim/network";
 import { LAKE_LIST } from "../render/lakes";
@@ -34,7 +35,7 @@ import { cityCard } from "./cityCard";
 import { currentPolicy, initialPolicy, policyText } from "../sim/stance41";
 import { prepareDecisionLoad, setDecisionSink, type DecisionPoint } from "../sim/decision41";
 import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, performRoad0, snapKmFor, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
-import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, skippedLabel, skippedWallMsOf, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
+import { yearOf, MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, skippedLabel, skippedWallMsOf, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
 import { displayName } from "../sim/straits";
 import { finishMigration } from "../sim/migrate";
@@ -1367,7 +1368,7 @@ export class App {
     line(`行政指定: ${routes.length ? routes.map((r) => routeOfficial(r) + (r.oldEdges.includes(e.id) ? "の旧道" : "")).join("・") : "市町村道(指定なし)"}${e.nick && routes[0] ? ` ／ 通称: ${NICK_LABEL[routes[0].grade]}(細く荒れた道に後から付いた呼び名)` : ""}`, "why-designation");
     const rail = e.mode === "rail", unit = rail ? "人/日" : "台/日";
     if (rail) line(`事業者: ${sim.operators[e.op ?? "jnr"]?.name ?? "国鉄"}${e.nick ? " ／ 通称: " + (e.op === "jnr" ? "酷鉄" : "死鉄") + "(利用が少なく保守が行き届かない線に後から付く呼び名)" : ""}`, "why-operator");
-    line(`規格: ${rail ? STANDARD_LABEL_RAIL[e.standard] : STANDARD_LABEL[e.standard]}${rail ? "" : ` ／ 路面: ${SURFACE_LABEL[e.surface]}`} ／ 品質${Math.round(e.quality)}・${rail ? "荒廃" : "風化"}${Math.round(e.weathering)}・最大勾配${e.maxGradePct}%${e.curv ? `・曲がり${e.curv}rad/km` : ""}${e.facility ? ` ／ 施設: ${e.facilityName ? displayName(e) : ""}(${e.facility === "tunnel" ? "トンネル" : "橋"})` : ""}`);
+    line(`規格: ${rail ? STANDARD_LABEL_RAIL[e.standard] : STANDARD_LABEL[e.standard]}${rail ? "" : ` ／ 路面: ${SURFACE_LABEL[e.surface]}`} ／ 品質${Math.round(e.quality)}・${rail ? "荒廃" : "風化"}${Math.round(e.weathering)}・最大勾配${e.maxGradePct}%${e.curv ? `・曲がり${e.curv}rad/km` : ""}${e.facility ? ` ／ 施設: ${e.facilityName ? displayName(e) : ""}(${e.facility === "tunnel" ? "トンネル" : "橋"})${e.facility === "tunnel" ? fictionMark(tunnelFiction(e, e.builtMonth !== null ? monthToYM(sim.startYear, e.builtMonth).year : yearOf(sim))) : ""}` : ""}`);
     line(`状態: ${e.built < 1 ? `工事中(${Math.round(e.built * 100)}%)` : STATE_LABEL[e.state]}${e.builtMonth !== null ? ` ／ 供用${monthToYM(sim.startYear, e.builtMonth).year}年〜` : ""}`, "why-state");
     line(`需要(${unit}): 旅客の通過${Math.round(e.through)}・沿線${Math.round(e.local)}${sim.stage3 ? ` ／ 貨物${Math.round(e.freight)}` : ""} ／ 通過のピーク${Math.round(e.peakThrough)} ／ 需要ゼロ${e.zeroYears}年`, "why-demand");
     if (e.bypassedBy.length) line(`旧道: ${e.bypassedBy.map((id) => `${nm(sim.edges[id]?.a)}〜${nm(sim.edges[id]?.b)}`).join("、")}のバイパス開通で通過交通が移った。沿線需要${Math.round(e.local)}台/日${e.local >= 40 ? "が残るため管理継続" : "は小さい"}`, "why-old");
