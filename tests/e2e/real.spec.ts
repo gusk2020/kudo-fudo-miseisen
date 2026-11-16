@@ -120,6 +120,9 @@ test("Stage 41 simple intervention: three questions decide the window, the detai
   expect(await app(page, "a => a.sim.policy.pending")).toBeNull(); expect(await app(page, "a => a.sim.simple41")).toEqual({ transport: "rail", city: "disperse", coast: "japansea", keep: true });
   expect(await app(page, "a => a.sim.policy.history.at(-1).adopted.map((x) => x.id)")).toContain("p-rail");
   await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); expect(await app(page, "a => a.sim.simple41.keep")).toBe(true);
+  expect(errs).toEqual([]);
+});
+
 test("Stage 41 night view: dark sheet + lights, on/off any time, light grows with the years, taps still open cities, nothing of the game changes", async ({ page }) => {
   const errs = watchErrors(page); await startReal(page); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.runner.settle(); });
   const lum = () => page.evaluate(() => { const c = document.querySelector("#stage canvas") as HTMLCanvasElement; const t = document.createElement("canvas"); t.width = 160; t.height = 240; const g = t.getContext("2d")!; (window as any).__kfm.r.app.renderer.render((window as any).__kfm.r.app.stage); g.drawImage(c, 0, 0, 160, 240); const d = g.getImageData(0, 0, 160, 240).data; let mean = 0, warm = 0; for (let i = 0; i < d.length; i += 4) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; mean += l; if (d[i] > 150 && d[i] > d[i + 2] + 40) warm++; } return { mean: mean / (d.length / 4), warm }; });
