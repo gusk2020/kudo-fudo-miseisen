@@ -12,9 +12,10 @@ import type { SimState } from "./types";
 
 export const CP_EVERY_YEARS = 50, CP_MAX_COUNT = 8, CP_MAX_BYTES = 48 * 1024 * 1024;
 export const CP_PREFIX = "s3:cp:", CP_INDEX = "s3:cp:index";
-export type CpKind = "50y" | "reloc";
-export interface CpDue { kind: CpKind; year: number; /** for "reloc": the number of the event just finished (1-based) */ n?: number }
-export interface CpEntry { /** Stage 30A: the world and timeline this save belongs to (absent = taken before Stage 30A, origin unknown) */ wid?: string; tl?: string; /** 2 = taken after the relocation event (Stage 27); absent = taken just before it (Stage 26) */ v?: number; key: string; year: number; kind: CpKind; n?: number; bytes: number; gz: boolean; savedAt: number; capital: string; sub: string }
+export type CpKind = "50y" | "reloc" | "decision";   // Stage 41: "decision" = just BEFORE a decision the game took by itself (decision41.ts)
+export const CP_DECISION_MAX = 3;   // per world: only the latest few are kept (policy windows come every 10 years)
+export interface CpDue { kind: CpKind; year: number; /** for "decision": which decision (kaigen / policy / reloc) */ dk?: "kaigen" | "policy" | "reloc"; /** for "reloc": the number of the event just finished (1-based) */ n?: number }
+export interface CpEntry { /** Stage 30A: the world and timeline this save belongs to (absent = taken before Stage 30A, origin unknown) */ wid?: string; tl?: string; /** 2 = taken after the relocation event (Stage 27); absent = taken just before it (Stage 26) */ v?: number; key: string; year: number; kind: CpKind; dk?: "kaigen" | "policy" | "reloc"; n?: number; bytes: number; gz: boolean; savedAt: number; capital: string; sub: string }
 export interface CpStore { put(key: string, data: Uint8Array | string): Promise<void>; get(key: string): Promise<Uint8Array | string | undefined>; del(key: string): Promise<void>; keys(): Promise<string[]> }
 
 /**
@@ -36,7 +37,7 @@ export function checkpointDue(sim: SimState): CpDue | null {
 export function markCheckpoint(sim: SimState, d: CpDue) { sim.cp = { y50: Math.max(sim.cp?.y50 ?? 0, Math.floor(d.year / CP_EVERY_YEARS) * CP_EVERY_YEARS), reloc: d.kind === "reloc" ? d.n! : sim.cp?.reloc ?? 0 }; }
 
 /** Stage 30A: the key names the world and timeline too -- two histories that reach the same year no longer overwrite each other. Old (identity-less) saves keep the old key form. */
-export const cpKey = (d: CpDue, id?: Identity) => id ? `${CP_PREFIX}${id.wid}:${id.tl}:${d.year}:${d.kind}` : `${CP_PREFIX}${d.year}:${d.kind}`;
+export const cpKey = (d: CpDue, id?: Identity) => { const k = d.kind === "decision" ? `decision:${d.dk ?? "x"}` : d.kind; return id ? `${CP_PREFIX}${id.wid}:${id.tl}:${d.year}:${k}` : `${CP_PREFIX}${d.year}:${k}`; };
 
 /**
  * Stage 30A: world and timeline identity. `wid` is issued once at the start of a new game and never changes; `tl` names one line of play within it. Loading a save made EARLIER than a checkpoint of the same timeline
@@ -78,12 +79,15 @@ export function planPrune(entries: CpEntry[], maxCount = CP_MAX_COUNT, maxBytes 
   }
   return planPruneWorld(entries, maxCount, maxBytes, () => 1);
 }
-function planPruneWorld(entries: CpEntry[], maxCount: number, maxBytes: number, rank: (e: CpEntry) => number): string[] {
-  if (!entries.length) return [];
+function planPruneWorld(all: CpEntry[], maxCount: number, maxBytes: number, rank: (e: CpEntry) => number): string[] {
+  if (!all.length) return [];
+  // Stage 41: the 判断直前 save points are a small rolling set of their own (the newest CP_DECISION_MAX); they never push a 50-year or relocation save out, and the newest write is never removed
+  const decs = all.filter((e) => e.kind === "decision").sort((a, b) => b.savedAt - a.savedAt), decOut = decs.slice(CP_DECISION_MAX).map((e) => e.key), entries = all.filter((e) => e.kind !== "decision");
+  if (!entries.length) return decOut;
   const newest = entries.reduce((a, b) => (b.savedAt >= a.savedAt ? b : a)), order = [...entries.filter((e) => e.kind === "50y").sort((a, b) => rank(a) - rank(b) || a.year - b.year), ...entries.filter((e) => e.kind === "reloc").sort((a, b) => rank(a) - rank(b) || a.year - b.year)].filter((e) => e.key !== newest.key).sort((a, b) => rank(a) - rank(b));
   let count = entries.length, bytes = entries.reduce((s, e) => s + e.bytes, 0); const out: string[] = [];
   for (const e of order) { if (count <= maxCount && bytes <= maxBytes) break; out.push(e.key); count--; bytes -= e.bytes; }
-  return out;
+  return [...decOut, ...out];
 }
 
 async function pipe(data: Uint8Array | string, T: typeof CompressionStream | typeof DecompressionStream, format: "gzip"): Promise<Uint8Array> {
@@ -105,7 +109,7 @@ const bytesOf = (d: Uint8Array | string) => (typeof d === "string" ? d.length * 
 export async function readIndex(store: CpStore): Promise<CpEntry[]> {
   const raw = await store.get(CP_INDEX); if (raw === undefined) return [];
   const j = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw));
-  return Array.isArray(j) ? (j as CpEntry[]).filter((e) => e && typeof e.key === "string" && e.key.startsWith(CP_PREFIX) && (e.wid === undefined || typeof e.wid === "string") && (e.tl === undefined || typeof e.tl === "string") && Number.isInteger(e.year) && (e.kind === "50y" || e.kind === "reloc") && typeof e.bytes === "number") : [];
+  return Array.isArray(j) ? (j as CpEntry[]).filter((e) => e && typeof e.key === "string" && e.key.startsWith(CP_PREFIX) && (e.wid === undefined || typeof e.wid === "string") && (e.tl === undefined || typeof e.tl === "string") && Number.isInteger(e.year) && (e.kind === "50y" || e.kind === "reloc" || e.kind === "decision") && typeof e.bytes === "number") : [];
 }
 /**
  * Writes one checkpoint. Order matters for safety: the new blob first, then the index that names it, and only then the deletions the prune rule asks for -- a failure at any step leaves every earlier checkpoint
@@ -114,7 +118,7 @@ export async function readIndex(store: CpStore): Promise<CpEntry[]> {
 export async function writeCheckpoint(store: CpStore, json: string, due: CpDue, meta: { capital: string; sub: string; id?: Identity | null }, now = Date.now()): Promise<{ ok: true; entry: CpEntry; pruned: string[] } | { ok: false; error: string }> {
   try {
     const index = await readIndex(store);   // (a failed read aborts here: an index must never be rewritten from a guess)
-    const enc = await encodeSave(json), key = cpKey(due, meta.id ?? undefined), entry: CpEntry = { v: 2, ...(meta.id ? { wid: meta.id.wid, tl: meta.id.tl } : {}), key, year: due.year, kind: due.kind, ...(due.n ? { n: due.n } : {}), bytes: bytesOf(enc.data), gz: enc.gz, savedAt: now, capital: meta.capital, sub: meta.sub };
+    const enc = await encodeSave(json), key = cpKey(due, meta.id ?? undefined), entry: CpEntry = { v: 2, ...(meta.id ? { wid: meta.id.wid, tl: meta.id.tl } : {}), key, year: due.year, kind: due.kind, ...(due.dk ? { dk: due.dk } : {}), ...(due.n ? { n: due.n } : {}), bytes: bytesOf(enc.data), gz: enc.gz, savedAt: now, capital: meta.capital, sub: meta.sub };
     await store.put(key, enc.data);
     const next = [...index.filter((e) => e.key !== key), entry], pruned = planPrune(next, CP_MAX_COUNT, CP_MAX_BYTES, meta.id ?? null);
     const kept = next.filter((e) => !pruned.includes(e.key));

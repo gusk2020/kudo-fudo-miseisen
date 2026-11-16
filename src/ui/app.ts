@@ -31,6 +31,7 @@ import { derive, errorsFor, featureScales, featureWorld, fujiHeightFactor, valid
 import { Renderer, type Pending } from "../render/renderer";
 import { attachGestures } from "./gestures";
 import { cityCard } from "./cityCard";
+import { prepareDecisionLoad, setDecisionSink, type DecisionPoint } from "../sim/decision41";
 import { CER_LABEL, cerLabel, homeCity, performCeremony, performNational, previewCeremony, previewNational, performRoad0, snapKmFor, seatCity, subCity, tokyoCity, type NatPreview, type CerKind, type CerPreview } from "../sim/ceremony";
 import { MS_PER_MONTH_X1, advance, createSimGen, noteSkipped, skippedLabel, skippedWallMsOf, settleKaigen, planCatchUp, prefName, routeLabel, routeOfficial, summary } from "../sim/engine";
 import { exportScenery } from "../sim/scenery";
@@ -114,7 +115,7 @@ export class App {
   private saveLocked = false; private prevCopied = false; private bootPending = false;   // Stage 36: a game read at start-up and not yet checked against the terrain -- nothing is written over its save until it has been accepted or put aside
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
-    const a = new App(); a.real = real; a.r = await Renderer.create(host);
+    const a = new App(); a.real = real; setDecisionSink((d) => a.keepDecisionPoint(d)); a.r = await Renderer.create(host);
     if (real) { a.store.replace(realState()); document.body.classList.add("real"); try { if (localStorage.getItem(lsKey("bg")) !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
       try { const u = JSON.parse(localStorage.getItem(lsKey("ui")) || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; a.legendShown = u.legendShown === true; a.legendSide = u.legendSide === "left" ? "left" : "right"; } catch { /* ignore */ } a.lite = localStorage.getItem(lsKey("lite")) === "1"; } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
@@ -876,6 +877,18 @@ export class App {
     if (done > 0) this.afterTick(now);
   }
   cpBusy = false; private costRoads = 0; private costHud = 0;
+  /** Stage 41: the game is about to take a decision by itself (era change / policy window / relocation in an automatic mode): keep the game as it stands with the decision still open (decision41.ts). Writes go one at a time and never while a checkpoint is being written; a failure is announced and the game goes on. */
+  private decQueue: Promise<void> = Promise.resolve();
+  keepDecisionPoint(d: DecisionPoint) {
+    const live = this.sim; if (!live) return; ensureIdentity(live); const copy = d.sim; copy.wid = live.wid; copy.tl = live.tl; if (live.anc) copy.anc = [...live.anc]; else delete copy.anc;
+    const json = JSON.stringify(makeSave(this.s, copy)), st = seatsOf(this.s), meta = { capital: seatPrefName(live.capital ?? st.capital), sub: seatPrefName(live.subCapital ?? st.sub), id: identityOf(live) };
+    this.decQueue = this.decQueue.then(async () => {
+      while (this.cpBusy) await new Promise((r) => setTimeout(r, 60)); this.cpBusy = true;
+      try { const r = await writeCheckpoint(idbCpStore, json, { kind: "decision", year: d.year, dk: d.kind }, meta); if (!r.ok) this.toast(`判断直前のセーブポイントを作れませんでした(${r.error})。ゲームはこのまま続けられます`); else if (this.sheet === "menu") this.buildSheet(); }
+      catch (e) { this.toast(`判断直前のセーブポイントを作れませんでした(${e instanceof Error ? e.message : "不明"})。ゲームはこのまま続けられます`); }
+      finally { this.cpBusy = false; }
+    });
+  }
   /** Stage 26: the clock has stopped at a year boundary that owes a checkpoint: write it (a failure is announced and the game goes on; the previous checkpoints are never touched by a failed write). */
   async takeCheckpoint() {
     const sim = this.sim, run = this.runner; if (!sim || !run) return; const due = checkpointDue(sim);
@@ -1411,9 +1424,9 @@ export class App {
     const list = id ? all.filter((e) => inHistory(e, id)) : [], old = id ? all.filter((e) => !e.wid) : all.filter((e) => !e.wid);
     const mb = (e: CpEntry) => `${(e.bytes / 1048576).toFixed(1)}MB`;
     const row = (e: CpEntry, legacy: boolean) => {
-      const label = e.kind === "reloc" ? `${e.year}年 遷都の${e.v ? "直後" : "直前(旧)"}(第${e.n ?? "?"}回)` : `${e.year}年 50年ごと`, text = `${label} / ${e.capital} / ${e.sub} / ${mb(e)}`;
-      body.append(h("div", { class: "slot-row cp-row" + (legacy ? " cp-legacy" : ""), id: `cp-${e.year}-${e.kind}` + (legacy ? "-old" : "") }, h("span", { class: "slot-text", title: text }, text),
-        h("button", { class: "slot-load cp-load", onclick: async () => { if (!confirm(`${label}から再開します。今のゲームは、保存していなければ失われます。よろしいですか?`)) return; const j = await readCheckpoint(idbCpStore, e); if (!j) { this.toast("読み込めません(データが見つかりません)"); return; } const p = parseSave(j); if (p.ok && p.sim) void this.adopt(p); else this.toast("読み込めません: " + (p.problems[0] ?? "壊れたデータ")); } }, "読込")));
+      const label = e.kind === "decision" ? `${e.year}年 判断直前(${e.dk === "kaigen" ? "改元" : e.dk === "policy" ? "政策介入" : e.dk === "reloc" ? "遷都" : "判断"})` : e.kind === "reloc" ? `${e.year}年 遷都の${e.v ? "直後" : "直前(旧)"}(第${e.n ?? "?"}回)` : `${e.year}年 50年ごと`, text = `${label} / ${e.capital} / ${e.sub} / ${mb(e)}`;
+      body.append(h("div", { class: "slot-row cp-row" + (legacy ? " cp-legacy" : ""), id: `cp-${e.year}-${e.kind}${e.dk ? "-" + e.dk : ""}` + (legacy ? "-old" : "") }, h("span", { class: "slot-text", title: text }, text),
+        h("button", { class: "slot-load cp-load", onclick: async () => { if (!confirm(`${label}から再開します。今のゲームは、保存していなければ失われます。よろしいですか?`)) return; const j = await readCheckpoint(idbCpStore, e); if (!j) { this.toast("読み込めません(データが見つかりません)"); return; } const p = parseSave(j); if (p.ok && p.sim) { if (e.kind === "decision") prepareDecisionLoad(p.sim); void this.adopt(p); } else this.toast("読み込めません: " + (p.problems[0] ?? "壊れたデータ")); } }, "読込")));
     };
     if (!list.length) body.append(h("div", { class: "slot-row", id: "cp-empty" }, h("span", { class: "slot-text empty" }, "(この世界ではまだありません)")));
     for (const e of list) row(e, false);

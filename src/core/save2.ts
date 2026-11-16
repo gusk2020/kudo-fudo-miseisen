@@ -124,9 +124,19 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (bad.length) return no(`道路網の整合性エラー: ${bad[0]}`);
   return { sim, problems: note };
 }
+/**
+ * Stage 41 / field report B: "地形が保存時と一致しません(地形ハッシュ不一致)" on an old manual slot. The check is RIGHT to refuse: measured against the published Stage 31-35 build (ce0327b), the same default map now differs in the saved terrain (docs/SAVE41.md):
+ * with the islands, the grid grew from 487 to 586 rows (南樺太 and the northern Kurils, Stage 36; the old rows keep their cell numbers) but the heights of the old rows are not all the same and the river lines went from 1610 to 1640 segments; without them, the prefecture table
+ * has a 50th prefecture. A route laid on the old terrain cannot be proven to lie on the same ground, so it is not put on this one -- the road data is set aside (never deleted, the stored save is never overwritten) and the map itself loads. This function only says WHICH case it is.
+ */
+export function explainTerrainMismatch(sim: Pick<SimState, "isl36" | "isl22" | "isl20" | "rules1800" | "startYear">): string {
+  const base = "地形が保存時と一致しません(地形ハッシュ不一致)";
+  if (!sim.isl36) return `${base}。この保存は、樺太と北部千島を地図に加える前の版(Stage 36より前)で作られています。その後に地形データ(標高・河川・県の数)が変わったため、道路を同じ地面の上へ安全に戻せません。元の保存は消えておらず、道路データは別に退避されています`;
+  return `${base}。地図の編集(山・湖・島など)か、地形を作る処理の版が保存時と違います。道路を別の地形へ戻すことはしません。元の保存は消えておらず、道路データは別に退避されています`;
+}
 /** After the world exists: every cell must be real land on this map. */
 export function validateSimAgainstWorld(sim: SimState, w: World, terrainHash: string): string | null {
-  if (sim.terrainHash !== terrainHash) return "地形が保存時と一致しません(地形ハッシュ不一致)";
+  if (sim.terrainHash !== terrainHash) return explainTerrainMismatch(sim);
   for (const e of Object.values(sim.edges)) for (const c of e.cells) if (c >= w.N || w.t.land[c] !== 1) return `道路が地形の外にあります(${e.id})`;
   for (const n of Object.values(sim.nodes)) if (n.cell >= w.N) return "ノードが地形の外にあります";
   if ((sim.towns16 ?? []).join(",") !== (w.townIds ?? []).join(",")) return "都市データの種類(町の有無)が保存時と一致しません";   // Stage 16

@@ -37,3 +37,13 @@ describe("Stage 41 A: two 国道0号 (one per relocation) are a valid game and s
     expect(checkIntegrity(back.sim!)).toEqual([]);
   }, 600000);
 });
+
+import { explainTerrainMismatch, validateSimAgainstWorld } from "../../src/core/save2";
+describe("Stage 41 B: a terrain that differs from the saved one is refused with a reason, and nothing is restored onto it", () => {
+  it("the message names the cause for a save from before Stage 36 and for a save of the current generation; the check itself still refuses", () => {
+    const { sim, w } = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true } as never);
+    expect(validateSimAgainstWorld(sim, w, sim.terrainHash)).toBeNull();
+    const cur = { ...sim, isl36: true } as typeof sim, other = validateSimAgainstWorld(cur, w, "deadbeef"); expect(other, "a different terrain hash is refused").toContain("地形ハッシュ不一致"); expect(other).toContain("地図の編集");   // (a save of the current generation: it is the 'edit or version' case)
+    const old = { ...sim, isl36: undefined } as typeof sim; const msg = explainTerrainMismatch(old); expect(msg).toContain("Stage 36より前"); expect(msg).toContain("元の保存は消えて"); expect(validateSimAgainstWorld(old, w, "deadbeef")).toBe(msg);
+  }, 600000);
+});

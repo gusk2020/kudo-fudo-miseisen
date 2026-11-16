@@ -12,6 +12,7 @@
  *
  * 史実と架空: the policies are model levers, not a record of real legislation. The window only exists to let the player steer.
  */
+import { noteDecision } from "./decision41";
 import { DIAL_KEYS, type Dials, type Mod } from "./eras";
 import { effectText } from "./events";
 import { ev } from "./engine";
@@ -82,6 +83,7 @@ export function openWindow(sim: SimState, w: World, y: number): void {
   pol.points += POINTS_PER_WINDOW; pol.lastWindow = y;
   const auto = pol.mode === "auto" || pol.mode === "autoReloc" || (pol.mode === "idleAuto" && pol.away);   // (遷都のみ手動: everything but the relocation event is decided automatically)
   if (!auto) { pol.pending = { year: y, domain: null }; ev(sim, "policy", `${y}年: 政策介入の機会(持ち点${pol.points}点)`, "10年ごとの政策介入。時間を止めて、介入する分野を選べます", {}); return; }
+  noteDecision("policy", y, sim, (c) => { c.policy!.pending = { year: y, domain: null }; });   // Stage 41: the window is kept as a save point with the choice still open
   autoResolve(sim, w);
 }
 /** No player: pick the domain whose best policy is most needed and adopt by the world's own scores, spending nothing (points are carried over). */

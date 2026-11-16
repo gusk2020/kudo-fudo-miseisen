@@ -129,6 +129,8 @@ export interface SimState {
   oldCities40?: import("./oldcity40").OldCityDef[];
   /** Stage 40 (Issue #66): new railway lines that failed the technology check, by candidate (city ids and cells), with [year, the longest tunnel that year's technology could dig] (planning.ts RAIL_RETRY_YEARS). 1800-start games only */
   railFail?: Record<string, [number, number]>;
+  /** Stage 41: set on a game loaded from a 判断直前 save point: the automatic mode it was saved in, held back (policy.mode is 'priority') until the decision is made (decision41.ts). Absent = none */
+  resumeMode?: "auto" | "autoReloc" | "idleAuto";
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
   dev37?: Record<string, number>;
