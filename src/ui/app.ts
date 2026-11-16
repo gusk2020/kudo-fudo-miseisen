@@ -261,7 +261,8 @@ export class App {
     if (this.building > 0) add(`1950年の道路網を生成中 ${Math.round(this.building * 100)}%`, "bad");
     if (this.s.step === 6 && this.sim) {
       const m = summary(this.sim), sp = this.sim.speed;
-      add(`${m.ym}`, "ok"); void sp;   // (Stage 41: the speed is no longer a pill of the top line; the speed buttons are unchanged) add(this.sim.stage3 ? `路線${m.routes}本 道路${m.roadKm.toLocaleString()}km・鉄道${m.railKm.toLocaleString()}km` : `路線${m.routes}本 総延長${m.km.toLocaleString()}km`); if (this.sim.policy?.pending) add("政策介入の待機中", "bad"); add(`建設中${m.building} 未成${m.unbuilt}`);
+      // (Stage 41: the speed is no longer a pill of the top line; the speed buttons are unchanged)
+      add(`${m.ym}`, "ok"); void sp; add(this.sim.stage3 ? `路線${m.routes}本 道路${m.roadKm.toLocaleString()}km・鉄道${m.railKm.toLocaleString()}km` : `路線${m.routes}本 総延長${m.km.toLocaleString()}km`); if (this.sim.policy?.pending) add("政策介入の待機中", "bad"); add(`建設中${m.building} 未成${m.unbuilt}`);
       add(`状態 良${m.good}/可${m.fair}/悪${m.poor}`); add(`休止${m.dormant} 閉鎖${m.closed} 廃道${m.lost}`);
       { const ini = initialPolicy(this.sim), cur = currentPolicy(this.sim); if (ini && cur) { const a = policyText(ini), b = policyText(cur); add(`初期方針 ${a}`); add(`現在の方針 ${b}`, a === b ? "" : "ok"); } }   // Stage 41: what the game started with, and what is stressed now (differs after an era change, a relocation or an intervention)
       const last = this.sim.events[this.sim.events.length - 1]; if (last) add(`最近: ${last.text}`);
