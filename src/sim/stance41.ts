@@ -10,11 +10,13 @@ export const STANCE_LABEL: Record<EraKey, string> = { heisei: "均衡", shubun: 
 export const FOCUS_LABEL = { concentrate: "集中", disperse: "分散" } as const, COAST_LABEL = { japansea: "日本海側", pacific: "太平洋側", neutral: "中立" } as const;
 export interface PolicyView { stance: string; city: string; region: string }
 const view = (stance: EraKey | undefined, focus?: "concentrate" | "disperse", coast?: "japansea" | "pacific" | "neutral"): PolicyView => ({ stance: stance ? STANCE_LABEL[stance] ?? "—" : "—", city: focus ? FOCUS_LABEL[focus] : "—", region: coast ? COAST_LABEL[coast] : "—" });
-export function currentPolicy(sim: Pick<SimState, "kaigen">): PolicyView | null {
-  const k = sim.kaigen; if (!k?.eras.length) return null; const e = k.eras[k.eras.length - 1]; return view(e.stance, k.recon?.focus, k.recon?.coast);
+/** A game of the single-era kind (no era list) has the one stance it was made with (`sim.era`) for ever: it is both its initial and its current policy. */
+const singleEra = (sim: { era?: string }): PolicyView | null => (sim.era && sim.era in STANCE_LABEL ? view(sim.era as EraKey) : null);
+export function currentPolicy(sim: Pick<SimState, "kaigen"> & { era?: string }): PolicyView | null {
+  const k = sim.kaigen; if (!k?.eras.length) return singleEra(sim); const e = k.eras[k.eras.length - 1]; return view(e.stance, k.recon?.focus, k.recon?.coast);
 }
-export function initialPolicy(sim: Pick<SimState, "kaigen" | "initPolicy">): PolicyView | null {
+export function initialPolicy(sim: Pick<SimState, "kaigen" | "initPolicy"> & { era?: string }): PolicyView | null {
   if (sim.initPolicy) return view(sim.initPolicy.stance, sim.initPolicy.focus, sim.initPolicy.coast);
-  const first = sim.kaigen?.eras[0]; return first ? view(first.stance) : null;
+  const first = sim.kaigen?.eras[0]; return first ? view(first.stance) : singleEra(sim);
 }
 export const policyText = (v: PolicyView): string => `${v.stance}・${v.city}・${v.region}`;

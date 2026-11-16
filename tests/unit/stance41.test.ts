@@ -16,5 +16,7 @@ describe("Stage 41: initial and current policy", () => {
   it("a game saved before the initial policy was recorded shows its first era's stance and a dash for the rest, never a guess; no era list = nothing", () => {
     const { sim } = stage3Sim("heisei", 7, true, 1, 2, true); const old = { ...sim, initPolicy: undefined }; const ini = initialPolicy(old)!; expect(ini.stance).toBe("道路重視"); expect(ini.city).toBe("—"); expect(ini.region).toBe("—");
     expect(currentPolicy({ kaigen: undefined })).toBeNull(); expect(initialPolicy({ kaigen: undefined, initPolicy: undefined })).toBeNull();
+    // a game of the single-era kind (no era list): its one stance is both the initial and the current policy
+    const single = { kaigen: undefined, initPolicy: undefined, era: "kobun" } as const; expect(policyText(currentPolicy(single)!)).toBe(policyText(initialPolicy(single)!)); expect(currentPolicy(single)!.stance).toBe("旧版"); expect(currentPolicy({ kaigen: undefined, era: "nope" })).toBeNull();
   }, 600000);
 });
