@@ -110,6 +110,22 @@ test("policy window: time stops at 1960 in 介入優先, points are spent with d
   expect(errs).toEqual([]);
 });
 
+test("Stage 41 night view: dark sheet + lights, on/off any time, light grows with the years, taps still open cities, nothing of the game changes", async ({ page }) => {
+  const errs = watchErrors(page); await startReal(page); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.runner.settle(); });
+  const lum = () => page.evaluate(() => { const c = document.querySelector("#stage canvas") as HTMLCanvasElement; const t = document.createElement("canvas"); t.width = 160; t.height = 240; const g = t.getContext("2d")!; (window as any).__kfm.r.app.renderer.render((window as any).__kfm.r.app.stage); g.drawImage(c, 0, 0, 160, 240); const d = g.getImageData(0, 0, 160, 240).data; let mean = 0, warm = 0; for (let i = 0; i < d.length; i += 4) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; mean += l; if (d[i] > 150 && d[i] > d[i + 2] + 40) warm++; } return { mean: mean / (d.length / 4), warm }; });
+  expect(await page.isVisible("#btn-night"), "the moon button is on the map").toBe(true); const day = await lum(); const before = JSON.stringify(await app(page, "a => [a.sim.month, a.sim.rngState, Object.keys(a.sim.edges).length]"));
+  await page.click("#btn-night"); await page.waitForTimeout(500); expect(await app(page, "a => a.night")).toBe(true); expect(await page.getAttribute("#btn-night", "aria-pressed")).toBe("true");
+  const n1 = await lum(); expect(n1.mean, "the map is dark").toBeLessThan(day.mean * 0.5); expect(n1.warm, "there are lights").toBeGreaterThan(5);
+  const cost = await page.evaluate(() => { const a = (window as any).__kfm; a.nightKey = ""; const t = performance.now(); a.updateNight(); return performance.now() - t; }); console.log(`T41 night update cost: ${cost.toFixed(0)} ms (software renderer)`); expect(cost).toBeLessThan(1500);
+  await page.evaluate(() => { const a = (window as any).__kfm; a.ffYears(40); a.runner.settle(); a.updateNight(); }); await page.waitForTimeout(400); const n2 = await lum(); console.log(`T41 night warm px ${n1.warm} -> ${n2.warm}`); expect(n2.warm, "forty years later more of the country is lit").toBeGreaterThan(n1.warm); if (process.env.KFM_SHOT) { await page.screenshot({ path: process.env.KFM_SHOT + "/night-1990.png" }); await page.evaluate(() => { const a = (window as any).__kfm; a.setNight(false); }); await page.waitForTimeout(500); await page.screenshot({ path: process.env.KFM_SHOT + "/day-1990.png" }); await page.evaluate(() => (window as any).__kfm.setNight(true)); await page.waitForTimeout(500); }
+  // a tap on a city still opens its card while the view is dark
+  const name = "名古屋市"; const p = await cityPos(page, name); await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 1.6 }), p); await page.waitForTimeout(700); const sc = await screenOf(page, p); await page.mouse.click(sc[0], sc[1]); await page.waitForSelector("#city-card:not([hidden])", { timeout: 4000 }); expect(await page.textContent("#city-card-title")).toContain("名古屋");
+  await page.click("#city-card-close"); const afterMonth = JSON.stringify(await app(page, "a => [a.sim.month > 0, Object.keys(a.sim.edges).length > 0]")); expect(afterMonth).toBe("[true,true]"); void before;
+  await page.click("#btn-night"); await page.waitForTimeout(600); expect(await app(page, "a => a.night")).toBe(false); await page.evaluate(() => (window as any).__kfm.r.fit((window as any).__kfm.s)); await page.waitForTimeout(600); const off = await lum(); expect(off.mean, "back to the day map").toBeGreaterThan(n1.mean * 1.8);
+  await page.click("#dock-layers"); expect(await page.isVisible("#layer-night")).toBe(true); await page.check("#layer-night"); expect(await app(page, "a => a.night")).toBe(true); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 }); expect(await app(page, "a => a.night"), "the choice is remembered on this phone").toBe(true);
+  expect(errs).toEqual([]);
+});
+
 test("the real-Japan game survives a reload; if the latest save is corrupt the backup is restored and the broken copy is kept", async ({ page }) => {
   const errs = watchErrors(page); await startReal(page, "shubun");
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.ffYears(6); });
