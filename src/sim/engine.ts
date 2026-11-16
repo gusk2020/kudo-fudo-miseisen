@@ -49,6 +49,7 @@ import { DEFAULT_CAPITAL, DEFAULT_SUB, DEFAULT_PALACE, prefOfSeat } from "../cor
 import { realToLonLat } from "../core/data";
 import type { Vec } from "../core/types";
 import { autoEraIdx } from "./simple41";
+import { isSpecialSym, specialOfficial } from "./special41";
 import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, relocFirstOf, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
@@ -91,7 +92,7 @@ export function ev(sim: SimState, kind: string, text: string, cause: string, ref
 }
 export const prefName = (id: string) => JAPAN.prefectures.find((p) => p.id === id)?.name ?? id;
 /** Official name only (国道N号). */
-export const routeOfficial = (r: SimRoute) => r.kaido ? `${r.kaido}(${GRADE_LABEL[r.grade]}${r.number}号)` : GRADE_MODE[r.grade] === "rail" ? `${r.opName ?? GRADE_LABEL[r.grade]}${r.number}号線` : `${r.scope === "JP" ? "" : prefName(r.scope) + " "}${GRADE_LABEL[r.grade]}${r.number}号${r.gen ? `(${r.gen}年)` : ""}`;
+export const routeOfficial = (r: SimRoute) => r.special && isSpecialSym(r.special) ? specialOfficial(r.special) : r.kaido ? `${r.kaido}(${GRADE_LABEL[r.grade]}${r.number}号)` : GRADE_MODE[r.grade] === "rail" ? `${r.opName ?? GRADE_LABEL[r.grade]}${r.number}号線` : `${r.scope === "JP" ? "" : prefName(r.scope) + " "}${GRADE_LABEL[r.grade]}${r.number}号${r.gen ? `(${r.gen}年)` : ""}`;
 /** Official name plus the earned nickname, if any: 国道N号(通称:酷道). */
 export const routeLabel = (r: SimRoute) => routeOfficial(r) + (r.nick ? `(通称:${NICK_LABEL[r.grade]})` : "");
 export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).year;
@@ -138,6 +139,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
   if (firstCand) sim.initPolicy = { stance: firstCand.stance, ...(firstCand.recon ? { coast: firstCand.recon.coast, focus: firstCand.recon.focus } : {}) };   // Stage 41: what the game was started with (the top line shows it beside the policy now)
+  if (opts.stage3 && firstCand) sim.special41 = true;   // Stage 41 #8: the special-route rules (special41.ts) for every new game; a game saved before keeps the old rule
   if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false, sim.subCapital2); }
   if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.g34new) sim.rec34 = { sites: [], log: [...w.g34new.log], done: [...w.g34new.done] }; if (w.islets) { sim.isl20 = true; if (w.t.isletVersion === 3) sim.isl36 = true; if (w.t.isletVersion === 2 || w.t.isletVersion === 3) { sim.isl22 = true; sim.sea22 = true; sim.tier23 = newTier23(); } } if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
   const tokyoId = sim.roles ? undefined : tokyoCity(w)?.id;

@@ -12,7 +12,7 @@ import { stage3Sim } from "./simhelp";
  */
 const line = (a: Vec, b: Vec, n = 20): Vec[] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as Vec);
 function twoRoad0() {
-  const g = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true } as never), { sim, w } = g, a = homeCity(w, sim.capital)!, b = subCity(w, sim.subCapital)!;
+  const g = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true } as never), { sim, w } = g; delete sim.special41; /* (the old rule: every relocation makes another dated 国道0号 -- what a game saved before Stage 41 #8 keeps) */ const a = homeCity(w, sim.capital)!, b = subCity(w, sim.subCapital)!;
   const mk = (year: number) => { sim.month = (year - sim.startYear) * 12; const p = previewNational(w, line(a.pos, b.pos), sim.capital, sim.subCapital, { year }); const r = performRoad0(sim, w, p); if (!r) throw new Error("road0 not laid: " + p.reasons.join()); return r; };
   const first = mk(1900), second = mk(2000); return { g, sim, first, second };
 }

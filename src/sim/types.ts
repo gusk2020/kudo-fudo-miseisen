@@ -53,7 +53,7 @@ export const modeOf = (x: { mode?: Mode }): Mode => x.mode ?? "road";
 export interface RouteEdgeRef { edgeId: string; dir: 1 | -1 }
 /** A numbered route: designation over edges. The stable `id` never changes; grade/number may (promotion/demotion). */
 export interface SimRoute {
-  id: string; scope: string; grade: Grade; number: number; name: string; edges: RouteEdgeRef[]; /** Stage 25: the year of a later 国道0号 (the one of a relocation after 2200) */ gen?: number; /** Stage 36: the name of a main highway of the 1800 start (東海道 ...); the official 国道N号 number is kept */ kaido?: string;
+  id: string; scope: string; grade: Grade; number: number; name: string; edges: RouteEdgeRef[]; /** Stage 41 #8: the symbol of a special route (A 元 始 ㄅ ᚠ Ⰰ ꀀ ᚛ 𓃀 ⌘ ꙮ; special41.ts). 国道1号/国道0号 are special routes by their number */ special?: string; /** Stage 25: the year of a later 国道0号 (the one of a relocation after 2200) */ gen?: number; /** Stage 36: the name of a main highway of the 1800 start (東海道 ...); the official 国道N号 number is kept */ kaido?: string;
   since: number; active: boolean; lowYears: number; highYears: number;
   history: { month: number; grade: Grade; number: number; text: string; scope?: string; opName?: string }[];
   endMonth?: number;        // month the designation ended (abolished); the line stays in the ledger
@@ -134,6 +134,8 @@ export interface SimState {
   initPolicy?: { stance: import("./eras").EraKey; coast?: "japansea" | "pacific" | "neutral"; focus?: "concentrate" | "disperse" };
   /** Stage 41 #4: the answers of the simple intervention mode (kept for the automatic modes when `keep`) */
   simple41?: import("./simple41").Simple41;
+  /** Stage 41 #8: the game uses the special-route rules (special41.ts): a relocation builds the next symbol, not another dated 国道0号. Absent = an older game */
+  special41?: true;
   resumeMode?: "auto" | "autoReloc" | "idleAuto";
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */

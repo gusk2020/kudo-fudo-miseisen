@@ -2,6 +2,8 @@
 const START_1800 = typeof location === "undefined" || new URLSearchParams(location.search).get("start") !== "1950";
 import { lsKey } from "../core/ns";
 import { nightField } from "../sim/night41";
+import { installGlyphCheck } from "./glyph41";
+import { canBuildNext, nextSpecial, specialFullName } from "../sim/special41";
 import type { RecLog } from "../sim/reclaim34";
 import { buildIndex } from "../sim/network";
 import { LAKE_LIST } from "../render/lakes";
@@ -131,7 +133,7 @@ export class App {
   private saveLocked = false; private prevCopied = false; private bootPending = false;   // Stage 36: a game read at start-up and not yet checked against the terrain -- nothing is written over its save until it has been accepted or put aside
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
-    const a = new App(); a.real = real; setDecisionSink((d) => a.keepDecisionPoint(d)); a.r = await Renderer.create(host);
+    const a = new App(); a.real = real; installGlyphCheck(); setDecisionSink((d) => a.keepDecisionPoint(d)); a.r = await Renderer.create(host);
     if (real) { a.store.replace(realState()); document.body.classList.add("real"); a.makeNightButton(); try { if (localStorage.getItem(lsKey("night")) === "1") { a.night = true; a.r.setNight(true); a.nightBtn?.setAttribute("aria-pressed", "true"); a.nightBtn?.classList.add("on"); } } catch { /* storage may be blocked */ } try { if (localStorage.getItem(lsKey("bg")) !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
       try { const u = JSON.parse(localStorage.getItem(lsKey("ui")) || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; a.legendShown = u.legendShown === true; a.legendSide = u.legendSide === "left" ? "left" : "right"; } catch { /* ignore */ } a.lite = localStorage.getItem(lsKey("lite")) === "1"; } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
@@ -721,6 +723,8 @@ export class App {
     const sim = this.sim!, a = this.activeSeats(), pos = (p: string) => w.cities.find((c) => c.pref === p && c.kind === "capital")?.pos ?? null;
     return { capital: homeCity(w, a.capital)?.pos ?? pos(a.capital), sub: subCity(w, a.sub)?.pos ?? pos(a.sub), sub2: sim.subCapital2 ? subCity(w, sim.subCapital2)?.pos ?? pos(sim.subCapital2) : null, palace: sim.palace?.pos ?? pos(a.palace) };
   }
+  /** Stage 41 #8: what this relocation's line is called: 国道0号 (the first), or the next special symbol of the game (A号 ...). `done` = after it was opened (the symbol just used) */
+  road0Name(): string { const sim = this.sim; if (!sim?.special41) return "国道0号"; const sym = nextSpecial(sim) ?? "0"; return sym === "0" || sym === "1" ? "国道0号" : specialFullName(sym); }
   road0Told = false; e22: Choice2200 | null = null; e22Pick: "capital" | "sub" | "sub2" | "palace" | null = null;
   startE22Map(role: "capital" | "sub" | "sub2" | "palace") { { const d = this.e22, pf = d?.[role === "sub" ? "sub" : role], ps = d ? (role === "capital" ? d.capitalPos : role === "sub" ? d.subPos : role === "sub2" ? d.subPos2 : d.palacePos) : null; if (pf) this.centerOnPref(pf, ps ?? null); } this.e22Pick = role; this.seatPick = null; this.r.seatPending = null; this.tool = "seatpick"; this.sheet = null; this.buildSheet(); this.buildToolbar(); this.render(); }
   endE22Map() { this.e22Pick = null; this.seatPick = null; this.r.seatPending = null; if (this.tool === "seatpick") this.tool = "view"; this.sheet = "e2200"; this.buildSheet(); this.buildToolbar(); this.render(); }
@@ -768,8 +772,9 @@ export class App {
     const sim = this.sim, w = this.world; if (!sim || !w || sim.e2200?.state !== "road0") return;
     if (skip) { close2200(sim); delete this.cerDraft.kokudo0; this.tool = "view"; this.buildUI(); this.renderRoads(); void this.persist(true); void this.takeCheckpoint(); return; }
     const d = this.cerDraft.kokudo0; if (!d?.prev.ok) return; this.runner?.settle();
-    const info = performRoad0(sim, w, d.prev as NatPreview); if (!info) { this.toast("国道0号を開通できませんでした"); return; }
-    close2200(sim, info); delete this.cerDraft.kokudo0; this.tool = "view"; this.toast(`国道0号が開通(転用${info.reusedKm}km・復旧${info.restoredKm}km・新設${info.newKm}km)`); this.renderRoads(); this.buildUI(); void this.persist(true); void this.takeCheckpoint();   // (Stage 29: the save after the event is taken as soon as 国道0号 is done)
+    const gate0 = sim.special41 ? canBuildNext(sim) : null; if (gate0 && !gate0.ok) { this.toast(`${gate0.reason}。このまま見送って確定してください`); return; }
+    const nm = this.road0Name(); const info = performRoad0(sim, w, d.prev as NatPreview); if (!info) { this.toast(`${this.road0Name()}を開通できませんでした`); return; }
+    close2200(sim, info); delete this.cerDraft.kokudo0; this.tool = "view"; this.toast(`${nm}が開通(転用${info.reusedKm}km・復旧${info.restoredKm}km・新設${info.newKm}km)`); this.renderRoads(); this.buildUI(); void this.persist(true); void this.takeCheckpoint();   // (Stage 29: the save after the event is taken as soon as 国道0号 is done)
   }
   /** Stage 21: 戻る in the map choice: back to the prefecture list, nothing changed. */
   backToSeatList() { if (this.e22Pick) { this.endE22Map(); return; } this.seatPick = null; this.r.seatPending = null; this.seatMode = "list"; if (this.tool === "seatpick") this.tool = "view"; this.buildToolbar(); this.render(); }
@@ -1242,7 +1247,7 @@ export class App {
     tb.append(sp);
     if (this.sim.e2200?.state === "road0") {   // Stage 22: 国道0号 -- drawn like 国道1号, either way round; opened by its own ceremony
       const d0 = this.cerDraft.kokudo0, nat0 = d0?.prev as NatPreview | undefined, g0 = h("div", { class: "grp", id: "road0-row" });
-      g0.append(this.tbtn("国道0号を描く" + (d0 ? (d0.prev.ok ? " 済" : " 要修正") : ""), this.tool === "cer-kokudo0", () => this.setTool("cer-kokudo0"), "tool-cer-kokudo0"), h("button", { id: "road0-skip", type: "button", onclick: () => this.rwSkipRoad() }, "国道0号はつくらない"));
+      g0.append(this.tbtn(`${this.road0Name()}を描く` + (d0 ? (d0.prev.ok ? " 済" : " 要修正") : ""), this.tool === "cer-kokudo0", () => this.setTool("cer-kokudo0"), "tool-cer-kokudo0"), h("button", { id: "road0-skip", type: "button", onclick: () => this.rwSkipRoad() }, "国道0号はつくらない"));
       if (this.rwStage < 3) tb.append(h("div", { class: "grp", id: "rw-nav" }, h("span", { id: "rw-head", class: "note", role: "status", "aria-live": "polite" }, "遷都 3/4  国道0号"), h("button", { id: "rw-back", type: "button", onclick: () => this.rwBack() }, "‹ 戻る"), h("button", { id: "rw-review", type: "button", class: "mode on", disabled: d0?.prev.ok ? null : "", onclick: () => this.rwReview() }, "最終確認 ›")));   // (the review sheet has its own 戻る / 確定)
       if (d0) g0.append(h("button", { id: "road0-undo", type: "button", disabled: !d0.past.length, onclick: () => this.cerUndo("kokudo0") }, "↶"), h("button", { id: "road0-restart", type: "button", onclick: () => this.cerRestart("kokudo0") }, "描き直す"));
       tb.append(g0); if (d0) tb.append(h("div", { id: "cer-status-kokudo0", class: "note " + (d0.prev.ok ? "okc" : "badc") }, d0.prev.ok ? `✓ 国道0号: 約${d0.prev.lengthKm}km${nat0?.ferries?.length ? `／フェリー${nat0.ferries.length}本` : ""}${nat0?.through?.length ? `／経由: ${nat0.through.map((n) => n.replace(/市$/, "")).join("・")}` : ""}(既存の道・旧道・廃道を優先して転用)` : `✗ ${d0.prev.reasons[0] ?? "経路を作れません"}`));

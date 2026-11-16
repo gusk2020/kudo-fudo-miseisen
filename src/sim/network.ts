@@ -250,7 +250,7 @@ export function checkIntegrity(sim: SimState): string[] {
   }
   const seen = new Set<string>();
   for (const r of Object.values(sim.routes)) {
-    const key = `${r.grade}:${r.scope}:${r.number}${r.gen ? `:${r.gen}` : ""}`;   // (Stage 41: a LATER 国道0号 is a route of its own, told by its year -- one per relocation, so two are a valid game; the same number AND year twice is still a duplicate)
+    const key = r.special ? `special:${r.special}` : `${r.grade}:${r.scope}:${r.number}${r.gen ? `:${r.gen}` : ""}`;   // (Stage 41: a LATER 国道0号 is a route of its own, told by its year -- one per relocation, so two are a valid game; the same number AND year twice is still a duplicate)
     if (r.active) { if (seen.has(key)) bad.push(`route number duplicated: ${key}`); seen.add(key); }
     let prev: string | null = null;
     for (const ref of r.edges) {
