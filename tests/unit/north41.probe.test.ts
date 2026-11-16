@@ -18,7 +18,7 @@ const GROUPS: Record<string, string[]> = { 札幌県: ["HK-SAP"], 函館県: ["H
       g.sim.policy!.mode = "auto"; const { sim, w } = g;
       for (const y of [1900, 1950, 2000]) {
         advance(sim, w, 12 * (y - yearOf(sim)));
-        const popBy: Record<string, number> = {}, townBy: Record<string, number> = {}; for (const id in sim.cities) { const c = w.cityById.get(id); if (!c) continue; const p = w.prefOf(c.cell) ?? c.pref; popBy[p] = (popBy[p] ?? 0) + sim.cities[id].pop; }
+        const popBy: Record<string, number> = {}, townBy: Record<string, number> = {}; for (const id in sim.cities) { const c = w.cityById.get(id); if (!c) continue; const p = w.prefOf(c.cell) ?? c.pref ?? "?"; popBy[p] = (popBy[p] ?? 0) + sim.cities[id].pop; }
         for (const id in sim.settlements) { const s = sim.settlements[id]; if (s.gone) continue; const p = w.prefOf(s.cell) ?? "?"; townBy[p] = (townBy[p] ?? 0) + s.pop; }
         const km: Record<string, { road: number; rail: number }> = {}; for (const e of Object.values(sim.edges)) { if (e.state !== "open" || e.facility === "ferry") continue; const p = w.prefOf(e.cells[Math.floor(e.cells.length / 2)]) ?? "?"; (km[p] ??= { road: 0, rail: 0 })[e.mode === "rail" ? "rail" : "road"] += e.lengthKm; }
         const ports = (sim.hubs ? Object.values(sim.hubs.ports) : []).filter((p) => !p.until).map((p) => w.prefOf(w.cityById.get(p.city)?.cell ?? -1) ?? "?"), air = (sim.hubs ? Object.values(sim.hubs.airports) : []).filter((p) => !p.until).map((p) => w.prefOf(w.cityById.get(p.city)?.cell ?? -1) ?? "?");
