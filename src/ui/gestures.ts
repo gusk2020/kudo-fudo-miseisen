@@ -17,6 +17,8 @@ export interface EditHandler {
 }
 /** A tap is a touch that stays within this many CSS px and ends within this many ms. */
 export const TAP_SLOP_PX = 10, TAP_MAX_MS = 500;
+/** Why the last one-finger touch that ended was NOT a tap (null = it was one, or none ended yet). For diagnosis and tests only: `ms` is the time between the press and the release as the browser stamped them. */
+export const tapDiag: { miss: null | { why: "slow" | "moved" | "other"; ms: number } } = { miss: null };
 export function attachGestures(canvas: HTMLElement, r: Renderer, h: EditHandler) {
   const ptrs = new Map<number, Vec>(); let mode: "none" | "pan" | "edit" | "pinch" | "multi" = "none";
   let pinch = { d: 0, mid: [0, 0] as Vec }; let last: Vec = [0, 0];
@@ -40,7 +42,7 @@ export function attachGestures(canvas: HTMLElement, r: Renderer, h: EditHandler)
   canvas.addEventListener("pointermove", (e) => {
     if (!ptrs.has(e.pointerId)) return;
     e.preventDefault();
-    const p = pos(e); ptrs.set(e.pointerId, p); if (tap && Math.hypot(p[0] - tap.p[0], p[1] - tap.p[1]) > TAP_SLOP_PX) tap = null;
+    const p = pos(e); ptrs.set(e.pointerId, p); if (tap && Math.hypot(p[0] - tap.p[0], p[1] - tap.p[1]) > TAP_SLOP_PX) { tapDiag.miss = { why: "moved", ms: e.timeStamp - tap.t }; tap = null; }
     if (mode === "multi" && ptrs.size >= 2) { const [a, b] = [...ptrs.values()]; h.multiMove?.(r.screenToWorld(a[0], a[1]), r.screenToWorld(b[0], b[1])); }
     else if (mode === "pinch" && ptrs.size >= 2) {
       const n = pinchState(), before = r.screenToWorld(pinch.mid[0], pinch.mid[1]);
@@ -54,7 +56,8 @@ export function attachGestures(canvas: HTMLElement, r: Renderer, h: EditHandler)
   const up = (e: PointerEvent) => {
     if (!ptrs.has(e.pointerId)) return;
     ptrs.delete(e.pointerId); const t = tap; tap = null;
-    if (t && e.type === "pointerup" && mode === "pan" && ptrs.size === 0 && e.timeStamp - t.t <= TAP_MAX_MS) h.tap?.(r.screenToWorld(t.p[0], t.p[1]), t.p);
+    if (t && e.type === "pointerup" && mode === "pan" && ptrs.size === 0 && e.timeStamp - t.t <= TAP_MAX_MS) { tapDiag.miss = null; h.tap?.(r.screenToWorld(t.p[0], t.p[1]), t.p); }
+    else if (t) tapDiag.miss = { why: e.timeStamp - t.t > TAP_MAX_MS ? "slow" : "other", ms: e.timeStamp - t.t };
     if (mode === "edit") { if (e.type === "pointercancel") h.cancel(); else h.end(); }
     if (mode === "multi") { h.multiEnd?.(e.type === "pointercancel"); mode = "pan"; }
     if (ptrs.size === 0) mode = "none";
