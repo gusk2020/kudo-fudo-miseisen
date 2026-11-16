@@ -48,6 +48,7 @@ import { reconGrowth, reconIndustry, reconMeanCore, reconOf, reconShare } from "
 import { DEFAULT_CAPITAL, DEFAULT_SUB, DEFAULT_PALACE, prefOfSeat } from "../core/seat";
 import { realToLonLat } from "../core/data";
 import type { Vec } from "../core/types";
+import { autoEraIdx } from "./simple41";
 import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, relocFirstOf, stanceAt } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
@@ -624,7 +625,7 @@ export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
 /** An era change is due: open it; if nobody is there to choose (or the setting says so) the first candidate (the real one for 1989/2019, else fewest strokes) is taken. */
 export function startKaigen(sim: SimState, year: number) {
   const k = sim.kaigen!; openKaigen(k, year); const pol = sim.policy, auto = !!pol && (pol.mode === "auto" || pol.mode === "autoReloc" || (pol.mode === "idleAuto" && pol.away));
-  if (auto) { noteDecision("kaigen", year, sim); settleKaigen(sim, 0, true); return; }   // (Stage 41: the era change is kept as a save point with the choice still open)
+  if (auto) { noteDecision("kaigen", year, sim); settleKaigen(sim, autoEraIdx(sim, sim.kaigen!.pending!.cands), true); return; }   // (Stage 41: the era change is kept as a save point with the choice still open)
   ev(sim, "kaigen", `${year}年: 改元の時を迎えた(候補${k.pending!.cands.length}案)`, "元号を選んでください。時間は止まっています", {});
 }
 export function settleKaigen(sim: SimState, idx: number, auto = false) {
@@ -636,7 +637,7 @@ export function settleKaigen(sim: SimState, idx: number, auto = false) {
 const STANCE_NAME: Record<string, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kobun: "旧版" };
 export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
 /** Fast-forward with no player (tests, tools): a policy window that opens is resolved by the world's own scores. */
-export function advance(sim: SimState, w: World, months: number) { if (sim.oldmuni40) syncOldCities(sim, w); for (let i = 0; i < months; i++) {   /* Issue #67: two games on one world (tests only) each get their own promoted cities back before they run */ stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, 0, true); stepMonth(sim, w); } if (waiting2200(sim)) break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
+export function advance(sim: SimState, w: World, months: number) { if (sim.oldmuni40) syncOldCities(sim, w); for (let i = 0; i < months; i++) {   /* Issue #67: two games on one world (tests only) each get their own promoted cities back before they run */ stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, autoEraIdx(sim, sim.kaigen.pending.cands), true); stepMonth(sim, w); } if (waiting2200(sim)) break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };

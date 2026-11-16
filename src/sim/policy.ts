@@ -16,6 +16,7 @@ import { noteDecision } from "./decision41";
 import { DIAL_KEYS, type Dials, type Mod } from "./eras";
 import { effectText } from "./events";
 import { ev } from "./engine";
+import { autoSimple } from "./simple41";
 import { reformJnr } from "./reform";
 import { modeOf, type SimState } from "./types";
 import { capacityOf } from "./demand";
@@ -88,6 +89,7 @@ export function openWindow(sim: SimState, w: World, y: number): void {
 }
 /** No player: pick the domain whose best policy is most needed and adopt by the world's own scores, spending nothing (points are carried over). */
 export function autoResolve(sim: SimState, w: World): PolicyRecord | null {
+  const kept = autoSimple(sim); if (kept) return kept;   // Stage 41 #4: 「今後の自動でも続ける」 -- the player's simple answers decide this window
   const env = computeEnv(sim); let bestD: Domain = "politics", bv = -1;
   for (const d of ["politics", "economy", "opinion"] as Domain[]) { const t = topFive(env, d)[0].base; if (t > bv) { bv = t; bestD = d; } }
   return resolveWindow(sim, w, bestD, {}, true);
