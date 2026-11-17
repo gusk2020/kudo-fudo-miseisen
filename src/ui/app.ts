@@ -1,4 +1,6 @@
 /** Stage 36: a new game starts in 1800 (the fictional timeline); ?start=1950 starts the older 1950 game (kept for its own tests and for comparison) */
+/** the decade mode's share of each frame (ms): the rest is left to the screen and the finger */
+const TURBO_BUDGET_MS = 26;
 const START_1800 = typeof location === "undefined" || new URLSearchParams(location.search).get("start") !== "1950";
 import { lsKey } from "../core/ns";
 import { ORIGIN_LABEL, STANCE_CHOICES, firstEraCands } from "../sim/era86";
@@ -903,7 +905,11 @@ export class App {
   afterPolicy() { this.lastTick = performance.now(); this.acc = 0; this.persist(true); this.renderRoads(); this.status(); this.buildSheet(); }
   /** Test/debug hook: advance synchronously (the normal clock is slower than a test can wait). */
   ffYears(n: number) { if (!this.sim || !this.world) return; this.runner?.settle(); advance(this.sim, this.world, 12 * n); this.renderRoads(); this.status(); this.buildUI(); }
-  setSpeed(n: 0 | 1 | 5 | 20) { if (!this.sim) return; this.sim.speed = n; this.acc = 0; this.lastTick = performance.now(); this.persist(); this.buildUI(); }
+  /** Issue #88-4: 「10年ごと」 -- faster than x20. Every month is still computed in full, in the same order (the same game as at any other speed: nothing is approximated); what is left out is the waiting and the redrawing between decades.
+   *  It stops by itself wherever the game waits for the player (a policy window, an era change, a relocation -- in the automatic modes those are decided as always and kept as 判断直前 save points) and goes on after the choice. Not saved with the game: a reload starts at x20. */
+  turbo = false; turboMonths = 0; private lastTurboDraw = 0;
+  setTurbo(on: boolean) { if (!this.sim) return; this.turbo = on; if (on && this.sim.speed === 0) this.sim.speed = 20; this.acc = 0; this.lastTick = performance.now(); this.buildUI(); }
+  setSpeed(n: 0 | 1 | 5 | 20) { if (!this.sim) return; this.turbo = false; this.sim.speed = n; this.acc = 0; this.lastTick = performance.now(); this.persist(); this.buildUI(); }
   /** Real-time clock: only while this page is visible. Tab hidden or app closed = no simulation; return = capped catch-up. */
   tickClock(frameTime = performance.now()) {
     const now = frameTime, sim = this.sim, w = this.world, run = this.runner;
@@ -916,6 +922,11 @@ export class App {
     if (!sim || !w || !run || !sim.ceremonyDone || sim.speed === 0 || document.hidden || this.catching || this.s.step < 5 || sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim)) { this.lastTick = now; return; }
     if (run.waiting) { this.lastTick = now; if (!this.cpBusy) void this.takeCheckpoint(); return; }
     const dt = Math.min(250, Math.max(0, now - this.lastTick)); this.lastTick = now;
+    if (this.turbo) {   // Issue #88-4: the decade mode -- the same months, computed as fast as the phone allows (no pacing by the clock), the map redrawn only at each decade
+      run.request(120, 120); const d0 = Math.floor(yearOf(sim) / 10), doneT = run.pump(TURBO_BUDGET_MS); if (run.waiting && !this.cpBusy) void this.takeCheckpoint(); this.turboMonths += doneT; run.dropped = 0; this.behind = false;
+      if (doneT > 0 && (Math.floor(yearOf(sim) / 10) !== d0 || now - this.lastTurboDraw > 2500 || sim.policy?.pending || sim.kaigen?.pending || waiting2200(sim))) { this.lastTurboDraw = now; this.lastRoads = 0; this.lastHud = 0; this.afterTick(now); }
+      return;
+    }
     this.acc += dt * sim.speed; const n = Math.floor(this.acc / MS_PER_MONTH_X1);
     if (n > 0) { this.acc -= n * MS_PER_MONTH_X1; run.request(n); }
     // at most ~8 ms of simulation per frame: the page stays smooth and the clock simply falls behind on a slow phone
@@ -1281,7 +1292,8 @@ export class App {
     }
     label(`選択中: ${names[this.tool]}`);
     const sp = h("div", { class: "grp" });
-    for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n, () => this.setSpeed(n), "speed-" + n));
+    for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n && !this.turbo, () => this.setSpeed(n), "speed-" + n));
+    sp.append(this.tbtn("10年⏩", this.turbo && this.sim.speed !== 0, () => this.setTurbo(!this.turbo), "speed-turbo"));
     tb.append(sp);
     if (this.sim.e2200?.state === "road0") {   // Stage 22: 国道0号 -- drawn like 国道1号, either way round; opened by its own ceremony
       const d0 = this.cerDraft.kokudo0, nat0 = d0?.prev as NatPreview | undefined, g0 = h("div", { class: "grp", id: "road0-row" });

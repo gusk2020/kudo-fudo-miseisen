@@ -8,7 +8,9 @@ Read with Issue #78/#86/#87/#88 and HANDOFF41C.md. **GitHub facts win over this 
 | `claude/s42-seats` | #88-2 seat bug fix; #88-3 night grain-size slider | done, tested |
 | `claude/s42-special60` | #87 sixty symbols, six fixed years, signs, embedded fonts | done, tested |
 | `claude/s42-era86` | #86 era names / policy apart | done for 1800-start games, tested |
-| `claude/s42-islands` | #88-1 no long/remote island links planned before 2000 | rule written; see "state when this was written" |
+| `claude/s42-islands` | #88-1 no long/remote island links planned before 2000 | done, measured, tested (PR #89 = this stack) |
+| `claude/s42-fast` | #88-4 decade mode; long-run probe and data | done (mode), measured to 2800 (docs/LONG42.md) |
+| `claude/s42-trunk` | capital↔sub-capital by mode: measure + data + builder design | measure only (docs/TRUNK42.md) |
 Because they are stacked, the top branch contains everything: a publish candidate is the top of the stack after CI is green.
 
 ## Stage 1 — seat bug (Issue #88-2): FIXED
@@ -35,11 +37,17 @@ Because they are stacked, the top branch contains everything: a publish candidat
 ## Stage 6 — remote islands before 2000 (Issue #88-1): rule written
 `islandlink37.ts`: `earlyLinkBlock` — a fixed island link may be PLANNED in 1900–1999 only if its gap ≤ 12 km and both shores are within 60 km of a mainland (land mass ≥ 15,000 km²). From 2000 the old rules. Existing/under-way links are not touched. The strait planner between mainlands (`crossing.ts`) is unchanged.
 
-## NOT STARTED (in the owner's order)
-- **Stage 2** capital ↔ sub-capital in all four modes. Entry points: `planning.ts` (rail/road candidates), `hubs.ts` (ports, airports, routes), `ferry.ts`. Idea: a yearly "trunk duty" that, for each capital–sub pair, checks per mode whether a path exists (road graph, rail graph, sea route between ports reachable by land, air route between airports reachable by land) and, if not and the technology exists, raises the priority of exactly one missing piece (never free construction).
-- **Stage 7** 10-year super-fast mode and 1000-year runs. Measure first: `App.ffYears`, `SimRunner`, `sim.events` growth, save size. Nothing measured yet in this session.
+## NOT DONE (in the owner's order)
+- **Stage 2** capital ↔ sub-capital in all four modes: MEASURED (rail is the gap: under road/sea priority 東京–大阪 has no rail link even in 2050; 東京–札幌 never), builder designed in docs/TRUNK42.md, **not implemented**. Original notes: Entry points: `planning.ts` (rail/road candidates), `hubs.ts` (ports, airports, routes), `ferry.ts`. Idea: a yearly "trunk duty" that, for each capital–sub pair, checks per mode whether a path exists (road graph, rail graph, sea route between ports reachable by land, air route between airports reachable by land) and, if not and the technology exists, raises the priority of exactly one missing piece (never free construction).
+- **Stage 7** decade mode DONE; 1000-year run measured (≈5 min in node to 2800, save 4.6 MB; `numreg` grows fastest — compact it next). See docs/LONG42.md.
 - **Stage 8** northern places (design in NORTH41.md: gated place set).
 - **Stage 9** shared data: `kfm.region.v1` exists (SHARED-DATA41.md); nothing new.
 
 ## Before publishing (needs the owner's approval)
 Top of the stack green in CI → `tools/compat-check.mjs dist-9e0a8c8-build new-build` → frozen branch `claude/release-pages-<sha>` → `pages.yml`. Rollback branch of the live version: `claude/release-pages-9e0a8c8`.
+
+## State at the end of this session (2026-11-17 19:37 JST)
+- PR #89 = `claude/s42-islands` (stages 1, 3, 4, 5, 6). Its first CI run failed in ONE test: `integration41.spec.ts` clicked era candidate #1 at the 1900 relocation, which Issue #86 now blocks (unverified reading). Fixed (tests pick the first selectable name); integration41 + seat88 pass locally. **CI of the fix not yet seen.**
+- PR #90 = `claude/s42-trunk` (on `claude/s42-fast`, on #89): decade mode, long-run data, trunk measure. Merged #89's fix in. CI not yet seen.
+- Not started: trunk builder (TRUNK42.md), numreg compaction (LONG42.md), northern place set (NORTH41.md), shared-data next step (SHARED-DATA41.md).
+- Publishing: not done; needs the owner's approval. Candidate = PR #90 head once green (it contains #89).
