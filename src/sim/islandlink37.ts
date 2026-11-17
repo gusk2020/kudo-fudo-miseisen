@@ -88,10 +88,33 @@ function coolingPairs(sim: SimState, w: World, y: number): Set<number> {
   }
   return out;
 }
+/**
+ * Issue #88: before 2000 the far island groups are NOT strung together by great bridges and undersea tunnels, whatever the policy. A fixed link planned in 1900-1999 must be SHORT (one gap of at most `EARLY_GAP_KM`) and NEAR THE MAINLAND
+ * (both shores on land masses within `EARLY_OFFSHORE_KM` of a mainland -- a land mass of at least `MAINLAND_KM2`; no place is named). So a near-shore island may get its bridge in the 1900s, while a chain running far out to sea waits for 2000;
+ * until then such islands are served by sea and air (the ferry, port and airport rules are untouched). From 2000 the ordinary rules decide (technology, demand, cost, clear crossing). Only NEW plans are judged: nothing built or under way is removed.
+ */
+const OFFSHORE = worldMemo<Float32Array>();
+export const EARLY_UNTIL = 2000, EARLY_GAP_KM = 12, EARLY_OFFSHORE_KM = 60, MAINLAND_KM2 = 15000;
+/** Per land mass: the distance (km, along the grid) from the nearest mainland; 0 for a mainland itself. */
+export function offshoreKm(w: World): Float32Array {
+  const hit = OFFSHORE.get(w); if (hit) return hit;
+  const made = (() => {
+    const { nx, ny, cell, lm, lmCount } = w, size = new Uint32Array(lmCount + 1); for (let k = 0; k < nx * ny; k++) if (lm[k]) size[lm[k]]++;
+    const main = new Uint8Array(lmCount + 1); for (let m = 1; m <= lmCount; m++) if (size[m] * cell * cell >= MAINLAND_KM2) main[m] = 1;
+    const d = new Float32Array(nx * ny).fill(Infinity); let q: number[] = []; for (let k = 0; k < nx * ny; k++) if (lm[k] && main[lm[k]]) { d[k] = 0; q.push(k); }
+    while (q.length) { const nq: number[] = []; for (const k of q) { const i = k % nx, j = (k / nx) | 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue; const n = jj * nx + ii, nd = d[k] + (di && dj ? 1.4142 : 1) * cell; if (nd < d[n] - 1e-6) { d[n] = nd; nq.push(n); } } } q = nq; }
+    const out = new Float32Array(lmCount + 1).fill(Infinity); for (let k = 0; k < nx * ny; k++) if (lm[k] && d[k] < out[lm[k]]) out[lm[k]] = d[k]; return out;
+  })(); OFFSHORE.set(w, made); return made;
+}
+/** May a fixed link across this pair be PLANNED in year y? (null = yes; otherwise the reason) */
+export function earlyLinkBlock(w: World, pr: ShorePair, y: number): string | null {
+  if (y >= EARLY_UNTIL) return null; if (pr.gap > EARLY_GAP_KM) return "early-long"; const off = offshoreKm(w); return Math.max(off[pr.a] ?? Infinity, off[pr.b] ?? Infinity) > EARLY_OFFSHORE_KM ? "early-remote" : null;
+}
 export function evalLink(sim: SimState, w: World, pr: ShorePair, y: number, d: DriveInfo, comp: Map<number, number>, cool: Set<number> = new Set(), nodes: Map<number, number[]> = nodesByMass(sim, w)): LinkEval {
   if (comp.get(pr.a) === comp.get(pr.b)) return { ok: false, why: "joined", pair: pr };
   if (cool.has(pr.a * 100000 + pr.b)) return { ok: false, why: "cooling", pair: pr };
   if (!pr.clear) return { ok: false, why: "over-land", pair: pr };
+  { const early = earlyLinkBlock(w, pr, y); if (early) return { ok: false, why: early, pair: pr }; }   // Issue #88: the 1900s do not chain the far islands
   const s = chooseStructure(sim, pr.gap, pr.gap, "road", y); if (!s) return { ok: false, why: "no-structure", pair: pr };
   const popA = massPop(sim, w, pr.a), popB = massPop(sim, w, pr.b), small = Math.min(popA, popB), big = Math.max(popA, popB), roads = (nearNode(w, nodes, pr.ca, 60) ? 1 : 0) + (nearNode(w, nodes, pr.cb, 60) ? 1 : 0);
   if (small + big < 200 && roads < 2) return { ok: false, why: "empty", pair: pr, fac: s.fac, cost: s.cost };   // nobody to serve
