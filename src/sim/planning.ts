@@ -1,4 +1,4 @@
-import { TRUNK_PURSE_SHARE, TRUNK_SCORE, TRUNK_TAG, trunkRailLeg } from "./trunk42";
+import { TRUNK_PURSE_SHARE, TRUNK_SCORE, TRUNK_TAG, trunkRailFerry, trunkRailLegs } from "./trunk42";
 import { mayScheduleServiceFor } from "./rules1800";
 /**
  * Yearly planning. Every prefecture keeps its own queue and purse, so many regions build at the same time.
@@ -190,7 +190,8 @@ const baseName = (n: string) => n.replace(/市$/, "");
 /** Railway planning, once a year: new lines where the demand is not served by rail, electrification/high-speed where lines are full, revival where demand returned. */
 export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
   if (sim.rules1800 && !mayScheduleServiceFor(sim, "rail", y)) return;   // Stage 36: no public railway before 1830 (1810-29 is experiments only)
-  const dl = sim.dials, leg = trunkRailLeg(sim, w); if (dl.railBuild < 0.05 && !leg) return;   // (Stage 42: the trunk duty is not switched off by the policy)
+  trunkRailFerry(sim, w, y);   // Stage 42: a train ferry across the strait once both shores' lines reach it
+  const dl = sim.dials, legs = trunkRailLegs(sim, w, y), leg = legs[0]; if (dl.railBuild < 0.05 && !leg) return;   // (Stage 42: the trunk duty is not switched off by the policy)
   const live = Object.values(sim.projects).filter((p) => modeOf(p) === "rail" && (p.status === "concept" || p.status === "planned" || p.status === "building" || p.status === "suspended"));
   const liveNew = live.filter((p) => p.kind === "new" && !p.reason.startsWith(LOCAL_TAG)).length, liveUp = live.filter((p) => p.kind !== "new").length, maxNew = 1 + Math.round(dl.railBuild * 2), maxUp = 2 + Math.round(dl.railBuild * 2);
   if (!leg && liveNew >= maxNew && liveUp >= maxUp && live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length >= 1 + Math.round(dl.railBuild * 3)) return;
@@ -234,7 +235,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     const demand = Math.log10(1 + (v.pop / 4000) * (30 / bd)) * (0.4 + dl.railBuild) * (1 + 0.5 * dl.railBias) * (0.6 + 0.4 * dl.growth);
     cands.push({ score: demand, kind: "new", a: ci, fromCell: v.cell, fromName: v.name, toCell: best.cell, toName: best.name, std: "rural", local: true, reason: `${LOCAL_TAG}${v.name}(人口${v.pop}人)は鉄道から${Math.round(bd)}kmで、支線の需要がある` });
   }
-  { if (leg) cands.push({ score: TRUNK_SCORE, kind: "new", a: leg.a, b: leg.b, std: y >= 1960 ? "standard" : "rural", reason: leg.reason }); }   // Stage 42: the capital / sub-capital railway, whatever the policy (ordinary checks below)
+  for (const lg of legs) cands.push({ score: TRUNK_SCORE, kind: "new", a: lg.a, b: lg.b, std: y >= 1960 ? "standard" : "rural", reason: lg.reason });   // Stage 42: the capital / sub-capital railway, whatever the policy (ordinary checks below)
   cands.sort((p, q) => q.score - p.score || (p.kind < q.kind ? -1 : 1) || (p.a ?? 0) - (q.a ?? 0) || (p.b ?? 0) - (q.b ?? 0) || (p.fromCell ?? 0) - (q.fromCell ?? 0));
   if ((globalThis as any).__DBG) console.log(y, "cands", cands.filter(c => c.kind === "new").length, cands.slice(0, 5).map(c => c.kind + ":" + c.score.toFixed(2)), "live", live.length, "liveNew", liveNew, "maxNew", maxNew, "up", liveUp, maxUp);
   let made = 0, pf = MAX_RAIL_PATHFINDS, nNew = 0, nUp = 0, nLocal = 0; const liveLocal = live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length, maxLocal = 1 + Math.round(dl.railBuild * 3); const wantNew = dl.railBuild > 0.9 ? 2 : 1, wantUp = Math.max(1, Math.round(0.3 + 1.2 * dl.railBuild));
