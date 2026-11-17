@@ -1,0 +1,190 @@
+[
+ {
+  "year": 1900,
+  "reached": true,
+  "secPerCentury": 10.7,
+  "saveMB": 1.4,
+  "heapMB": 121,
+  "edges": 1408,
+  "routes": 128,
+  "projects": 216,
+  "events": 1050,
+  "eras": 3,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    805354
+   ],
+   [
+    "events",
+    137666
+   ],
+   [
+    "settlements",
+    101886
+   ],
+   [
+    "nodes",
+    80625
+   ],
+   [
+    "projects",
+    80373
+   ],
+   [
+    "routes",
+    72362
+   ],
+   [
+    "stats",
+    39696
+   ],
+   [
+    "metro",
+    37410
+   ]
+  ]
+ },
+ {
+  "year": 2000,
+  "reached": true,
+  "secPerCentury": 19,
+  "saveMB": 2.3,
+  "heapMB": 143,
+  "edges": 2113,
+  "routes": 311,
+  "projects": 311,
+  "events": 1071,
+  "eras": 8,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1253188
+   ],
+   [
+    "routes",
+    160759
+   ],
+   [
+    "events",
+    149926
+   ],
+   [
+    "numreg",
+    117366
+   ],
+   [
+    "settlements",
+    115585
+   ],
+   [
+    "projects",
+    112734
+   ],
+   [
+    "nodes",
+    105228
+   ],
+   [
+    "hubs",
+    96505
+   ]
+  ]
+ },
+ {
+  "year": 2100,
+  "reached": true,
+  "secPerCentury": 21.9,
+  "saveMB": 2.6,
+  "heapMB": 124,
+  "edges": 2360,
+  "routes": 351,
+  "projects": 194,
+  "events": 1093,
+  "eras": 12,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1421661
+   ],
+   [
+    "routes",
+    189525
+   ],
+   [
+    "numreg",
+    179786
+   ],
+   [
+    "events",
+    150429
+   ],
+   [
+    "settlements",
+    117534
+   ],
+   [
+    "nodes",
+    113555
+   ],
+   [
+    "hubs",
+    104183
+   ],
+   [
+    "metro",
+    83347
+   ]
+  ]
+ },
+ {
+  "year": 2200,
+  "reached": true,
+  "secPerCentury": 22.8,
+  "saveMB": 2.8,
+  "heapMB": 114,
+  "edges": 2483,
+  "routes": 359,
+  "projects": 190,
+  "events": 1066,
+  "eras": 16,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1538820
+   ],
+   [
+    "numreg",
+    214695
+   ],
+   [
+    "routes",
+    199056
+   ],
+   [
+    "events",
+    146376
+   ],
+   [
+    "settlements",
+    118921
+   ],
+   [
+    "nodes",
+    116890
+   ],
+   [
+    "hubs",
+    107323
+   ],
+   [
+    "metro",
+    86832
+   ]
+  ]
+ }
+]
