@@ -1,6 +1,8 @@
 /** Stage 36: a new game starts in 1800 (the fictional timeline); ?start=1950 starts the older 1950 game (kept for its own tests and for comparison) */
 const START_1800 = typeof location === "undefined" || new URLSearchParams(location.search).get("start") !== "1950";
 import { lsKey } from "../core/ns";
+import { ORIGIN_LABEL, STANCE_CHOICES, firstEraCands } from "../sim/era86";
+const STANCE_LABEL86: Record<string, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kairo: "海路重視", kuuro: "空路重視" };
 import { nightField } from "../sim/night41";
 import { glyphState, installGlyphCheck } from "./glyph41";
 import { SPECIAL_SYMS, canBuildNext, nextSpecial, specialFullName, specialRoutes, specialOfficial as specialOfficialOf0 } from "../sim/special41";
@@ -130,6 +132,8 @@ export class App {
   private makeNightButton() {
     if (this.nightBtn || !this.real) return; const b = document.createElement("button"); b.id = "btn-night"; b.type = "button"; b.setAttribute("aria-label", "夜景モード"); b.setAttribute("aria-pressed", "false"); b.textContent = "☾"; b.onclick = () => this.setNight(!this.night); document.body.appendChild(b); this.nightBtn = b;
   }
+  /** Issue #86 (1800 start): the first era's name and, apart from it, the policy */
+  era86: { name: string; stance: EraKey; coast: "pacific" | "japansea" | "neutral"; focus: "concentrate" | "disperse" } = (() => { const d = { name: "天興", stance: "heisei" as EraKey, coast: "pacific" as const, focus: "concentrate" as const }; try { const o = JSON.parse(localStorage.getItem(lsKey("era86")) || "null"); if (o && typeof o.name === "string" && STANCE_CHOICES.includes(o.stance) && ["pacific", "japansea", "neutral"].includes(o.coast) && ["concentrate", "disperse"].includes(o.focus) && firstEraCands().some((c) => c.name === o.name && !c.blocked)) return o; } catch { /* default */ } return d; })();
   eraChoice: EraKey = "heisei"; firstEra = 0; editOpen = false; editMore = false; bg: "terrain" | "roadmap" = "terrain"; hide = new Set<string>(); names = false; legendOpen = true;
   runner: SimRunner | null = null; building = 0; safeMode = false; behind = false; private lastRoads = 0;
   private lastBackup = 0; private lastSaved = 0; private persistRetry = 0; catching = false; catchInfo = ""; private acc = 0; private lastTick = 0; private hiddenAt = 0; private lastPersist = 0; private lastHud = 0;
@@ -868,7 +872,7 @@ export class App {
     const seats = seatsOf(this.s), palacePos = palaceWorld(this.s);
     this.building = 0.01; this.status(); this.buildUI();
     // the 1950 network is generated in slices (a single long task froze phones); the UI shows progress and stays responsive
-    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra, capital: seats.capital, subCapital: seats.sub, palace: { pref: seats.palace, pos: palacePos ?? [0, 0] }, ...(this.s.capitalPos ? { capitalPos: this.s.capitalPos } : {}), ...(this.s.subPos ? { subPos: this.s.subPos } : {}), ...(this.s.subCapital2 ? { subCapital2: this.s.subCapital2, ...(this.s.subPos2 ? { subPos2: this.s.subPos2 } : {}) } : {}), ...(w.moveSpec ? { moves: w.moveSpec } : {}), ...(START_1800 ? { start1800: true } : {}) } : {}); let sim: SimState | null = null;
+    const gen = createSimGen(w, mapStateHash(this.s), this.terrain.hash, this.s.seed, this.real ? { stage3: true, firstEra: this.firstEra, ...(START_1800 ? { era86: { ...this.era86 } } : {}), capital: seats.capital, subCapital: seats.sub, palace: { pref: seats.palace, pos: palacePos ?? [0, 0] }, ...(this.s.capitalPos ? { capitalPos: this.s.capitalPos } : {}), ...(this.s.subPos ? { subPos: this.s.subPos } : {}), ...(this.s.subCapital2 ? { subCapital2: this.s.subCapital2, ...(this.s.subPos2 ? { subPos2: this.s.subPos2 } : {}) } : {}), ...(w.moveSpec ? { moves: w.moveSpec } : {}), ...(START_1800 ? { start1800: true } : {}) } : {}); let sim: SimState | null = null;
     while (!sim) {
       const t0 = performance.now();
       while (performance.now() - t0 < 10) { const r = gen.next(); if (r.done) { sim = r.value; break; } this.building = Math.max(this.building, r.value); }
@@ -895,7 +899,7 @@ export class App {
     this.selEdge = es.sort((p, q) => q.lengthKm - p.lengthKm)[0].id; this.r.setView({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 - (sh * 0.2) / zoom, zoom }); this.renderRoads();
   }
   /** The player chose an era name at a kaigen. */
-  chooseKaigen(idx: number) { const sim = this.sim; if (!sim?.kaigen?.pending) return; const e = settleKaigen(sim, idx, false); this.sheet = null; this.afterPolicy(); if (e) this.toast(`${e.name}元年になりました`); this.buildUI(); }
+  chooseKaigen(idx: number, stance?: EraKey) { const sim = this.sim; if (!sim?.kaigen?.pending) return; const e = settleKaigen(sim, idx, false, stance); this.sheet = null; this.afterPolicy(); if (e) this.toast(`${e.name}元年になりました`); this.buildUI(); }
   afterPolicy() { this.lastTick = performance.now(); this.acc = 0; this.persist(true); this.renderRoads(); this.status(); this.buildSheet(); }
   /** Test/debug hook: advance synchronously (the normal clock is slower than a test can wait). */
   ffYears(n: number) { if (!this.sim || !this.world) return; this.runner?.settle(); advance(this.sim, this.world, 12 * n); this.renderRoads(); this.status(); this.buildUI(); }
@@ -1154,7 +1158,17 @@ export class App {
     const where = (which: "capital" | "sub" | "sub2" | "palace") => { const pos = which === "capital" ? this.s.capitalPos : which === "sub" ? this.s.subPos : which === "sub2" ? this.s.subPos2 : this.s.palacePos; return `${seatPrefName(st[which] ?? "")}${pos ? `(地図で指定 ${ll(pos)})` : "(県庁所在地)"}`; };
     if (!this.setupTab) return;   // closed: only the four tabs (each tab's own panel shows what is chosen)
     const panel = h("div", { id: "setup-panel" }), tab = this.setupTab;
-    if (tab === "era") {
+    if (tab === "era" && START_1800) {   // Issue #86: the name and the policy are chosen apart (names: the candidates passed over in 1912; a name history adopted is never offered)
+      const e = this.era86, cands = firstEraCands(), row = (id: string, title: string, items: [string, string, boolean, () => void, string?][]) => { const r = h("div", { class: "grp", id }); r.append(h("span", { class: "tag" }, title)); for (const [k, l, on, f, why] of items) r.append(h("button", { id: `${id}-${k}`, type: "button", class: on ? "mode on" : "mode", "aria-pressed": on ? "true" : "false", disabled: why ? "" : null, title: why ?? "", onclick: f }, `${on ? "✓ " : ""}${l}`)); return r; };
+      const set = (f: () => void) => () => { f(); try { localStorage.setItem(lsKey("era86"), JSON.stringify(this.era86)); } catch { /* storage may be blocked */ } this.buildToolbar(); };
+      panel.append(h("div", { class: "note", id: "era-now" }, `最初の元号: ${e.name}(${cands.find((c) => c.name === e.name)?.yomi ?? ""}) ／ 方針: ${STANCE_LABEL86[e.stance]}・${e.focus === "concentrate" ? "集中" : "分散"}・${e.coast === "pacific" ? "太平洋側" : e.coast === "japansea" ? "日本海側" : "中立"}`));
+      panel.append(row("e86-name", `元号(${ORIGIN_LABEL.taisho})`, cands.map((c, i) => [String(i), `${c.name}(${c.yomi ?? "読み未確認"})`, e.name === c.name, set(() => { e.name = c.name; }), c.blocked ?? undefined])));
+      panel.append(row("e86-stance", "交通方針", STANCE_CHOICES.map((k) => [k, STANCE_LABEL86[k], e.stance === k, set(() => { e.stance = k; })])));
+      panel.append(row("e86-focus", "都市", ([["concentrate", "集中"], ["disperse", "分散"]] as const).map(([k, l]) => [k, l, e.focus === k, set(() => { e.focus = k; })])));
+      panel.append(row("e86-coast", "地域", ([["pacific", "太平洋側"], ["japansea", "日本海側"], ["neutral", "中立"]] as const).map(([k, l]) => [k, l, e.coast === k, set(() => { e.coast = k; })])));
+      panel.append(h("div", { class: "note", id: "e86-help" }, "元号の名前と方針は別々に選べます。名前は1912年の改元で採用されなかった案です(史実で採用された元号は選べません)。"));
+      panel.append(h("div", { class: "grp", id: "bg-choice" }, h("span", {}, "地図の表示"), ...(["roadmap", "terrain"] as const).map((m) => h("button", { id: "bg-" + m, type: "button", class: this.bg === m ? "mode on" : "mode", "aria-pressed": this.bg === m ? "true" : "false", onclick: () => { this.setBg(m); this.buildToolbar(); } }, m === "roadmap" ? "道路図" : "地形図"))));
+    } else if (tab === "era") {
       panel.append(h("div", { class: "note", id: "era-now" }, `最初の元号: ${CAND_1945[this.firstEra]?.name ?? ""}`), h("button", { id: "era-open", type: "button", onclick: () => { this.eraOpen = true; this.buildToolbar(); } }, "元号を選ぶ"), h("div", { id: "era-desc", class: "note" }, eraDescText(this.firstEra)));
       if (this.eraOpen) { this.radioShown = true; showRadio({ id: "era-list", title: "最初の元号(1926年の候補)", groups: eraRadioGroups(this.firstEra, (i) => { this.firstEra = i; this.buildToolbar(); }), foot: [{ id: "rw-bg", label: this.bg === "roadmap" ? "地形図にする" : "道路図にする", act: () => { this.setBg(this.bg === "roadmap" ? "terrain" : "roadmap"); this.buildToolbar(); } }], close: () => { this.eraOpen = false; this.buildToolbar(); } }); }
       panel.append(h("div", { class: "grp", id: "bg-choice" }, h("span", {}, "地図の表示"), ...(["roadmap", "terrain"] as const).map((m) => h("button", { id: "bg-" + m, type: "button", class: this.bg === m ? "mode on" : "mode", "aria-pressed": this.bg === m ? "true" : "false", onclick: () => { this.setBg(m); this.buildToolbar(); } }, m === "roadmap" ? "道路図" : "地形図"))));
@@ -1185,7 +1199,7 @@ export class App {
   wizardActive() { return this.real && !this.sim && !this.pendingSim; }
   private wizSig(k: number): string {
     const terr = stateKey(this.s), seats = JSON.stringify([this.s.capital, this.s.subCapital, this.s.palace, this.s.capitalPos ?? null, this.s.subPos ?? null, this.s.palacePos ?? null]);
-    return k === 0 ? terr : k === 1 ? String(this.firstEra) : k === 2 ? seats : terr + "|" + seats + "|" + JSON.stringify(this.cerDraft.kokudo1?.strokes ?? null);   // (the road depends on the terrain and the seats it joins)
+    return k === 0 ? terr : k === 1 ? String(this.firstEra) + (START_1800 ? JSON.stringify(this.era86) : "") : k === 2 ? seats : terr + "|" + seats + "|" + JSON.stringify(this.cerDraft.kokudo1?.strokes ?? null);   // (the road depends on the terrain and the seats it joins)
   }
   wizValid(k: number) { return this.wizOk[k]?.sig === this.wizSig(k); }
   wizAllValid() { return [0, 1, 2, 3].every((k) => this.wizValid(k)); }
@@ -1210,7 +1224,7 @@ export class App {
   private wizSummary(k: number): string {
     const s = this.s, st = seatsOf(s);
     if (k === 0) { const n = Object.keys(s.rangeEdits ?? {}).length, ridge = (s.ridges.ne ? 1 : 0) + (s.ridges.sw ? 1 : 0) + (s.ridgeExtra?.ne.length ?? 0) + (s.ridgeExtra?.sw.length ?? 0), f = s.features; return `富士山${f.fuji.pos || f.fuji.scale !== undefined || f.fuji.height !== undefined ? "変更あり" : "そのまま"}・琵琶湖${f.biwa.pos || f.biwa.scale !== undefined ? "変更あり" : "そのまま"}・山脈${n}件・稜線${ridge}本`; }
-    if (k === 1) return CAND_1945[this.firstEra]?.name ?? "";
+    if (k === 1) return START_1800 ? `${this.era86.name}・${STANCE_LABEL86[this.era86.stance]}` : CAND_1945[this.firstEra]?.name ?? "";
     if (k === 2) return `首都${seatPrefName(st.capital)}・副首都${seatPrefName(st.sub)}・皇居${seatPrefName(st.palace)}`;
     const d = this.cerDraft.kokudo1; return d ? (d.prev.ok ? `国道1号 約${d.prev.lengthKm}km` : "国道1号 要修正") : "まだ描いていません";
   }

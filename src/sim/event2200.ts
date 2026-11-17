@@ -48,8 +48,8 @@ export function open2200(sim: SimState) {
 /** The candidates put to the player at the open event (built now for a game saved before they were recorded). */
 /** Stage 36 M4: in an 1800 game a relocation always changes the era, even when the seats stay ("今のまま続ける" and 常に自動): the first unused name of that event's historical candidate group. Returns the name. */
 export function renameAtReloc(sim: SimState, y: number, n: number, auto: boolean): string | null {
-  const k = sim.kaigen; if (!k) return null; const g = ((k.reloc ??= [])[n] ??= relocGroup(k, n, y)), used = usedKeys(k), c = g.cands.find((x) => !used.has(eraKey(x.name))); if (!c) return null;
-  const cur = k.eras[k.eras.length - 1]; k.eras.push({ name: c.name, start: y, stance: cur?.stance ?? "heisei", real: c.real, picked: g.cands.indexOf(c), of: g.cands.length, auto }); g.chosen = c.name; return c.name;
+  const k = sim.kaigen; if (!k) return null; const g = ((k.reloc ??= [])[n] ??= relocGroup(k, n, y)), used = usedKeys(k), c = g.cands.find((x) => !used.has(eraKey(x.name)) && !x.blocked); if (!c) return null;
+  const cur = k.eras[k.eras.length - 1]; k.eras.push({ name: c.name, start: y, stance: cur?.stance ?? "heisei", real: c.real, picked: g.cands.indexOf(c), of: g.cands.length, auto, ...(k.era86 ? { yomi: c.yomi ?? null, ...(c.o86 ? { o86: c.o86 } : {}) } : {}) }); g.chosen = c.name; return c.name;
 }
 export function groupOf2200(sim: SimState): RelocGroup | null {
   const e = sim.e2200, k = sim.kaigen; if (!e || !k) return null; const n = e.n ?? Math.max(0, (sim.e2200hist?.length ?? 0));
@@ -60,9 +60,9 @@ export function apply2200(sim: SimState, ch: Choice2200 | null, auto = false, se
   const e = sim.e2200, k = sim.kaigen; if (!e || e.state !== "pending" || !k) return false; const y = e.year;
   if (!ch) { e.state = "done"; e.kept = true; if (auto) e.auto = true; if (sim.rules1800) { const nm = renameAtReloc(sim, y, e.n ?? 0, auto); if (nm) ev(sim, "kaigen", `${y}年: 首都などはそのまま、元号を${nm}に改めた${auto ? "【自動】" : ""}`, "1800年開始のゲームでは遷都の年に必ず改元する", {}); } if (!sim.rules1800) ev(sim, "kaigen", `${y}年: 遷都・改元は行わず、今の首都・元号・方針を続ける${auto ? "【自動】" : ""}`, "選択されなかったため現状を維持", {}); return false; }
   const g = groupOf2200(sim)!, used = usedKeys(k); let ci = Math.max(0, Math.min(g.cands.length - 1, Math.floor(ch.era)));
-  if (used.has(eraKey(g.cands[ci].name))) ci = Math.max(0, g.cands.findIndex((x) => !used.has(eraKey(x.name))));   // (a name already adopted is never adopted again)
+  if (used.has(eraKey(g.cands[ci].name)) || g.cands[ci].blocked) ci = Math.max(0, g.cands.findIndex((x) => !used.has(eraKey(x.name)) && !x.blocked));   // (Issue #86: nor one the 4-era rule forbids)   // (a name already adopted is never adopted again)
   const c = { ...g.cands[ci], yomi: g.cands[ci].yomi ?? "" };
-  if (!used.has(eraKey(c.name))) { k.eras.push({ name: c.name, start: y, stance: ch.stance, real: c.real, picked: ci, of: g.cands.length, auto }); g.chosen = c.name; }
+  if (!used.has(eraKey(c.name)) && !g.cands[ci].blocked) { k.eras.push({ name: c.name, start: y, stance: ch.stance, real: c.real, picked: ci, of: g.cands.length, auto, ...(k.era86 ? { yomi: g.cands[ci].yomi ?? null, ...(g.cands[ci].o86 ? { o86: g.cands[ci].o86 } : {}) } : {}) }); g.chosen = c.name; }
   k.pending = null; k.next = y + futureInterval(sim.seed, k.nextIdx, !!k.free); k.nextIdx++;
   k.recon = { coast: ch.coast, focus: ch.focus, since: y };
   // seats: prefecture ids; a point on the map becomes that prefecture's 県庁所在地 (as at the start); a seat with no point stands at its prefecture's 県庁所在地

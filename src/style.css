@@ -169,3 +169,7 @@ body #sheet.mini h3 { display: none; }
 #btn-night { position: fixed; right: 8px; top: calc(env(safe-area-inset-top, 0px) + 4px); width: 40px; height: 40px; border-radius: 20px; z-index: 7; font-size: 22px; line-height: 1; padding: 0; background: var(--panel); border: 1px solid #5d7a95; color: #e8eef4; }
 #btn-night.on { background: #1b2748; border-color: #ffd27a; color: #ffd27a; }
 #btn-night[hidden] { display: none; }
+
+/* Issue #86: a candidate that cannot be chosen stays listed, dimmed */
+.blocked, button.era-row:disabled { opacity: 0.55; }
+button.era-row { display: block; width: 100%; text-align: left; margin: 3px 0; }

@@ -48,10 +48,11 @@ import { reconGrowth, reconIndustry, reconMeanCore, reconOf, reconShare } from "
 import { DEFAULT_CAPITAL, DEFAULT_SUB, DEFAULT_PALACE, prefOfSeat } from "../core/seat";
 import { realToLonLat } from "../core/data";
 import type { Vec } from "../core/types";
-import { autoEraIdx } from "./simple41";
+import { autoEraIdx, autoStance } from "./simple41";
+import { firstEraCands } from "./era86";
 import { isSpecialSym, specialOfficial } from "./special41";
 import { BRIDGE_RECORD, SEA_AIR_TUNNEL_CAP_KM, seaAirPriority } from "./fiction41";
-import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, relocFirstOf, stanceAt } from "./kaigen";
+import { CAND_1945, chooseEra, kaigenDue, newKaigen, openKaigen, relocFirstOf, stanceAt, type EraCand } from "./kaigen";
 import { facCost, planYearGen } from "./planning";
 import { seedInitialNetworkGen } from "./seed";
 import { ERA, FU_PREFS, GRADE_LABEL, GRADE_MODE, KIND_LABEL, NICK_LABEL, SIM_VERSION, modeOf, monthToYM, setActiveEra, setActiveTimeline, ymLabel, type Grade, type RouteEdgeRef, type Settlement, type SimEdge, type SimProject, type SimRoute, type SimState } from "./types";
@@ -115,7 +116,7 @@ export function projectTimeMult(sim: SimState, p: SimProject): number {
 }
 /** Builds the starting state in small slices (yields progress 0..1) so a phone never freezes on one long task. */
 /** `firstEra`: index into CAND_1945. When given, the game has an era timeline (Issue #13) and `era` is taken from that candidate's stance. */
-export interface SimOpts { /** Stage 36 M2: start in 1800 (the 1800 rules) */ start1800?: boolean; /** Stage 36 M3: a second sub-capital (prefecture, and its map point) */ subCapital2?: string; subPos2?: Vec; /** Stage 28: the year of the first relocation (absent = the game's own start year + 150) */ relocFirst?: number; moves?: SeatMove[]; capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
+export interface SimOpts { /** Issue #86 (1800 start): the first era by name with the policy chosen beside it; absent = the older way (an index into the 1926 list, the policy tied to the name) */ era86?: { name: string; stance: EraKey; coast: "pacific" | "japansea" | "neutral"; focus: "concentrate" | "disperse" }; /** Stage 36 M2: start in 1800 (the 1800 rules) */ start1800?: boolean; /** Stage 36 M3: a second sub-capital (prefecture, and its map point) */ subCapital2?: string; subPos2?: Vec; /** Stage 28: the year of the first relocation (absent = the game's own start year + 150) */ relocFirst?: number; moves?: SeatMove[]; capitalPos?: Vec; subPos?: Vec; coast18?: boolean /* false = no Stage 18 coast correction of the potential order */; pot17?: boolean /* false = the Stage 16 start: every listed city is a city from the first day */; era?: EraKey; stage3?: boolean; firstEra?: number; techK?: number; seats14?: boolean; pop15?: boolean /* false = the cities start from the map-data figures x POP_1950_SCALE (Stage 14 and earlier) */; waterK?: number /* 0 = no water-tunnel rule: the Stage 11 rules a game made before Stage 13 keeps */; capital?: string; subCapital?: string; palace?: { pref: string; pos: Vec } }
 /** Stage 19: the exact lon/lat of the seats put on the map (world = real for the real map); undefined when every seat stands at its 県庁所在地, so such a game orders the prefectures exactly as before. */
 function seatLL(sim: SimState, w: World): { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } | undefined {
   const ll = (p: Vec) => realToLonLat(p) as [number, number], o: { capital?: [number, number]; sub?: [number, number]; palace?: [number, number] } = {};
@@ -126,7 +127,8 @@ function seatLL(sim: SimState, w: World): { capital?: [number, number]; sub?: [n
 export function* createSimGen(w: World, mapHash: string, terrainHash: string, seed: number, opts: SimOpts = {}): Generator<number, SimState> {
   w.barrier = !!opts.stage3;   // Stage 9: the mountain barrier is part of the real-map game
   w.land12 = !!(opts.stage3 && opts.firstEra !== undefined);   // Stage 12: every game started from the era timeline (Stage 10 onward flow) uses the land model
-  const firstCand = opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
+  const e86 = opts.stage3 && opts.start1800 && opts.era86 ? firstEraCands().find((c) => c.name === opts.era86!.name && !c.blocked) ?? firstEraCands().find((c) => !c.blocked)! : null;   // Issue #86: the first era by NAME (a 大正時候補), the policy beside it
+  const firstCand: EraCand | null = e86 ? { name: e86.name, stance: opts.era86!.stance, real: true, note: e86.note, yomi: e86.yomi ?? undefined, recon: { coast: opts.era86!.coast, focus: opts.era86!.focus }, o86: e86.origin } : opts.stage3 && opts.firstEra !== undefined ? CAND_1945[Math.max(0, Math.min(CAND_1945.length - 1, opts.firstEra))] : null, eraKey = firstCand ? firstCand.stance : opts.era ?? "kobun";
   const startYear = opts.start1800 ? START_YEAR_1800 : 1950;   // (a game's own start year: the relocation origin is derived from it, so there is one place that says 1950)
   const sim: SimState = {
     schemaVersion: SIM_VERSION, mapHash, terrainHash, seed: seed >>> 0, era: eraKey, startYear, month: 0, rngState: (seed ^ 0xa5a5a5a5) >>> 0, speed: 0,
@@ -140,7 +142,8 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   sim.dials = composeDials(sim, 1950); setActiveEra(eraKeyOf(eraKey)); setActiveTimeline(sim.kaigen?.eras ?? null);
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
   if (firstCand) sim.initPolicy = { stance: firstCand.stance, ...(firstCand.recon ? { coast: firstCand.recon.coast, focus: firstCand.recon.focus } : {}) };   // Stage 41: what the game was started with (the top line shows it beside the policy now)
-  if (opts.stage3 && firstCand) { sim.special41 = true; sim.special60 = true; }   // Stage 41 #8: the special-route rules (special41.ts) for every new game; a game saved before keeps the old rule
+  if (opts.stage3 && firstCand) { sim.special41 = true; sim.special60 = true; }
+  if (e86 && sim.kaigen) { sim.kaigen.era86 = true; const f = sim.kaigen.eras[0]; f.yomi = e86.yomi; f.o86 = e86.origin; f.of = firstEraCands().length; f.picked = firstEraCands().findIndex((c) => c.name === e86.name); }   // Stage 41 #8: the special-route rules (special41.ts) for every new game; a game saved before keeps the old rule
   if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false, sim.subCapital2); }
   if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.g34new) sim.rec34 = { sites: [], log: [...w.g34new.log], done: [...w.g34new.done] }; if (w.islets) { sim.isl20 = true; if (w.t.isletVersion === 3) sim.isl36 = true; if (w.t.isletVersion === 2 || w.t.isletVersion === 3) { sim.isl22 = true; sim.sea22 = true; sim.tier23 = newTier23(); } } if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
   const tokyoId = sim.roles ? undefined : tokyoCity(w)?.id;
@@ -629,19 +632,19 @@ export function* stepMonthGen(sim: SimState, w: World): Generator<void> {
 /** An era change is due: open it; if nobody is there to choose (or the setting says so) the first candidate (the real one for 1989/2019, else fewest strokes) is taken. */
 export function startKaigen(sim: SimState, year: number) {
   const k = sim.kaigen!; openKaigen(k, year); const pol = sim.policy, auto = !!pol && (pol.mode === "auto" || pol.mode === "autoReloc" || (pol.mode === "idleAuto" && pol.away));
-  if (auto) { noteDecision("kaigen", year, sim); settleKaigen(sim, autoEraIdx(sim, sim.kaigen!.pending!.cands), true); return; }   // (Stage 41: the era change is kept as a save point with the choice still open)
+  if (auto) { noteDecision("kaigen", year, sim); settleKaigen(sim, autoEraIdx(sim, sim.kaigen!.pending!.cands), true, autoStance(sim)); return; }   // (Stage 41: the era change is kept as a save point with the choice still open)
   ev(sim, "kaigen", `${year}年: 改元の時を迎えた(候補${k.pending!.cands.length}案)`, "元号を選んでください。時間は止まっています", {});
 }
-export function settleKaigen(sim: SimState, idx: number, auto = false) {
+export function settleKaigen(sim: SimState, idx: number, auto = false, stance?: EraKey) {
   const k = sim.kaigen; if (!k?.pending) return null; const year = k.pending.year, prev = k.eras[k.eras.length - 1], names = k.pending.cands.map((c) => c.name).join("・");
-  const e = chooseEra(k, idx, sim.seed, auto); if (!e) return null; setActiveTimeline(k.eras);
+  const e = chooseEra(k, idx, sim.seed, auto, stance); if (!e) return null; setActiveTimeline(k.eras);
   ev(sim, "kaigen", `改元: ${e.name}元年(${year}年)${auto ? "【自動】" : ""}`, `${prev.name}が終わり${e.name}へ。候補: ${names}。方針: ${STANCE_NAME[e.stance]}${e.real ? "" : "(暫定規則で生成した名)"}。以後の道路・鉄道の方針に${prev.name}の分も一部残って効く`, {});
   sim.dials = composeDials(sim, year); return e;
 }
 const STANCE_NAME: Record<string, string> = { heisei: "均衡", shubun: "道路重視", shoka: "鉄道重視", kobun: "旧版" };
 export function stepMonth(sim: SimState, w: World) { const g = stepMonthGen(sim, w); while (!g.next().done); }
 /** Fast-forward with no player (tests, tools): a policy window that opens is resolved by the world's own scores. */
-export function advance(sim: SimState, w: World, months: number) { if (sim.oldmuni40) syncOldCities(sim, w); for (let i = 0; i < months; i++) {   /* Issue #67: two games on one world (tests only) each get their own promoted cities back before they run */ stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, autoEraIdx(sim, sim.kaigen.pending.cands), true); stepMonth(sim, w); } if (waiting2200(sim)) break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
+export function advance(sim: SimState, w: World, months: number) { if (sim.oldmuni40) syncOldCities(sim, w); for (let i = 0; i < months; i++) {   /* Issue #67: two games on one world (tests only) each get their own promoted cities back before they run */ stepMonth(sim, w); if (sim.kaigen?.pending) { settleKaigen(sim, autoEraIdx(sim, sim.kaigen.pending.cands), true, autoStance(sim)); stepMonth(sim, w); } if (waiting2200(sim)) break;   /* (the player decides 2200 -- a fast-forward stops there) */ if (sim.policy?.pending) { autoResolve(sim, w); stepMonth(sim, w); } } }
 /** How many months to simulate after being away: capped, with the rest reported rather than silently dropped. */
 export function planCatchUp(elapsedWallMs: number, speed: number): { months: number; skipped: number } {
   if (!(elapsedWallMs > 0) || speed <= 0) return { months: 0, skipped: 0 };

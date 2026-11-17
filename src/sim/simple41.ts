@@ -61,3 +61,7 @@ export function autoEraIdx(sim: SimState, cands: EraCand[]): number {
   const s = sim.simple41; if (!s?.keep || (!s.coast && !s.city)) return 0;
   let best = 0, bv = -1; cands.forEach((c, i) => { const v = (s.coast && c.recon?.coast === s.coast ? 2 : 0) + (s.city && c.recon?.focus === s.city ? 1 : 0); if (v > bv) { bv = v; best = i; } }); return best;
 }
+/** Issue #86: an automatic era change in a game whose names and policy are separate keeps the policy in force -- unless the simple mode's kept transport answer says another. */
+export function autoStance(sim: SimState): import("./eras").EraKey | undefined {
+  const s = sim.simple41; if (!sim.kaigen?.era86 || !s?.keep || !s.transport) return undefined; return ({ road: "shubun", rail: "shoka", sea: "kairo", air: "kuuro" } as const)[s.transport];
+}
