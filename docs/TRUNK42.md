@@ -18,3 +18,11 @@ Reading: road and sea are always there; air comes with the airports (after 1950)
   - **road**: already always present; keep as a check.
 - Policy keeps its weight everywhere else: the duty only fixes the ONE missing link per mode for these pairs; quality, speed and volume stay policy-driven.
 - Acceptance: by 2000 every pair connected in all four modes for every policy and 3 seeds; no new link before its technology; Issue #66 rail audit numbers re-run.
+
+## Builder, first part (2026-11-17, second session): the RAIL duty — implemented (`claude/s42-terrain91`)
+- Games made with `sim.trunk42` (new 1800 games). While capital and sub-capital are not joined by railway, `planRailGen` gets one extra candidate (`trunkRailLeg`): the next leg from the capital's side of the rail network towards the sub-capital (≤160 km, same island), tagged `【首都幹線】`, score 60 (ahead of ordinary candidates), its own quota (one leg at a time), not switched off by `railBuild` or the sea/air hold. It still goes through path, technology and cost checks; its purse is at least 10 % of the national budget (so a road-first policy cannot starve it — it is still paid for).
+- On the way, rail track that lies there closed/dormant/abandoned is **restored first** (one restore project) — the real cause of the old gap was a closed section (the path found "0 km new" yet the network was cut).
+- Seats on another island: rail to the ports joined by a domestic sea route counts (rail + ship + rail), and the legs aim at those ports. The measure (`trunkStatus`) counts that as a rail way when the seats are on different islands.
+- Measured (`docs/data/trunk42-after.json`, seeds 7 and 11, five policies): **東京–大阪 joined by rail by 2000 under every policy and seed** (by 1950 in 8 of 10; before: never under road/sea priority). Air by 2000 everywhere, road and sea always.
+- **Still open**: 東京–札幌 has no rail way in any run (no rail+ship way formed: either the Hokkaido line does not reach a port with a route to a Honshu port reached by rail — not diagnosed yet). Sea and air duties not implemented (they were already connected in every run measured, except air before ~1950–2000 when airports did not exist).
+- Unit test `tests/unit/trunk42.test.ts`: road-first policy joined by 1900 with the duty and not without; no trunk project before that game's own railway service year.

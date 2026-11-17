@@ -140,6 +140,8 @@ export interface SimState {
   special60?: true;
   /** Issue #91: the cities the timeline has already told about being on uninhabitable ground */
   uninhab91?: string[];
+  /** Stage 42: the capital / sub-capital trunk duty (trunk42.ts) is on. Set for new 1800 games; absent = an older game, whose planner is as it was */
+  trunk42?: true;
   resumeMode?: "auto" | "autoReloc" | "idleAuto";
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
