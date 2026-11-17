@@ -103,11 +103,13 @@ function update(en: NumEntry, it: Item, y: number) {
 }
 /**
  * Long runs (Stage 42, games with `sim.trunk42`): a number given up for 100 years or more no longer needs the ground it covered (it could only come back as the same line within that time)
- * nor its whole history: it keeps its number, state, label, its first year, the first year it was in service and its last ten changes. Keeps a 1000-year save from growing with every line ever numbered.
+ * nor its whole history: it keeps its number, state, label, its first year, the first year it was in service and its last ten changes; a given-up domestic flight or sea lane (key h: / f:) is forgotten altogether. Keeps a 1000-year save from growing with every line ever numbered.
  */
 export const NUM_FORGET_YEARS = 100, NUM_HIST_KEEP = 10;
 export function compactNumbers(sim: SimState, y: number): void {
   const reg = sim.numreg; if (!sim.trunk42 || !reg) return;
+  // domestic flights and sea lanes open and close all the time (1,124 given-up air numbers against 246 in service by year 2500): after the same 100 years such a number is forgotten altogether and reads as a gap (欠番)
+  for (const cl of NUM_CLASSES) if (cl[0] === "air" || cl[0] === "sea") reg.list[cl[0]] = reg.list[cl[0]].filter((en) => !(en.state === "abolished" && (en.key.startsWith("h:") || en.key.startsWith("f:")) && y - Math.floor(en.hist[en.hist.length - 1] / 8) >= NUM_FORGET_YEARS));
   for (const cl of NUM_CLASSES) for (const en of reg.list[cl[0]]) {
     if ((en.state !== "abolished" && en.state !== "void") || y - Math.floor(en.hist[en.hist.length - 1] / 8) < NUM_FORGET_YEARS) continue;
     if (en.edges.length) en.edges = [];
