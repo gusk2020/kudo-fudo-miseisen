@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { advance, yearOf } from "../../src/sim/engine";
-import { clearCrossing, driveOf, evalLink, planIslandLinks, shorePairs } from "../../src/sim/islandlink37";
+import { EARLY_GAP_KM, clearCrossing, driveOf, evalLink, planIslandLinks, shorePairs } from "../../src/sim/islandlink37";
 import { LONG_LINK_FROM_1800, SHORT_LINK_KM } from "../../src/sim/crossing";
 import { RECLAIM_FROM_1800 } from "../../src/sim/reclaim34";
 import { realWorld, stage3SimOn } from "./simhelp";
@@ -16,13 +16,18 @@ describe("Stage 37 C1/C2: nothing long or reclaimed by itself before 1950 in an 
   });
 });
 describe("Stage 37 C3-C5/C8: from 1950 every island is considered", () => {
-  const g = fresh(); g.sim.policy!.mode = "auto"; advance(g.sim, g.w, 12 * (2000 - yearOf(g.sim)));
+  const g = fresh(); g.sim.policy!.mode = "auto"; advance(g.sim, g.w, 12 * (1990 - yearOf(g.sim))); const early = Object.values(g.sim.projects).filter((p) => p.reason.includes("島間接続")).map((p) => ({ ...p })); advance(g.sim, g.w, 12 * (2040 - yearOf(g.sim)));   // (Issue #88: the long and the far links come from 2000, so the look is taken in 2040; the 1900s are checked on their own below)
   const isl = Object.values(g.sim.projects).filter((p) => p.reason.includes("島間接続")), at = (p: { startMonth: number }) => Math.floor(g.sim.startYear + p.startMonth / 12);
   it("island links are made, none before 1950, and they are not all to the biggest island", () => {
     expect(isl.length).toBeGreaterThan(8); expect(Math.min(...isl.map(at))).toBeGreaterThanOrEqual(1950);
     const masses = new Map<number, number>(); for (let k = 0; k < g.w.N; k++) if (g.w.t.land[k] === 1) masses.set(g.w.lm[k], (masses.get(g.w.lm[k]) ?? 0) + 1);
     const biggest = [...masses.entries()].sort((a, b) => b[1] - a[1])[0][0]; const ends = isl.map((p) => { const e = g.sim.edges[p.edgeIds[0]]; return e ? [g.w.lm[e.cells[0]], g.w.lm[e.cells[e.cells.length - 1]]] : null; }).filter((x): x is number[] => !!x);
     expect(ends.length).toBeGreaterThan(8); expect(ends.filter((x) => !x.includes(biggest)).length).toBeGreaterThan(3);
+  });
+  it("Issue #88: every island link begun before 2000 is short and near the mainland; long or far ones begin in 2000 or later", () => {
+    const gapOf = (p: { edgeIds: string[] }) => g.sim.edges[p.edgeIds[0]]?.lengthKm ?? 0;
+    for (const p of [...early, ...isl]) if (at(p) < 2000) expect(gapOf(p), `begun ${at(p)}`).toBeLessThanOrEqual(EARLY_GAP_KM + 8);   // (the edge runs shore cell to shore cell: a little longer than the water)
+    expect(isl.some((p) => at(p) >= 2000 && gapOf(p) > EARLY_GAP_KM + 8), "long links do come, after 2000").toBe(true);
   });
   it("the far north is reached: a link ends on 樺太 or a Kuril island", () => {
     const far = new Set<number>(); for (const c of g.w.cities) if (c.island === 10) far.add(g.w.lm[c.cell]);

@@ -101,8 +101,10 @@ export function offshoreKm(w: World): Float32Array {
   const made = (() => {
     const { nx, ny, cell, lm, lmCount } = w, size = new Uint32Array(lmCount + 1); for (let k = 0; k < nx * ny; k++) if (lm[k]) size[lm[k]]++;
     const main = new Uint8Array(lmCount + 1); for (let m = 1; m <= lmCount; m++) if (size[m] * cell * cell >= MAINLAND_KM2) main[m] = 1;
-    const d = new Float32Array(nx * ny).fill(Infinity); let q: number[] = []; for (let k = 0; k < nx * ny; k++) if (lm[k] && main[lm[k]]) { d[k] = 0; q.push(k); }
-    while (q.length) { const nq: number[] = []; for (const k of q) { const i = k % nx, j = (k / nx) | 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue; const n = jj * nx + ii, nd = d[k] + (di && dj ? 1.4142 : 1) * cell; if (nd < d[n] - 1e-6) { d[n] = nd; nq.push(n); } } } q = nq; }
+    // two sweeps of a chamfer distance (5 km straight, 7.07 km diagonal): linear in the grid, a few milliseconds
+    const d = new Float32Array(nx * ny).fill(1e9), st = cell, dg = cell * Math.SQRT2; for (let k = 0; k < nx * ny; k++) if (lm[k] && main[lm[k]]) d[k] = 0;
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const k = j * nx + i; let v = d[k]; if (i > 0) v = Math.min(v, d[k - 1] + st); if (j > 0) { v = Math.min(v, d[k - nx] + st); if (i > 0) v = Math.min(v, d[k - nx - 1] + dg); if (i < nx - 1) v = Math.min(v, d[k - nx + 1] + dg); } d[k] = v; }
+    for (let j = ny - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) { const k = j * nx + i; let v = d[k]; if (i < nx - 1) v = Math.min(v, d[k + 1] + st); if (j < ny - 1) { v = Math.min(v, d[k + nx] + st); if (i < nx - 1) v = Math.min(v, d[k + nx + 1] + dg); if (i > 0) v = Math.min(v, d[k + nx - 1] + dg); } d[k] = v; }
     const out = new Float32Array(lmCount + 1).fill(Infinity); for (let k = 0; k < nx * ny; k++) if (lm[k] && d[k] < out[lm[k]]) out[lm[k]] = d[k]; return out;
   })(); OFFSHORE.set(w, made); return made;
 }

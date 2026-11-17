@@ -85,7 +85,7 @@ describe("Stage 23: the route number register", () => {
     expect(targetOfRoute(Object.values(sim.routes)[0]).edges.length).toBeGreaterThan(0);
   }, 300000);
   it("国道0号 holds 道路 number 0 and 国道1号 keeps its own history", () => {
-    const { sim, w } = run14({ seed: 5, until: 1952, islets: true }); sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "priority"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
+    const { sim, w } = run14({ seed: 5, until: 1952, islets: true }); delete sim.special60;   /* (Issue #87: with the sixty-symbol list the relocation of 2200 builds its fixed ♨号; this test is about 国道0号, the first relocation's route in any other year) */ sim.month = (2200 - sim.startYear) * 12; sim.policy!.mode = "priority"; sim.kaigen!.next = 2230; sim.kaigen!.pending = null;
     stepMonth(sim, w); apply2200(sim, { era: 2, stance: "heisei", coast: "pacific", focus: "concentrate", capital: "JP-27", sub: "JP-13" });
     const idx = buildIndex(sim, "road"), a = homeCity(w, sim.capital)!, b = subCity(w, sim.subCapital)!, ln = Array.from({ length: 21 }, (_, i) => [a.pos[0] + ((b.pos[0] - a.pos[0]) * i) / 20, a.pos[1] + ((b.pos[1] - a.pos[1]) * i) / 20] as Vec);
     const p = previewNational(w, ln, sim.capital, sim.subCapital, { roadCells: idx.roadCells, roadside: true }); expect(performNational(sim, w, p, { road0: true })).toBe(true);
