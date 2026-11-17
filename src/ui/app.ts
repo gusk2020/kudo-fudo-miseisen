@@ -2,7 +2,7 @@
 const START_1800 = typeof location === "undefined" || new URLSearchParams(location.search).get("start") !== "1950";
 import { lsKey } from "../core/ns";
 import { nightField } from "../sim/night41";
-import { installGlyphCheck } from "./glyph41";
+import { glyphState, installGlyphCheck } from "./glyph41";
 import { SPECIAL_SYMS, canBuildNext, nextSpecial, specialFullName, specialRoutes, specialOfficial as specialOfficialOf0 } from "../sim/special41";
 import { checkExtension, checkLoop, performExtension, performLoop, previewExtension, splitLoop, type ExtPreview } from "../sim/specialDraw41";
 const specialOfficialOf = (sym: string) => (sym === "1" || sym === "0" ? `国道${sym}号` : specialOfficialOf0(sym));
@@ -139,7 +139,7 @@ export class App {
   private saveLocked = false; private prevCopied = false; private bootPending = false;   // Stage 36: a game read at start-up and not yet checked against the terrain -- nothing is written over its save until it has been accepted or put aside
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
-    const a = new App(); a.real = real; installGlyphCheck(); setDecisionSink((d) => a.keepDecisionPoint(d)); a.r = await Renderer.create(host);
+    const a = new App(); a.real = real; installGlyphCheck(() => { try { a.r?.roads.redraw(a.r.view.zoom); a.buildUI(); } catch { /* not built yet */ } }); setDecisionSink((d) => a.keepDecisionPoint(d)); a.r = await Renderer.create(host);
     if (real) { a.store.replace(realState()); document.body.classList.add("real"); a.makeNightButton(); try { { const ns = Number(localStorage.getItem(lsKey("nightSize")) ?? "100"); if (Number.isFinite(ns)) { a.nightSize = Math.max(0, Math.min(100, Math.round(ns))); a.r.night.size = a.nightSize; } } if (localStorage.getItem(lsKey("night")) === "1") { a.night = true; a.r.setNight(true); a.nightBtn?.setAttribute("aria-pressed", "true"); a.nightBtn?.classList.add("on"); } } catch { /* storage may be blocked */ } try { if (localStorage.getItem(lsKey("bg")) !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
       try { const u = JSON.parse(localStorage.getItem(lsKey("ui")) || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; a.legendShown = u.legendShown === true; a.legendSide = u.legendSide === "left" ? "left" : "right"; } catch { /* ignore */ } a.lite = localStorage.getItem(lsKey("lite")) === "1"; } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
@@ -339,6 +339,7 @@ export class App {
     const best = hit[0], card = best ? cityCard(sim, w, best.id, best.rel) : null; if (!card) { this.hideCityCard(); return; }
     const el = document.getElementById("city-card")!; document.getElementById("city-card-title")!.textContent = card.title; const body = document.getElementById("city-card-body")!; body.replaceChildren(...card.lines.map((t) => h("div", {}, t))); const dock = document.getElementById("dock"); el.style.bottom = `${Math.ceil((dock?.getBoundingClientRect().height ?? 60) + 8)}px`; el.hidden = false;   // (just above the dock, whatever height the dock has on this device)
   }
+  get glyphs() { return glyphState; }
   /** (tests, diagnosis) why the last touch was not a tap */
   get tapMiss() { return tapDiag.miss; }
   hideCityCard() { const el = document.getElementById("city-card"); if (el) el.hidden = true; }

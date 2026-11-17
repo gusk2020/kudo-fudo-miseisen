@@ -1,0 +1,42 @@
+/* Issue #87: the special-route symbols a phone may not carry. Tiny subsets (one or a few glyphs each) of Noto fonts, SIL Open Font License 1.1 (src/assets/fonts41/OFL.txt, LICENCE.md). Made by tools/build_symbol_fonts.py; do not edit by hand. */
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-592a.woff2") format("woff2"); unicode-range: U+592A; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-59cb.woff2") format("woff2"); unicode-range: U+59CB; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-203b_5143.woff2") format("woff2"); unicode-range: U+203B, U+5143; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-521d.woff2") format("woff2"); unicode-range: U+521D; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-3091.woff2") format("woff2"); unicode-range: U+3091; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-5700.woff2") format("woff2"); unicode-range: U+5700; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-309f_3105.woff2") format("woff2"); unicode-range: U+309F, U+3105; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-2660_2668_2756.woff2") format("woff2"); unicode-range: U+2660, U+2668, U+2756; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-2202_2203_2318.woff2") format("woff2"); unicode-range: U+2202, U+2203, U+2318; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-3090.woff2") format("woff2"); unicode-range: U+3090; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-221e.woff2") format("woff2"); unicode-range: U+221E; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-2665.woff2") format("woff2"); unicode-range: U+2665; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-9741.woff2") format("woff2"); unicode-range: U+9741; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-jp-2200_963f.woff2") format("woff2"); unicode-range: U+2200, U+963F; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-symbols-232c_260a_263e_263f_269b_26e9_1f702.woff2") format("woff2"); unicode-range: U+232C, U+260A, U+263E, U+263F, U+269B, U+26E9, U+1F702; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-symbols-2-2325.woff2") format("woff2"); unicode-range: U+2325; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-music-1d11e_1d122.woff2") format("woff2"); unicode-range: U+1D11E, U+1D122; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-armenian-531.woff2") format("woff2"); unicode-range: U+531; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-brahmi-11005.woff2") format("woff2"); unicode-range: U+11005; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-cherokee-13a1.woff2") format("woff2"); unicode-range: U+13A1; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-devanagari-905.woff2") format("woff2"); unicode-range: U+905; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-egyptian-hieroglyphs-130c0.woff2") format("woff2"); unicode-range: U+130C0; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-georgian-10d0.woff2") format("woff2"); unicode-range: U+10D0; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-glagolitic-2c00.woff2") format("woff2"); unicode-range: U+2C00; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-javanese-a9c5.woff2") format("woff2"); unicode-range: U+A9C5; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-kr-ac00.woff2") format("woff2"); unicode-range: U+AC00; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-linear-b-10000.woff2") format("woff2"); unicode-range: U+10000; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-lycian-10280.woff2") format("woff2"); unicode-range: U+10280; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-meetei-mayek-abc0.woff2") format("woff2"); unicode-range: U+ABC0; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-ogham-169b.woff2") format("woff2"); unicode-range: U+169B; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-old-south-arabian-10a71.woff2") format("woff2"); unicode-range: U+10A71; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-phoenician-10900.woff2") format("woff2"); unicode-range: U+10900; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-runic-16a0.woff2") format("woff2"); unicode-range: U+16A0; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-syloti-nagri-a800.woff2") format("woff2"); unicode-range: U+A800; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-tagalog-1700.woff2") format("woff2"); unicode-range: U+1700; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-ugaritic-10380.woff2") format("woff2"); unicode-range: U+10380; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-yi-a000.woff2") format("woff2"); unicode-range: U+A000; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-a66e.woff2") format("woff2"); unicode-range: U+A66E; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-sans-294_20bf.woff2") format("woff2"); unicode-range: U+294, U+20BF; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-serif-hentaigana-1b001.woff2") format("woff2"); unicode-range: U+1B001; font-display: swap; }
+@font-face { font-family: "KfmSym"; src: url("./assets/fonts41/kfm-sym-noto-serif-tangut-17f07.woff2") format("woff2"); unicode-range: U+17F07; font-display: swap; }

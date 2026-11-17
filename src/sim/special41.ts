@@ -13,17 +13,91 @@ import type { Vec } from "../core/types";
 import type { World } from "./world";
 import { homeCity, subCity } from "./ceremony";
 
-export interface SpecialDef { sym: string; reading: string }
-export const SPECIALS: readonly SpecialDef[] = [
+export interface SpecialDef { sym: string; reading: string; /** the year this symbol stands at in the owner's list (its place in the order; only the six FIXED years bind a symbol to a year) */ year?: number; cp?: number }
+/** The first list (Stage 41, 13 symbols): games made by the build published on 2026-11-17 keep it (`special41` without `special60`). */
+export const SPECIALS13: readonly SpecialDef[] = [
   { sym: "1", reading: "イチ" }, { sym: "0", reading: "ゼロ" }, { sym: "A", reading: "エー" }, { sym: "元", reading: "ゲン" }, { sym: "始", reading: "シ" }, { sym: "ㄅ", reading: "ボ" }, { sym: "ᚠ", reading: "フェ" },
   { sym: "Ⰰ", reading: "アズ" }, { sym: "ꀀ", reading: "イ" }, { sym: "᚛", reading: "ベイ" }, { sym: "𓃀", reading: "ベー" }, { sym: "⌘", reading: "コマ" }, { sym: "ꙮ", reading: "オク" },
 ];
-export const SPECIAL_SYMS = SPECIALS.map((s) => s.sym);
+/** Issue #87: the sixty symbols, 1800-7700, by code point (the characters are made from the numbers, so an editor or a font can never change which character a route carries). 3300 reads ハート and 7600 is U+221E, as the owner corrected. */
+export const SPECIALS60: readonly SpecialDef[] = [
+  { year: 1800, cp: 0x0031, sym: String.fromCodePoint(0x0031), reading: "イチ" },
+  { year: 1900, cp: 0x0030, sym: String.fromCodePoint(0x0030), reading: "ゼロ" },
+  { year: 2000, cp: 0x0041, sym: String.fromCodePoint(0x0041), reading: "エー" },
+  { year: 2100, cp: 0x963F, sym: String.fromCodePoint(0x963F), reading: "ア" },
+  { year: 2200, cp: 0x2668, sym: String.fromCodePoint(0x2668), reading: "ユ" },
+  { year: 2300, cp: 0x2200, sym: String.fromCodePoint(0x2200), reading: "オール" },
+  { year: 2400, cp: 0x5143, sym: String.fromCodePoint(0x5143), reading: "ゲン" },
+  { year: 2500, cp: 0x1D11E, sym: String.fromCodePoint(0x1D11E), reading: "トオン" },
+  { year: 2600, cp: 0x16A0, sym: String.fromCodePoint(0x16A0), reading: "フェ" },
+  { year: 2700, cp: 0x2318, sym: String.fromCodePoint(0x2318), reading: "コマ" },
+  { year: 2800, cp: 0x592A, sym: String.fromCodePoint(0x592A), reading: "タイ" },
+  { year: 2900, cp: 0x10380, sym: String.fromCodePoint(0x10380), reading: "ウガ" },
+  { year: 3000, cp: 0x00A7, sym: String.fromCodePoint(0x00A7), reading: "セク" },
+  { year: 3100, cp: 0xA000, sym: String.fromCodePoint(0xA000), reading: "イ" },
+  { year: 3200, cp: 0x1F702, sym: String.fromCodePoint(0x1F702), reading: "エン" },
+  { year: 3300, cp: 0x2665, sym: String.fromCodePoint(0x2665), reading: "ハート" },
+  { year: 3400, cp: 0x2325, sym: String.fromCodePoint(0x2325), reading: "オプ" },
+  { year: 3500, cp: 0x3090, sym: String.fromCodePoint(0x3090), reading: "ヰ" },
+  { year: 3600, cp: 0x2202, sym: String.fromCodePoint(0x2202), reading: "デル" },
+  { year: 3700, cp: 0x2C00, sym: String.fromCodePoint(0x2C00), reading: "アズ" },
+  { year: 3800, cp: 0x1D122, sym: String.fromCodePoint(0x1D122), reading: "ヘオン" },
+  { year: 3900, cp: 0x203B, sym: String.fromCodePoint(0x203B), reading: "コメ" },
+  { year: 4000, cp: 0x0531, sym: String.fromCodePoint(0x0531), reading: "アイ" },
+  { year: 4100, cp: 0xABC0, sym: String.fromCodePoint(0xABC0), reading: "コク" },
+  { year: 4200, cp: 0x10A71, sym: String.fromCodePoint(0x10A71), reading: "サバ" },
+  { year: 4300, cp: 0x00B6, sym: String.fromCodePoint(0x00B6), reading: "ピル" },
+  { year: 4400, cp: 0xA9C5, sym: String.fromCodePoint(0xA9C5), reading: "ジャワ" },
+  { year: 4500, cp: 0x263F, sym: String.fromCodePoint(0x263F), reading: "メル" },
+  { year: 4600, cp: 0x5700, sym: String.fromCodePoint(0x5700), reading: "クニ" },
+  { year: 4700, cp: 0x2660, sym: String.fromCodePoint(0x2660), reading: "スペ" },
+  { year: 4800, cp: 0x2203, sym: String.fromCodePoint(0x2203), reading: "イグ" },
+  { year: 4900, cp: 0x11005, sym: String.fromCodePoint(0x11005), reading: "ブラ" },
+  { year: 5000, cp: 0x269B, sym: String.fromCodePoint(0x269B), reading: "アトム" },
+  { year: 5100, cp: 0x10D0, sym: String.fromCodePoint(0x10D0), reading: "アニ" },
+  { year: 5200, cp: 0x20BF, sym: String.fromCodePoint(0x20BF), reading: "ビット" },
+  { year: 5300, cp: 0x10280, sym: String.fromCodePoint(0x10280), reading: "リュク" },
+  { year: 5400, cp: 0x21A04, sym: String.fromCodePoint(0x21A04), reading: "ナン" },
+  { year: 5500, cp: 0x232C, sym: String.fromCodePoint(0x232C), reading: "ベン" },
+  { year: 5600, cp: 0x13A1, sym: String.fromCodePoint(0x13A1), reading: "レ" },
+  { year: 5700, cp: 0x26E9, sym: String.fromCodePoint(0x26E9), reading: "トリ" },
+  { year: 5800, cp: 0x10900, sym: String.fromCodePoint(0x10900), reading: "アルパ" },
+  { year: 5900, cp: 0x263E, sym: String.fromCodePoint(0x263E), reading: "ゲツ" },
+  { year: 6000, cp: 0x9741, sym: String.fromCodePoint(0x9741), reading: "ライ" },
+  { year: 6100, cp: 0x0905, sym: String.fromCodePoint(0x0905), reading: "ヒン" },
+  { year: 6200, cp: 0x1700, sym: String.fromCodePoint(0x1700), reading: "バイ" },
+  { year: 6300, cp: 0x10000, sym: String.fromCodePoint(0x10000), reading: "ミケ" },
+  { year: 6400, cp: 0xA800, sym: String.fromCodePoint(0xA800), reading: "シロ" },
+  { year: 6500, cp: 0x1B001, sym: String.fromCodePoint(0x1B001), reading: "イェ" },
+  { year: 6600, cp: 0x130C0, sym: String.fromCodePoint(0x130C0), reading: "ベー" },
+  { year: 6700, cp: 0x2756, sym: String.fromCodePoint(0x2756), reading: "ヤツ" },
+  { year: 6800, cp: 0x0294, sym: String.fromCodePoint(0x0294), reading: "グロ" },
+  { year: 6900, cp: 0x17F07, sym: String.fromCodePoint(0x17F07), reading: "セイ" },
+  { year: 7000, cp: 0x260A, sym: String.fromCodePoint(0x260A), reading: "ノード" },
+  { year: 7100, cp: 0x169B, sym: String.fromCodePoint(0x169B), reading: "オガ" },
+  { year: 7200, cp: 0x309F, sym: String.fromCodePoint(0x309F), reading: "ヨリ" },
+  { year: 7300, cp: 0x521D, sym: String.fromCodePoint(0x521D), reading: "ショ" },
+  { year: 7400, cp: 0x3091, sym: String.fromCodePoint(0x3091), reading: "ヱ" },
+  { year: 7500, cp: 0xAC00, sym: String.fromCodePoint(0xAC00), reading: "カ" },
+  { year: 7600, cp: 0x221E, sym: String.fromCodePoint(0x221E), reading: "ムゲン" },
+  { year: 7700, cp: 0xA66E, sym: String.fromCodePoint(0xA66E), reading: "オク" },
+];
+/** Issue #87: the six years whose symbol is FIXED to that year's building opportunity. In such a year the fixed symbol is what is built; the ordinary symbols not yet used are not lost (they go on from the next ordinary opportunity). A fixed symbol whose year was
+ *  passed without building is not carried to another year (it is that year's opportunity) -- decided here because the owner left this detail to the implementation; no route is ever removed by it. */
+export const FIXED_YEARS: Readonly<Record<number, string>> = Object.freeze(Object.fromEntries(SPECIALS60.filter((d) => [2200, 3300, 4400, 5500, 6600, 7700].includes(d.year!)).map((d) => [d.year!, d.sym])));
+const FIXED_SYMS = new Set(Object.values(FIXED_YEARS));
+/** For a later feature (not built: the owner has not decided it): years whose first two digits repeat (2200, 3300 ...) and years of four equal digits (2222, 3333 ...). */
+export const isDoubleCenturyYear = (y: number) => y >= 1100 && y % 100 === 0 && Math.floor(y / 1000) === Math.floor(y / 100) % 10;
+export const isQuadYear = (y: number) => y >= 1111 && y <= 9999 && y % 1111 === 0;
+export const SPECIALS: readonly SpecialDef[] = SPECIALS60;
+const listOf = (sim: Pick<SimState, "special60">): readonly SpecialDef[] => (sim.special60 ? SPECIALS60 : SPECIALS13);
+export const SPECIAL_SYMS = [...new Set([...SPECIALS60, ...SPECIALS13].map((s) => s.sym))];
+export const symsOf = (sim: Pick<SimState, "special60">) => listOf(sim).map((s) => s.sym);
 export const isSpecialSym = (s: unknown): s is string => typeof s === "string" && SPECIAL_SYMS.includes(s);
 /** Which symbols the display can draw; the default (tests, tools) says all. The app installs a real check at start. */
 let glyphOk: (sym: string) => boolean = () => true;
 export const setGlyphCheck = (f: ((sym: string) => boolean) | null) => { glyphOk = f ?? (() => true); };
-export const readingOf = (sym: string) => SPECIALS.find((s) => s.sym === sym)?.reading ?? "";
+export const readingOf = (sym: string) => (SPECIALS60.find((s) => s.sym === sym) ?? SPECIALS13.find((s) => s.sym === sym))?.reading ?? "";
 /** What is shown for a symbol: the symbol itself, or its reading when the phone cannot draw it. */
 export const shownSymbol = (sym: string) => (glyphOk(sym) ? sym : readingOf(sym) || sym);
 export const specialOfficial = (sym: string) => `${shownSymbol(sym)}号`;
@@ -40,7 +114,18 @@ export function specialRoutes(sim: SimState): Record<string, SimRoute> {
   }
   return out;
 }
-export const nextSpecial = (sim: SimState): string | null => { const have = specialRoutes(sim); return SPECIAL_SYMS.find((s) => !have[s]) ?? null; };
+const yearNow = (sim: SimState) => sim.startYear + Math.floor(sim.month / 12);
+/** The symbol the next new special route takes, for a route made in `year`: in a fixed year its fixed symbol (if not used yet); otherwise the first symbol of the game's list, in order, that no route carries -- the six fixed ones are never given out in another year. */
+export const nextSpecial = (sim: SimState, year = yearNow(sim)): string | null => {
+  const have = specialRoutes(sim), list = symsOf(sim);
+  if (sim.special60) { const fx = FIXED_YEARS[year]; if (fx && !have[fx]) return fx; return list.find((s) => !have[s] && !FIXED_SYMS.has(s)) ?? null; }
+  return list.find((s) => !have[s]) ?? null;
+};
+/** The special route made last (the one that must be complete before another is begun): by the month it was made, the numbered 国道1号 first of all. */
+export function lastSpecial(sim: SimState): SimRoute | null {
+  const made = (r: SimRoute) => (r.history?.length ? Math.min(...r.history.map((h) => h.month)) : 0); let best: SimRoute | null = null;
+  for (const r of Object.values(specialRoutes(sim))) if (!best || made(r) > made(best) || (made(r) === made(best) && r.id > best.id)) best = r; return best;
+}
 /** COMPLETE = built through: the route exists and every one of its sections has been finished (built to 100%). A section that was finished and later closed, or fell into disuse a century on, does not un-complete the route -- "完成" is about the construction, not about today's traffic. */
 export function routeComplete(sim: SimState, r: SimRoute): boolean {
   if (!r.edges.length) return false;
@@ -48,11 +133,11 @@ export function routeComplete(sim: SimState, r: SimRoute): boolean {
 }
 export interface Gate { ok: boolean; sym: string | null; reason: string }
 /** May the next special route be made now? (The first symbol needs nothing before it; every later one needs the previous to be complete.) */
-export function canBuildNext(sim: SimState): Gate {
-  const sym = nextSpecial(sim); if (!sym) return { ok: false, sym: null, reason: "13本の特殊路線はすべて作られています" };
-  const i = SPECIAL_SYMS.indexOf(sym); if (i === 0) return { ok: true, sym, reason: "" };
-  const prev = specialRoutes(sim)[SPECIAL_SYMS[i - 1]]; if (!prev) return { ok: false, sym, reason: `前の特殊路線(${specialFullName(SPECIAL_SYMS[i - 1])})がまだありません` };
-  if (!routeComplete(sim, prev)) return { ok: false, sym, reason: `前の特殊路線(${specialFullName(SPECIAL_SYMS[i - 1])})が完成していません(全区間の工事が終わっていることが条件です)` };
+export function canBuildNext(sim: SimState, year = yearNow(sim)): Gate {
+  const sym = nextSpecial(sim, year); if (!sym) return { ok: false, sym: null, reason: "特殊路線の記号はすべて使われています" };
+  const prev = lastSpecial(sim); if (!prev) return { ok: true, sym, reason: "" };
+  const pn = specialFullName(prev.special ?? String(prev.number));
+  if (!routeComplete(sim, prev)) return { ok: false, sym, reason: `前の特殊路線(${pn})が完成していません(全区間の工事が終わっていることが条件です)` };
   return { ok: true, sym, reason: "" };
 }
 
