@@ -197,7 +197,7 @@ export function stanceAt(sim: { era: string; kaigen?: KaigenState }, year: numbe
 export const RELOC_FIRST_LEGACY = 2200, RELOC_STEP = 150, RELOC_MIN = 3, RELOC_TARGET = 5;
 export const relocFirstOf = (startYear: number) => startYear + RELOC_STEP;
 export const relocYear = (n: number, first: number = RELOC_FIRST_LEGACY, step: number = RELOC_STEP) => first + step * n;
-export interface RelocCand { name: string; yomi?: string; real: boolean; note: string; origin: "inherit" | "history" | "fiction"; blocked?: string | null; mark?: string; o86?: string }
+export interface RelocCand { name: string; yomi?: string; real: boolean; note: string; origin: "inherit" | "history" | "fiction"; blocked?: string | null; mark?: string; o86?: string; yomiSrc?: "source" | "provisional" }
 export interface RelocGroup { n: number; year: number; base: string; cands: RelocCand[]; chosen?: string }
 /** Old and new forms, and width variants, of the same name are one name. */
 const VARIANTS: Record<string, string> = { "國": "国", "與": "与", "德": "徳", "榮": "栄", "寶": "宝", "應": "応", "龍": "竜", "禮": "礼", "廣": "広", "壽": "寿", "萬": "万", "齋": "斎", "眞": "真", "惠": "恵", "將": "将", "曆": "暦", "祿": "禄", "觀": "観", "實": "実", "靈": "霊", "龜": "亀", "歷": "歴", "戰": "戦", "圓": "円" };
@@ -216,7 +216,7 @@ function relocBase(k: KaigenState, n: number): { cands: RelocCand[]; text: strin
 }
 /** The group put to the player at relocation event `n` (the `year` is the one it opens in). `pool` is the real-era supply (a parameter so a test can run it dry). */
 export function relocGroup(k: KaigenState, n: number, year: number, pool: string[] = REAL_POOL): RelocGroup {
-  if (k.era86) return { n, year, base: era86PoolText(year), cands: era86Historical(year, k).map((c) => ({ name: c.name, ...(c.yomi ? { yomi: c.yomi } : {}), real: c.origin !== "generated" && c.origin !== "reuse", note: c.note, origin: c.origin === "generated" ? "fiction" as const : "inherit" as const, blocked: c.blocked, ...(c.mark ? { mark: c.mark } : {}), o86: c.origin })) };   // Issue #86
+  if (k.era86) return { n, year, base: era86PoolText(year), cands: era86Historical(year, k).map((c) => ({ name: c.name, ...(c.yomi ? { yomi: c.yomi } : {}), real: c.origin !== "generated" && c.origin !== "reuse", note: c.note, origin: c.origin === "generated" ? "fiction" as const : "inherit" as const, ...(c.yomiSrc ? { yomiSrc: c.yomiSrc } : {}), blocked: c.blocked, ...(c.mark ? { mark: c.mark } : {}), o86: c.origin })) };   // Issue #86
   const used = usedKeys(k), base = relocBase(k, n), seen = new Set<string>(), cands: RelocCand[] = [];
   for (const c of base.cands) { const key = eraKey(c.name); if (used.has(key) || seen.has(key)) continue; seen.add(key); cands.push(c); }
   let text = base.text;
@@ -230,6 +230,6 @@ export function relocGroup(k: KaigenState, n: number, year: number, pool: string
 }
 
 // ---- Issue #86: the bridge to era86.ts (set by that module when it loads, so this file does not import it: era86 imports this one)
-type E86 = { name: string; yomi: string | null; origin: string; note: string; blocked: string | null; mark?: string };
+type E86 = { name: string; yomi: string | null; origin: string; note: string; blocked: string | null; mark?: string; yomiSrc?: "source" | "provisional" };
 let era86Ordinary: (year: number, k: KaigenState) => E86[] = () => [], era86Historical: (year: number, k: KaigenState) => E86[] = () => [], era86PoolText: (year: number) => string = () => "";
 export const installEra86 = (ord: typeof era86Ordinary, hist: typeof era86Historical, text: typeof era86PoolText) => { era86Ordinary = ord; era86Historical = hist; era86PoolText = text; };
