@@ -65,3 +65,6 @@ Top of the stack green in CI → `tools/compat-check.mjs dist-9e0a8c8-build new-
 ## CI 結果（2026-11-17 23:52 JST 時点）
 - PR #89 / #90 / #93 の CI（typecheck・unit・E2E）は全実行が成功。失敗なし、skip・基準緩和なし。
 - 公開（Pages 更新）は引き続き保留。
+
+## 3rd session: 東京–札幌 rail
+See docs/TRUNK42.md "Fourth pass". Open: 修文 stance still slow; Issue #91 road above 1500 m (177 km); screen warning for a seat on uninhabitable ground; numreg compaction; north; shared data. Publishing still on hold; 昭和 readings = option A (owner decided).

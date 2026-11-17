@@ -20,7 +20,12 @@ let S = "", Y = 0, chosen = "";
 beforeAll(() => {
   sim.policy!.mode = "auto"; advance(sim, w, 12 * (1960 - yearOf(sim)));
   Y = sim.startYear + Math.ceil((yearOf(sim) - sim.startYear + 1) / 10) * 10;
-  for (const v of Object.values(sim.settlements)) { if (v.gone || !v.origin || v.post) continue; const pop = v.pop; v.pop = 60000; if (promotionCandidates(sim, w, Y).some((c) => c.id === "O-" + v.origin!.code)) { chosen = v.id; break; } v.pop = pop; }
+  for (const v of Object.values(sim.settlements)) { if (v.gone || !v.origin || v.post) continue; const pop = v.pop; v.pop = 60000; if (promotionCandidates(sim, w, Y).some((c) => c.id === "O-" + v.origin!.code)) {
+      // the premise of this audit is a road that REALLY gets laid before the refusal: try the candidate on a copy and keep it only if so (which settlement qualifies depends on how the game ran, so the first candidate is not always one)
+      const t = JSON.parse(JSON.stringify(sim)) as SimState; syncOldCities(t, w); t.policy!.mode = "auto"; hook.fail = true; hook.edgesAtCall = -1; hook.edgesBefore = Object.keys(t.edges).length;
+      try { promoteOldCities(t, w, Y); } finally { hook.fail = false; }
+      if (hook.edgesAtCall > hook.edgesBefore) { chosen = v.id; break; } }
+    v.pop = pop; }
   S = JSON.stringify(sim);
 }, 900000);
 const fresh = () => { const s = JSON.parse(S) as SimState; syncOldCities(s, w); s.policy!.mode = "auto"; return s; };

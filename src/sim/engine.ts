@@ -507,7 +507,7 @@ function resolveConcepts(sim: SimState) {
     if (p.status !== "concept" || sim.month - p.statusSince < 18) continue;
     const appetite = modeOf(p) === "rail" ? sim.dials.railBuild : sim.dials.hwyBuild;
     const trunk = !!sim.trunk42 && p.reason.startsWith("【首都幹線】");   // Stage 42: the capital / sub-capital trunk is a duty (trunk42.ts): its concept is never dropped at random nor by a low appetite
-    if ((appetite >= 0.25 || trunk) && (rand(sim) < 0.7 || trunk || p.reason.includes("【島間】") || p.reason.includes("【島間接続】")))  { /* a link between two main islands is not dropped at random: STRATEGIC_TAG in crossing.ts */ p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
+    if ((appetite >= 0.25 && (rand(sim) < 0.7 || p.reason.includes("【島間】") || p.reason.includes("【島間接続】"))) || trunk)  { /* a link between two main islands is not dropped at random: STRATEGIC_TAG in crossing.ts */ p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
     else {
       p.status = "abolished"; p.statusSince = sim.month;
       for (const id of p.edgeIds) { const e = sim.edges[id]; if (e && e.built < 1 && !Object.values(sim.routes).some((r) => r.edges.some((x) => x.edgeId === id)) && !Object.values(sim.projects).some((q) => q !== p && (q.edgeIds.includes(id) || q.chain.some((c) => c.edgeId === id) || q.replaces.includes(id)))) { delete sim.edges[id]; netRemoved(sim); } }
