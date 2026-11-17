@@ -1,3 +1,4 @@
+import { TRUNK_PURSE_SHARE, TRUNK_SCORE, TRUNK_TAG, trunkRailFerry, trunkRailLegs } from "./trunk42";
 import { mayScheduleServiceFor } from "./rules1800";
 /**
  * Yearly planning. Every prefecture keeps its own queue and purse, so many regions build at the same time.
@@ -189,10 +190,11 @@ const baseName = (n: string) => n.replace(/市$/, "");
 /** Railway planning, once a year: new lines where the demand is not served by rail, electrification/high-speed where lines are full, revival where demand returned. */
 export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): Generator<void> {
   if (sim.rules1800 && !mayScheduleServiceFor(sim, "rail", y)) return;   // Stage 36: no public railway before 1830 (1810-29 is experiments only)
-  const dl = sim.dials; if (dl.railBuild < 0.05) return;
+  trunkRailFerry(sim, w, y);   // Stage 42: a train ferry across the strait once both shores' lines reach it
+  const dl = sim.dials, legs = trunkRailLegs(sim, w, y), leg = legs[0]; if (dl.railBuild < 0.05 && !leg) return;   // (Stage 42: the trunk duty is not switched off by the policy)
   const live = Object.values(sim.projects).filter((p) => modeOf(p) === "rail" && (p.status === "concept" || p.status === "planned" || p.status === "building" || p.status === "suspended"));
   const liveNew = live.filter((p) => p.kind === "new" && !p.reason.startsWith(LOCAL_TAG)).length, liveUp = live.filter((p) => p.kind !== "new").length, maxNew = 1 + Math.round(dl.railBuild * 2), maxUp = 2 + Math.round(dl.railBuild * 2);
-  if (liveNew >= maxNew && liveUp >= maxUp && live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length >= 1 + Math.round(dl.railBuild * 3)) return;
+  if (!leg && liveNew >= maxNew && liveUp >= maxUp && live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length >= 1 + Math.round(dl.railBuild * 3)) return;
   const busy = new Set(live.flatMap((p) => p.edgeIds)), nc = w.cities.length, cands: (Cand & { op?: string; std?: Standard })[] = [];
   const rail18 = stance18(sim) !== null;   // Stage 18: 海路重視 / 空路重視 hold railway building back
   const rcr = reconOf(sim) ? { y, meanCore: reconMeanCore(sim, w) } : undefined, favMemo = new Map<string, boolean>(), favRegion = (r: string) => { let v = favMemo.get(r); if (v === undefined) { v = !!rcr && reconRegionLean(sim, w, r, rcr.meanCore) >= FAVOURED_LEAN; favMemo.set(r, v); } return v; };
@@ -233,6 +235,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     const demand = Math.log10(1 + (v.pop / 4000) * (30 / bd)) * (0.4 + dl.railBuild) * (1 + 0.5 * dl.railBias) * (0.6 + 0.4 * dl.growth);
     cands.push({ score: demand, kind: "new", a: ci, fromCell: v.cell, fromName: v.name, toCell: best.cell, toName: best.name, std: "rural", local: true, reason: `${LOCAL_TAG}${v.name}(人口${v.pop}人)は鉄道から${Math.round(bd)}kmで、支線の需要がある` });
   }
+  for (const lg of legs) cands.push({ score: TRUNK_SCORE, kind: "new", a: lg.a, b: lg.b, std: y >= 1960 ? "standard" : "rural", reason: lg.reason });   // Stage 42: the capital / sub-capital railway, whatever the policy (ordinary checks below)
   cands.sort((p, q) => q.score - p.score || (p.kind < q.kind ? -1 : 1) || (p.a ?? 0) - (q.a ?? 0) || (p.b ?? 0) - (q.b ?? 0) || (p.fromCell ?? 0) - (q.fromCell ?? 0));
   if ((globalThis as any).__DBG) console.log(y, "cands", cands.filter(c => c.kind === "new").length, cands.slice(0, 5).map(c => c.kind + ":" + c.score.toFixed(2)), "live", live.length, "liveNew", liveNew, "maxNew", maxNew, "up", liveUp, maxUp);
   let made = 0, pf = MAX_RAIL_PATHFINDS, nNew = 0, nUp = 0, nLocal = 0; const liveLocal = live.filter((p) => p.reason.startsWith(LOCAL_TAG)).length, maxLocal = 1 + Math.round(dl.railBuild * 3); const wantNew = dl.railBuild > 0.9 ? 2 : 1, wantUp = Math.max(1, Math.round(0.3 + 1.2 * dl.railBuild));
@@ -244,6 +247,7 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     if (c.score < 0.25) break;
     if (c.pol) { if (nPol >= 1 || livePol + nPol >= 2) continue; }
     else if (c.local) { if (nLocal >= 1 || liveLocal + nLocal >= maxLocal) continue; }
+    else if (c.reason.startsWith(TRUNK_TAG)) { /* Stage 42: the trunk leg has a turn of its own (one leg at a time, trunk42.ts) */ }
     else if (c.kind === "new" ? nNew >= wantNew || liveNew + nNew >= maxNew : nUp >= wantUp || liveUp + nUp >= maxUp) continue;   // new lines and upgrades each get their own quota, so upgrades cannot crowd out new lines for ever
     if (c.edge && (c.kind === "electrify" || c.kind === "restore")) {
       const e = c.edge, cost = e.lengthKm * (c.kind === "restore" ? (e.state === "lost" ? 2.4 : 1.2) : e.standard === "rural" ? 1.3 : 3.2) * mtnCost(w, sim, "rail", e.cells, y);   // Stage 9: upgrading a line through drawn mountains costs as much more as building it
@@ -254,9 +258,15 @@ export function* planRailGen(sim: SimState, w: World, an: Analysis, y: number): 
     if (c.kind === "new" && c.a !== undefined && (c.b !== undefined || c.toCell !== undefined) && !railFailCooling(sim, w, c, y) && pf-- > 0) {
       const a = w.cities[c.a], aCell = c.fromCell ?? a.cell, aName = c.fromName ?? a.name, b = c.b !== undefined ? w.cities[c.b] : null, bCell = b ? b.cell : c.toCell!, bName = b ? b.name : c.toName ?? "既設線", idx = buildIndex(sim, "rail"), ref = referenceGrids(w), std = c.std ?? "rural";
       const path = pathfind(w, aCell, bCell, { rail: true, ease: crossingEase(sim.tech, y), bias: (k) => refBias(ref.rail)(k) * (idx.roadCells.has(k) ? 1.6 : 1), margin: 16 }); yield; if (!path) continue;   // a new line is a direct one: existing track is not discounted
-      const newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell); if (newKm < (c.local ? 6 : 15)) continue;
+      const newKm = path.filter((k, q) => q > 0 && !idx.step.has(stepKey(path[q - 1], k))).length * w.cell; if ((globalThis as any).__DBG) console.log("try", aName, bName, "newKm", newKm, "len", path.length * w.cell);
+      if (c.reason.startsWith(TRUNK_TAG)) {   // Stage 42: on the trunk, track that lies there closed / dormant / abandoned is brought back first (one project), before anything new is laid
+        const dead = [...new Set(path.map((k, q) => (q > 0 ? idx.step.get(stepKey(path[q - 1], k))?.edge : undefined)).filter((id): id is string => !!id))].map((id) => sim.edges[id]).filter((e) => !!e && modeOf(e) === "rail" && e.built >= 1 && e.state !== "open" && !busy.has(e.id));
+        if (dead.length) { const cost = dead.reduce((s2, e) => s2 + e.lengthKm * (e.state === "lost" ? 2.4 : 1.2) * mtnCost(w, sim, "rail", e.cells, y), 0), p = createProject(sim, "restore", "JP", dead[0].a, dead[dead.length - 1].b, dead.map((e) => e.id), dead.map((e) => ({ edgeId: e.id, dir: 1 as const })), cost, `${c.reason}(休止・廃止区間${dead.length}か所を復活)`, c.score); p.mode = "rail"; p.op = dead[0].op ?? "jnr";
+          ev(sim, "project", `復活計画: ${projLabel(sim, p)}`, p.reason, { project: p.id }); made++; nNew++; yield; continue; }
+      }
+      if (newKm < (c.local ? 6 : 15)) continue;
       const tcR = techCheck(sim, w, "rail", path, y); if (!tcR.ok) { if (sim.rules1800) (sim.railFail ??= {})[railFailKey(w, c)] = [y, sim.tech ? techAt(sim.tech.k, y).tunnelKm : 0]; continue; }   // not buildable with this year's tunnelling (yet)
-      if (!affordable(sim, w, "rail", path, newKm, RAIL_UNIT[std], railPurse(sim), y)) continue;
+      if (!affordable(sim, w, "rail", path, newKm, RAIL_UNIT[std], c.reason.startsWith(TRUNK_TAG) ? Math.max(railPurse(sim), TRUNK_PURSE_SHARE * sim.macro.budgetBu * 12) : railPurse(sim), y)) continue;   // (Stage 42: the trunk leg is judged against a national share of the budget, so a road-first policy cannot starve it; it is still paid for)
       const jnrEra = sim.dials.privatize < 0.5, privateOk = !!b && Math.min(sim.cities[a.id].pop, sim.cities[b.id].pop) > PRIVATE_MIN_POP && dist(a.pos, b.pos) < PRIVATE_MAX_KM,   /* Stage 7: private companies enter the busier corridors the national railway serves poorly, so the two compete */ localPrivate = !!c.local && !jnrEra;
       let op = "jnr"; if (c.local && !localPrivate) op = "jnr"; else if (!jnrEra || privateOk) { const anchorIsA = !b || basePop(sim, w, a) >= basePop(sim, w, b), id = `p.${anchorIsA ? a.id : b!.id}`, anchor = anchorIsA ? a : b!; if (!sim.operators[id]) sim.operators[id] = { id, name: `${baseName(anchor.name)}${jnrEra ? "電鉄" : "鉄道"}`, kind: "private", since: y, note: "新規参入の鉄道事業者(架空の事業者名)" } as Operator; op = id; }
       const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 88, built: 0, month: sim.month, standard: std, mode: "rail", op }); if (!l.created.length) continue;
