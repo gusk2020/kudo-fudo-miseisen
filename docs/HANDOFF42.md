@@ -51,3 +51,13 @@ Top of the stack green in CI → `tools/compat-check.mjs dist-9e0a8c8-build new-
 - PR #90 = `claude/s42-trunk` (on `claude/s42-fast`, on #89): decade mode, long-run data, trunk measure. Merged #89's fix in. CI not yet seen.
 - Not started: trunk builder (TRUNK42.md), numreg compaction (LONG42.md), northern place set (NORTH41.md), shared-data next step (SHARED-DATA41.md).
 - Publishing: not done; needs the owner's approval. Candidate = PR #90 head once green (it contains #89).
+
+## Second session (Claude Opus, 2026-11-17 evening) — publishing ON HOLD by the owner
+- **Issue #86 correction** (on `claude/s42-islands` = PR #89): the 1900 relocation offers the 14 昭和時候補 again with provisional readings marked 仮; options in ERA86.md.
+- **Issue #91** fixed (first part) and **trunk railway duty** implemented: PR #93 = `claude/s42-terrain91` (on #90). TERRAIN91.md, TRUNK42.md.
+- Pinned test `rail66` "balanced game keeps its railway": the exact figures are now asserted without the trunk duty, and "at least as long" with it.
+- Save compatibility live build (9e0a8c8) → this stack: 11/16 = the 5 by-design items, all real checks pass.
+- Full unit suite (terrain91 head before the trunk duty): 738 passed. After the trunk duty: 738 passed + 2 failures that were (a) a debug file, since removed, (b) the pinned rail66 figures (handled above).
+- CI of #89/#90 for the latest pushes was still running at 20:55 JST; #93 not yet run. **Check them first next time.**
+- Stack for a future publish candidate: #93 head (contains #89, #90).
+- Still open: 東京–札幌 rail+ship way; Issue #91 roads above 1,500 m (177 km remain); seat-on-uninhabitable warning on screen; numreg compaction; north; shared data.
