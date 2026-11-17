@@ -26,3 +26,17 @@ From 2100 the pool is all four groups minus what this world used.
 - Same-year ordinary change + relocation: the ordinary one is settled first, the relocation names its own; names never repeat (tested).
 - Saves: `EraEntry.yomi/o86`, `KaigenState.era86`; older saves lack them and are not rewritten.
 Tests: `tests/unit/era86.test.ts` (8), `tests/e2e/era86.spec.ts`.
+
+## Correction (2026-11-17, second session): the 昭和時候補 are offered again
+The first version made the 14 昭和時候補 unselectable (no verified reading), so the 1900 relocation offered only generated names — **against the owner's rule** ("1900 = only the 14 昭和 candidates"). Now:
+- each 昭和 name carries a **provisional reading** (`yomiSrc: "provisional"`): the usual on-reading of each character — 神化 しんか, 元化 げんか, 神和 しんわ, 同和 どうわ, 継明 けいめい, 順明 じゅんめい, 明保 めいほ, 寛安 かんあん, 元安 げんあん, 立成 りっせい, 定業 ていぎょう, 光文 こうぶん, 章明 しょうめい, 協中 きょうちゅう. 修文 しゅうぶん / 正化 せいか likewise (their S initial IS sourced).
+- they are **shown as 「仮の読み」** in the relocation list, and a block decided by a provisional initial says 「(仮の読みによる判定)」. Readings with a source (大正, 令和) are `yomiSrc: "source"`.
+- Search this session (2026-11-17): the names and the 宮内省/内閣 split are confirmed again (NDL column 6, gendai.media on 倉富日記, zatsuneta); only 元化(げんか) appeared spelled out, on an aggregator page (not a reliable source). No source with all 14 readings was reached; ja.wikipedia and several sites are outside this session's network.
+- Result: at 1900 the list has exactly the 14 names; with an 1800 start most are selectable (the rest blocked by the 4-era rule, with the reason).
+
+### Options left for the owner (recorded, not decided here)
+| option | effect | risk |
+|---|---|---|
+| A (current) | provisional on-readings, marked 仮, used by the 4-era rule | a real reading could differ (e.g. 神 = じん), which could flip an S/J initial |
+| B | judge 昭和 names by kanji only until a reading is sourced | the romaji rule is skipped for them |
+| C | owner supplies sources/readings | best; one line per name in `HIST_POOL` |

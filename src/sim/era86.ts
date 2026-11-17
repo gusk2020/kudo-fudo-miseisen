@@ -2,7 +2,7 @@
  * Issue #86: era NAMES and transport POLICY are chosen independently, from the candidates history passed over.
  *   pools      大正時候補 (the 1912 names beside 大正): the first era of an 1800 game.   昭和時候補 (1926): the relocation of the 1900s.   平成時候補 + 令和時候補 (1989, 2019): the 2000s.   From 2100: every one of them not yet used.
  *              明治's candidates are not used (none could be verified). 令和's side proposals 佳桜・桜花・知道 are not used. A name history ADOPTED (大正 昭和 平成 令和 ...) is never offered.
- *   readings   A candidate's reading is data, with its source (docs/ERA86.md). The fourteen 1926 names have NO verified reading yet: they are listed, marked 「読み未確認」 and cannot be chosen -- an initial is never guessed.
+ *   readings   A candidate's reading is data, with where it comes from (docs/ERA86.md): `source` (a source spells it out) or `provisional` (the game's own reading -- the usual on-reading of each character -- for the 1926 names and the full kana of 修文・正化, whose readings no reachable source spelled out). A provisional reading is shown as 仮; the 4-era rule judges by it like any other, and the reason says so when it decides a block.
  *   4 eras     The candidate and the three eras before it must all differ in (1) their first kanji and (2) the first letter of their reading in Hepburn romaji. The two are judged separately; a candidate that fails is still listed, with the mark and the reason, and cannot be chosen.
  *              A fifth era may repeat the first one's initial. An era before it whose reading is unknown (a game from before this rule) is judged by its kanji only.
  *   前・中・後   The game's OWN fiction (not a practice of real Japanese eras): when every verified historical candidate has been used, a name adopted before may come back -- the second time as 前X, the third as 中X, the fourth as 後X (readings ぜん・ちゅう・こう + X).
@@ -15,14 +15,14 @@ import { BRANCHES, IROHA, REAL_ERAS_USED, STEMS, eraKey, eto, futureCandidates, 
 
 export type EraOrigin = "taisho" | "showa" | "heisei" | "reiwa" | "reuse" | "generated";
 export const ORIGIN_LABEL: Record<EraOrigin, string> = { taisho: "大正時候補", showa: "昭和時候補", heisei: "平成時候補", reiwa: "令和時候補", reuse: "再採用(ゲーム独自の前・中・後)", generated: "ゲーム生成(史実の候補ではない)" };
-export interface HistCand { name: string; yomi: string | null; origin: EraOrigin; note: string }
+export interface HistCand { name: string; yomi: string | null; origin: EraOrigin; note: string; /** where the reading comes from: a source (docs/ERA86.md), or the game's PROVISIONAL reading -- the usual on-reading of each character, made by the game because no source spelling the reading out was found; it is shown as 仮 and judged by the 4-era rule like any other */ yomiSrc?: "source" | "provisional" }
 /** yomi null = no verified reading (docs/ERA86.md lists the sources tried). */
 export const HIST_POOL: readonly HistCand[] = [
-  ...[["天興", "てんこう"], ["興化", "こうか"], ["永安", "えいあん"], ["乾徳", "けんとく"], ["昭徳", "しょうとく"]].map(([name, yomi]) => ({ name, yomi, origin: "taisho" as const, note: "1912年の改元で示された候補(不採用)" })),
-  ...["神化", "元化", "神和", "同和", "継明", "順明", "明保", "寛安", "元安"].map((name) => ({ name, yomi: null, origin: "showa" as const, note: "1926年の改元の宮内省案(不採用)" })),
-  ...["立成", "定業", "光文", "章明", "協中"].map((name) => ({ name, yomi: null, origin: "showa" as const, note: "1926年の改元の内閣案(不採用)" })),
-  ...[["修文", "しゅうぶん"], ["正化", "せいか"]].map(([name, yomi]) => ({ name, yomi, origin: "heisei" as const, note: "1989年の改元の最終候補(不採用)" })),
-  ...[["英弘", "えいこう"], ["久化", "きゅうか"], ["広至", "こうし"], ["万和", "ばんな"], ["万保", "ばんぽう"]].map(([name, yomi]) => ({ name, yomi, origin: "reiwa" as const, note: "2019年の改元の最終候補(不採用)" })),
+  ...[["天興", "てんこう"], ["興化", "こうか"], ["永安", "えいあん"], ["乾徳", "けんとく"], ["昭徳", "しょうとく"]].map(([name, yomi]) => ({ name, yomi, origin: "taisho" as const, yomiSrc: "source" as const, note: "1912年の改元で示された候補(不採用)" })),
+  ...[["神化", "しんか"], ["元化", "げんか"], ["神和", "しんわ"], ["同和", "どうわ"], ["継明", "けいめい"], ["順明", "じゅんめい"], ["明保", "めいほ"], ["寛安", "かんあん"], ["元安", "げんあん"]].map(([name, yomi]) => ({ name, yomi, yomiSrc: "provisional" as const, origin: "showa" as const, note: "1926年の改元の宮内省案(不採用)。読みはゲーム上の仮の読み" })),
+  ...[["立成", "りっせい"], ["定業", "ていぎょう"], ["光文", "こうぶん"], ["章明", "しょうめい"], ["協中", "きょうちゅう"]].map(([name, yomi]) => ({ name, yomi, yomiSrc: "provisional" as const, origin: "showa" as const, note: "1926年の改元の内閣案(不採用)。読みはゲーム上の仮の読み" })),
+  ...[["修文", "しゅうぶん"], ["正化", "せいか"]].map(([name, yomi]) => ({ name, yomi, yomiSrc: "provisional" as const, origin: "heisei" as const, note: "1989年の改元の最終候補(不採用)" })),
+  ...[["英弘", "えいこう"], ["久化", "きゅうか"], ["広至", "こうし"], ["万和", "ばんな"], ["万保", "ばんぽう"]].map(([name, yomi]) => ({ name, yomi, origin: "reiwa" as const, yomiSrc: "source" as const, note: "2019年の改元の最終候補(不採用)" })),
 ];
 /** Names history really adopted: never offered, whatever the pool says. */
 export const ADOPTED_REAL = new Set(REAL_ERAS_USED.map(eraKey));
@@ -45,19 +45,19 @@ export const PREFIXES = [["前", "ぜん"], ["中", "ちゅう"], ["後", "こ�
 export function baseOf(name: string, bases: Set<string>): string { const c = [...name]; return c.length > 2 && PREFIXES.some(([p]) => p === c[0]) && bases.has(c.slice(1).join("")) ? c.slice(1).join("") : name; }
 
 // ---- the candidates of one occasion
-export interface Era86Cand { name: string; yomi: string | null; origin: EraOrigin; note: string; /** null = can be chosen */ blocked: string | null; /** the mark shown beside a blocked one */ mark?: "漢" | "ロ" | "読" | "済" }
+export interface Era86Cand { name: string; yomi: string | null; origin: EraOrigin; note: string; yomiSrc?: "source" | "provisional"; /** null = can be chosen */ blocked: string | null; /** the mark shown beside a blocked one */ mark?: "漢" | "ロ" | "読" | "済" }
 export interface EraPast { name: string; yomi?: string | null }
 /** The 4-era test of one name against the eras before it (newest last). */
-export function fourEraBlock(name: string, yomi: string | null, past: EraPast[]): { blocked: string; mark: "漢" | "ロ" } | null {
+export function fourEraBlock(name: string, yomi: string | null, past: EraPast[], provisional = false): { blocked: string; mark: "漢" | "ロ" } | null {
   const last3 = past.slice(-3), k = kanjiInitial(name), hitK = last3.find((e) => kanjiInitial(e.name) === k); if (hitK) return { blocked: `先頭の漢字「${k}」が直前3代の「${hitK.name}」と重なる`, mark: "漢" };
-  const r = romajiInitial(yomi); if (r) { const hitR = last3.find((e) => romajiInitial(e.yomi) === r); if (hitR) return { blocked: `ローマ字の頭文字「${r}」が直前3代の「${hitR.name}」と重なる`, mark: "ロ" }; }
+  const r = romajiInitial(yomi); if (r) { const hitR = last3.find((e) => romajiInitial(e.yomi) === r); if (hitR) return { blocked: `ローマ字の頭文字「${r}」が直前3代の「${hitR.name}」と重なる${provisional ? "(仮の読みによる判定)" : ""}`, mark: "ロ" }; }
   return null;
 }
 export const poolFor = (year: number): EraOrigin[] => (year < 1900 ? ["taisho"] : year < 2000 ? ["showa"] : year < 2100 ? ["heisei", "reiwa"] : ["taisho", "showa", "heisei", "reiwa"]);
-const judge = (c: { name: string; yomi: string | null; origin: EraOrigin; note: string }, past: EraPast[], used: Set<string>): Era86Cand => {
+const judge = (c: { name: string; yomi: string | null; origin: EraOrigin; note: string; yomiSrc?: "source" | "provisional" }, past: EraPast[], used: Set<string>): Era86Cand => {
   if (used.has(eraKey(c.name))) return { ...c, blocked: "この世界ですでに使った元号", mark: "済" };
   if (c.yomi === null) return { ...c, blocked: "読みを資料で確認できていない(ローマ字の頭文字を判定できない)", mark: "読" };
-  const b = fourEraBlock(c.name, c.yomi, past); return b ? { ...c, ...b } : { ...c, blocked: null };
+  const b = fourEraBlock(c.name, c.yomi, past, (c as { yomiSrc?: string }).yomiSrc === "provisional"); return b ? { ...c, ...b } : { ...c, blocked: null };
 };
 export const GENERATED_SHOWN = 5, GENERATED_TRY = 40;
 /** Generated names for `year`, judged: the first five, and more until three can be chosen (at most GENERATED_TRY looked at). */
