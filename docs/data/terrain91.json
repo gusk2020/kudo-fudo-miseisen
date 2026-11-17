@@ -1,0 +1,28 @@
+{
+ "normal": {
+  "pops": {
+   "東京": 26778,
+   "横浜市": 3879,
+   "千葉市": 3340,
+   "さいたま市": 3161,
+   "大阪市": 13375
+  },
+  "kantoPopK": 47276,
+  "roadKmWithin70km": 2465,
+  "openKmAbove1500m": 0,
+  "capitalPref": "JP-13"
+ },
+ "fuji-tokyo-x5": {
+  "pops": {
+   "東京": 6,
+   "横浜市": 6,
+   "千葉市": 6,
+   "さいたま市": 6,
+   "大阪市": 22009
+  },
+  "kantoPopK": 39,
+  "roadKmWithin70km": 172,
+  "openKmAbove1500m": 177,
+  "capitalPref": "JP-13"
+ }
+}

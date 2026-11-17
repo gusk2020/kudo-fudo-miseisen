@@ -37,7 +37,8 @@ import { dropForeignOldCities, syncOldCities } from "./oldcity40";
 import { developSeats37 } from "./devseat37";
 import { abolishSubmerged, mayStand, reclaimedCell } from "./muni39sim";
 import { homeCity, seatCity, subCity, tokyoCity } from "./ceremony";
-import { siteCapacity, upkeepMult } from "./land";
+import { worldMemo } from "./worldMemo";
+import { siteCapacity, uninhabitable, upkeepMult } from "./land";
 import { ecoIndustry, ecoYear } from "./econ";
 import { computeMetros } from "./metro";
 import { applySeatOrder } from "./seats14";
@@ -103,6 +104,20 @@ export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).yea
  * Stage 12: the people a city's land cannot hold (1 - siteCapacity of its base size) move to the other cities of the same prefecture, in proportion to how
  * much better their land is; a prefecture with no better-sited city sends them to the nation's cities in proportion to size, so the national total holds.
  */
+/** Issue #91: the most people a city on uninhabitable ground (land.ts `uninhabitable`: no buildable land around it and above the 市 limit) may hold, whatever its role -- a mountain village, not a city. */
+export const UNINHABITABLE_CAP = 5000;
+const uninhabMemo = worldMemo<string[]>();
+/** Once a year: such cities give their excess people to the habitable cities of their prefecture (else of the nation, by size), as the start of a game does for squeezed sites. The first time it happens to a city the timeline says why. Nothing else of the city changes. */
+export function capUninhabitable(sim: SimState, w: World, y: number): number {
+  let ids = uninhabMemo.get(w); if (!ids) { ids = w.cities.filter((c) => uninhabitable(w, c)).map((c) => c.id); uninhabMemo.set(w, ids); } if (!ids.length) return 0; let moved = 0;
+  for (const id of ids) {
+    const st = sim.cities[id], c = w.cityById.get(id); if (!st || !c || st.pop <= UNINHABITABLE_CAP) continue; const d = st.pop - UNINHABITABLE_CAP; st.pop = UNINHABITABLE_CAP; moved += d;
+    const ok = (q: typeof c) => q.id !== id && !ids!.includes(q.id) && (sim.cities[q.id]?.pop ?? 0) > 0, same = w.cities.filter((q) => q.pref === c.pref && ok(q)), hosts = same.length ? same : w.cities.filter(ok), tot = hosts.reduce((a, q) => a + sim.cities[q.id].pop, 0);
+    let given = 0; hosts.forEach((q, i) => { const g = i === hosts.length - 1 ? d - given : Math.round((d * sim.cities[q.id].pop) / tot); sim.cities[q.id].pop += g; given += g; });
+    const told = (sim.uninhab91 ??= []); if (!told.includes(id)) { told.push(id); ev(sim, "muni39", `${c.name}は住める土地がなく、人の住む規模が保てない`, `地形変換で役所の位置が標高${Math.round(w.elevM(c.cell))}mの急な山地になり、周りに平らな土地がない。人口は${UNINHABITABLE_CAP.toLocaleString()}人までに抑えられ、残りは${same.length ? "同じ府県" : "全国"}のほかの都市へ移る${sim.capital === c.pref || sim.subCapital === c.pref ? "(首都・副首都の指定は変えていない)" : ""}`, { city: id }); }
+  }
+  return moved;
+}
 export function squeezeSites(sim: SimState, w: World) {
   let lost = 0; const cap = new Map<string, number>();
   for (const c of w.cities) { const k = siteCapacity(w, c); cap.set(c.id, k); if (k < 1) { const st = sim.cities[c.id], keep = Math.round(st.pop * k), d = st.pop - keep; st.pop = keep; lost += d; const pf = c.pref; const hosts = w.cities.filter((q) => q.pref === pf && (cap.get(q.id) ?? siteCapacity(w, q)) >= 0.9); const tot = hosts.reduce((s, q) => s + sim.cities[q.id].pop, 0); if (tot > 0) { for (const q of hosts) sim.cities[q.id].pop += Math.round(d * sim.cities[q.id].pop / tot); lost -= d; } } }
@@ -218,6 +233,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   if (sim.rec34) { const n = stepReclaim(sim, w, y).length; if (n) ev(sim, "reclaim", `${y}年: 首都・副首都の埋め立てで${n}マス(約${n * w.cell * w.cell}km²)の陸地が増えた`, "埋め立ては年間の面積をためておき、1マス(25km²)分になった時に1マスずつ海岸に足す。別の島とは陸続きにならない", {}); }   // Stage 34
   if (sim.rules1800) { const g = shipGrade(sim, y); for (const e of Object.values(sim.edges)) if (e.facility === "ferry" && (e.shipGrade ?? 0) !== g) e.shipGrade = g; }   // Stage 40 (#66 B): the ships of the ferry routes follow the year's grade (monotone)
   if (sim.oldmuni40) syncOldCities(sim, w);   // Issue #67: the world holds exactly this game's promoted cities (a shared world may hold another game's)
+  capUninhabitable(sim, w, y);   // Issue #91: a city on ground the player's terrain made uninhabitable cannot be big (no city is ever removed)
   if (sim.oldmuni40 && y > sim.startYear) { foundOldMunicipalities(sim, w, y); promoteSettlements(sim, w, y); if (sim.promote40) promoteOldCities(sim, w, y); }   // Stage 40: old municipalities come into being and are promoted in stages
   if (sim.rules1800 && y > sim.startYear) fireHistory1800(sim, y);   // Stage 36: the technology rows and the fictional history of an 1800 game
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, hubYear(sim, y)); }

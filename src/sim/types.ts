@@ -138,6 +138,8 @@ export interface SimState {
   special41?: true;
   /** Issue #87: the game uses the sixty-symbol list and its six fixed years (special41.ts). Absent with `special41` = a game of the first, thirteen-symbol list, which it keeps */
   special60?: true;
+  /** Issue #91: the cities the timeline has already told about being on uninhabitable ground */
+  uninhab91?: string[];
   resumeMode?: "auto" | "autoReloc" | "idleAuto";
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
