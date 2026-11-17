@@ -37,7 +37,8 @@ import { dropForeignOldCities, syncOldCities } from "./oldcity40";
 import { developSeats37 } from "./devseat37";
 import { abolishSubmerged, mayStand, reclaimedCell } from "./muni39sim";
 import { homeCity, seatCity, subCity, tokyoCity } from "./ceremony";
-import { siteCapacity, upkeepMult } from "./land";
+import { worldMemo } from "./worldMemo";
+import { siteCapacity, uninhabitable, upkeepMult } from "./land";
 import { ecoIndustry, ecoYear } from "./econ";
 import { computeMetros } from "./metro";
 import { applySeatOrder } from "./seats14";
@@ -103,6 +104,20 @@ export const yearOf = (sim: SimState) => monthToYM(sim.startYear, sim.month).yea
  * Stage 12: the people a city's land cannot hold (1 - siteCapacity of its base size) move to the other cities of the same prefecture, in proportion to how
  * much better their land is; a prefecture with no better-sited city sends them to the nation's cities in proportion to size, so the national total holds.
  */
+/** Issue #91: the most people a city on uninhabitable ground (land.ts `uninhabitable`: no buildable land around it and above the 市 limit) may hold, whatever its role -- a mountain village, not a city. */
+export const UNINHABITABLE_CAP = 5000;
+const uninhabMemo = worldMemo<string[]>();
+/** Once a year: such cities give their excess people to the habitable cities of their prefecture (else of the nation, by size), as the start of a game does for squeezed sites. The first time it happens to a city the timeline says why. Nothing else of the city changes. */
+export function capUninhabitable(sim: SimState, w: World, y: number): number {
+  let ids = uninhabMemo.get(w); if (!ids) { ids = w.cities.filter((c) => uninhabitable(w, c)).map((c) => c.id); uninhabMemo.set(w, ids); } if (!ids.length) return 0; let moved = 0;
+  for (const id of ids) {
+    const st = sim.cities[id], c = w.cityById.get(id); if (!st || !c || st.pop <= UNINHABITABLE_CAP) continue; const d = st.pop - UNINHABITABLE_CAP; st.pop = UNINHABITABLE_CAP; moved += d;
+    const ok = (q: typeof c) => q.id !== id && !ids!.includes(q.id) && (sim.cities[q.id]?.pop ?? 0) > 0, same = w.cities.filter((q) => q.pref === c.pref && ok(q)), hosts = same.length ? same : w.cities.filter(ok), tot = hosts.reduce((a, q) => a + sim.cities[q.id].pop, 0);
+    let given = 0; hosts.forEach((q, i) => { const g = i === hosts.length - 1 ? d - given : Math.round((d * sim.cities[q.id].pop) / tot); sim.cities[q.id].pop += g; given += g; });
+    const told = (sim.uninhab91 ??= []); if (!told.includes(id)) { told.push(id); ev(sim, "muni39", `${c.name}は住める土地がなく、人の住む規模が保てない`, `地形変換で役所の位置が標高${Math.round(w.elevM(c.cell))}mの急な山地になり、周りに平らな土地がない。人口は${UNINHABITABLE_CAP.toLocaleString()}人までに抑えられ、残りは${same.length ? "同じ府県" : "全国"}のほかの都市へ移る${sim.capital === c.pref || sim.subCapital === c.pref ? "(首都・副首都の指定は変えていない)" : ""}`, { city: id }); }
+  }
+  return moved;
+}
 export function squeezeSites(sim: SimState, w: World) {
   let lost = 0; const cap = new Map<string, number>();
   for (const c of w.cities) { const k = siteCapacity(w, c); cap.set(c.id, k); if (k < 1) { const st = sim.cities[c.id], keep = Math.round(st.pop * k), d = st.pop - keep; st.pop = keep; lost += d; const pf = c.pref; const hosts = w.cities.filter((q) => q.pref === pf && (cap.get(q.id) ?? siteCapacity(w, q)) >= 0.9); const tot = hosts.reduce((s, q) => s + sim.cities[q.id].pop, 0); if (tot > 0) { for (const q of hosts) sim.cities[q.id].pop += Math.round(d * sim.cities[q.id].pop / tot); lost -= d; } } }
@@ -143,6 +158,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
   if (firstCand) sim.initPolicy = { stance: firstCand.stance, ...(firstCand.recon ? { coast: firstCand.recon.coast, focus: firstCand.recon.focus } : {}) };   // Stage 41: what the game was started with (the top line shows it beside the policy now)
   if (opts.stage3 && firstCand) { sim.special41 = true; sim.special60 = true; }
+  if (opts.stage3 && opts.start1800 && firstCand) sim.trunk42 = true;   // Stage 42: the capital / sub-capital trunk duty (trunk42.ts)
   if (e86 && sim.kaigen) { sim.kaigen.era86 = true; const f = sim.kaigen.eras[0]; f.yomi = e86.yomi; f.o86 = e86.origin; f.of = firstEraCands().length; f.picked = firstEraCands().findIndex((c) => c.name === e86.name); }   // Stage 41 #8: the special-route rules (special41.ts) for every new game; a game saved before keeps the old rule
   if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false, sim.subCapital2); }
   if (firstCand) { sim.econ = true; if (opts.seats14 !== false) sim.seats14 = true; if (opts.pop15 !== false) sim.pop15 = true; }   if (w.townIds) sim.towns16 = [...w.townIds]; if (w.g34new) sim.rec34 = { sites: [], log: [...w.g34new.log], done: [...w.g34new.done] }; if (w.islets) { sim.isl20 = true; if (w.t.isletVersion === 3) sim.isl36 = true; if (w.t.isletVersion === 2 || w.t.isletVersion === 3) { sim.isl22 = true; sim.sea22 = true; sim.tier23 = newTier23(); } } if (w.moves20 && opts.moves) sim.moves20 = opts.moves.map((m) => ({ pref: m.pref, pos: [m.pos[0], m.pos[1]] as Vec, by: m.by }));   // Stage 12 (the land economy), Stage 14 (the seats head the city order); seats14: false keeps a Stage 13 game
@@ -218,6 +234,7 @@ function* yearlyGen(sim: SimState, w: World): Generator<void> {
   if (sim.rec34) { const n = stepReclaim(sim, w, y).length; if (n) ev(sim, "reclaim", `${y}年: 首都・副首都の埋め立てで${n}マス(約${n * w.cell * w.cell}km²)の陸地が増えた`, "埋め立ては年間の面積をためておき、1マス(25km²)分になった時に1マスずつ海岸に足す。別の島とは陸続きにならない", {}); }   // Stage 34
   if (sim.rules1800) { const g = shipGrade(sim, y); for (const e of Object.values(sim.edges)) if (e.facility === "ferry" && (e.shipGrade ?? 0) !== g) e.shipGrade = g; }   // Stage 40 (#66 B): the ships of the ferry routes follow the year's grade (monotone)
   if (sim.oldmuni40) syncOldCities(sim, w);   // Issue #67: the world holds exactly this game's promoted cities (a shared world may hold another game's)
+  capUninhabitable(sim, w, y);   // Issue #91: a city on ground the player's terrain made uninhabitable cannot be big (no city is ever removed)
   if (sim.oldmuni40 && y > sim.startYear) { foundOldMunicipalities(sim, w, y); promoteSettlements(sim, w, y); if (sim.promote40) promoteOldCities(sim, w, y); }   // Stage 40: old municipalities come into being and are promoted in stages
   if (sim.rules1800 && y > sim.startYear) fireHistory1800(sim, y);   // Stage 36: the technology rows and the fictional history of an 1800 game
   if (sim.stage3) { applyYearEvents(sim, y); openStraits(sim, w, y); sim.dials = composeDials(sim, y); ensureHubs(sim, w, hubYear(sim, y)); }
@@ -489,7 +506,8 @@ function resolveConcepts(sim: SimState) {
   for (const p of Object.values(sim.projects)) {
     if (p.status !== "concept" || sim.month - p.statusSince < 18) continue;
     const appetite = modeOf(p) === "rail" ? sim.dials.railBuild : sim.dials.hwyBuild;
-    if (appetite >= 0.25 && (rand(sim) < 0.7 || p.reason.includes("【島間】") || p.reason.includes("【島間接続】")))  { /* a link between two main islands is not dropped at random: STRATEGIC_TAG in crossing.ts */ p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
+    const trunk = !!sim.trunk42 && p.reason.startsWith("【首都幹線】");   // Stage 42: the capital / sub-capital trunk is a duty (trunk42.ts): its concept is never dropped at random nor by a low appetite
+    if ((appetite >= 0.25 && (rand(sim) < 0.7 || p.reason.includes("【島間】") || p.reason.includes("【島間接続】"))) || trunk)  { /* a link between two main islands is not dropped at random: STRATEGIC_TAG in crossing.ts */ p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
     else {
       p.status = "abolished"; p.statusSince = sim.month;
       for (const id of p.edgeIds) { const e = sim.edges[id]; if (e && e.built < 1 && !Object.values(sim.routes).some((r) => r.edges.some((x) => x.edgeId === id)) && !Object.values(sim.projects).some((q) => q !== p && (q.edgeIds.includes(id) || q.chain.some((c) => c.edgeId === id) || q.replaces.includes(id)))) { delete sim.edges[id]; netRemoved(sim); } }
@@ -517,11 +535,11 @@ function railMonthly(sim: SimState, w: World, railB: number) {
       if (e.weathering >= 100) { setEdgeState(sim, e, "lost", `保守費が賄えず荒廃(品質${Math.round(e.quality)})`); ev(sim, "lost", `${edgeName(sim, e)}の線路が荒廃し廃線跡に`, `保守費が賄えず荒廃${e.zeroYears ? `・需要ゼロ${e.zeroYears}年` : ""}`, { edge: e.id }); }
     }
   }
-  let pot = railB * 0.4 * dl.railBuild * 2;
+  let pot = railB * 0.4 * dl.railBuild * 2; const trunkFloor = railB * 0.4 * 2 * 0.5;   // (Stage 42: half of what a full-appetite year would spend, kept for the trunk duty alone)
   const rtm = (p: SimProject) => (sim.tech?.wk !== undefined && p.edgeIds.some((id) => { const e = sim.edges[id]; return !!e && isWaterTunnel(e); }) ? projectTimeMult(sim, p) : 1);   // Stage 13: a railway tunnel under water is built in the water-tunnel time
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "rail").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
   for (const p of projs) {
-    const totLen = p.edgeIds.reduce((t, id) => t + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, req = Math.max(0.0001, p.costBu / Math.max(36 * rtm(p), totLen * 0.6 * rtm(p))), f = Math.min(req, Math.max(0, pot)); pot -= f;
+    const totLen = p.edgeIds.reduce((t, id) => t + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, req = Math.max(0.0001, p.costBu / Math.max(36 * rtm(p), totLen * 0.6 * rtm(p))), duty = !!sim.trunk42 && p.reason.startsWith("【首都幹線】"), f = Math.min(req, Math.max(0, duty ? Math.max(pot, trunkFloor) : pot)); pot -= duty ? Math.min(f, Math.max(0, pot)) : f;   // Stage 42: the capital / sub-capital trunk keeps a floor of its own, so a road-first budget cannot stall it for ever
     if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen);
   }
 }

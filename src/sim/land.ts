@@ -103,4 +103,9 @@ export function siteQuality(w: World, c: WCity): number {
   return m.get(c.id) ?? 0;
 }
 /** 0.15..1: how much of its real size a city can keep on the land it has in this game. 1 for any city on land as good as a real city's. */
-export function siteCapacity(w: World, c: WCity): number { return Math.max(0.15, Math.min(1, siteQuality(w, c) / SITE_REF)); }
+/** Issue #91: a city whose office point the player's terrain put on ground no 市 may stand on (1300 m and above) AND that has no buildable land around it at all keeps only a trace of its people (`UNINHABITABLE_FLOOR` instead of 0.15):
+ *  the rest move, as for any squeezed site, to the other cities of its prefecture at the start and by rent and congestion afterwards. No city is named; on the real terrain no city stands that high, so nothing changes there. The city itself is kept (its
+ *  prefecture, the seats and every save stay valid): it simply cannot be big. */
+export const UNINHABITABLE_FLOOR = 0.01, UNINHABITABLE_SITE = 0.05, UNINHABITABLE_ELEV_M = 1300;
+export const uninhabitable = (w: World, c: WCity): boolean => siteQuality(w, c) < UNINHABITABLE_SITE && w.elevM(c.cell) >= UNINHABITABLE_ELEV_M;
+export function siteCapacity(w: World, c: WCity): number { return Math.max(uninhabitable(w, c) ? UNINHABITABLE_FLOOR : 0.15, Math.min(1, siteQuality(w, c) / SITE_REF)); }

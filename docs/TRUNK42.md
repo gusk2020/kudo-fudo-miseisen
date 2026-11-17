@@ -18,3 +18,24 @@ Reading: road and sea are always there; air comes with the airports (after 1950)
   - **road**: already always present; keep as a check.
 - Policy keeps its weight everywhere else: the duty only fixes the ONE missing link per mode for these pairs; quality, speed and volume stay policy-driven.
 - Acceptance: by 2000 every pair connected in all four modes for every policy and 3 seeds; no new link before its technology; Issue #66 rail audit numbers re-run.
+
+## Builder, first part (2026-11-17, second session): the RAIL duty — implemented (`claude/s42-terrain91`)
+- Games made with `sim.trunk42` (new 1800 games). While capital and sub-capital are not joined by railway, `planRailGen` gets one extra candidate (`trunkRailLeg`): the next leg from the capital's side of the rail network towards the sub-capital (≤160 km, same island), tagged `【首都幹線】`, score 60 (ahead of ordinary candidates), its own quota (one leg at a time), not switched off by `railBuild` or the sea/air hold. It still goes through path, technology and cost checks; its purse is at least 10 % of the national budget (so a road-first policy cannot starve it — it is still paid for).
+- On the way, rail track that lies there closed/dormant/abandoned is **restored first** (one restore project) — the real cause of the old gap was a closed section (the path found "0 km new" yet the network was cut).
+- Seats on another island: rail to the ports joined by a domestic sea route counts (rail + ship + rail), and the legs aim at those ports. The measure (`trunkStatus`) counts that as a rail way when the seats are on different islands.
+- Measured (`docs/data/trunk42-after.json`, seeds 7 and 11, five policies): **東京–大阪 joined by rail by 2000 under every policy and seed** (by 1950 in 8 of 10; before: never under road/sea priority). Air by 2000 everywhere, road and sea always.
+- **Still open**: 東京–札幌 has no rail way in any run (no rail+ship way formed: either the Hokkaido line does not reach a port with a route to a Honshu port reached by rail — not diagnosed yet). Sea and air duties not implemented (they were already connected in every run measured, except air before ~1950–2000 when airports did not exist).
+- Unit test `tests/unit/trunk42.test.ts`: road-first policy joined by 1900 with the duty and not without; no trunk project before that game's own railway service year.
+
+### Third pass (same evening): across the strait, and legs that fail
+- `trunkRailLegs`: one leg per target, up to 2 under way (both shores at once); a pair whose line failed the technology check and is cooling (`railFail`) is passed over for the next best way round.
+- `trunkRailFerry`: for a seat on another island, the targets are the two ends of the road ferry that best crosses between the islands (青森–函館 in the runs measured); once both ends are on the two seats' railways, a **train ferry (鉄道連絡船)** opens between them (instant, like every other ferry of the game; event recorded).
+- Measured (seed 7, `/tmp` probe, policies 均衡/道路/海路): 東京–大阪 by rail **by 1900 in all three**; 東京–札幌 by rail by 2000 only under 海路重視. Diagnosis of the rest: the Honshu line reaches 青森 by ~1870, but the 札幌–函館 leg fails the technology check (tunnel length) again and again and no intermediate city offers a way round within the leg rules. Next: allow the leg to end at an intermediate rail node or settlement, or let the strait ferry land at another Hokkaido port nearer an existing line.
+
+### Fourth pass: why 東京–札幌 stayed open (diagnosed, three causes, none a technology rule)
+Measured on seed 7 (札幌 seat), by following one game's trunk projects year by year:
+1. **Technology timing is real and stays**: 札幌〜函館 needs a ~35 km tunnel (`techCheck`), so it cannot be planned before the tunnel limit reaches 35 km (~1965). Nothing was loosened.
+2. **A trunk concept was dropped at random** (`resolveConcepts`: 30 % or low appetite). Now a trunk concept always becomes a plan (the draw is still made, so every other game's random sequence is unchanged).
+3. **The 国鉄 reform froze the trunk project** (`freeze.ts`, 工事凍結) for 8 years until it became 未成線. A trunk project is now exempt, as island-link projects already are.
+Also: the trunk projects get a pot floor of their own in `railMonthly` (half of a full-appetite year), so a road-first budget cannot starve them. Only games with `sim.trunk42` are affected.
+Result (seed 7, 札幌 seat): 平成 **2030+ → 2000**; 海路重視 2000 → **1990**; 修文 still under construction in 2030 (slow, not blocked). Test fixes (not loosened): `trunk42.test.ts` now looks for the trunk projects on the way (finished records are pruned, and the trunk now finishes sooner); `oldpromote40rollback.test.ts` picks a candidate whose road really is laid (the premise of that audit) instead of the first one.
