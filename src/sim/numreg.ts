@@ -95,10 +95,24 @@ export function syncNumbers(sim: SimState, y: number): void {
     const into = en.key.startsWith("p:") && reg.list[cl[0]].some((o) => o !== en && claimed.has(o) && o.state !== "void" && overlap(eg(en), new Set(eg(o))) >= 0.5);   // (a plan that became part of a line)
     en.state = into ? "void" : "abolished"; if (into) en.key = "void:" + cl[0] + en.n; en.hist.push(enc(y, en.state));
   }
+  compactNumbers(sim, y);
 }
 function update(en: NumEntry, it: Item, y: number) {
   if (!it.key.startsWith("r:")) { if (it.edges.length) en.edges = it.edges; en.label = it.label; } else { en.edges = []; en.label = ""; } if (it.ends) en.ends = it.ends;
   if (en.state !== it.state) { if (it.state === "active" && (en.state === "abolished" || en.state === "unbuilt") && en.hist.some((v) => v % 8 === 0)) en.revived = y; en.state = it.state; en.hist.push(enc(y, it.state)); }
+}
+/**
+ * Long runs (Stage 42, games with `sim.trunk42`): a number given up for 100 years or more no longer needs the ground it covered (it could only come back as the same line within that time)
+ * nor its whole history: it keeps its number, state, label, its first year, the first year it was in service and its last ten changes. Keeps a 1000-year save from growing with every line ever numbered.
+ */
+export const NUM_FORGET_YEARS = 100, NUM_HIST_KEEP = 10;
+export function compactNumbers(sim: SimState, y: number): void {
+  const reg = sim.numreg; if (!sim.trunk42 || !reg) return;
+  for (const cl of NUM_CLASSES) for (const en of reg.list[cl[0]]) {
+    if ((en.state !== "abolished" && en.state !== "void") || y - Math.floor(en.hist[en.hist.length - 1] / 8) < NUM_FORGET_YEARS) continue;
+    if (en.edges.length) en.edges = [];
+    if (en.hist.length > NUM_HIST_KEEP + 2) { const act = en.hist.findIndex((v) => v % 8 === 0), keep = new Set<number>([0, ...(act > 0 ? [act] : []), ...en.hist.map((_, i) => i).slice(-NUM_HIST_KEEP)]); en.hist = en.hist.filter((_, i) => keep.has(i)); }
+  }
 }
 /** What a chip of the number list shows. */
 export type ChipKind = NumState | "revived" | "gap";
