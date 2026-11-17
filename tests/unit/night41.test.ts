@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { advance } from "../../src/sim/engine";
 import { edgeActivity, electrification, lightOf, nightField } from "../../src/sim/night41";
 import { stage3Sim } from "./simhelp";
+import { GRAIN_MAX_DOTS, grainRadiusKm, grainsOf } from "../../src/render/night";
 
 /** Stage 41 #2: the night view's light. Pure function of the game; dark at 1800, blazing cities and lit corridors by 2000, only what is in service, never the sea or the air. */
 const game = () => { const g = stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true } as never); g.sim.policy!.mode = "auto"; advance(g.sim, g.w, 12 * 60); return g; };
@@ -29,5 +30,13 @@ describe("Stage 41 #2: night field", () => {
     const s2 = JSON.parse(JSON.stringify(sim)); for (const e of Object.values(s2.edges) as any[]) { e.state = "closed"; e.open = false; } const nol = nightField(s2, w, 2000); expect(nol.lit.edges).toBe(0); expect(stats(nol.v).mean).toBeLessThan(stats(full.v).mean);
     const top = [...w.cities].filter((c) => sim.cities[c.id]).sort((x, y) => sim.cities[y.id].pop - sim.cities[x.id].pop)[0]; expect(nol.v[top.cell], "the city itself still shines").toBeGreaterThan(0.3);
     const s3 = JSON.parse(JSON.stringify(sim)); s3.cities[top.id].pop = Math.floor(s3.cities[top.id].pop / 20); expect(nightField(s3, w, 2000).v[top.cell]).toBeLessThan(full.v[top.cell]);
+  }, 600000);
+  it("Issue #88 grains: the same field gives the same grains, each inside its own lit cell, more in brighter cells, never more than the cap; the radius grows with the setting; the field itself is not touched", () => {
+    const { sim, w } = game(), f = nightField(sim, w, 2000), g = { x0: w.t.grid.x0, y0: w.t.grid.y0, cell: w.t.grid.cell }, snap = Array.from(f.v), a = grainsOf(f, g), b = grainsOf(f, g); expect(a).toEqual(b); expect(Array.from(f.v)).toEqual(snap);
+    expect(a.length / 3).toBeGreaterThan(500); expect(a.length / 3).toBeLessThanOrEqual(GRAIN_MAX_DOTS * 1.3);
+    const per = new Map<number, number>(); for (let i = 0; i < a.length; i += 3) { const k = w.cellOf([a[i], a[i + 1]]); expect(f.v[k], "a grain stands in a lit cell").toBeGreaterThan(0.01); per.set(k, (per.get(k) ?? 0) + 1); expect(a[i + 2]).toBeGreaterThan(0); expect(a[i + 2]).toBeLessThanOrEqual(1); }
+    const lit = [...per.keys()].sort((x, y) => f.v[y] - f.v[x]); expect(per.get(lit[0])!).toBeGreaterThanOrEqual(per.get(lit[lit.length - 1])!); expect(Math.max(...per.values())).toBeLessThanOrEqual(5);
+    expect(grainsOf(f, g, 300).length / 3, "thinned to about the cap when asked").toBeLessThan(per.size + 300);
+    expect(grainRadiusKm(0)).toBeCloseTo(0.35, 5); expect(grainRadiusKm(50)).toBeGreaterThan(grainRadiusKm(10)); expect(grainRadiusKm(99)).toBeCloseTo(3.2, 5);
   }, 600000);
 });

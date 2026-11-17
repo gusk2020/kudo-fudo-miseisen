@@ -115,7 +115,9 @@ export class App {
   /** Stage 3: the era chosen before the ceremony, the year being looked at (null = now, time running), and the background map. */
   lite = false; private slowTicks = 0;
   /** Stage 41 #2: the night view (display only; remembered on this phone, never part of a save) */
-  night = false; private nightKey = ""; private nightBtn: HTMLButtonElement | null = null;
+  night = false; nightSize = 100; private nightKey = "";
+  /** Issue #88: the size of the grains of light (0..100; 100 = the continuous glow). Display only, remembered on this phone like the night view itself. */
+  setNightSize(v: number) { this.nightSize = Math.max(0, Math.min(100, Math.round(v))); try { localStorage.setItem(lsKey("nightSize"), String(this.nightSize)); } catch { /* storage may be blocked */ } this.r.setNightSize(this.nightSize); const o = document.getElementById("night-size-out"); if (o) o.textContent = this.nightSize >= 100 ? "連続光" : `粒 ${this.nightSize}`; } private nightBtn: HTMLButtonElement | null = null;
   setNight(on: boolean) {
     this.night = on; try { localStorage.setItem(lsKey("night"), on ? "1" : "0"); } catch { /* storage may be blocked */ }
     this.r.setNight(on); this.nightKey = ""; if (on) this.updateNight(); this.nightBtn?.setAttribute("aria-pressed", on ? "true" : "false"); if (this.nightBtn) this.nightBtn.classList.toggle("on", on); if (this.sheet === "layers") this.buildSheet();
@@ -138,7 +140,7 @@ export class App {
   real = false; get saveKey() { return this.real ? "s3:auto" : "auto"; }
   static async start(host: HTMLElement, real = false) {
     const a = new App(); a.real = real; installGlyphCheck(); setDecisionSink((d) => a.keepDecisionPoint(d)); a.r = await Renderer.create(host);
-    if (real) { a.store.replace(realState()); document.body.classList.add("real"); a.makeNightButton(); try { if (localStorage.getItem(lsKey("night")) === "1") { a.night = true; a.r.setNight(true); a.nightBtn?.setAttribute("aria-pressed", "true"); a.nightBtn?.classList.add("on"); } } catch { /* storage may be blocked */ } try { if (localStorage.getItem(lsKey("bg")) !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
+    if (real) { a.store.replace(realState()); document.body.classList.add("real"); a.makeNightButton(); try { { const ns = Number(localStorage.getItem(lsKey("nightSize")) ?? "100"); if (Number.isFinite(ns)) { a.nightSize = Math.max(0, Math.min(100, Math.round(ns))); a.r.night.size = a.nightSize; } } if (localStorage.getItem(lsKey("night")) === "1") { a.night = true; a.r.setNight(true); a.nightBtn?.setAttribute("aria-pressed", "true"); a.nightBtn?.classList.add("on"); } } catch { /* storage may be blocked */ } try { if (localStorage.getItem(lsKey("bg")) !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
       try { const u = JSON.parse(localStorage.getItem(lsKey("ui")) || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; a.legendShown = u.legendShown === true; a.legendSide = u.legendSide === "left" ? "left" : "right"; } catch { /* ignore */ } a.lite = localStorage.getItem(lsKey("lite")) === "1"; } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
     try { a.safeMode = !!localStorage.getItem(lsKey("run")); localStorage.setItem(lsKey("run"), String(Date.now())); } catch { /* storage may be blocked */ }
@@ -1300,6 +1302,7 @@ export class App {
       for (const k of this.s.step === 6 ? [...LAYER_KEYS, ...ROAD_LAYER_KEYS] : LAYER_KEYS) wrap.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-" + k, checked: this.s.layers[k], onchange: (e: Event) => { const v = (e.target as HTMLInputElement).checked; this.store.set((s) => { s.layers[k] = v; if (!s.layersSet?.includes(k)) s.layersSet = [...(s.layersSet ?? []), k]; }); } }), LAYER_LABELS[k]));
       body.append(wrap, h("small", {}, "河川・府県境・標高は「1E 地形生成」以降に表示されます。"));
       if (this.real) body.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-night", checked: this.night, onchange: (e: Event) => this.setNight((e.target as HTMLInputElement).checked) }), "夜景モード(夜の地表の光。都市の人口・経済と、使われている道路・鉄道の輸送を映します。海路・空路は光りません)"));
+      if (this.real && this.night) body.append(h("label", { class: "layer", id: "night-size-row" }, "光の粒の大きさ ", h("input", { type: "range", id: "night-size", min: "0", max: "100", step: "1", value: String(this.nightSize), oninput: (e: Event) => this.setNightSize(Number((e.target as HTMLInputElement).value)) }), h("span", { id: "night-size-out" }, this.nightSize >= 100 ? "連続光" : `粒 ${this.nightSize}`)), h("small", { id: "night-size-help" }, "左ほど小さな粒(拡大・縮小しても1点ずつ見分けられます)、右端は連続した光。表示だけの設定で、ゲームの内容は変わりません。"));
       if (this.real) body.append(h("label", { class: "layer" }, h("input", { type: "checkbox", id: "layer-lite", checked: this.lite, onchange: (e: Event) => this.setLite((e.target as HTMLInputElement).checked) }), "軽量表示(動作が重いとき。点線を実線にし、ラベルと港・空港を減らす)"));
     } else if (this.sheet === "issues") {
       body.append(h("h3", {}, "検証結果"));

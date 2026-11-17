@@ -84,8 +84,9 @@ export class Renderer {
   roads = new RoadLayer(); private roadArgs: RoadArgs | null = null;
   /** Stage 41 #2: the night view (a dark sheet and one sprite of light between the roads and the labels); while it is on the road drawing is hidden, its data and hit-testing untouched */
   night = new NightLayer();
-  setNight(on: boolean) { this.night.setOn(on); this.roads.container.visible = !on; }
-  drawNight(f: NightField, g: { x0: number; y0: number; cell: number }) { this.night.update(f, g); }
+  setNight(on: boolean) { this.night.setOn(on); this.roads.container.visible = !on; if (on) this.night.redraw(this.view.zoom); }
+  drawNight(f: NightField, g: { x0: number; y0: number; cell: number }) { this.night.update(f, g); this.night.redraw(this.view.zoom); }
+  setNightSize(size: number) { this.night.setSize(size, this.view.zoom); }
   private lakeG: ReturnType<typeof buildLakeGraphics> | null = null; private biwaIsl: Graphics | null = null; private biwaIslBg = ""; private landSprite: Sprite | null = null; private terrainSprite: Sprite | null = null; private terrainRef: TerrainResult | null = null;
   private lastArgs: [ProjectState, TerrainResult | null, Issue[], Pending | null] | null = null;
   private rebuildTimer: any = 0;
@@ -112,7 +113,7 @@ export class Renderer {
   setView(v: Partial<View>, quiet = false) {
     Object.assign(this.view, v); this.view.zoom = Math.max(0.05, Math.min(12, this.view.zoom));
     this.applyView();
-    if (!quiet) { this.onViewChange?.(); clearTimeout(this.rebuildTimer); this.rebuildTimer = setTimeout(() => { this.rebuild(); this.roads.redraw(this.view.zoom); }, 140); }
+    if (!quiet) { this.onViewChange?.(); clearTimeout(this.rebuildTimer); this.rebuildTimer = setTimeout(() => { this.rebuild(); this.roads.redraw(this.view.zoom); if (this.night.on) this.night.redraw(this.view.zoom); }, 140); }
   }
   private applyView() {
     const { w, h } = this.size, z = this.view.zoom;
