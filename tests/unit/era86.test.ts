@@ -10,12 +10,15 @@ import { stage3Sim } from "./simhelp";
 /** Issue #86: era names and policy apart; pools by year; the 4-era rule; 前・中・後; nothing guessed. */
 const game = (o: object = {}) => stage3Sim("heisei", 7, true, 0, 2, true, undefined, undefined, { start1800: true, era86: { name: "興化", stance: "kairo", coast: "japansea", focus: "disperse" }, ...o } as never);
 describe("Issue #86: candidates", () => {
-  it("pools by year; no name history adopted is in them; 明治's candidates and 令和's side proposals are absent; the 1926 names have no reading and say so", () => {
+  it("pools by year; no name history adopted is in them; 明治's candidates and 令和's side proposals are absent; the 1926 names carry the game's PROVISIONAL readings, marked so, and can be chosen", () => {
     expect(poolFor(1800)).toEqual(["taisho"]); expect(poolFor(1900)).toEqual(["showa"]); expect(poolFor(2000)).toEqual(["heisei", "reiwa"]); expect(poolFor(2100).length).toBe(4);
     for (const c of HIST_POOL) expect(ADOPTED_REAL.has(eraKey(c.name)), c.name).toBe(false); const names = HIST_POOL.map((c) => c.name); for (const n of ["大正", "昭和", "平成", "令和", "明治", "佳桜", "桜花", "知道"]) expect(names).not.toContain(n);
     expect(HIST_POOL.filter((c) => c.origin === "taisho").map((c) => c.name)).toEqual(["天興", "興化", "永安", "乾徳", "昭徳"]); expect(HIST_POOL.filter((c) => c.origin === "reiwa").map((c) => `${c.name}:${c.yomi}`)).toEqual(["英弘:えいこう", "久化:きゅうか", "広至:こうし", "万和:ばんな", "万保:ばんぽう"]);
-    expect(HIST_POOL.filter((c) => c.origin === "showa").length).toBe(14); expect(HIST_POOL.filter((c) => c.origin === "showa").every((c) => c.yomi === null)).toBe(true);
-    const s = historicalCands(1900, [{ name: "興化", yomi: "こうか" }]).filter((c) => c.origin === "showa"); expect(s.length).toBe(14); expect(s.every((c) => c.mark === "読" && !!c.blocked)).toBe(true);
+    const showa = HIST_POOL.filter((c) => c.origin === "showa"); expect(showa.map((c) => c.name)).toEqual(["神化", "元化", "神和", "同和", "継明", "順明", "明保", "寛安", "元安", "立成", "定業", "光文", "章明", "協中"]); expect(showa.every((c) => !!c.yomi && c.yomiSrc === "provisional")).toBe(true);
+    expect(HIST_POOL.filter((c) => c.origin === "taisho" || c.origin === "reiwa").every((c) => c.yomiSrc === "source")).toBe(true);
+    // 1900: ONLY the fourteen 昭和時候補, most of them selectable; those that are blocked say why (and when the reading is provisional, that too)
+    const s = historicalCands(1900, [{ name: "興化", yomi: "こうか" }]); expect(s.length).toBe(14); expect(s.every((c) => c.origin === "showa")).toBe(true); expect(s.filter((c) => !c.blocked).length).toBeGreaterThanOrEqual(10);
+    const k = s.find((c) => c.name === "光文")!; expect(k.mark).toBe("ロ"); expect(k.blocked).toContain("仮の読み");
   });
   it("initials: Hepburn first letter from the reading (し S, ち C, つ T, ふ F, じ J); kanji first character; a generated name's reading is the game's own", () => {
     expect(["しょうとく", "ちゅう", "つ", "ふ", "じ", "えいあん", "ばんな", "ぜんこうか"].map((y) => romajiInitial(y))).toEqual(["S", "C", "T", "F", "J", "E", "B", "Z"]); expect(romajiInitial(null)).toBeNull(); expect(kanjiInitial("興化")).toBe("興");
@@ -29,7 +32,7 @@ describe("Issue #86: candidates", () => {
     const c = historicalCands(1800, [{ name: "興化", yomi: "こうか" }]); expect(c.find((x) => x.name === "興化")!.mark).toBe("済"); expect(c.find((x) => x.name === "乾徳")!.mark).toBe("ロ"); expect(c.find((x) => x.name === "天興")!.blocked).toBeNull(); expect(c.length, "blocked ones stay listed").toBe(5);
   });
   it("前・中・後 only when every verified historical name is used, as names of their own under the same rule; before that the fallback is the game's generated names, labelled", () => {
-    const some = [{ name: "興化", yomi: "こうか" }]; const at1900 = historicalCands(1900, some); expect(at1900.some((c) => c.origin === "reuse"), "names are left: no 前").toBe(false); expect(at1900.filter((c) => c.origin === "generated" && !c.blocked).length).toBeGreaterThanOrEqual(3);
+    const some = [{ name: "興化", yomi: "こうか" }]; const at1900 = historicalCands(1900, some); expect(at1900.some((c) => c.origin === "reuse" || c.origin === "generated"), "historical names are left: neither 前 nor generated names").toBe(false);
     const all = HIST_POOL.filter((c) => c.yomi).map((c) => ({ name: c.name, yomi: c.yomi })); const r = historicalCands(2400, all); const reuse = r.filter((c) => c.origin === "reuse"); expect(reuse.length).toBe(all.length); expect(reuse[0].name).toBe("前天興"); expect(reuse[0].yomi).toBe("ぜんてんこう");
     expect(reuse.every((c) => c.blocked === null || c.mark === "漢" || c.mark === "ロ")).toBe(true); expect(reuse.filter((c) => !c.blocked).length, "前 forms all begin with 前/Z: after one is taken the next three eras cannot take another").toBeGreaterThan(0);
     const again = historicalCands(2500, [...all, { name: "前天興", yomi: "ぜんてんこう" }]); expect(again.filter((c) => c.origin === "reuse" && c.name.startsWith("前")).every((c) => c.mark === "漢"), "the other 前 forms collide with 前天興").toBe(true); expect(again.find((c) => c.name === "中天興"), "天興 itself would come back as 中天興").toBeTruthy(); expect(again.find((c) => c.name === "中天興")!.blocked, "and can be chosen, so no generated name is needed").toBeNull(); expect(again.some((c) => c.origin === "generated")).toBe(false);
@@ -50,10 +53,10 @@ describe("Issue #86: in the game", () => {
     const eras = sim.kaigen!.eras; for (let i = 1; i < eras.length; i++) { const win = eras.slice(Math.max(0, i - 3), i + 1); expect(new Set(win.map((x) => kanjiInitial(x.name))).size, `kanji initials differ in ${win.map((x) => x.name).join()}`).toBe(win.length); const rs = win.map((x) => romajiInitial(x.yomi)).filter(Boolean); expect(new Set(rs).size, `romaji initials differ in ${win.map((x) => x.yomi).join()}`).toBe(rs.length); }
     const back = sanitizeSim(JSON.parse(JSON.stringify(sim))); expect(back.problems).toEqual([]); expect(back.sim!.kaigen!.era86).toBe(true); expect(back.sim!.kaigen!.eras.map((x) => x.yomi)).toEqual(eras.map((x) => x.yomi));
   }, 900000);
-  it("relocation of 1900: the 昭和時候補 are listed but cannot be chosen (no verified reading); a generated name is taken; the policy is the player's; no era is named twice when an ordinary change falls in the same year", () => {
+  it("relocation of 1900: only the 昭和時候補 are offered (provisional readings, marked); one of them is taken; the policy is the player's; no era is named twice when an ordinary change falls in the same year", () => {
     const { sim, w } = game(); sim.policy!.mode = "priority"; sim.kaigen!.next = 1900; sim.month = 1200 - 1; let guard = 0; while (sim.e2200?.state !== "pending" && guard++ < 40) { stepMonth(sim, w); if (sim.policy!.pending) skipWindow(sim); if (sim.kaigen!.pending) settleKaigen(sim, 0, false, "heisei"); }
-    expect(sim.e2200?.state).toBe("pending"); const g = sim.kaigen!.reloc![sim.e2200!.n ?? 0]!; expect(g.cands.filter((c) => c.o86 === "showa").length).toBe(14); expect(g.cands.filter((c) => c.o86 === "showa").every((c) => c.blocked)).toBe(true);
-    const n = sim.kaigen!.eras.length; apply2200(sim, { era: 0, stance: "kuuro", coast: "pacific", focus: "concentrate" }); const last = sim.kaigen!.eras[sim.kaigen!.eras.length - 1]; expect(sim.kaigen!.eras.length).toBe(n + 1); expect(last.o86).toBe("generated"); expect(last.stance).toBe("kuuro"); expect(last.start).toBe(1900);
+    expect(sim.e2200?.state).toBe("pending"); const g = sim.kaigen!.reloc![sim.e2200!.n ?? 0]!; expect(g.cands.length).toBe(14); expect(g.cands.every((c) => c.o86 === "showa" && c.yomiSrc === "provisional")).toBe(true); expect(g.cands.filter((c) => !c.blocked).length).toBeGreaterThanOrEqual(8);
+    const n = sim.kaigen!.eras.length; apply2200(sim, { era: 0, stance: "kuuro", coast: "pacific", focus: "concentrate" }); const last = sim.kaigen!.eras[sim.kaigen!.eras.length - 1]; expect(sim.kaigen!.eras.length).toBe(n + 1); expect(last.o86, "a 昭和時候補 is taken at the 1900 relocation").toBe("showa"); expect(last.stance).toBe("kuuro"); expect(last.start).toBe(1900);
     expect(new Set(sim.kaigen!.eras.map((e) => e.name)).size).toBe(sim.kaigen!.eras.length); expect(sim.kaigen!.eras.filter((e) => e.start === 1900).length, "one era for 1900, not two").toBeLessThanOrEqual(2); void yearOf;
   }, 900000);
 });

@@ -38,7 +38,7 @@ export function buildE2200(app: App, body: HTMLElement) {
   const g = groupOf2200(sim)!;
   list.append(h("div", { class: "rw-head" }, "元号", h("small", {}, ` ${g.base}。一度でも使った元号は出ません`)));
   if (sim.kaigen?.era86 && g.cands[d.era]?.blocked) d.era = Math.max(0, g.cands.findIndex((c) => !c.blocked));   // Issue #86: the draft never stands on a name that cannot be chosen
-  g.cands.forEach((c, i) => { const r = radio("e22-era-" + i, `${c.blocked ? `✕[${c.mark ?? ""}] ` : ""}${c.name}${c.yomi ? `(${c.yomi})` : ""}${c.origin === "fiction" ? "【架空】" : ""}${c.o86 ? ` ― ${O86[c.o86] ?? ""}` : ""}`, d.era === i, () => { if (c.blocked) { app.toast(`選べません: ${c.blocked}`); return; } d.era = i; re(); }, c.blocked ? `選べません: ${c.blocked}` : c.note); if (c.blocked) { r.classList.add("blocked"); r.setAttribute("aria-disabled", "true"); } list.append(r); });
+  g.cands.forEach((c, i) => { const r = radio("e22-era-" + i, `${c.blocked ? `✕[${c.mark ?? ""}] ` : ""}${c.name}${c.yomi ? `(${c.yomi}${c.yomiSrc === "provisional" ? "・仮の読み" : ""})` : ""}${c.origin === "fiction" ? "【架空】" : ""}${c.o86 ? ` ― ${O86[c.o86] ?? ""}` : ""}`, d.era === i, () => { if (c.blocked) { app.toast(`選べません: ${c.blocked}`); return; } d.era = i; re(); }, c.blocked ? `選べません: ${c.blocked}` : c.note); if (c.blocked) { r.classList.add("blocked"); r.setAttribute("aria-disabled", "true"); } list.append(r); });
   // policy, free combination
   list.append(h("div", { class: "rw-head" }, "交通方針", h("small", {}, " 元号とは切り離して自由に選べます")));
   for (const [k, l] of [["shubun", "道路重視"], ["shoka", "鉄道重視"], ["kairo", "海路重視"], ["kuuro", "空路重視"], ["heisei", "均衡"]] as const) list.append(radio("e22-stance-" + k, l, d.stance === k, () => { d.stance = k; re(); }));
