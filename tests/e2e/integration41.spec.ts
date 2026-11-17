@@ -20,7 +20,7 @@ const warm = (page: Page) => page.evaluate(() => { const a = (window as any).__k
 async function toRoadStage(page: Page, year: number) {
   await kfm(page, `a => { const s = a.sim; a.runner.settle(); s.policy.pending = null; s.kaigen.pending = null; s.kaigen.next = ${year} + 40; s.policy.mode = 'priority'; s.month = (${year} - s.startYear) * 12; s.speed = 20; return 1; }`);
   await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "pending", null, { timeout: 120000 }); await page.waitForSelector("#e22-box");
-  await page.click("#e22-era-1"); await page.click("#e22-next"); await page.click("#e22-decide"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "road0", null, { timeout: 60000 }); await page.waitForSelector("#sp-row");
+  await page.click("[id^=e22-era-]:not(.blocked)");   /* (Issue #86: the first name that can be chosen) */ await page.click("#e22-next"); await page.click("#e22-decide"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "road0", null, { timeout: 60000 }); await page.waitForSelector("#sp-row");
 }
 test("Stage 41 integration: 1800 start -> dark night -> simple intervention -> 国道0号 (1900) -> lit night (2000) -> A号 (2000) -> reload", async ({ page }) => {
   test.setTimeout(1500000); await page.setViewportSize({ width: 412, height: 915 }); const errs: string[] = []; page.on("pageerror", (e) => errs.push(String(e))); page.on("dialog", (d) => void d.accept());
