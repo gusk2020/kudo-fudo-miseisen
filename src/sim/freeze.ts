@@ -31,7 +31,7 @@ export function reviewWorks(sim: SimState): { frozen: number; resumed: number } 
     const why = m === "rail" ? (reform ? "国鉄の分割・民営化で建設中の新線を凍結" : fell ? `鉄道建設の意欲が低下(${app(m, prev).toFixed(2)}→${app(m).toFixed(2)})し工事を凍結` : null)
       : fell ? `道路建設の意欲が低下(${app(m, prev).toFixed(2)}→${app(m).toFixed(2)})し工事を凍結` : tight ? `財政の引き締め(${dl.austerity.toFixed(2)})で工事を凍結` : null;
     if (!why) continue;
-    const cands = Object.values(sim.projects).filter((p) => modeOf(p) === m && (p.status === "building" || p.status === "planned") && (p.kind === "new" || p.kind === "bypass") && !isCrossingProject(p) && p.spentBu < FREEZE_PROGRESS * p.costBu && !p.edgeIds.some((id) => sim.edges[id]?.standard === "highgrade"))   // trunk high-speed works are not frozen this way
+    const cands = Object.values(sim.projects).filter((p) => modeOf(p) === m && (p.status === "building" || p.status === "planned") && (p.kind === "new" || p.kind === "bypass") && !isCrossingProject(p) && !(sim.trunk42 && p.reason.startsWith("【首都幹線】")) && p.spentBu < FREEZE_PROGRESS * p.costBu && !p.edgeIds.some((id) => sim.edges[id]?.standard === "highgrade"))   // trunk high-speed works are not frozen this way
       .sort((a, b) => a.priority - b.priority || (a.id < b.id ? -1 : 1));
     for (const p of cands.slice(0, MAX_FREEZE)) {
       p.status = "suspended"; p.statusSince = sim.month; if (!p.reason.includes(FROZEN_TAG)) p.reason = `${p.reason}${FROZEN_TAG}`; frozen++;

@@ -506,7 +506,8 @@ function resolveConcepts(sim: SimState) {
   for (const p of Object.values(sim.projects)) {
     if (p.status !== "concept" || sim.month - p.statusSince < 18) continue;
     const appetite = modeOf(p) === "rail" ? sim.dials.railBuild : sim.dials.hwyBuild;
-    if (appetite >= 0.25 && (rand(sim) < 0.7 || p.reason.includes("【島間】") || p.reason.includes("【島間接続】")))  { /* a link between two main islands is not dropped at random: STRATEGIC_TAG in crossing.ts */ p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
+    const trunk = !!sim.trunk42 && p.reason.startsWith("【首都幹線】");   // Stage 42: the capital / sub-capital trunk is a duty (trunk42.ts): its concept is never dropped at random nor by a low appetite
+    if ((appetite >= 0.25 || trunk) && (rand(sim) < 0.7 || trunk || p.reason.includes("【島間】") || p.reason.includes("【島間接続】")))  { /* a link between two main islands is not dropped at random: STRATEGIC_TAG in crossing.ts */ p.status = "planned"; p.statusSince = sim.month; ev(sim, "project", `計画決定: ${projLabel(sim, p)}`, `構想から${Math.round((sim.month - p.startMonth) / 12 * 10) / 10}年。${p.reason}`, { project: p.id }); }
     else {
       p.status = "abolished"; p.statusSince = sim.month;
       for (const id of p.edgeIds) { const e = sim.edges[id]; if (e && e.built < 1 && !Object.values(sim.routes).some((r) => r.edges.some((x) => x.edgeId === id)) && !Object.values(sim.projects).some((q) => q !== p && (q.edgeIds.includes(id) || q.chain.some((c) => c.edgeId === id) || q.replaces.includes(id)))) { delete sim.edges[id]; netRemoved(sim); } }
@@ -534,11 +535,11 @@ function railMonthly(sim: SimState, w: World, railB: number) {
       if (e.weathering >= 100) { setEdgeState(sim, e, "lost", `保守費が賄えず荒廃(品質${Math.round(e.quality)})`); ev(sim, "lost", `${edgeName(sim, e)}の線路が荒廃し廃線跡に`, `保守費が賄えず荒廃${e.zeroYears ? `・需要ゼロ${e.zeroYears}年` : ""}`, { edge: e.id }); }
     }
   }
-  let pot = railB * 0.4 * dl.railBuild * 2;
+  let pot = railB * 0.4 * dl.railBuild * 2; const trunkFloor = railB * 0.4 * 2 * 0.5;   // (Stage 42: half of what a full-appetite year would spend, kept for the trunk duty alone)
   const rtm = (p: SimProject) => (sim.tech?.wk !== undefined && p.edgeIds.some((id) => { const e = sim.edges[id]; return !!e && isWaterTunnel(e); }) ? projectTimeMult(sim, p) : 1);   // Stage 13: a railway tunnel under water is built in the water-tunnel time
   const projs = Object.values(sim.projects).filter((p) => (p.status === "planned" || p.status === "building") && modeOf(p) === "rail").sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : 1));
   for (const p of projs) {
-    const totLen = p.edgeIds.reduce((t, id) => t + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, req = Math.max(0.0001, p.costBu / Math.max(36 * rtm(p), totLen * 0.6 * rtm(p))), f = Math.min(req, Math.max(0, pot)); pot -= f;
+    const totLen = p.edgeIds.reduce((t, id) => t + (sim.edges[id]?.lengthKm ?? 0), 0) || 1, req = Math.max(0.0001, p.costBu / Math.max(36 * rtm(p), totLen * 0.6 * rtm(p))), duty = !!sim.trunk42 && p.reason.startsWith("【首都幹線】"), f = Math.min(req, Math.max(0, duty ? Math.max(pot, trunkFloor) : pot)); pot -= duty ? Math.min(f, Math.max(0, pot)) : f;   // Stage 42: the capital / sub-capital trunk keeps a floor of its own, so a road-first budget cannot stall it for ever
     if (f > 0 || p.status === "building") progressProject(sim, w, p, f, req, totLen);
   }
 }
