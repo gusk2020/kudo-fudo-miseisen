@@ -52,3 +52,18 @@ The capital holds 19–25% of the nation wherever it is (東京 142M is larger t
 - Starting sizes small (they are 1800), growth by the existing mechanisms: a coastal place lets `hubs.ts` open a port; two or more places give the planner intercity demand; sea priority → ports/ferries first, air priority → airports, road/rail priority → the existing strait-link candidates (宗谷海峡 is ~42 km: over every 2026 bridge record, inside the tunnel record).
 - Acceptance by the probe: with the capital in 東京, 樺太県 ≥ 5% of the median prefecture at 2000 with ≥1 port and intercity road; other prefectures' figures within ±5% of the baseline; Issue #65/#66/#72 cases re-run.
 - The "exaggerated population" the user asked for should then come from this (settlement, ports, migration), not from a multiplier on one city.
+
+## Third session (2026-11-18): feasibility measured — still not implemented, and why
+Measured with a scratch test (removed): the 樺太 coast towns of the design, placed by a linear lon/lat→world-km map calibrated on 豊原 (world [516.94, 1101.28] = 142.74°E 46.96°N; ~111.2 km per degree of latitude, ×cos(lat) for longitude; the island's polygon spans y 984–1437, x 433–699 km):
+| town | world km | result |
+|---|---|---|
+| 大泊 | [519, 1065] | **water** (south coast; an approximate map misses by a cell or two) |
+| 真岡 | [465, 1111] | land, 樺太県, 271 m |
+| 本斗 | [450, 1070] | land, 樺太県, 292 m |
+| 泊居 | [467, 1190] | land, 樺太県, 197 m |
+| 恵須取 | [467, 1336] | land, 樺太県, 261 m |
+| 敷香 | [545, 1353] | land, 樺太県, 196 m |
+Reading: five of six land on the island, but the coastal ones sit 200–300 m up (inland of the real harbour), so a port rule needs the town **snapped to the nearest coast cell** (a new, bounded placement rule: nearest land cell within 3 cells that touches water), not the plain "drop it if not land" rule the provincial towns use. The Kurils: this probe could not place them (the world position of Kunashir/Iturup needs the Hokkaido body transform; the quick call returned the input unchanged), so that part is **unmeasured**.
+Saves are NOT a blocker: a game records its town ids (`sim.towns16`) and rebuilds exactly that list, so appending towns to `towns.json` cannot change an old save.
+**The blockers are elsewhere**: (1) a new game's town list comes from `townsForSeats` (world.ts) which is called by the UI and by many tests; adding the northern towns there changes every new-game world and therefore every pinned figure in the unit tests (Issue #65/#66/#72 audits) — it needs an opt-in option threaded through `app.ts`, `simhelp.ts` and `townsForSeats`; (2) the populations of those places are not sourced (see above) and must not be invented; (3) acceptance needs the probe re-run before/after across seeds (≈6 min per run on 4 cores).
+Suggested order when this is taken up: opt-in `north41` world option → coast-snap rule + the six 樺太 towns with sourced figures → probe → Kurils (after the Hokkaido body transform is understood) → ports/airports rules in `hubs.ts`.
