@@ -1,0 +1,1306 @@
+[
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "heisei",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "shubun",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "shoka",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "kairo",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 7,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2000,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "JP-27",
+  "year": 2050,
+  "road": true,
+  "rail": true,
+  "sea": true,
+  "air": true,
+  "missing": {}
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1850,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1900,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 1950,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": false,
+  "missing": {
+   "rail": "鉄道網がつながっていない",
+   "air": "東京から陸路で行ける空港がない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2000,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ },
+ {
+  "stance": "kuuro",
+  "seed": 11,
+  "sub": "HK-SAP",
+  "year": 2050,
+  "road": true,
+  "rail": false,
+  "sea": true,
+  "air": true,
+  "missing": {
+   "rail": "鉄道網がつながっていない"
+  }
+ }
+]
