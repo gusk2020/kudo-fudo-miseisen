@@ -61,3 +61,7 @@ Top of the stack green in CI → `tools/compat-check.mjs dist-9e0a8c8-build new-
 - CI of #89/#90 for the latest pushes was still running at 20:55 JST; #93 not yet run. **Check them first next time.**
 - Stack for a future publish candidate: #93 head (contains #89, #90).
 - Still open: 東京–札幌 rail+ship way; Issue #91 roads above 1,500 m (177 km remain); seat-on-uninhabitable warning on screen; numreg compaction; north; shared data.
+
+## CI 結果（2026-11-17 23:52 JST 時点）
+- PR #89 / #90 / #93 の CI（typecheck・unit・E2E）は全実行が成功。失敗なし、skip・基準緩和なし。
+- 公開（Pages 更新）は引き続き保留。
