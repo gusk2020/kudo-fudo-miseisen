@@ -1,5 +1,8 @@
 /** Dynamic transport layer (roads and railways): redrawn on its own (time ticks, zoom end) without touching the terrain layers. */
 import { isIslandRoute, isOcean } from "../sim/sea22";
+import { isSpecialSym, shownSymbol } from "../sim/special41";
+/** the symbols' own font comes last: a glyph the phone has is drawn by the phone, one it lacks by the game's subset (src/symbols41.css) */
+export const SIGN_FONT = 'Arial, "Noto Sans JP", sans-serif, "KfmSym"';
 import { Container, Graphics, Text } from "pixi.js";
 import { edgeShape } from "../sim/network";
 import { GRADE_MODE, GRADE_SHORT, NICK_SHORT, modeOf, type EdgeState, type Grade, type SimEdge, type SimState } from "../sim/types";
@@ -79,7 +82,7 @@ export class RoadLayer {
     let h = 0; const s = a.sim;
     if (s) {
       for (const e of Object.values(s.edges)) h = (h * 31 + (e.open ? 1 : 0) + (e.lost ? 2 : 0) + e.state.length * 5 + Math.floor(e.built * 10) * 4 + Math.floor(e.quality / 15) * 64 + e.cells.length + (e.nick ? 7 : 0) + e.standard.length * 13 + e.bypassedBy.length * 17 + (e.mode === "rail" ? 29 : 0)) >>> 0;
-      for (const r of Object.values(s.routes)) h = (h * 31 + r.number + (r.active ? 1 : 0) + r.edges.length * 7 + r.oldEdges.length * 3 + (r.grade === "national" ? 3 : r.grade === "fu" ? 5 : r.grade === "jnr" ? 13 : r.grade === "priv" ? 17 : 11) + (r.nick ? 19 : 0)) >>> 0;
+      for (const r of Object.values(s.routes)) h = (h * 31 + r.number + (r.special ? r.special.codePointAt(0)! : 0) + (r.active ? 1 : 0) + r.edges.length * 7 + r.oldEdges.length * 3 + (r.grade === "national" ? 3 : r.grade === "fu" ? 5 : r.grade === "jnr" ? 13 : r.grade === "priv" ? 17 : 11) + (r.nick ? 19 : 0)) >>> 0;
       for (const p of Object.values(s.projects)) h = (h * 31 + p.status.length + p.edgeIds.length) >>> 0;
       for (const c of Object.values(s.cities)) if (c.airport !== undefined) h = (h * 31 + 7) >>> 0;
       if (s.tier23) for (const [id, z] of Object.entries(s.tier23.zones)) h = (h * 31 + z.tier * 7 + z.facs.length + id.length) >>> 0;   // Stage 23
@@ -279,7 +282,7 @@ export class RoadLayer {
             if (grade === "national") sg.circle(0, 0, 11).fill({ color: col }).stroke({ width: 2, color: 0xffffff });
             else if (grade === "ken") sg.roundRect(-12, -9, 24, 18, 4).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
             else sg.poly([0, -12, 12, -2, 7, 11, -7, 11, -12, -2]).fill({ color: 0xffffff }).stroke({ width: 2.5, color: col });
-            sp.t.text = String(number); sp.t.style.fontSize = grade === "national" ? 10 : 9; sp.t.style.fill = grade === "national" ? 0xffffff : col;
+            { const sym = r.special && isSpecialSym(r.special) ? shownSymbol(r.special) : null;   /* Issue #87: a special route's sign carries its SYMBOL (it used to show the 0 it is stored under); where the phone cannot draw the symbol, its reading, small */ sp.t.text = sym ?? String(number); sp.t.style.fontSize = sym && [...sym].length > 1 ? ([...sym].length > 2 ? 6 : 7.5) : grade === "national" ? 10 : 9; sp.t.style.fontFamily = SIGN_FONT; } sp.t.style.fill = grade === "national" ? 0xffffff : col;
           }
           // The number sign above is number-only and always follows the 標識 layer. The route-NAME text is a separate setting (a.names) and applies to every route alike:
           // national, prefectural, railway, and the roads and lines that were designated later by the simulation.

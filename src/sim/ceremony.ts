@@ -8,7 +8,7 @@ import { techAt } from "./tech";
 import { DEFAULT_SUB, prefOfSeat } from "../core/seat";
 import { ERA, eraLabel, modeOf, type SimState } from "./types";
 import { ERAS, eraKeyOf } from "./eras";
-import { SPECIAL_SYMS, canBuildNext, specialFullName, specialOfficial } from "./special41";
+import { canBuildNext, specialFullName, specialOfficial } from "./special41";
 import { cellDistKm, mountainCost, pathfind, type World } from "./world";
 
 export type CerKind = "kokudo1" | "fudo1" | "kokudo0";
@@ -308,7 +308,7 @@ export function performRoad0(sim: SimState, w: World, prev: NatPreview): { route
   if (gate?.sym && gate.sym !== "0" && gate.sym !== "1") {   // Stage 41 #8: a later special route (A 元 始 ...): a route of its own by symbol, not a numbered one
     const sp = designate(sim, chain, "national", "JP", `${prev.from.replace(/市$/, "")}〜${prev.to.replace(/市$/, "")}`, `遷都後の開通の儀(${specialFullName(gate.sym)})`, false, 0); if (!sp) return null;
     sp.special = gate.sym; sp.gen = sim.startYear + Math.floor(sim.month / 12); sp.name = specialFullName(gate.sym);
-    ev(sim, "ceremony", `${specialOfficial(gate.sym)}が開通(既存道路の転用${Math.round(reusedKm)}km・廃道/旧道の復旧${Math.round(restoredKm)}km・新設${Math.round(newKm)}km)`, `特殊路線の${SPECIAL_SYMS.indexOf(gate.sym) + 1}本目(${specialFullName(gate.sym)})。新首都(${prev.from})と新副首都(${prev.to})を通る。工事費相当${Math.round((newKm * ROAD0_NEW_BU + restoredKm * ROAD0_RESTORE_BU) * 100) / 100}`, { route: sp.id });
+    ev(sim, "ceremony", `${specialOfficial(gate.sym)}が開通(既存道路の転用${Math.round(reusedKm)}km・廃道/旧道の復旧${Math.round(restoredKm)}km・新設${Math.round(newKm)}km)`, `特殊路線(${specialFullName(gate.sym)})。新首都(${prev.from})と新副首都(${prev.to})を通る。工事費相当${Math.round((newKm * ROAD0_NEW_BU + restoredKm * ROAD0_RESTORE_BU) * 100) / 100}`, { route: sp.id });
     return { routeId: sp.id, reusedKm: Math.round(reusedKm), restoredKm: Math.round(restoredKm), newKm: Math.round(newKm), costBu: Math.round((newKm * ROAD0_NEW_BU + restoredKm * ROAD0_RESTORE_BU) * 100) / 100, spurs };
   }
   const later = !gate && Object.values(sim.routes).some((q) => q.grade === "national" && q.scope === "JP" && q.number === 0);   // Stage 25: a second (third ...) 国道0号 is a route of its own, named by its year; the first one is never touched

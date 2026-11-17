@@ -23,7 +23,8 @@ import { AIR_KIND_LABEL, PORT_CAP, PORT_TIER_LABEL, airName, foreignName, hubsAt
 import { DOMAIN_LABEL, POLICIES, skipWindow, POLICY_MODE_LABEL, POINTS_PER_WINDOW, ADOPT_BAR, baseScores, boostOf, computeEnv, resolveWindow, topFive, type Domain, type PolicyMode } from "../sim/policy";
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
 
-export const ui3 = { graph: false, tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerMode: "normal" as "normal" | "numbers", numClass: "road" as NumClass, numPage: 0, ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null, simple: (() => { try { return localStorage.getItem("kfm.polSimple") === "1"; } catch { return false; } })(), sKeep: undefined as boolean | undefined, sAns: {} as { transport?: Transport; city?: Concentration; coast?: Coast } };
+const ORIGIN86: Record<string, string> = { taisho: "大正時候補", showa: "昭和時候補", heisei: "平成時候補", reiwa: "令和時候補", reuse: "再採用(ゲーム独自の前・中・後)", generated: "ゲーム生成(史実の候補ではありません)" };
+export const ui3 = { k86: null as null | { year: number; idx: number; stance: EraKey }, graph: false, tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerMode: "normal" as "normal" | "numbers", numClass: "road" as NumClass, numPage: 0, ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null, simple: (() => { try { return localStorage.getItem("kfm.polSimple") === "1"; } catch { return false; } })(), sKeep: undefined as boolean | undefined, sAns: {} as { transport?: Transport; city?: Concentration; coast?: Coast } };
 const ym = (sim: SimState, m: number) => { const { year, month } = monthToYM(sim.startYear, m); return `${year}年${month}月`; };
 const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) * 10)) + "□".repeat(10 - Math.round(Math.max(0, Math.min(1, v)) * 10));
 
@@ -53,6 +54,16 @@ export function buildKaigen(app: App, body: HTMLElement) {
   body.append(h("div", { class: "issue", id: "kaigen-history" }, "元号の履歴: " + k.eras.map((e) => `${e.name}(${e.start}〜)`).join(" → "), ...(k.recon ? [h("br"), h("small", { id: "kaigen-recon" }, `復興方針(1945年に決定・以後も持続): ${reconText(k.recon)}`)] : [])));
   if (!k.pending) { body.append(h("div", { class: "issue" }, `次の改元: ${k.next}年ごろ(27〜33年間隔の暫定規則)`)); return; }
   const p = k.pending, real = p.year === 1989 || p.year === 2019;
+  if (k.era86) {   // Issue #86: the name and the policy apart; a name the 4-era rule forbids stays in the list with its mark and the reason, and cannot be chosen
+    const sel = ui3.k86 && ui3.k86.year === p.year ? ui3.k86 : (ui3.k86 = { year: p.year, idx: Math.max(0, p.cands.findIndex((c) => !c.blocked)), stance: k.eras[k.eras.length - 1].stance });
+    body.append(h("div", { class: "issue warn", id: "kaigen-window" }, `${p.year}年: 新しい元号と方針を選んでください。時間は止まっています。`, h("br"), h("small", {}, "元号の名前と交通方針は別々に選べます。候補はゲームが作った名前です(史実の元号・候補ではありません)。直前3代と先頭の漢字またはローマ字の頭文字が重なる名前は選べません。")));
+    const box = h("div", { id: "kaigen-box", class: "era-list-box" });
+    p.cands.forEach((c, i) => box.append(h("button", { id: "kaigen-" + i, type: "button", class: sel.idx === i ? "mode on era-row" : "mode era-row", "aria-pressed": sel.idx === i ? "true" : "false", disabled: c.blocked ? "" : null, onclick: () => { sel.idx = i; app.buildSheet(); } }, `${sel.idx === i ? "✓ " : ""}${c.blocked ? `✕[${c.mark ?? ""}] ` : ""}${c.name}${c.yomi ? `(${c.yomi})` : ""}`, h("br"), h("small", {}, c.blocked ? `選べません: ${c.blocked}` : ORIGIN86[c.o86 ?? "generated"] ?? ""))));
+    body.append(box); const row = h("div", { class: "row", id: "kaigen-stance" }); row.append(h("small", {}, "交通方針"));
+    for (const st of ["heisei", "shubun", "shoka", "kairo", "kuuro"] as EraKey[]) row.append(h("button", { id: "kaigen-stance-" + st, type: "button", class: sel.stance === st ? "mode on" : "mode", "aria-pressed": sel.stance === st ? "true" : "false", onclick: () => { sel.stance = st; app.buildSheet(); } }, `${sel.stance === st ? "✓ " : ""}${STANCE_LABEL[st]}`));
+    body.append(row, h("div", { class: "row" }, h("button", { id: "kaigen-go", type: "button", class: "primary", disabled: p.cands[sel.idx]?.blocked ? "" : null, onclick: () => { const s2 = ui3.k86!; ui3.k86 = null; app.chooseKaigen(s2.idx, s2.stance); } }, "この元号と方針で決定")));
+    return;
+  }
   body.append(h("div", { class: "issue warn", id: "kaigen-window" }, `${p.year}年: 新しい元号を選んでください。時間は止まっています。`, h("br"), h("small", {}, real ? "候補は史実でこの年に挙がった案です(最初が実際に選ばれた元号)。方針の割り当てはゲーム上の仮のものです。" : "候補は暫定の生成規則による名前です(いろは順の漢字化+改元年の干支、画数の少ない順)。実在の元号ではありません。")));
   {   // Stage 19: a heading per transport group, one candidate per line (name -- main effect); the candidates of the same group are together
     const box = h("div", { id: "kaigen-box", class: "era-list-box" });

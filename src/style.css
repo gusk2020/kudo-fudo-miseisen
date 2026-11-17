@@ -1,7 +1,7 @@
 html { color-scheme: dark; }
 :root { --bg:#16324a; --panel:#0f2438ee; --fg:#eef4f8; --accent:#ffd23a; --bad:#ff6b6b; --ok:#6bdc8c; --btn:#24506f; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin:0; height:100%; overflow:hidden; overscroll-behavior:none; background:var(--bg); color:var(--fg); font:14px/1.35 system-ui,"Noto Sans JP",sans-serif; touch-action:none; user-select:none; -webkit-user-select:none; }
+html, body { margin:0; height:100%; overflow:hidden; overscroll-behavior:none; background:var(--bg); color:var(--fg); font:14px/1.35 system-ui,"Noto Sans JP",sans-serif,"KfmSym"; touch-action:none; user-select:none; -webkit-user-select:none; }
 #stage { position:fixed; inset:0; touch-action:none; }
 #stage canvas { display:block; touch-action:none; }
 button { font:inherit; color:var(--fg); background:var(--btn); border:1px solid #3a6d92; border-radius:8px; padding:8px 10px; min-height:40px; touch-action:manipulation; }
@@ -169,3 +169,7 @@ body #sheet.mini h3 { display: none; }
 #btn-night { position: fixed; right: 8px; top: calc(env(safe-area-inset-top, 0px) + 4px); width: 40px; height: 40px; border-radius: 20px; z-index: 7; font-size: 22px; line-height: 1; padding: 0; background: var(--panel); border: 1px solid #5d7a95; color: #e8eef4; }
 #btn-night.on { background: #1b2748; border-color: #ffd27a; color: #ffd27a; }
 #btn-night[hidden] { display: none; }
+
+/* Issue #86: a candidate that cannot be chosen stays listed, dimmed */
+.blocked, button.era-row:disabled { opacity: 0.55; }
+button.era-row { display: block; width: 100%; text-align: left; margin: 3px 0; }

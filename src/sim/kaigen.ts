@@ -23,11 +23,11 @@
  */
 import type { EraKey } from "./eras";
 
-export interface EraCand { name: string; stance: EraKey; real: boolean; note: string; recon?: Recon; yomi?: string }
+export interface EraCand { name: string; stance: EraKey; real: boolean; note: string; recon?: Recon; yomi?: string; /** Issue #86 (era86 games): why it cannot be chosen (null/absent = it can), the mark shown, and where the name comes from */ blocked?: string | null; mark?: string; o86?: string }
 /** Stage 10: the 1945 reconstruction policy (recon.ts). Only the first era choice carries one. */
 export interface Recon { coast: "pacific" | "japansea" | "neutral"; focus: "concentrate" | "disperse"; /** Stage 22: the year the policy was set (1945 if absent); its strength fades from there */ since?: number }
-export interface EraEntry { name: string; start: number; stance: EraKey; real: boolean; picked: number; of: number; auto: boolean }
-export interface KaigenState { eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number; recon?: Recon; /** Stage 25: the groups put to the player at each relocation event (index = the event's number), with the one chosen */ reloc?: (RelocGroup | null)[]; /** Stage 36 M4: an 1800 game -- every ordinary era change is 20-40 years after the last (no fixed 1989/2019), and names come from the generator only */ free?: true }
+export interface EraEntry { name: string; start: number; stance: EraKey; real: boolean; picked: number; of: number; auto: boolean; /** Issue #86: the reading and the origin of the name, kept with the era (absent in eras made before) */ yomi?: string | null; o86?: string }
+export interface KaigenState { /** Issue #86: names and policy are chosen independently, under the 4-era rule (era86.ts). Absent = a game from before, which keeps its own rules */ era86?: true; eras: EraEntry[]; pending: { year: number; cands: EraCand[] } | null; next: number; nextIdx: number; recon?: Recon; /** Stage 25: the groups put to the player at each relocation event (index = the event's number), with the one chosen */ reloc?: (RelocGroup | null)[]; /** Stage 36 M4: an 1800 game -- every ordinary era change is 20-40 years after the last (no fixed 1989/2019), and names come from the generator only */ free?: true }
 
 /** The policy stances a candidate can carry, in the order they are handed out. Issue #15 added 空路重視 and 海路重視 to the original three. */
 export const STANCES: EraKey[] = ["heisei", "shubun", "shoka", "kuuro", "kairo"];
@@ -139,6 +139,7 @@ export function futureCandidates(year: number, taken: Set<string> = new Set()): 
 // ---------------------------------------------------------------- the timeline ----------
 export const newKaigen = (first: EraCand, firstIdx: number, seed: number, start1800 = false): KaigenState => ({ ...(start1800 ? { free: true as const } : {}), eras: [{ name: first.name, start: start1800 ? 1800 : FIRST_YEAR, stance: first.stance, real: first.real, picked: firstIdx, of: CAND_1945.length, auto: false }], pending: null, next: start1800 ? 1800 + futureInterval(seed, 0, true) : KAIGEN_YEARS.second, nextIdx: start1800 ? 1 : 0, ...(first.recon ? { recon: { ...first.recon } } : {}) });
 export function candidatesFor(k: KaigenState, year: number): EraCand[] {
+  if (k.era86) { const cur = k.eras[k.eras.length - 1]?.stance ?? "heisei"; return era86Ordinary(year, k).map((c) => ({ name: c.name, stance: cur, real: false, note: c.note, ...(c.yomi ? { yomi: c.yomi } : {}), blocked: c.blocked, ...(c.mark ? { mark: c.mark } : {}), o86: c.origin })); }   // Issue #86: generated names, judged by the 4-era rule; the policy is not the name's (it stays as it is unless chosen beside the name)
   if (!k.free) { if (year === KAIGEN_YEARS.second) return CAND_1989; if (year === KAIGEN_YEARS.third) return CAND_2019; }
   return futureCandidates(year, new Set(k.eras.map((x) => x.name)));
 }
@@ -146,9 +147,11 @@ export function candidatesFor(k: KaigenState, year: number): EraCand[] {
 export function kaigenDue(k: KaigenState | undefined, year: number): boolean { return !!k && !k.pending && year >= k.next; }
 export function openKaigen(k: KaigenState, year: number): void { k.pending = { year, cands: candidatesFor(k, year) }; }
 /** Choose candidate `idx` (the pending one). The next date is scheduled; returns the new entry. */
-export function chooseEra(k: KaigenState, idx: number, seed: number, auto = false): EraEntry | null {
-  const p = k.pending; if (!p) return null; const i = Math.max(0, Math.min(p.cands.length - 1, Math.floor(idx))), c = p.cands[i];
-  const e: EraEntry = { name: c.name, start: p.year, stance: c.stance, real: c.real, picked: i, of: p.cands.length, auto };
+export function chooseEra(k: KaigenState, idx: number, seed: number, auto = false, stance?: EraKey): EraEntry | null {
+  const p = k.pending; if (!p) return null; let i = Math.max(0, Math.min(p.cands.length - 1, Math.floor(idx)));
+  if (k.era86 && p.cands[i].blocked) { const j = p.cands.findIndex((x) => !x.blocked); if (j < 0) return null; i = j; }   // Issue #86: a name that cannot be chosen is never taken (the first that can be is)
+  const c = p.cands[i];
+  const e: EraEntry = { name: c.name, start: p.year, stance: k.era86 ? stance ?? k.eras[k.eras.length - 1]?.stance ?? c.stance : c.stance, real: c.real, picked: i, of: p.cands.length, auto, ...(k.era86 ? { yomi: c.yomi ?? null, ...(c.o86 ? { o86: c.o86 } : {}) } : {}) };
   k.eras.push(e); k.pending = null;
   if (!k.free && p.year < KAIGEN_YEARS.third) k.next = p.year === KAIGEN_YEARS.second ? KAIGEN_YEARS.third : KAIGEN_YEARS.second; else { k.next = p.year + futureInterval(seed, k.nextIdx, !!k.free); k.nextIdx++; }
   return e;
@@ -194,7 +197,7 @@ export function stanceAt(sim: { era: string; kaigen?: KaigenState }, year: numbe
 export const RELOC_FIRST_LEGACY = 2200, RELOC_STEP = 150, RELOC_MIN = 3, RELOC_TARGET = 5;
 export const relocFirstOf = (startYear: number) => startYear + RELOC_STEP;
 export const relocYear = (n: number, first: number = RELOC_FIRST_LEGACY, step: number = RELOC_STEP) => first + step * n;
-export interface RelocCand { name: string; yomi?: string; real: boolean; note: string; origin: "inherit" | "history" | "fiction" }
+export interface RelocCand { name: string; yomi?: string; real: boolean; note: string; origin: "inherit" | "history" | "fiction"; blocked?: string | null; mark?: string; o86?: string; yomiSrc?: "source" | "provisional" }
 export interface RelocGroup { n: number; year: number; base: string; cands: RelocCand[]; chosen?: string }
 /** Old and new forms, and width variants, of the same name are one name. */
 const VARIANTS: Record<string, string> = { "國": "国", "與": "与", "德": "徳", "榮": "栄", "寶": "宝", "應": "応", "龍": "竜", "禮": "礼", "廣": "広", "壽": "寿", "萬": "万", "齋": "斎", "眞": "真", "惠": "恵", "將": "将", "曆": "暦", "祿": "禄", "觀": "観", "實": "実", "靈": "霊", "龜": "亀", "歷": "歴", "戰": "戦", "圓": "円" };
@@ -213,6 +216,7 @@ function relocBase(k: KaigenState, n: number): { cands: RelocCand[]; text: strin
 }
 /** The group put to the player at relocation event `n` (the `year` is the one it opens in). `pool` is the real-era supply (a parameter so a test can run it dry). */
 export function relocGroup(k: KaigenState, n: number, year: number, pool: string[] = REAL_POOL): RelocGroup {
+  if (k.era86) return { n, year, base: era86PoolText(year), cands: era86Historical(year, k).map((c) => ({ name: c.name, ...(c.yomi ? { yomi: c.yomi } : {}), real: c.origin !== "generated" && c.origin !== "reuse", note: c.note, origin: c.origin === "generated" ? "fiction" as const : "inherit" as const, ...(c.yomiSrc ? { yomiSrc: c.yomiSrc } : {}), blocked: c.blocked, ...(c.mark ? { mark: c.mark } : {}), o86: c.origin })) };   // Issue #86
   const used = usedKeys(k), base = relocBase(k, n), seen = new Set<string>(), cands: RelocCand[] = [];
   for (const c of base.cands) { const key = eraKey(c.name); if (used.has(key) || seen.has(key)) continue; seen.add(key); cands.push(c); }
   let text = base.text;
@@ -224,3 +228,8 @@ export function relocGroup(k: KaigenState, n: number, year: number, pool: string
   }
   return { n, year, base: text, cands };
 }
+
+// ---- Issue #86: the bridge to era86.ts (set by that module when it loads, so this file does not import it: era86 imports this one)
+type E86 = { name: string; yomi: string | null; origin: string; note: string; blocked: string | null; mark?: string; yomiSrc?: "source" | "provisional" };
+let era86Ordinary: (year: number, k: KaigenState) => E86[] = () => [], era86Historical: (year: number, k: KaigenState) => E86[] = () => [], era86PoolText: (year: number) => string = () => "";
+export const installEra86 = (ord: typeof era86Ordinary, hist: typeof era86Historical, text: typeof era86PoolText) => { era86Ordinary = ord; era86Historical = hist; era86PoolText = text; };

@@ -1,4 +1,5 @@
 import "./style.css";
+import "./symbols41.css";
 import { App } from "./ui/app";
 import { showIntro } from "./ui/intro";
 // Stage 3 (real Japan) is the default; the Stage 1/2 hand-edited-map flow stays reachable at ?legacy=1 with its own saves.

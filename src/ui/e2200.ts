@@ -13,6 +13,7 @@ const radio = (id: string, label: string, on: boolean, pick: () => void, desc?: 
 export const RW_LABELS = ["元号・方針", "首都・副首都・皇居", "国道0号", "最終確認"];
 const rwHead = (n: number, extra = "") => h("div", { id: "rw-head", class: "note", role: "status", "aria-live": "polite" }, `遷都 ${n + 1}/4  ${RW_LABELS[n]}${extra}`);
 /** Stage 35: the relocation as four stages -- era and policy, the three seats, 国道0号, a final review. Nothing is applied before the seats stage is decided, and the game does not move until the review is confirmed. */
+const O86: Record<string, string> = { taisho: "大正時候補", showa: "昭和時候補", heisei: "平成時候補", reiwa: "令和時候補", reuse: "再採用(前・中・後)", generated: "ゲーム生成" };
 export function buildE2200(app: App, body: HTMLElement) {
   const sim = app.sim, e = sim?.e2200; if (!sim || !e) { body.append(h("small", {}, "遷都の出来事はまだです")); return; }
   body.append(h("h3", {}, `${e.year}年 遷都と復興(第${(e.n ?? 0) + 1}回)`));
@@ -36,7 +37,8 @@ export function buildE2200(app: App, body: HTMLElement) {
   // era
   const g = groupOf2200(sim)!;
   list.append(h("div", { class: "rw-head" }, "元号", h("small", {}, ` ${g.base}。一度でも使った元号は出ません`)));
-  g.cands.forEach((c, i) => list.append(radio("e22-era-" + i, `${c.name}${c.yomi ? `(${c.yomi})` : ""}${c.origin === "fiction" ? "【架空】" : ""}`, d.era === i, () => { d.era = i; re(); }, c.note)));
+  if (sim.kaigen?.era86 && g.cands[d.era]?.blocked) d.era = Math.max(0, g.cands.findIndex((c) => !c.blocked));   // Issue #86: the draft never stands on a name that cannot be chosen
+  g.cands.forEach((c, i) => { const r = radio("e22-era-" + i, `${c.blocked ? `✕[${c.mark ?? ""}] ` : ""}${c.name}${c.yomi ? `(${c.yomi}${c.yomiSrc === "provisional" ? "・仮の読み" : ""})` : ""}${c.origin === "fiction" ? "【架空】" : ""}${c.o86 ? ` ― ${O86[c.o86] ?? ""}` : ""}`, d.era === i, () => { if (c.blocked) { app.toast(`選べません: ${c.blocked}`); return; } d.era = i; re(); }, c.blocked ? `選べません: ${c.blocked}` : c.note); if (c.blocked) { r.classList.add("blocked"); r.setAttribute("aria-disabled", "true"); } list.append(r); });
   // policy, free combination
   list.append(h("div", { class: "rw-head" }, "交通方針", h("small", {}, " 元号とは切り離して自由に選べます")));
   for (const [k, l] of [["shubun", "道路重視"], ["shoka", "鉄道重視"], ["kairo", "海路重視"], ["kuuro", "空路重視"], ["heisei", "均衡"]] as const) list.append(radio("e22-stance-" + k, l, d.stance === k, () => { d.stance = k; re(); }));

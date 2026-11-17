@@ -136,6 +136,8 @@ export interface SimState {
   simple41?: import("./simple41").Simple41;
   /** Stage 41 #8: the game uses the special-route rules (special41.ts): a relocation builds the next symbol, not another dated 国道0号. Absent = an older game */
   special41?: true;
+  /** Issue #87: the game uses the sixty-symbol list and its six fixed years (special41.ts). Absent with `special41` = a game of the first, thirteen-symbol list, which it keeps */
+  special60?: true;
   resumeMode?: "auto" | "autoReloc" | "idleAuto";
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */
