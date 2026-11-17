@@ -45,3 +45,9 @@ Because they are stacked, the top branch contains everything: a publish candidat
 
 ## Before publishing (needs the owner's approval)
 Top of the stack green in CI → `tools/compat-check.mjs dist-9e0a8c8-build new-build` → frozen branch `claude/release-pages-<sha>` → `pages.yml`. Rollback branch of the live version: `claude/release-pages-9e0a8c8`.
+
+## State at the end of this session (2026-11-17 19:37 JST)
+- PR #89 = `claude/s42-islands` (stages 1, 3, 4, 5, 6). Its first CI run failed in ONE test: `integration41.spec.ts` clicked era candidate #1 at the 1900 relocation, which Issue #86 now blocks (unverified reading). Fixed (tests pick the first selectable name); integration41 + seat88 pass locally. **CI of the fix not yet seen.**
+- PR #90 = `claude/s42-trunk` (on `claude/s42-fast`, on #89): decade mode, long-run data, trunk measure. Merged #89's fix in. CI not yet seen.
+- Not started: trunk builder (TRUNK42.md), numreg compaction (LONG42.md), northern place set (NORTH41.md), shared-data next step (SHARED-DATA41.md).
+- Publishing: not done; needs the owner's approval. Candidate = PR #90 head once green (it contains #89).
