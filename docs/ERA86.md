@@ -40,3 +40,7 @@ The first version made the 14 昭和時候補 unselectable (no verified reading)
 | A (current) | provisional on-readings, marked 仮, used by the 4-era rule | a real reading could differ (e.g. 神 = じん), which could flip an S/J initial |
 | B | judge 昭和 names by kanji only until a reading is sourced | the romaji rule is skipped for them |
 | C | owner supplies sources/readings | best; one line per name in `HIST_POOL` |
+
+## 決定（2026-11-17）
+- 昭和の未採用候補14件の読みは **案A（現状のまま・仮の読みとして判定、画面に「仮の読み」と明示）** で確定。オーナー承認済み。
+- 将来オーナーが読みを指定する場合は案Cへ移行できる（`yomiSrc` を "source" に変えるだけ）。
