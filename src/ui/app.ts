@@ -727,7 +727,8 @@ export class App {
   /** Where the three seats stand in the world (the 県庁所在地 city of each, or the palace's own point). */
   seatPoints(w: World): { capital: Vec | null; sub: Vec | null; sub2?: Vec | null; palace: Vec | null } {
     const sim = this.sim!, a = this.activeSeats(), pos = (p: string) => w.cities.find((c) => c.pref === p && c.kind === "capital")?.pos ?? null;
-    return { capital: homeCity(w, a.capital)?.pos ?? pos(a.capital), sub: subCity(w, a.sub)?.pos ?? pos(a.sub), sub2: sim.subCapital2 ? subCity(w, sim.subCapital2)?.pos ?? pos(sim.subCapital2) : null, palace: sim.palace?.pos ?? pos(a.palace) };
+    // Issue #88: a seat the player put on the map is drawn at THAT point (it used to be drawn at its prefecture's 県庁所在地, which another seat of the same prefecture may have taken)
+    return { capital: sim.capitalPos ?? homeCity(w, a.capital)?.pos ?? pos(a.capital), sub: sim.subPos ?? subCity(w, a.sub)?.pos ?? pos(a.sub), sub2: sim.subCapital2 ? sim.subPos2 ?? subCity(w, sim.subCapital2)?.pos ?? pos(sim.subCapital2) : null, palace: sim.palace?.pos ?? pos(a.palace) };
   }
   /** Stage 41 #8: what this relocation's line is called: 国道0号 (the first), or the next special symbol of the game (A号 ...). `done` = after it was opened (the symbol just used) */
   road0Name(): string { const sim = this.sim; if (!sim?.special41) return "国道0号"; if (this.spMode === "extend" && this.spSym) return `${specialFullName(this.spSym)}の延長`; const sym = nextSpecial(sim) ?? "0"; return sym === "0" || sym === "1" ? "国道0号" : specialFullName(sym); }
