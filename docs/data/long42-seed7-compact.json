@@ -1,0 +1,472 @@
+[
+ {
+  "year": 1900,
+  "reached": true,
+  "secPerCentury": 11.6,
+  "saveMB": 1.4,
+  "heapMB": 139,
+  "edges": 1391,
+  "routes": 133,
+  "projects": 232,
+  "events": 1063,
+  "eras": 3,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    795325
+   ],
+   [
+    "events",
+    139725
+   ],
+   [
+    "settlements",
+    101875
+   ],
+   [
+    "projects",
+    85953
+   ],
+   [
+    "nodes",
+    80879
+   ],
+   [
+    "routes",
+    72804
+   ],
+   [
+    "stats",
+    39710
+   ],
+   [
+    "metro",
+    37621
+   ]
+  ]
+ },
+ {
+  "year": 2000,
+  "reached": true,
+  "secPerCentury": 20.5,
+  "saveMB": 2.3,
+  "heapMB": 108,
+  "edges": 2082,
+  "routes": 310,
+  "projects": 314,
+  "events": 1065,
+  "eras": 8,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1234448
+   ],
+   [
+    "routes",
+    159118
+   ],
+   [
+    "events",
+    147883
+   ],
+   [
+    "numreg",
+    123864
+   ],
+   [
+    "settlements",
+    115488
+   ],
+   [
+    "projects",
+    112827
+   ],
+   [
+    "nodes",
+    105704
+   ],
+   [
+    "hubs",
+    101473
+   ]
+  ]
+ },
+ {
+  "year": 2100,
+  "reached": true,
+  "secPerCentury": 22.9,
+  "saveMB": 2.5,
+  "heapMB": 88,
+  "edges": 2297,
+  "routes": 340,
+  "projects": 208,
+  "events": 1030,
+  "eras": 12,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1380438
+   ],
+   [
+    "routes",
+    177685
+   ],
+   [
+    "events",
+    141762
+   ],
+   [
+    "numreg",
+    136362
+   ],
+   [
+    "settlements",
+    116937
+   ],
+   [
+    "nodes",
+    113171
+   ],
+   [
+    "hubs",
+    106412
+   ],
+   [
+    "metro",
+    83055
+   ]
+  ]
+ },
+ {
+  "year": 2200,
+  "reached": true,
+  "secPerCentury": 23.6,
+  "saveMB": 2.6,
+  "heapMB": 182,
+  "edges": 2365,
+  "routes": 346,
+  "projects": 179,
+  "events": 1055,
+  "eras": 16,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1458912
+   ],
+   [
+    "routes",
+    184565
+   ],
+   [
+    "events",
+    143703
+   ],
+   [
+    "numreg",
+    127052
+   ],
+   [
+    "settlements",
+    117222
+   ],
+   [
+    "nodes",
+    114916
+   ],
+   [
+    "hubs",
+    113350
+   ],
+   [
+    "metro",
+    85825
+   ]
+  ]
+ },
+ {
+  "year": 2300,
+  "reached": true,
+  "secPerCentury": 27.8,
+  "saveMB": 2.8,
+  "heapMB": 170,
+  "edges": 2488,
+  "routes": 348,
+  "projects": 188,
+  "events": 1061,
+  "eras": 20,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1582097
+   ],
+   [
+    "routes",
+    188518
+   ],
+   [
+    "events",
+    143763
+   ],
+   [
+    "settlements",
+    119849
+   ],
+   [
+    "nodes",
+    119289
+   ],
+   [
+    "numreg",
+    118864
+   ],
+   [
+    "hubs",
+    115993
+   ],
+   [
+    "metro",
+    87343
+   ]
+  ]
+ },
+ {
+  "year": 2400,
+  "reached": true,
+  "secPerCentury": 32.3,
+  "saveMB": 2.9,
+  "heapMB": 88,
+  "edges": 2607,
+  "routes": 351,
+  "projects": 180,
+  "events": 1066,
+  "eras": 24,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1696009
+   ],
+   [
+    "routes",
+    192319
+   ],
+   [
+    "events",
+    143970
+   ],
+   [
+    "numreg",
+    124190
+   ],
+   [
+    "nodes",
+    123169
+   ],
+   [
+    "settlements",
+    122439
+   ],
+   [
+    "hubs",
+    114943
+   ],
+   [
+    "metro",
+    89150
+   ]
+  ]
+ },
+ {
+  "year": 2500,
+  "reached": true,
+  "secPerCentury": 37,
+  "saveMB": 3,
+  "heapMB": 138,
+  "edges": 2709,
+  "routes": 351,
+  "projects": 187,
+  "events": 1092,
+  "eras": 29,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1792025
+   ],
+   [
+    "routes",
+    193688
+   ],
+   [
+    "events",
+    146634
+   ],
+   [
+    "nodes",
+    127193
+   ],
+   [
+    "settlements",
+    125658
+   ],
+   [
+    "numreg",
+    124361
+   ],
+   [
+    "hubs",
+    117413
+   ],
+   [
+    "city12",
+    96453
+   ]
+  ]
+ },
+ {
+  "year": 2600,
+  "reached": true,
+  "secPerCentury": 38.2,
+  "saveMB": 3.4,
+  "heapMB": 92,
+  "edges": 2799,
+  "routes": 361,
+  "projects": 189,
+  "events": 1069,
+  "eras": 33,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1879153
+   ],
+   [
+    "numreg",
+    302402
+   ],
+   [
+    "routes",
+    198144
+   ],
+   [
+    "hubs",
+    162734
+   ],
+   [
+    "events",
+    143928
+   ],
+   [
+    "nodes",
+    130266
+   ],
+   [
+    "settlements",
+    128787
+   ],
+   [
+    "city12",
+    111758
+   ]
+  ]
+ },
+ {
+  "year": 2700,
+  "reached": true,
+  "secPerCentury": 39.7,
+  "saveMB": 3.8,
+  "heapMB": 150,
+  "edges": 2865,
+  "routes": 371,
+  "projects": 210,
+  "events": 1076,
+  "eras": 38,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    1952056
+   ],
+   [
+    "numreg",
+    579998
+   ],
+   [
+    "routes",
+    203960
+   ],
+   [
+    "hubs",
+    167321
+   ],
+   [
+    "events",
+    145014
+   ],
+   [
+    "nodes",
+    132416
+   ],
+   [
+    "settlements",
+    131939
+   ],
+   [
+    "city12",
+    125391
+   ]
+  ]
+ },
+ {
+  "year": 2800,
+  "reached": true,
+  "secPerCentury": 42.6,
+  "saveMB": 3.9,
+  "heapMB": 163,
+  "edges": 2933,
+  "routes": 377,
+  "projects": 204,
+  "events": 1087,
+  "eras": 42,
+  "specials": "",
+  "top": [
+   [
+    "edges",
+    2027404
+   ],
+   [
+    "numreg",
+    548909
+   ],
+   [
+    "routes",
+    208457
+   ],
+   [
+    "hubs",
+    167383
+   ],
+   [
+    "events",
+    146442
+   ],
+   [
+    "city12",
+    138845
+   ],
+   [
+    "nodes",
+    135120
+   ],
+   [
+    "settlements",
+    135088
+   ]
+  ]
+ }
+]
