@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 import { writeFileSync } from "node:fs";
 import { advance, yearOf } from "../../src/sim/engine";
-import { stage3Sim } from "./simhelp";
+import { realWorld, stage3Sim, stage3SimOn } from "./simhelp";
 
 /**
  * Stage 41 #10 measurement (NOT a regression test: it only runs when KFM_NORTH=<out.json> is set). 1800-start games, several seeds and capital placements; per prefecture group: population, open road/rail km, ports, airports at 1900/1950/2000.
@@ -14,7 +14,7 @@ const GROUPS: Record<string, string[]> = { 札幌県: ["HK-SAP"], 函館県: ["H
     const rows: unknown[] = []; const seeds = (process.env.KFM_SEEDS ?? "1,2,3").split(",").map(Number), caps = (process.env.KFM_CAPS ?? "JP-13,HK-SAP,KRF").split(",");
     for (const cap of caps) for (const seed of seeds) {
       const t0 = Date.now(); let g: ReturnType<typeof stage3Sim>;
-      try { g = stage3Sim("heisei", seed, true, 0, 2, true, { capital: cap, sub: cap === "JP-27" ? "JP-13" : "JP-27" }, undefined, { start1800: true, towns: true } as never); } catch (e) { rows.push({ cap, seed, error: String(e).slice(0, 200) }); continue; }
+      try { const seats = { capital: cap, sub: cap === "JP-27" ? "JP-13" : "JP-27" }; g = process.env.KFM_ISLETS === "1" ? stage3SimOn(realWorld(true, seats, 3) as never, 0, seed, { start1800: true, subCapital: seats.sub, ...(cap !== "JP-13" ? { capital: cap } : {}) } as never) as never : stage3Sim("heisei", seed, true, 0, 2, true, seats, undefined, { start1800: true, towns: true } as never); }   // (KFM_ISLETS=1: the world a new game in the app gets, islets and all) catch (e) { rows.push({ cap, seed, error: String(e).slice(0, 200) }); continue; }
       g.sim.policy!.mode = "auto"; const { sim, w } = g;
       for (const y of [1900, 1950, 2000]) {
         advance(sim, w, 12 * (y - yearOf(sim)));

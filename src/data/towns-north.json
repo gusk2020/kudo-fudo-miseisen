@@ -1,5 +1,5 @@
 {
- "note": "Stage 42 (Issue #88 north): real towns of 樺太(北緯50度以南). Names are real (樺太庁の町). 'pos' is world km in the same frame as the 樺太 island outline (calibrated on 豊原 = [516.94, 1101.28]); 'snap' = the town is moved to the nearest coast cell within 3 cells (a harbour town on a 5 km grid). 'pop' is a reference figure from a SEARCH-RESULT SNIPPET of a 1940s source (not verified against the primary table) and is scaled like every other town (POP_1950_SCALE): it is a size hint for the game, not a statistic. 本斗 is not here: no figure was found. 千島 is not here: its world position is not resolved yet (docs/NORTH41.md).",
+ "note": "Stage 42 (Issue #88 north): real towns of 樺太(北緯50度以南). Names are real (樺太庁の町). 'pos' is world km in the same frame as the 樺太 island outline (calibrated on 豊原 = [516.94, 1101.28]); 'snap' = the town is moved to the nearest coast cell within 3 cells (a harbour town on a 5 km grid). 'pop' is a reference figure from a SEARCH-RESULT SNIPPET of a 1940s source (not verified against the primary table) and is scaled like every other town (POP_1950_SCALE): it is a size hint for the game, not a statistic. 本斗 is not here: no figure was found.  千島(根室県): the three entries with 'islet': true stand on the real-outline islets of islets.json (the world grid is widened by withIslets), so they are placed in buildWorld, not in the terrain; their pos is lonLatToReal(lon, lat), the islets' own frame, snapped to the coast. Their 'pop' is the 1945-08-15 village population (外務省 table as quoted by the Sasakawa Peace Foundation), used only as a size hint; lon/lat are APPROXIMATE game placements (the places' modern coordinates where a source gave them), not surveyed positions of the old village offices.",
  "towns": [
   {
    "id": "TN-OTOMARI",
@@ -60,6 +60,39 @@
    "snap": true,
    "pop": 28000,
    "popNote": "人口は検索結果の記事の値(27,935人、昭和15年)を丸めたもの"
+  },
+  {
+   "id": "TN-KUNASHIRI-TOMARI",
+   "name": "泊(国後島)",
+   "lon": 145.85,
+   "lat": 44.03,
+   "island": "kunashiri",
+   "islet": true,
+   "snap": true,
+   "pop": 4864,
+   "popNote": "泊村 1945-08-15 4,864人(外務省表、笹川平和財団の引用)。座標は古釜布=ユジノクリリスクの現在地(検索結果: 44°02′N 145°51′E)を使った近似"
+  },
+  {
+   "id": "TN-SHIKOTAN-SHAKOTAN",
+   "name": "斜古丹(色丹島)",
+   "lon": 146.83,
+   "lat": 43.87,
+   "island": "shikotan",
+   "islet": true,
+   "snap": true,
+   "pop": 1038,
+   "popNote": "色丹島 1945-08-15 1,038人(206世帯、笹川平和財団)。座標は島の輪郭(islets.json)内の北岸への近似で、史料では未確認"
+  },
+  {
+   "id": "TN-ETOROFU-SHANA",
+   "name": "紗那(択捉島)",
+   "lon": 147.88,
+   "lat": 45.23,
+   "island": "etorofu",
+   "islet": true,
+   "snap": true,
+   "pop": 1001,
+   "popNote": "紗那村 1945-08-15 1,001人(笹川平和財団)。座標は現在のクリリスク付近への近似で、検索では位置を確認できていない"
   }
  ]
 }
