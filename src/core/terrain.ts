@@ -1,6 +1,6 @@
 /** Deterministic terrain/hydrology/prefecture generation on a regular world grid. Pure: no DOM, no rendering. */
 import { localToWorld, realToWorld } from "./body";
-import { BODY_DEFS, EXTRA, EXTRA_IDS, JAPAN, realToLonLat, TOWNS } from "./data";
+import { BODY_DEFS, EXTRA, EXTRA_IDS, JAPAN, NORTH_TOWNS, realToLonLat, TOWNS } from "./data";
 import { MinHeap } from "./heap";
 import { dist, pointSegDist, rot as rotv } from "./geom";
 import { fbm, hashArrays } from "./rng";
@@ -481,6 +481,13 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
     if (k >= 0 && land[k] === 2 && freshLakeSet.has(k) && !taken.has(k)) { taken.add(k); towns.push({ id: c.id, name: c.name, kind: "town", pref: null, pos: w, moved: false, elevM: Math.round(elev[k]), prefIndex: pref[k], submerged: true }); continue; }   // Stage 39: under a lake the player made: kept (as abolished), not dropped
     if (k < 0 || land[k] !== 1 || elev[k] > 2600 || taken.has(k)) continue;
     taken.add(k); towns.push({ id: c.id, name: c.name, kind: "town", pref: null, pos: w, moved: false, elevM: Math.round(elev[k]), prefIndex: pref[k] });
+  }
+  // Stage 42: the towns of 樺太 (their own list; `pos` is world km). A harbour town on a 5 km grid is put on the nearest coast cell within 3 cells (a town the sea or the grid leaves nowhere is dropped, never shifted far).
+  for (const c of NORTH_TOWNS) {
+    let k = idxOf(c.pos); const near = (n: number) => land[n] === 1 && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([di, dj]) => { const a = (n % nx) + di, b = ((n / nx) | 0) + dj; return a < 0 || b < 0 || a >= nx || b >= ny || land[b * nx + a] !== 1; });
+    if (c.snap && k >= 0) { let best = -1, bd = Infinity; const i0 = k % nx, j0 = (k / nx) | 0; for (let dj = -3; dj <= 3; dj++) for (let di = -3; di <= 3; di++) { const a = i0 + di, b = j0 + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue; const n = b * nx + a; if (!near(n) || taken.has(n) || elev[n] > 600) continue; const dd = Math.hypot(di, dj); if (dd < bd) { bd = dd; best = n; } } k = best; }
+    if (k < 0 || land[k] !== 1 || taken.has(k)) continue;
+    taken.add(k); towns.push({ id: c.id, name: c.name, kind: "town", pref: null, pos: [cx(k % nx), cy((k / nx) | 0)], moved: false, elevM: Math.round(elev[k]), prefIndex: pref[k] });
   }
   const movedN = cities.filter((c) => c.moved).length;
   if (movedN) warnings.push(`${movedN}都市が不適地のため局所補正されました`);

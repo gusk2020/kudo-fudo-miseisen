@@ -143,6 +143,7 @@ export function* createSimGen(w: World, mapHash: string, terrainHash: string, se
   // Stage 10: a new real-map game swaps regional roles with the real Tokyo / Osaka / Kyoto (roles.ts) instead of adding a bonus
   if (firstCand) sim.initPolicy = { stance: firstCand.stance, ...(firstCand.recon ? { coast: firstCand.recon.coast, focus: firstCand.recon.focus } : {}) };   // Stage 41: what the game was started with (the top line shows it beside the policy now)
   if (opts.stage3 && firstCand) { sim.special41 = true; sim.special60 = true; }
+  if (opts.stage3 && opts.start1800 && firstCand) sim.north41 = true;   // Stage 42 (Issue #95): island gateway ports (hubs.ts); new 1800 games only
   if (opts.stage3 && opts.start1800 && firstCand) sim.trunk42 = true;   // Stage 42: railway trunk duty; terrain / city populations remain unchanged
   if (e86 && sim.kaigen) { sim.kaigen.era86 = true; const f = sim.kaigen.eras[0]; f.yomi = e86.yomi; f.o86 = e86.origin; f.of = firstEraCands().length; f.picked = firstEraCands().findIndex((c) => c.name === e86.name); }   // Stage 41 #8: the special-route rules (special41.ts) for every new game; a game saved before keeps the old rule
   if (firstCand) { const cap = sim.capital ?? DEFAULT_CAPITAL; sim.roles = computeRoles(w, cap, sim.subCapital ?? (cap === DEFAULT_SUB ? DEFAULT_CAPITAL : DEFAULT_SUB), prefOfSeat(sim.palace?.pref) ?? DEFAULT_PALACE, opts.pop15 !== false, sim.subCapital2); }

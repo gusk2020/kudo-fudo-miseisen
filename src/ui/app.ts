@@ -230,7 +230,7 @@ export class App {
   /** The towns a world carries: a running or loaded game keeps the ones it was started with (none for an older game); a game not yet started takes the towns around its two seats. */
   private townIdsWanted(): string[] | false {
     const sim = this.sim ?? this.pendingSim; if (sim) return sim.towns16 ?? false;
-    if (!this.real || !this.terrain) return false; const st = seatsOf(this.s); const ids = townsForSeats(this.terrain, [st.capital, st.sub]); return ids.length ? ids : false;
+    if (!this.real || !this.terrain) return false; const st = seatsOf(this.s); const ids = townsForSeats(this.terrain, [st.capital, st.sub], true); return ids.length ? ids : false;
   }
   /** Stage 20: a running or loaded game keeps the grid it was started with (an older game has no islets); a game not yet started takes the islands. */
   /** Stage 20: the seat points that make a new 県庁所在地 (a game under way keeps the ones it started with; an older game has none). */

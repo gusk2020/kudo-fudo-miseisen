@@ -121,11 +121,13 @@ export function hubDemand(sim: SimState, w: World, T: Float64Array, TT: Float64A
 }
 
 // ---- state ----
-const PORT_MIN_POP = 90000, PORT_NEW_POP = 140000, PORT_MAX = 40;
+const PORT_MIN_POP = 90000, PORT_NEW_POP = 140000, PORT_MAX = 40, GATEWAY_PORT_POP = 20000, GATEWAY_PORT_YEAR = 1900;   // (the last two: Stage 42, `sim.north41` games)
 /** Facilities keep their distance: a new port not within PORT_SPACING_KM of another, a new airport not within AIR_SPACING_KM of an open one (unless its city is huge). */
 export const PORT_SPACING_KM = 12, AIR_SPACING_KM = 60, AIR_SPACING_POP = 3e6;
 const nearestKm = (w: World, id: string, others: string[]) => { const c = w.cityById.get(id); if (!c) return Infinity; let b = Infinity; for (const o of others) { if (o === id) continue; const q = w.cityById.get(o); if (q) b = Math.min(b, dist(c.pos, q.pos)); } return b; };
 export const hubLog = (x: { hist: { y: number; t: string }[] }, y: number, t: string) => { x.hist.push({ y, t }); if (x.hist.length > 16) x.hist.splice(1, 1); };
+/** Stage 42 (`sim.north41`): is this the only open port on its island? */
+const soleOpenPortOfIsland = (h: HubsState, w: World, city: string): boolean => { const isl = w.t.island[w.cityById.get(city)?.cell ?? -1]; return !Object.values(h.ports).some((q) => q.city !== city && q.until === undefined && w.t.island[w.cityById.get(q.city)?.cell ?? -1] === isl); };
 const portName = (w: World, id: string) => `${(w.cityById.get(id)?.name ?? id).replace(/市$/, "")}港`;
 const airName = (w: World, id: string) => `${(w.cityById.get(id)?.name ?? id).replace(/市$/, "")}空港`;
 export { portName, airName };
@@ -177,9 +179,14 @@ export function reviewHubs(sim: SimState, w: World, tot: HubTotals | undefined, 
       if (affordable(sim, cost, seaApp)) { const yrs = buildYears(sim, y, to >= 4 ? 6 : 4); p.build = { to, done: y + yrs }; hubLog(p, y, `${PORT_TIER_LABEL[to]}への拡張に着工`); ev(sim, "port", `${portName(w, p.city)}の拡張に着工(${to >= 4 ? "コンテナ埠頭" : "岸壁の増設"})`, `取扱が能力の${Math.round(p.load * 100)}%で2年続いた。完成予定${y + yrs}年・工費${Math.round(cost * 100) / 100}`, { city: p.city }); n++; }
     } else if (!p.build && p.lo >= 10 && p.tier >= 2 && seaApp0 < 1.2) {
       p.tier--; p.lo = 0; hubLog(p, y, `${PORT_TIER_LABEL[p.tier]}に縮小`); ev(sim, "port", `${portName(w, p.city)}を縮小: ${PORT_TIER_LABEL[p.tier]}`, `取扱が能力の2割以下で10年続いた`, { city: p.city }); n++;
-    } else if (p.tier === 1 && p.lo >= 15 && y >= 1990 && p.cargo < 0.05 * PORT_CAP[1]) {
+    } else if (p.tier === 1 && p.lo >= 15 && y >= 1990 && p.cargo < 0.05 * PORT_CAP[1] && !(sim.north41 && soleOpenPortOfIsland(h, w, p.city))) {   // (Stage 42: an island's only port stays open: the sea is its way out)
       p.until = y; hubLog(p, y, "閉港"); ev(sim, "port", `${portName(w, p.city)}を閉港`, `取扱がほとんどない状態が15年続いた`, { city: p.city }); n++;
     }
+  }
+  // Stage 42 (Issue #95, games with `sim.north41`): an island whose sea is its only way out gets its first port at its biggest coastal town once that town is of some size, whatever the nation-wide port count (PORT_MAX) is by then. No place is named: it is the same rule for every island that has never had a port.
+  if (sim.north41 && y >= GATEWAY_PORT_YEAR) {
+    const had = new Set(Object.keys(h.ports).map((id) => w.t.island[w.cityById.get(id)?.cell ?? -1])), cand = w.cities.filter((c) => c.coastal && !h.ports[c.id] && !had.has(w.t.island[c.cell]) && (sim.cities[c.id]?.pop ?? 0) >= GATEWAY_PORT_POP).sort((a, b) => sim.cities[b.id].pop - sim.cities[a.id].pop || (a.id < b.id ? -1 : 1))[0];
+    if (cand && affordable(sim, 0.3 * costMult(sim, y), seaApp)) { h.ports[cand.id] = { city: cand.id, tier: 1, since: y, cargo: 0, pax: 0, load: 0, hi: 0, lo: 0, hist: [{ y, t: "開港(島の玄関港)" }] }; ev(sim, "port", `${portName(w, cand.id)}が開港`, `人口${Math.round(sim.cities[cand.id].pop / 1000)}千人。島で最初の港(海が島の唯一の出口)`, { city: cand.id }); n++; }
   }
   if (y >= 1955 && Object.values(h.ports).filter((p) => p.until === undefined).length < PORT_MAX) {
     const c = w.cities.filter((c) => c.coastal && !h.ports[c.id] && nearestKm(w, c.id, Object.keys(h.ports)) >= PORT_SPACING_KM && (sim.cities[c.id]?.pop ?? 0) >= PORT_NEW_POP * hubThreshold18(sim)[0] * (1 - 0.25 * Math.min(1, dl.seaBias))).sort((a, b) => sim.cities[b.id].pop * (0.3 + sim.cities[b.id].industry) - sim.cities[a.id].pop * (0.3 + sim.cities[a.id].industry) || (a.id < b.id ? -1 : 1))[0];

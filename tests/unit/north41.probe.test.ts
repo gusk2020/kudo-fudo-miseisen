@@ -14,7 +14,7 @@ const GROUPS: Record<string, string[]> = { 札幌県: ["HK-SAP"], 函館県: ["H
     const rows: unknown[] = []; const seeds = (process.env.KFM_SEEDS ?? "1,2,3").split(",").map(Number), caps = (process.env.KFM_CAPS ?? "JP-13,HK-SAP,KRF").split(",");
     for (const cap of caps) for (const seed of seeds) {
       const t0 = Date.now(); let g: ReturnType<typeof stage3Sim>;
-      try { g = stage3Sim("heisei", seed, true, 0, 2, true, { capital: cap, sub: cap === "JP-27" ? "JP-13" : "JP-27" }, undefined, { start1800: true } as never); } catch (e) { rows.push({ cap, seed, error: String(e).slice(0, 200) }); continue; }
+      try { g = stage3Sim("heisei", seed, true, 0, 2, true, { capital: cap, sub: cap === "JP-27" ? "JP-13" : "JP-27" }, undefined, { start1800: true, towns: true } as never); } catch (e) { rows.push({ cap, seed, error: String(e).slice(0, 200) }); continue; }
       g.sim.policy!.mode = "auto"; const { sim, w } = g;
       for (const y of [1900, 1950, 2000]) {
         advance(sim, w, 12 * (y - yearOf(sim)));

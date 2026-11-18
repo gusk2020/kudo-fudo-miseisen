@@ -1,0 +1,65 @@
+{
+ "note": "Stage 42 (Issue #88 north): real towns of 樺太(北緯50度以南). Names are real (樺太庁の町). 'pos' is world km in the same frame as the 樺太 island outline (calibrated on 豊原 = [516.94, 1101.28]); 'snap' = the town is moved to the nearest coast cell within 3 cells (a harbour town on a 5 km grid). 'pop' is a reference figure from a SEARCH-RESULT SNIPPET of a 1940s source (not verified against the primary table) and is scaled like every other town (POP_1950_SCALE): it is a size hint for the game, not a statistic. 本斗 is not here: no figure was found. 千島 is not here: its world position is not resolved yet (docs/NORTH41.md).",
+ "towns": [
+  {
+   "id": "TN-OTOMARI",
+   "name": "大泊",
+   "pos": [
+    519.2,
+    1064.6
+   ],
+   "island": "karafuto",
+   "snap": true,
+   "pop": 22000,
+   "popNote": "樺太庁の最初の所在地(1909年まで)。人口は検索結果の記事の値(21,799人、時点不明)を丸めたもの"
+  },
+  {
+   "id": "TN-MAOKA",
+   "name": "真岡",
+   "pos": [
+    464.6,
+    1111.3
+   ],
+   "island": "karafuto",
+   "snap": true,
+   "pop": 18000,
+   "popNote": "西海岸の港町。人口は検索結果の記事の値(18,151人、時点不明)を丸めたもの"
+  },
+  {
+   "id": "TN-TOMARIORU",
+   "name": "泊居",
+   "pos": [
+    466.8,
+    1190.2
+   ],
+   "island": "karafuto",
+   "snap": true,
+   "pop": 12000,
+   "popNote": "人口は検索結果の記事の値(11,777人、1941年12月)を丸めたもの"
+  },
+  {
+   "id": "TN-ESUTORU",
+   "name": "恵須取",
+   "pos": [
+    467.3,
+    1335.9
+   ],
+   "island": "karafuto",
+   "snap": true,
+   "pop": 35000,
+   "popNote": "人口は検索結果の記事の値(35,115人、昭和15年)を丸めたもの。1923年594人→1928年末14,535人(釧路公立大の論文)"
+  },
+  {
+   "id": "TN-SHIKUKA",
+   "name": "敷香",
+   "pos": [
+    544.6,
+    1352.6
+   ],
+   "island": "karafuto",
+   "snap": true,
+   "pop": 28000,
+   "popNote": "人口は検索結果の記事の値(27,935人、昭和15年)を丸めたもの"
+  }
+ ]
+}

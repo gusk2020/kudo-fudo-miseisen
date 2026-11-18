@@ -1,6 +1,6 @@
 /** Static, derived-from-the-map context for the simulation. Rebuilt on load; never saved. */
 import { MinHeap } from "../core/heap";
-import { EXTRA, JAPAN, TOWNS, lonLatToReal } from "../core/data";
+import { EXTRA, JAPAN, NORTH_TOWNS, TOWNS, lonLatToReal } from "../core/data";
 import { mulberry32 } from "../core/rng";
 import type { TerrainResult } from "../core/terrain";
 import type { Vec } from "../core/types";
@@ -40,7 +40,7 @@ export const POP_1950_SCALE = 0.32; // reference (modern) population -> 1950 lev
  * Stage 16: which provincial towns a game carries: the towns of the prefectures the seats of government stand in and of every prefecture next to them (a town is a real town; the game only adds the ones
  * whose growth the seats can reach, which keeps the city count -- and with it the cost of every pass over all pairs of cities -- down). Pure in the terrain and the two prefecture ids.
  */
-export function townsForSeats(t: TerrainResult, prefs: string[]): string[] {
+export function townsForSeats(t: TerrainResult, prefs: string[], north = false): string[] {
   const { nx, ny } = t.grid, adj = new Map<number, Set<number>>(), idx = prefs.map((p) => t.prefOrder.indexOf(p) + 1).filter((i) => i > 0);
   const link = (a: number, b: number) => { if (!a || !b || a === b) return; (adj.get(a) ?? adj.set(a, new Set()).get(a)!).add(b); (adj.get(b) ?? adj.set(b, new Set()).get(b)!).add(a); };
   for (let k = 0; k < nx * ny; k++) { if (t.land[k] !== 1) continue; const i = k % nx; if (i + 1 < nx && t.land[k + 1] === 1) link(t.pref[k], t.pref[k + 1]); if (k + nx < nx * ny && t.land[k + nx] === 1) link(t.pref[k], t.pref[k + nx]); }
@@ -51,6 +51,7 @@ export function townsForSeats(t: TerrainResult, prefs: string[]): string[] {
   for (const c of t.towns ?? []) { if (c.prefIndex <= 0 || !want.has(c.prefIndex)) continue; const l = byPref.get(c.prefIndex) ?? byPref.set(c.prefIndex, []).get(c.prefIndex)!; l.push({ id: c.id, score: (pop.get(c.id) ?? 0) * (idx.includes(c.prefIndex) ? 1.8 : 1) }); }
   const all: { id: string; score: number }[] = []; for (const l of byPref.values()) all.push(...l.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1)).slice(0, TOWNS_PER_PREF));
   const keep = new Set(all.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1)).slice(0, TOWN_MAX).map((x) => x.id));
+  if (north) for (const c of t.towns ?? []) if (c.id.startsWith("TN-")) keep.add(c.id);   // Stage 42: a new game also carries the towns of 樺太 (their own list); a game made before it keeps the ids it recorded
   return (t.towns ?? []).filter((c) => keep.has(c.id)).map((c) => c.id);   // (in the order of the data file, so a world is the same wherever it is built)
 }
 export const TOWNS_PER_PREF = 5, TOWN_MAX = 40;
@@ -108,7 +109,7 @@ export function buildWorld(t0: TerrainResult, seed: number, withTowns: string[] 
   }
   // Stage 16: the provincial towns come last, so the cities keep their places in every array indexed by city (and the random stream above is untouched)
   if (withTowns && t.towns) {
-    const popOf = new Map(TOWNS.map((x) => [x.id, x.pop])), only = new Set(withTowns);
+    const popOf = new Map<string, number>([...TOWNS, ...NORTH_TOWNS].map((x) => [x.id, x.pop])), only = new Set(withTowns);
     for (const c of t.towns) {
       if (!only.has(c.id)) continue;
       const k = cellOf(c.pos); if (k < 0 || cities.some((x) => x.cell === k)) continue;

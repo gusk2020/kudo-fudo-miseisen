@@ -52,3 +52,30 @@ The capital holds 19–25% of the nation wherever it is (東京 142M is larger t
 - Starting sizes small (they are 1800), growth by the existing mechanisms: a coastal place lets `hubs.ts` open a port; two or more places give the planner intercity demand; sea priority → ports/ferries first, air priority → airports, road/rail priority → the existing strait-link candidates (宗谷海峡 is ~42 km: over every 2026 bridge record, inside the tunnel record).
 - Acceptance by the probe: with the capital in 東京, 樺太県 ≥ 5% of the median prefecture at 2000 with ≥1 port and intercity road; other prefectures' figures within ±5% of the baseline; Issue #65/#66/#72 cases re-run.
 - The "exaggerated population" the user asked for should then come from this (settlement, ports, migration), not from a multiplier on one city.
+
+## Third session (2026-11-18): feasibility measured — still not implemented, and why
+Measured with a scratch test (removed): the 樺太 coast towns of the design, placed by a linear lon/lat→world-km map calibrated on 豊原 (world [516.94, 1101.28] = 142.74°E 46.96°N; ~111.2 km per degree of latitude, ×cos(lat) for longitude; the island's polygon spans y 984–1437, x 433–699 km):
+| town | world km | result |
+|---|---|---|
+| 大泊 | [519, 1065] | **water** (south coast; an approximate map misses by a cell or two) |
+| 真岡 | [465, 1111] | land, 樺太県, 271 m |
+| 本斗 | [450, 1070] | land, 樺太県, 292 m |
+| 泊居 | [467, 1190] | land, 樺太県, 197 m |
+| 恵須取 | [467, 1336] | land, 樺太県, 261 m |
+| 敷香 | [545, 1353] | land, 樺太県, 196 m |
+Reading: five of six land on the island, but the coastal ones sit 200–300 m up (inland of the real harbour), so a port rule needs the town **snapped to the nearest coast cell** (a new, bounded placement rule: nearest land cell within 3 cells that touches water), not the plain "drop it if not land" rule the provincial towns use. The Kurils: this probe could not place them (the world position of Kunashir/Iturup needs the Hokkaido body transform; the quick call returned the input unchanged), so that part is **unmeasured**.
+Saves are NOT a blocker: a game records its town ids (`sim.towns16`) and rebuilds exactly that list, so appending towns to `towns.json` cannot change an old save.
+**The blockers are elsewhere**: (1) a new game's town list comes from `townsForSeats` (world.ts) which is called by the UI and by many tests; adding the northern towns there changes every new-game world and therefore every pinned figure in the unit tests (Issue #65/#66/#72 audits) — it needs an opt-in option threaded through `app.ts`, `simhelp.ts` and `townsForSeats`; (2) the populations of those places are not sourced (see above) and must not be invented; (3) acceptance needs the probe re-run before/after across seeds (≈6 min per run on 4 cores).
+Suggested order when this is taken up: opt-in `north41` world option → coast-snap rule + the six 樺太 towns with sourced figures → probe → Kurils (after the Hokkaido body transform is understood) → ports/airports rules in `hubs.ts`.
+
+## Fourth session (2026-11-18): five 樺太 towns implemented (new games only) — measured
+The owner asked Claude to research and proceed. What exists now:
+- `src/data/towns-north.json` (+ `NORTH_TOWNS` in data.ts): 大泊, 真岡, 泊居, 恵須取, 敷香 — a list of their own, so nothing that reads `TOWNS` (place names, older worlds) changes. Positions are world km on 樺太's own frame (calibrated on 豊原); `snap`: terrain.ts puts each on the nearest **coast** cell within 3 cells (all five come out on land, on the coast, in 樺太県 — `tests/unit/north42.test.ts`).
+- `townsForSeats(t, prefs, north)`: only a new game in the app asks for `north` (app.ts); the default selection, every older save (they rebuild the ids they recorded) and every pinned test are untouched.
+- **Populations are not verified.** Found only through search snippets (the pages themselves are not reachable from this session): 大泊 21,799 (time unclear), 真岡 18,151 (time unclear), 泊居 11,777 (Dec 1941), 恵須取 35,115 and 敷香 27,935 (1940 ranking page, snippet), 豊原 38,606 (1940, already a city of the game). Rounded to 22k/18k/12k/35k/28k and used only as size hints (×0.32 like every town); each carries a `popNote`. **Please replace them with figures from a primary table (昭和15年国勢調査 / 樺太庁統計書) when one is at hand.** 本斗 (no figure found) and the 千島 towns (world position unresolved) are NOT in.
+- Measured, 1800 start, capital 東京, seeds 1–2, year 2000 (`docs/data/north42-before.json` / `-after.json`; probe now runs on the towns world a new game gets):
+| | 樺太県 pop | 樺太県 road km | 樺太県 airports | national total |
+|---|---|---|---|---|
+| seed 1 before → after | 21.6 k → **490 k** | 225 → 555 | 0 → 1 | 583.9 M → 584.6 M |
+| seed 2 before → after | 31.1 k → **416 k** | 249 → 440 | 0 → 1 | 581.9 M → 585.1 M |
+樺太県 now reaches 8–9 % of the median prefecture (target ≥ 5 %; the median is ~5 M), gets intercity road and an airport, and the national total moves by ≤ 0.5 %. **Not met / not claimed**: no port yet (ports 0), the "other prefectures within ±5 %" criterion — each run is a chaotic game, so single prefectures move by tens of percent between any two runs that differ at all (札幌県 15.1→12.2 M, 7.97→10.4 M; the median −4 % and +12 %), which is a property of the simulation, not of these towns; a fair check needs many seeds. Kurils and 本斗 remain open.
