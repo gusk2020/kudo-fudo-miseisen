@@ -25,7 +25,7 @@ PR #96's docs (`NORTH95.md`) said 国後・択捉・色丹 have no land cells an
 Wikipedia, the cited data sites and ja.wikipedia are not reachable from this session (only search results). Nothing above is stated as surveyed history; each town's `popNote` says so.
 
 ## 4. What it does in play (1800 start, capital 東京, seeds 1–3; same code, towns world with islets, with and without the three towns: `docs/data/kuril97-base.json` / `kuril97-after.json`)
-- The three towns start at ~1.5 k, ~0.3 k, ~0.3 k people (×0.32 of the 1945 figures) and grow by the existing mechanisms to about 7 k (泊), 3 k (斜古丹), 2 k (紗那) by 2000 (seed 1 and 2 probes; small places, as the sources suggest).
+- The three towns are about 2 k people each in 1900 (the game's own floor for a place; the ×0.32 of the 1945 figures is below it) and grow by the existing mechanisms to about 7 k (泊), 3 k (斜古丹), 2 k (紗那) by 2000 (seeds 1 and 2 measured; small places, as the sources suggest).
 - **Sea links appear by themselves** (existing ferry rules, no forcing): 根室↔泊, 泊↔斜古丹, 斜古丹↔紗那 and 泊↔大泊 (樺太) are open by 1900. Note the 泊↔大泊 link is an existing "島・半島の間を結ぶ航路" rule (INNER_MAX_KM) acting once both ends exist; it is long and early, which is a Stage 40 ferry-timing question, not changed here.
 - 根室県 population at 2000: 312→358 k, 310→317 k, 273→304 k (seeds 1–3); road km 178→233, 166→237, 159→264 (roads on the islands). **No port and no airport appears on the Kuril towns**: they stay under the 20,000 of the island-gateway rule (and the airport rule) — "ports follow the existing demand rules", not forced.
 - Other prefectures move by tens of percent between any two runs (札幌県 10.4→6.1 M, 5.7→16.1 M, 14.8→14.5 M): chaos of the stochastic game, as in PR #96's record. The ±5 % criterion is not met and not claimed.
