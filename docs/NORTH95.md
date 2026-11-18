@@ -10,7 +10,17 @@ Branch `claude/s42-north95`, based on `claude/s42-trunk-only-review` (the PR #94
 3. `north41` is validated on load (`save2.ts`, like `isl36`): anything but `true` is dropped, so an old save never gets it by accident.
 
 ## Measured (1800 start, capital 東京, seeds 1–3; `docs/data/north95-base.json` = the PR #94 line, `docs/data/north95-after.json` = this branch)
-See the table in the last section (filled in from the measurement run; figures are quoted from those files only).
+Population in thousands, r = road km, t = rail km, ports / airports counted open; "med" = median of the prefectures outside the four northern groups (millions); nat = national total (millions). Base = the PR #94 line (no northern towns); after = this branch.
+| seed | 2000 | 樺太県 pop | 樺太 road / rail | 樺太 ports / airports | 札幌県 pop | 函館県 pop | 根室県 pop | med | nat |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | base | 23 | 225 / 0 | 0 / 0 | 16,165 | 2,423 | 250 | 5.00 | 584 |
+| 1 | after | **490** | 555 / 0 | **1** / 1 | 12,092 | 2,916 | 323 | 5.00 | 585 |
+| 2 | base | 55 | 249 / 0 | 0 / 0 | 13,041 | 2,417 | 307 | 5.21 | 583 |
+| 2 | after | **430** | 440 / 0 | **1** / 1 | 7,928 | 2,660 | 265 | 5.01 | 586 |
+| 3 | base | 24 | 209 / 0 | 0 / 0 | 11,728 | 2,820 | 312 | 5.19 | 584 |
+| 3 | after | **451** | 493 / 0 | **1** / 1 | 12,221 | 2,603 | 287 | 4.92 | 586 |
+**Against the Issue's yardsticks**: 樺太県 at 2000 = 8.6–9.8 % of the median (target ≥ 5 %) — met; ports ≥ 1 — met (3 of 3 seeds; the first port opens by 1950); intercity road — yes (road km roughly doubles; no rail, as before); airport — 1 (was 0). Sea route: a road ferry 根室–大泊 appears by 1900 in the seed measured (no ferry reached 樺太 before). **Other prefectures ±5 % — NOT met and not claimed**: 札幌県 moves −25 %, −39 %, +4 % between the two runs, 函館県 +20 %, +10 %, −8 %, 根室県 +29 %, −14 %, −8 %; the median −0 %…−5 %; the national total +0.2 %. The same kind of swing (both signs, tens of percent) appeared in the earlier no-port comparison (札幌県 −19 % / +30 %), i.e. the simulation is chaotic: any change to the set of places reshuffles the random stream and the prefectures' growth shares. The honest user-facing difference: **樺太 is now a real region (about 0.45 M people, a port, an airport, longer roads) while the national total is unchanged; individual prefectures elsewhere will differ from the same seed on the previous version, in either direction.** A fair ±5 % test needs many seeds and a proper noise floor; not done.
+**Regression**: full unit suite 743 passed / 10 skipped (includes #65 population branches, #66 rail audit, #72 islands). Save compatibility, Stage 41 published build → this build (`tools/compat-check.mjs`): 11 / 16, the same five by-design failures as for PR #93 (the Stage 31–35 save migration copies), nothing new; an old game comes back with the same month / capital / routes / cities / population. E2E (Playwright) and CI: run by CI on the Draft PR; not run locally here.
 
 ## Kurils (千島) — NOT implemented, with the evidence
 Checked on the real terrain grid (`generateTerrain` of the default Japan, islands on) by converting lon/lat with `lonLatToReal` then `realToWorld("hokkaido", …)`:
