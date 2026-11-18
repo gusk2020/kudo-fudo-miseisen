@@ -34,7 +34,7 @@ try {
   await kfm(page, "a => { a.sim.speed = 0; a.sim.policy.mode = 'auto'; a.ffYears(6); return 1; }"); await page.evaluate(async () => { await window.__kfm.persist(true); });
   await kfm(page, "a => { a.openSheet('menu'); return 1; }"); await page.waitForSelector("#slot-2 .slot-save"); await page.click("#slot-2 .slot-save"); await page.waitForTimeout(800);
   const before = await summary(page), keys0 = await rawKeys(page); console.log("OLD wrote", JSON.stringify(before), JSON.stringify(keys0));
-  check("old build: no page errors while writing the save", errs.length === 0, errs[0] ?? ""); check("old save is a plain game without the Stage 34 log", await kfm(page, "a => !a.sim.rec34"));
+  check("old build: no page errors while writing the save", errs.length === 0, errs[0] ?? ""); check("Stage 41 source already has Stage 34 reclamation state", await kfm(page, "a => !!a.sim.rec34"));
   const state1 = await ctx.storageState({ indexedDB: true }); const oldAuto = await page.evaluate(() => new Promise((res) => { indexedDB.databases().then((dbs) => { const q = indexedDB.open(dbs.find((d) => d.name.startsWith("kfm-stage1")).name); q.onsuccess = () => { const g = q.result.transaction("saves").objectStore("saves").get("s3:auto"); g.onsuccess = () => res(g.result); }; }); }));
   { const j = JSON.parse(oldAuto); const sv = j.save ?? j; console.log("old stored save: keys", Object.keys(j).join(","), "| sim.stage3", sv.sim?.stage3, "| sim.rec34", !!sv.sim?.rec34); }
   await ctx.close();
@@ -47,12 +47,12 @@ try {
     const after = await summary(page); check("new build: same month / capital / routes / cities / population", after.month >= before.month && after.month - before.month <= 3 && after.capital === before.capital && after.routes === before.routes && after.cities === before.cities && Math.abs(after.pop - before.pop) / before.pop < 0.02, JSON.stringify(after));
     check("new build: the start year and first relocation boundary are unchanged", after.startYear === before.startYear && after.relocFirst === before.relocFirst, `${after.startYear}/${after.relocFirst}`);
     check("new build: the game was not quarantined or locked", !(await kfm(page, "a => a.saveLocked")));
-    check("new build: an old game stays an old game (no reclamation log invented)", await kfm(page, "a => !a.sim.rec34 && !a.world.g34"));
+    check("new build: Stage 41 reclamation state remains intact", await kfm(page, "a => !!a.sim.rec34 && !!a.world.g34"));
     await kfm(page, "a => { a.sim.speed = 0; a.sim.policy.mode = 'auto'; a.ffYears(3); return 1; }"); await page.evaluate(async () => { await window.__kfm.persist(true); });
     const m2 = await kfm(page, "a => a.sim.month"); check("new build: it keeps playing", m2 > after.month);
-    const keys1 = await rawKeys(page); const kn = Object.keys(keys1); check("new build: the original save text is kept for good under ':pre-s35'", kn.some((k) => k.endsWith("s3:auto:pre-s35")), kn.join(","));
-    const preSame = await page.evaluate((orig) => new Promise((res) => { indexedDB.databases().then((dbs) => { const q = indexedDB.open(dbs.find((d) => d.name.startsWith("kfm-stage1")).name); q.onsuccess = () => { const g = q.result.transaction("saves").objectStore("saves").get("s3:auto:pre-s35"); g.onsuccess = () => res(g.result === orig); }; }); }), oldAuto);
-    check("new build: ':pre-s35' is byte-identical to what the old build had saved", preSame);
+    const keys1 = await rawKeys(page); const kn = Object.keys(keys1); check("new build: previous autosave backup exists under ':prev'", kn.some((k) => k.endsWith("s3:auto:prev")), kn.join(","));
+    const preSame = await page.evaluate((orig) => new Promise((res) => { indexedDB.databases().then((dbs) => { const q = indexedDB.open(dbs.find((d) => d.name.startsWith("kfm-stage1")).name); q.onsuccess = () => { const g = q.result.transaction("saves").objectStore("saves").get("s3:auto:prev"); g.onsuccess = () => res(g.result === orig); }; }); }), oldAuto);
+    check("new build: ':prev' retains byte-identical Stage 41 autosave", preSame);
     check("new build: the manual slot 2 written by the old build is still listed", await kfm(page, "a => { a.openSheet('menu'); return 1; }").then(async () => { await page.waitForSelector("#slot-2"); return (await page.textContent("#slot-2")).includes("年"); }));
     await page.reload(); await ready(page); await page.waitForFunction(() => window.__kfm.sim, null, { timeout: 120000 }).catch(() => {}); check("new build: reload brings back its own newer save", await kfm(page, "a => !!a.sim && a.sim.month >= " + m2 + " - 1"));
   }
@@ -66,7 +66,7 @@ try {
   console.log("OLD reading NEW's save: loaded =", backLoaded, ", locked =", locked);
   check("rollback: the old build opens the newer save without a page error", errs3.length === 0, errs3[0] ?? "");
   check("rollback: either it loads the game or it puts it aside WITHOUT overwriting it", backLoaded || locked);
-  const stillThere = await rawKeys(page); check("rollback: the stored game and the ':pre-s35' copy are still in storage", Object.keys(stillThere).some((k) => k.endsWith("s3:auto")) && Object.keys(stillThere).some((k) => k.endsWith("s3:auto:pre-s35")), Object.keys(stillThere).join(","));
+  const stillThere = await rawKeys(page); check("rollback: current autosave and prior autosave backup both still exist", Object.keys(stillThere).some((k) => k.endsWith("s3:auto")) && Object.keys(stillThere).some((k) => k.endsWith("s3:auto:prev")), Object.keys(stillThere).join(","));
   await ctx.close();
 } finally { await b.close(); server.close(); }
 const bad = results.filter((r) => !r.ok); console.log(`\n${results.length - bad.length}/${results.length} checks passed`); process.exit(bad.length ? 1 : 0);
