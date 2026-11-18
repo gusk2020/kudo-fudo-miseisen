@@ -484,6 +484,7 @@ export function generateTerrain(s: ProjectState, dem: Int16Array, progress: (p: 
   }
   // Stage 42: the towns of 樺太 (their own list; `pos` is world km). A harbour town on a 5 km grid is put on the nearest coast cell within 3 cells (a town the sea or the grid leaves nowhere is dropped, never shifted far).
   for (const c of NORTH_TOWNS) {
+    if (c.islet) continue;   // (stands on a real-outline islet: placed in buildWorld, on the world grid the islets widen)
     let k = idxOf(c.pos); const near = (n: number) => land[n] === 1 && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([di, dj]) => { const a = (n % nx) + di, b = ((n / nx) | 0) + dj; return a < 0 || b < 0 || a >= nx || b >= ny || land[b * nx + a] !== 1; });
     if (c.snap && k >= 0) { let best = -1, bd = Infinity; const i0 = k % nx, j0 = (k / nx) | 0; for (let dj = -3; dj <= 3; dj++) for (let di = -3; di <= 3; di++) { const a = i0 + di, b = j0 + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue; const n = b * nx + a; if (!near(n) || taken.has(n) || elev[n] > 600) continue; const dd = Math.hypot(di, dj); if (dd < bd) { bd = dd; best = n; } } k = best; }
     if (k < 0 || land[k] !== 1 || taken.has(k)) continue;
