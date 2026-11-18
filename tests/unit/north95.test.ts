@@ -11,5 +11,6 @@ it("new games get the flag; older ones do not", () => { expect(game(true).sim.no
 it("樺太 gets its first port from the rule; the same game without the flag does not", () => {
   const a = game(true); advance(a.sim, a.w, 12 * (1960 - yearOf(a.sim))); const p = northPorts(a); expect(p.length, "a port on 樺太").toBeGreaterThanOrEqual(1);
   expect(a.sim.hubs!.ports[p[0]].hist.some((h) => h.t.includes("島の玄関港")), "opened by the island rule").toBe(true);
+  advance(a.sim, a.w, 12 * (2000 - yearOf(a.sim))); expect(northPorts(a).some((id) => a.sim.hubs!.ports[id].until === undefined), "still an open port on 樺太 in 2000 (the only port of an island is not closed)").toBe(true);
   const b = game(false); advance(b.sim, b.w, 12 * (1960 - yearOf(b.sim))); expect(northPorts(b).length, "no port without the flag").toBe(0);
 }, 3000000);
