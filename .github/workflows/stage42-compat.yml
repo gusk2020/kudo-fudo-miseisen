@@ -1,0 +1,40 @@
+name: Stage 42 save-compatibility gate
+on:
+  push:
+    branches: [claude/s42-playtest-compat]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Get Stage 41 release source
+        uses: actions/checkout@v4
+        with:
+          ref: 9e0a8c805f29af18e8cf018254832d79573aa5c7
+          path: old
+      - name: Get candidate source
+        uses: actions/checkout@v4
+        with:
+          path: candidate
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install and build the current Stage 41 release
+        working-directory: old
+        run: |
+          npm ci
+          BASE_PATH=/kudo-fudo-miseisen/ npm run build
+      - name: Install and build Stage 42 candidate
+        working-directory: candidate
+        run: |
+          npm ci
+          BASE_PATH=/kudo-fudo-miseisen/ npm run build
+          npx playwright install --with-deps chromium
+      - name: Test old saves, continued play and safe rollback
+        working-directory: candidate
+        run: node tools/compat-check.mjs ../old/dist ./dist --base /kudo-fudo-miseisen/
+      - name: Publication remains disabled
+        run: echo "Readiness check only. No Pages, main, or user saves modified."
