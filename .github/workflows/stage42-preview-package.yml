@@ -1,0 +1,65 @@
+name: Stage 42 isolated playtest package (NO DEPLOY)
+on:
+  push:
+    branches: [claude/s42-playtest-package]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 9e0a8c805f29af18e8cf018254832d79573aa5c7
+          path: published41
+      - uses: actions/checkout@v4
+        with:
+          path: stage42
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build pinned live Stage 41 at the existing root
+        working-directory: published41
+        run: |
+          npm ci
+          BASE_PATH=/kudo-fudo-miseisen/ npm run build
+      - name: Build isolated Stage 42 for /stage42/
+        working-directory: stage42
+        env:
+          BASE_PATH: /kudo-fudo-miseisen/stage42/
+          VITE_SAVE_NS: stage42trial
+        run: |
+          npm ci
+          npm run build
+      - name: Assemble two versions without writing to Pages
+        run: |
+          mkdir -p composite/stage42
+          cp -a published41/dist/. composite/
+          cp -a stage42/dist/. composite/stage42/
+          test -s composite/index.html
+          test -s composite/stage42/index.html
+          grep -q '/kudo-fudo-miseisen/stage42/' composite/stage42/index.html
+          if grep -q '/kudo-fudo-miseisen/stage42/' composite/index.html; then
+            echo "::error::Stage 41 root must not refer to Stage 42"
+            exit 1
+          fi
+          grep -rl 'stage42trial' composite/stage42/assets/ >/dev/null || { echo "::error::Stage 42 storage isolation missing"; exit 1; }
+          (cd published41/dist && find . -type f -print0 | sort -z | xargs -0 sha256sum) > stage41-root-sha256.txt
+          (cd composite && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum) > root-file-sha256.txt
+          echo "Packaged Stage 41 root + isolated Stage 42 subdirectory. Not deployed."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage42-isolated-preview-site
+          path: composite/
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage42-root-reference-manifest
+          path: |
+            stage41-root-sha256.txt
+            root-file-sha256.txt
+          retention-days: 14
+          if-no-files-found: error
