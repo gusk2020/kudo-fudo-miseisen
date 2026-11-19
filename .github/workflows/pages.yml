@@ -1,24 +1,66 @@
+# This file becomes `.github/workflows/pages.yml` ONLY on the frozen branch `claude/release-pages-stage42trial-<sha>` (see docs/STAGE42-PUBLISH-RUNBOOK.md).
+# It lives under docs/, so GitHub does not run it here. workflow_dispatch only: nothing deploys by itself.
 name: Pages
 on:
-  push:
-    branches: [main, claude/stage1-map-generator, claude/stage2-roads, claude/stage2-road-evolution, claude/stage3-foundation, claude/stage4-issue13, claude/stage5-issue15, claude/stage6-issue18, claude/stage7-sim, claude/stage8-issue22, claude/stage9-issue24, claude/stage10-issue26, claude/stage11-issue28, claude/stage12-issue31, claude/stage13-issue33, claude/stage14-issue35, claude/stage17-potential, claude/stage18-sea-air-names, claude/stage19-tabs-map-seats, claude/stage20-islands-seats, claude/stage21-pickers-road, claude/stage22-sea-map-2200, claude/stage22-audit, claude/stage23, claude/stage24, claude/stage25, claude/stage26, claude/stage27, claude/stage28, claude/stage29, claude/stage30a]
   workflow_dispatch:
 permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: true }
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with: { ref: 9e0a8c805f29af18e8cf018254832d79573aa5c7, path: published41 }
+      - uses: actions/checkout@v4
+        with: { path: stage42 }
       - uses: actions/configure-pages@v5
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-        env: { BASE_PATH: "/kudo-fudo-miseisen/" }
+        with: { node-version: 22 }
+      - name: Build the pinned Stage 41 at the root
+        working-directory: published41
+        env: { BASE_PATH: /kudo-fudo-miseisen/ }
+        run: |
+          npm ci
+          npm run build
+      - name: Build Stage 42 for /stage42/ with its own storage names
+        working-directory: stage42
+        env: { BASE_PATH: /kudo-fudo-miseisen/stage42/, VITE_SAVE_NS: stage42trial }
+        run: |
+          npm ci
+          npm run build
+      - name: Assemble ONE site (Stage 41 at the root, the trial beside it)
+        run: |
+          mkdir -p composite/stage42
+          cp -a published41/dist/. composite/
+          cp -a stage42/dist/. composite/stage42/
+          if grep -q '/kudo-fudo-miseisen/stage42/' composite/index.html; then echo "::error::the Stage 41 root must not refer to Stage 42"; exit 1; fi
+          grep -q '/kudo-fudo-miseisen/stage42/' composite/stage42/index.html
+          grep -rl 'stage42trial' composite/stage42/assets/ > /dev/null
+      - name: GUARD - the rebuilt Stage 41 root equals the live site byte for byte (read-only GET)
+        run: |
+          cd published41/dist; bad=0; n=0
+          for f in $(find . -type f | sed 's|^\./||' | sort); do
+            live=$(curl -fsS --max-time 60 "https://gusk2020.github.io/kudo-fudo-miseisen/$f" | sha256sum | cut -d' ' -f1) || live=none
+            mine=$(sha256sum "$f" | cut -d' ' -f1); n=$((n+1))
+            if [ "$live" != "$mine" ]; then echo "::error::live differs from the rebuilt Stage 41 root: $f"; bad=$((bad+1)); fi
+          done
+          echo "files compared: $n, different: $bad"; test "$bad" -eq 0
+      - name: GUARD - no bare browser-storage names in the trial bundle
+        run: |
+          if grep -rEq 'localStorage\.(get|set|remove)Item\("kfm' composite/stage42/assets; then echo "::error::a storage key without the trial prefix"; exit 1; fi
+          if grep -rEq 'indexedDB\.open\("kfm-stage1"' composite/stage42/assets; then echo "::error::the real game's database name in the trial"; exit 1; fi
+      - name: GUARD - real-browser isolation check
+        working-directory: stage42
+        run: |
+          npx playwright install --with-deps chromium
+          node tools/isolation-check.mjs ../composite
+      - name: Record what is deployed
+        run: |
+          (cd composite && find . -type f -print0 | sort -z | xargs -0 sha256sum) > deployed-sha256.txt
+          echo "Stage 42 trial source: $(git -C stage42 rev-parse HEAD); Stage 41 root: 9e0a8c805f29af18e8cf018254832d79573aa5c7" | tee deployed-note.txt
+          cp deployed-sha256.txt deployed-note.txt composite/
       - uses: actions/upload-pages-artifact@v3
-        with: { path: dist }
+        with: { path: composite }
   deploy:
     needs: build
     runs-on: ubuntu-latest
