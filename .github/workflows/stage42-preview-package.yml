@@ -49,6 +49,24 @@ jobs:
           (cd published41/dist && find . -type f -print0 | sort -z | xargs -0 sha256sum) > stage41-root-sha256.txt
           (cd composite && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum) > root-file-sha256.txt
           echo "Packaged Stage 41 root + isolated Stage 42 subdirectory. Not deployed."
+      - name: Rebuilt Stage 41 root is byte-identical to the live Pages site (read-only GET)
+        run: |
+          cd published41/dist; bad=0; n=0
+          for f in $(find . -type f | sed 's|^\./||' | sort); do
+            live=$(curl -fsS --max-time 60 "https://gusk2020.github.io/kudo-fudo-miseisen/$f" | sha256sum | cut -d' ' -f1) || live=none
+            mine=$(sha256sum "$f" | cut -d' ' -f1); n=$((n+1))
+            if [ "$live" != "$mine" ]; then echo "::error::live differs from the rebuilt Stage 41 root: $f"; bad=$((bad+1)); fi
+          done
+          echo "files compared: $n, different: $bad"; test "$bad" -eq 0
+      - name: No bare browser-storage names in the Stage 42 bundle
+        run: |
+          if grep -rEq 'localStorage\.(get|set|remove)Item\("kfm' composite/stage42/assets; then echo "::error::a storage key without the trial prefix"; exit 1; fi
+          if grep -rEq 'indexedDB\.open\("kfm-stage1"' composite/stage42/assets; then echo "::error::the real game's database name in the trial"; exit 1; fi
+      - name: Real-browser isolation check (real game and /stage42/ on one origin)
+        working-directory: stage42
+        run: |
+          npx playwright install --with-deps chromium
+          node tools/isolation-check.mjs ../composite
       - uses: actions/upload-artifact@v4
         with:
           name: stage42-isolated-preview-site
