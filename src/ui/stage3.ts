@@ -1,5 +1,6 @@
 /** Stage 3 panels: era choice, timeline, route ledger, transport atlas (year slider), policy window. Plain DOM, built only when opened. */
 import { TECHS_1800, techNow } from "../sim/history1800";
+import { lsKey } from "../core/ns";   // (a preview build with VITE_SAVE_NS keeps its own keys: this one had been written as a bare "kfm.polSimple", shared with the real game on the same origin)
 import type { RadioGroup } from "./radioWin";
 import type { App } from "./app";
 import { h } from "./app";
@@ -24,7 +25,7 @@ import { DOMAIN_LABEL, POLICIES, skipWindow, POLICY_MODE_LABEL, POINTS_PER_WINDO
 import { GRADE_MODE, KIND_LABEL, PROJECT_LABEL, STATE_LABEL, modeOf, monthToYM, type SimRoute, type SimState } from "../sim/types";
 
 const ORIGIN86: Record<string, string> = { taisho: "大正時候補", showa: "昭和時候補", heisei: "平成時候補", reiwa: "令和時候補", reuse: "再採用(ゲーム独自の前・中・後)", generated: "ゲーム生成(史実の候補ではありません)" };
-export const ui3 = { k86: null as null | { year: number; idx: number; stance: EraKey }, graph: false, tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerMode: "normal" as "normal" | "numbers", numClass: "road" as NumClass, numPage: 0, ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null, simple: (() => { try { return localStorage.getItem("kfm.polSimple") === "1"; } catch { return false; } })(), sKeep: undefined as boolean | undefined, sAns: {} as { transport?: Transport; city?: Concentration; coast?: Coast } };
+export const ui3 = { k86: null as null | { year: number; idx: number; stance: EraKey }, graph: false, tl: "all", tlN: 60, ledger: "road" as "road" | "rail" | "fac" | "gone", ledgerMode: "normal" as "normal" | "numbers", numClass: "road" as NumClass, numPage: 0, ledgerN: 40, open: new Set<string>(), spend: {} as Record<string, number>, domain: null as Domain | null, simple: (() => { try { return localStorage.getItem(lsKey("polSimple")) === "1"; } catch { return false; } })(), sKeep: undefined as boolean | undefined, sAns: {} as { transport?: Transport; city?: Concentration; coast?: Coast } };
 const ym = (sim: SimState, m: number) => { const { year, month } = monthToYM(sim.startYear, m); return `${year}年${month}月`; };
 const bar = (v: number) => "■".repeat(Math.round(Math.max(0, Math.min(1, v)) * 10)) + "□".repeat(10 - Math.round(Math.max(0, Math.min(1, v)) * 10));
 
@@ -198,7 +199,7 @@ export function buildTrends(sim: NonNullable<App["sim"]>, body: HTMLElement) {
   const turns = sim.events.filter((e) => /赤字ローカル線の廃止|工事凍結|工事再開|国鉄を分割|海峡連絡が開通|開業:|地方道の計画|国際ハブ空港|港の拡張が完成|開港|閉港|廃港|湖上大橋/.test(e.text)).slice(-6).reverse();
   if (turns.length) body.append(h("div", { class: "issue", id: "trend-turns" }, h("b", {}, "最近の転機"), ...turns.map((e) => h("div", {}, h("small", {}, `${sim.startYear + Math.floor(e.month / 12)}年 ${e.text}`)))));
 }
-const setSimple = (v: boolean) => { ui3.simple = v; try { localStorage.setItem("kfm.polSimple", v ? "1" : "0"); } catch { /* storage may be unavailable */ } };
+const setSimple = (v: boolean) => { ui3.simple = v; try { localStorage.setItem(lsKey("polSimple"), v ? "1" : "0"); } catch { /* storage may be unavailable */ } };
 /** Stage 41 #4: the simple intervention window -- three questions; the detailed window stays one button away. */
 function buildSimpleWindow(app: App, body: HTMLElement, sim: SimState) {
   const sp = sim.simple41, a = ui3.sAns, keep = ui3.sKeep ?? sp?.keep ?? false;
