@@ -84,6 +84,11 @@ export class Renderer {
   roads = new RoadLayer(); private roadArgs: RoadArgs | null = null;
   /** Stage 41 #2: the night view (a dark sheet and one sprite of light between the roads and the labels); while it is on the road drawing is hidden, its data and hit-testing untouched */
   night = new NightLayer();
+  /** Stage 43 (C): the decade mode changes the picture only at each decade, yet the stage was drawn every frame -- on a phone that drawing takes much of the time the simulation could have.
+   *  While "quiet", the automatic drawing is stopped and the stage is drawn once whenever something visible changes (`kick`: a redraw, a pan or a zoom). Display only: the game is untouched. */
+  quiet = false;
+  setQuiet(on: boolean) { if (on === this.quiet || !this.app?.ticker) return; this.quiet = on; if (on) this.app.ticker.stop(); else this.app.ticker.start(); }
+  kick() { if (this.quiet && this.app?.renderer) this.app.render(); }
   setNight(on: boolean) { this.night.setOn(on); this.roads.container.visible = !on; if (on) this.night.redraw(this.view.zoom); }
   drawNight(f: NightField, g: { x0: number; y0: number; cell: number }) { this.night.update(f, g); this.night.redraw(this.view.zoom); }
   setNightSize(size: number) { this.night.setSize(size, this.view.zoom); }
@@ -112,8 +117,8 @@ export class Renderer {
   worldToScreen(p: Vec): Vec { const { w, h } = this.size, z = this.view.zoom; return [(p[0] - this.view.cx) * z + w / 2, -(p[1] - this.view.cy) * z + h / 2]; }
   setView(v: Partial<View>, quiet = false) {
     Object.assign(this.view, v); this.view.zoom = Math.max(0.05, Math.min(12, this.view.zoom));
-    this.applyView();
-    if (!quiet) { this.onViewChange?.(); clearTimeout(this.rebuildTimer); this.rebuildTimer = setTimeout(() => { this.rebuild(); this.roads.redraw(this.view.zoom); if (this.night.on) this.night.redraw(this.view.zoom); }, 140); }
+    this.applyView(); this.kick();
+    if (!quiet) { this.onViewChange?.(); clearTimeout(this.rebuildTimer); this.rebuildTimer = setTimeout(() => { this.rebuild(); this.roads.redraw(this.view.zoom); if (this.night.on) this.night.redraw(this.view.zoom); this.kick(); }, 140); }
   }
   private applyView() {
     const { w, h } = this.size, z = this.view.zoom;

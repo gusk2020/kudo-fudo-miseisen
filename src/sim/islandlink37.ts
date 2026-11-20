@@ -134,11 +134,14 @@ export function evalLink(sim: SimState, w: World, pr: ShorePair, y: number, d: D
   return { ok: true, why: "ok", pair: pr, fac: s.fac, cost: s.cost, score };
 }
 /** Stage 43: does this land mass (the smaller side of a crossing, usually) have an open airport or port of its own? Not the main islands' business: they always have one. */
+const servedMemo = new WeakMap<SimState, { month: number; masses: Set<number> }>();
 function hubServed(sim: SimState, w: World, mass: number): boolean {
-  const h = sim.hubs; if (!h) return false;
-  for (const a of Object.values(h.airports)) if (a.until === undefined) { const c = w.cityById.get(a.city); if (c && w.lm[c.cell] === mass) return true; }
-  for (const p of Object.values(h.ports)) if (p.until === undefined) { const c = w.cityById.get(p.city); if (c && w.lm[c.cell] === mass) return true; }
-  return false;
+  const h = sim.hubs; if (!h) return false; let m = servedMemo.get(sim);
+  if (!m || m.month !== sim.month) {   // (once a month: the masses with an open airport or port -- asked for every shore pair)
+    const masses = new Set<number>(); for (const x of [...Object.values(h.airports), ...Object.values(h.ports)]) if (x.until === undefined) { const c = w.cityById.get(x.city); if (c) masses.add(w.lm[c.cell]); }
+    m = { month: sim.month, masses }; servedMemo.set(sim, m);
+  }
+  return m.masses.has(mass);
 }
 function startLink(sim: SimState, w: World, ev0: LinkEval, y: number): boolean {
   const { pair: pr, fac, cost } = ev0, idx = buildIndex(sim, "road");
