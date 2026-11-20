@@ -187,3 +187,14 @@ label.lrow { display: flex; align-items: center; gap: 6px; min-height: 34px; }
 label.lrow .lname { flex: 1 1 auto; }
 label.lrow .lsample { flex: 0 0 60px; display: inline-flex; justify-content: flex-end; }
 .lnote { display: block; margin: 4px 0 0; opacity: 0.8; }
+
+/* Stage 43 (E2): while a real game runs, no title bar: the information line sits at the top edge (clear of the moon button on the right) */
+body.real.playing #top { display: none; }
+body.real.playing #status { top: calc(env(safe-area-inset-top, 0px) + 2px); left: 4px; right: 50px; text-align: left; }
+body.real.playing #status span { margin: 1px; padding: 2px 8px; font-size: 11.5px; }
+
+/* Stage 43 (E1): the folded speed panel: a small chip at the bottom left, the rest of the bottom free for the map */
+#tools-wrap.folded { right: auto; }
+#toolbar.folded { background: transparent; padding: 0; }
+#speed-chip { min-height: 40px; padding: 4px 12px; border-radius: 20px; font-weight: bold; background: var(--panel); }
+#tools-wrap.folded #speed-chip { box-shadow: 0 1px 4px rgba(0,0,0,0.4); }

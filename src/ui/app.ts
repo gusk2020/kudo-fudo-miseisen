@@ -154,7 +154,7 @@ export class App {
   static async start(host: HTMLElement, real = false) {
     const a = new App(); a.real = real; installGlyphCheck(() => { try { a.r?.roads.redraw(a.r.view.zoom); a.buildUI(); } catch { /* not built yet */ } }); setDecisionSink((d) => a.keepDecisionPoint(d)); a.r = await Renderer.create(host);
     if (real) { a.store.replace(realState()); document.body.classList.add("real"); a.makeNightButton(); try { { const ns = Number(localStorage.getItem(lsKey("nightSize")) ?? "100"); if (Number.isFinite(ns)) { a.nightSize = Math.max(0, Math.min(100, Math.round(ns))); a.r.night.size = a.nightSize; } } if (localStorage.getItem(lsKey("night")) === "1") { a.night = true; a.r.setNight(true); a.nightBtn?.setAttribute("aria-pressed", "true"); a.nightBtn?.classList.add("on"); } } catch { /* storage may be blocked */ } try { if (localStorage.getItem(lsKey("bg")) !== "terrain") { a.bg = "roadmap"; a.r.setBg("roadmap"); }   /* default: road map */
-      try { const u = JSON.parse(localStorage.getItem(lsKey("ui")) || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; a.legendShown = u.legendShown === true; a.legendSide = u.legendSide === "left" ? "left" : "right"; if (Array.isArray(u.layerOpen)) a.layerOpen = new Set(u.layerOpen.filter((x: unknown) => x === "terrain" || x === "traffic" || x === "other")); } catch { /* ignore */ } a.lite = localStorage.getItem(lsKey("lite")) === "1"; } catch { /* ignore */ } }
+      try { const u = JSON.parse(localStorage.getItem(lsKey("ui")) || "{}"); if (Array.isArray(u.hide)) a.hide = new Set(u.hide.filter((x: unknown) => typeof x === "string")); a.names = u.names === true; a.legendOpen = u.legendOpen !== false; a.legendShown = u.legendShown === true; a.legendSide = u.legendSide === "left" ? "left" : "right"; if (Array.isArray(u.layerOpen)) a.layerOpen = new Set(u.layerOpen.filter((x: unknown) => x === "terrain" || x === "traffic" || x === "other")); } catch { /* ignore */ } a.toolsOpen = localStorage.getItem(lsKey("toolsOpen")) !== "0"; a.lite = localStorage.getItem(lsKey("lite")) === "1"; } catch { /* ignore */ } }
     // A tab that was killed (out of memory, renderer crash) never ran pagehide, so the marker is still set: start in safe mode.
     try { a.safeMode = !!localStorage.getItem(lsKey("run")); localStorage.setItem(lsKey("run"), String(Date.now())); } catch { /* storage may be blocked */ }
     a.r.onContextLost = () => a.toast("画面の描画が一時的に失われました。復帰を待っています…"); a.r.onContextRestored = () => { a.render(); a.toast("描画が復帰しました"); };
@@ -290,6 +290,7 @@ export class App {
   relocOpen(): boolean { const st = this.sim?.e2200?.state as string | undefined; return st === "pending" || st === "road0"; }
   status() {
     const el = $("status"); el.replaceChildren();
+    document.body.classList.toggle("playing", this.real && this.s.step === 6 && !!this.sim);   // Stage 43 (E2): while a game runs the title bar (the game's name) is put away and the information line moves to the top edge
     // Stage 31: while a relocation event is open (choices, then 国道0号) the ordinary information line over the map is put away; it returns when the event closes
     el.hidden = this.relocOpen();
     const add = (t: string, c = "") => el.append(h("span", { class: c }, t));
@@ -298,9 +299,10 @@ export class App {
     if (this.s.step === 6 && this.sim) {
       const m = summary(this.sim), sp = this.sim.speed;
       // (Stage 41: the speed is no longer a pill of the top line; the speed buttons are unchanged)
+      // Stage 43 (E2): the policy comes FIRST, initial and current in one short line: 方針(初期/現在) 空路/鉄道・分散/分散・中立/中立
+      { const ini = initialPolicy(this.sim), cur = currentPolicy(this.sim); if (ini && cur) { const sh = (t: string) => t.replace(/重視$/, "").replace(/側$/, ""), pair = (a: string, b: string) => `${sh(a)}/${sh(b)}`; add(`方針(初期/現在) ${pair(ini.stance, cur.stance)}・${pair(ini.city, cur.city)}・${pair(ini.region, cur.region)}`, policyText(ini) === policyText(cur) ? "" : "ok"); } }
       add(`${m.ym}`, "ok"); void sp; add(this.sim.stage3 ? `路線${m.routes}本 道路${m.roadKm.toLocaleString()}km・鉄道${m.railKm.toLocaleString()}km` : `路線${m.routes}本 総延長${m.km.toLocaleString()}km`); if (this.sim.policy?.pending) add("政策介入の待機中", "bad"); add(`建設中${m.building} 未成${m.unbuilt}`);
       add(`状態 良${m.good}/可${m.fair}/悪${m.poor}`); add(`休止${m.dormant} 閉鎖${m.closed} 廃道${m.lost}`);
-      { const ini = initialPolicy(this.sim), cur = currentPolicy(this.sim); if (ini && cur) { const a = policyText(ini), b = policyText(cur); add(`初期方針 ${a}`); add(`現在の方針 ${b}`, a === b ? "" : "ok"); } }   // Stage 41: what the game started with, and what is stressed now (differs after an era change, a relocation or an intervention)
       const last = this.sim.events[this.sim.events.length - 1]; if (last) add(`最近: ${last.text}`);
       if (this.catching) add(this.catchInfo, "bad");
       if (this.behind) add("端末の処理が追いつかず、速度を自動で落としています", "bad");
@@ -1099,6 +1101,7 @@ export class App {
   rangeSel: string | null = null; rangeListOpen = false;
   buildToolbar() { this.radioShown = false; this.buildToolbarInner(); if (!this.radioShown) closeRadio(); requestAnimationFrame(() => (this.legendEl ? this.placeLegend() : this.legendShown ? this.drawLegendStrip() : undefined)); }
   private buildToolbarInner() {
+    $("toolbar").classList.remove("folded"); $("tools-wrap").classList.remove("folded");   // (Stage 43: only the running game's speed panel folds; set again below when it does)
     if (this.sim && this.e22Pick) {   // Stage 22: choosing a 2200 seat on the map (the same tap, hint and 決定 / 取り消し / 戻る as at the start)
       const tb0 = $("toolbar"); tb0.replaceChildren(); const p = this.seatPick, label = { capital: "首都", sub: "副首都", sub2: "副首都(2か所目)", palace: "皇居" }[this.e22Pick];
       tb0.append(...this.seatPickPanel(label, "2200年の", () => this.endE22Map()), this.bgSwitch("e22-pick-bg"));
@@ -1308,6 +1311,11 @@ export class App {
       this.buildCerControls(tb, true);
       return;
     }
+    // Stage 43 (E1): the speed panel folds away. Folded, only a small chip remains at the bottom left, showing the speed (or 停止中) -- one tap opens the panel again. The state is remembered on this phone.
+    { const sp0 = this.sim.speed, now = sp0 === 0 ? "⏸ 停止中" : this.turbo ? "▶ 10年⏩" : `▶ ×${sp0}`, busy = this.sim.e2200?.state === "road0" || this.tool !== "view";
+      const chip = h("button", { id: "speed-chip", type: "button", class: "mode" + (this.toolsOpen ? " on" : ""), "aria-expanded": this.toolsOpen ? "true" : "false", "aria-label": this.toolsOpen ? "速度パネルをたたむ" : "速度パネルを開く", onclick: () => this.setToolsOpen(!this.toolsOpen) }, `${now} ${this.toolsOpen ? "▼" : "▲"}`);
+      tb.classList.toggle("folded", this.real && !this.toolsOpen && !busy); $("tools-wrap").classList.toggle("folded", this.real && !this.toolsOpen && !busy);
+      if (this.real) { if (!this.toolsOpen && !busy) { tb.append(chip); return; } tb.append(chip); } }
     label(`選択中: ${names[this.tool]}`);
     const sp = h("div", { class: "grp" });
     for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n && !this.turbo, () => this.setSpeed(n), "speed-" + n));
@@ -1375,6 +1383,9 @@ export class App {
    *  高速道路 / 一般道路 / 新幹線・リニア / 一般鉄道 / 空路・幹線 / 空路・地方路線 / 海路・幹線 / 海路・地方航路. The states (計画・未成・廃止) stay under 交通 as before. Older settings carry over:
    *  a road / railway / flight / sea switch that was off shows its rows off, and turning one row on turns only that row on. */
   private layerOpen = new Set<string>(["traffic"]);
+  /** Stage 43 (E1): is the speed panel open (remembered on this phone; open until first folded) */
+  toolsOpen = true;
+  setToolsOpen(v: boolean) { this.toolsOpen = v; try { localStorage.setItem(lsKey("toolsOpen"), v ? "1" : "0"); } catch { /* ignore */ } this.buildToolbar(); this.placeLegend?.(); }
   private buildLayers43(body: HTMLElement) {
     body.append(h("h3", {}, "表示レイヤー"));
     const L = this.s.layers, hid = (k: string) => this.hide.has(k), setHide = (keys: string[], hide: boolean) => { for (const k of keys) { if (hide) this.hide.add(k); else this.hide.delete(k); } };

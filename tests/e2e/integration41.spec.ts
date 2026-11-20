@@ -45,7 +45,7 @@ test("Stage 41 integration: 1800 start -> dark night -> simple intervention -> �
   await page.click("#tool-cer-kokudo0").catch(() => {}); await drawLine(page, "東京", "大阪市"); await page.waitForSelector("#cer-status-kokudo0"); const sA = (await page.textContent("#cer-status-kokudo0"))!; console.log("I41 A号:", sA); expect(sA).toContain("✓"); expect(sA).toContain("A号");
   await page.click("#rw-review"); await page.click("#rw-confirm"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "done", null, { timeout: 60000 });
   const sp = (await kfm(page, "a => Object.values(a.sim.routes).filter((r) => r.special).map((r) => [r.special, r.gen, r.active])")) as unknown[]; expect(sp).toEqual([["A", 2000, true]]);
-  expect(await page.textContent("#status")).toContain("現在の方針");
+  expect(await page.textContent("#status")).toContain("方針(初期/現在)");   // (Stage 43: initial and current in one line)
   // save and reload: everything is there, and time still runs
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 120000 });
   expect(await kfm(page, "a => [a.sim.special41, a.sim.simple41.keep, Object.values(a.sim.routes).filter((r) => r.special).map((r) => r.special).join(), a.saveLocked ?? false]")).toEqual([true, true, "A", false]);
