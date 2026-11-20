@@ -169,7 +169,21 @@ body #sheet.mini h3 { display: none; }
 #btn-night { position: fixed; right: 8px; top: calc(env(safe-area-inset-top, 0px) + 4px); width: 40px; height: 40px; border-radius: 20px; z-index: 7; font-size: 22px; line-height: 1; padding: 0; background: var(--panel); border: 1px solid #5d7a95; color: #e8eef4; }
 #btn-night.on { background: #1b2748; border-color: #ffd27a; color: #ffd27a; }
 #btn-night[hidden] { display: none; }
+/* Stage 43 (B4): the grain slider under the moon, only while the night view is on: tall and thin, clear of the map's centre */
+#night-panel { position: fixed; right: 6px; top: calc(env(safe-area-inset-top, 0px) + 50px); z-index: 7; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; border-radius: 14px; background: rgba(16, 26, 46, 0.78); border: 1px solid #5d7a95; }
+#night-panel[hidden] { display: none; }
+#night-size { writing-mode: vertical-lr; direction: rtl; width: 28px; height: 150px; margin: 0; accent-color: #f4f1ea; }
+#night-size-out { font-size: 10px; color: #e8eef4; white-space: nowrap; }
 
 /* Issue #86: a candidate that cannot be chosen stays listed, dimmed */
 .blocked, button.era-row:disabled { opacity: 0.55; }
 button.era-row { display: block; width: 100%; text-align: left; margin: 3px 0; }
+
+/* Stage 43 (B3): the layer window in three folding groups; each row = checkbox · name · sample */
+.lgroup { margin: 4px 0; border: 1px solid #3d5470; border-radius: 8px; overflow: hidden; }
+.lhead { display: block; width: 100%; text-align: left; padding: 8px 10px; font-weight: bold; background: rgba(40, 62, 92, 0.6); border: 0; color: inherit; min-height: 40px; }
+.lbody { padding: 2px 6px 6px; }
+label.lrow { display: flex; align-items: center; gap: 6px; min-height: 34px; }
+label.lrow .lname { flex: 1 1 auto; }
+label.lrow .lsample { flex: 0 0 60px; display: inline-flex; justify-content: flex-end; }
+.lnote { display: block; margin: 4px 0 0; opacity: 0.8; }

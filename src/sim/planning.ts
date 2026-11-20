@@ -16,6 +16,7 @@ import { accessDeficit, ev, projLabel, rand, yearOf } from "./engine";
 import { CAPACITY, RAIL_CAPACITY as RAIL_CAP, edgeSpeed, type Analysis } from "./demand";
 const edgeKmh = (e: SimEdge) => edgeSpeed(e);
 import { KIND_LABEL, modeOf, type Operator, type ProjectKind, type SimEdge, type SimProject, type SimState, type Standard } from "./types";
+import { corridorFull } from "./corridor43";
 import { mountainCost, pathfind, type World } from "./world";
 import { burdenCost, terrainGate } from "./land";
 
@@ -289,6 +290,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
       const path = pathfind(w, e.cells[0], e.cells[e.cells.length - 1], { bias: (k) => (near.has(k) ? 3 : 1), margin: 12, ease: crossingEase(sim.tech, y) });
       const shared = path ? path.filter((k) => old.has(k)).length : 99;
       if (path && shared === 0 && path.length >= 3) {
+        if (corridorFull(sim, w, path, target)) return planImprove(sim, w, e, region, purse, c);   // Stage 43: the mountain corridor already has its roads: improve this one instead
         const idx = buildIndex(sim); if (path.slice(1, -1).some((k) => idx.nodeByCell.has(k) || idx.cellEdge.has(k))) return planImprove(sim, w, e, region, purse, c);
         const tcB = techCheck(sim, w, "road", path, y); if (!tcB.ok || !affordable(sim, w, "road", path, path.length * w.cell, UNIT[target], purse, y)) return planImprove(sim, w, e, region, purse, c);   // would cut another road: improve in place instead
         const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "paved", quality: 90, built: 0, month: sim.month, standard: target });
@@ -308,6 +310,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
     if (!direct) return false; const nowKm = now ? now.length : Infinity; if (direct.length > nowKm * LINK_CUT) return false;   // the way that exists is already about as short
     if (!techCheck(sim, w, "road", direct, y).ok) return false;
     const newKm = direct.filter((k, q) => q > 0 && !idx.step.has(stepKey(direct[q - 1], k))).length * w.cell; if (newKm < 4) return false; if (newKm > purse) return false; if (!affordable(sim, w, "road", direct, newKm, 0.9, purse, y)) return false;
+    if (corridorFull(sim, w, direct, "rural")) return false;   // Stage 43
     const l = layPath(sim, w, direct, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 70, built: 0, month: sim.month, standard: "rural" }); if (!l.created.length) return false;
     const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * 0.9 * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * (w.land12 ? mtnCost(w, sim, "road", x.cells, y) : 1), 0);
     const p = createProject(sim, "access", region, nodeAtCell(sim, w, idx, v.cell, "village"), nodeAtCell(sim, w, idx, c.toCell, "junction"), l.created, l.chain, cost, c.reason, c.score);
@@ -344,6 +347,7 @@ function tryPlan(sim: SimState, w: World, c: Cand, region: string, purse: number
         return planImprove(sim, w, slow, region, purse, { ...c, reason: `${c.reason}。経路上で最も遅い区間を改良` });
       }
     }
+    if (corridorFull(sim, w, path, std)) return false;   // Stage 43: no further parallel road over a full mountain corridor
     if (newKm * 1.3 > Math.max(30, purse)) return false; if (!affordable(sim, w, "road", path, newKm, UNIT[std], purse, y)) return false;
     const l = layPath(sim, w, path, { facilities: !!sim.stage3, open: false, surface: "gravel", quality: 80, built: 0, month: sim.month, standard: std }); if (!l.created.length) return false;
     const es = l.created.map((id) => sim.edges[id]), cost = es.reduce((s, x) => s + x.lengthKm * UNIT[std] * (1 + x.maxGradePct * 0.03) * facCost(x, sim) * mtnCost(w, sim, "road", x.cells, y), 0);

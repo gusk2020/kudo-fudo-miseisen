@@ -90,6 +90,15 @@ export function allStyleColours(): Set<number> {
 
 /** A domestic flight (Stage 27): a pale blue-grey line drawn as a gentle arc between its two airports, on a faint white under-stroke -- light enough not to hide roads and names, and told from a road (solid, kind hue), a sea route and a gone line by being a thin curve. */
 export const AIR_STYLE: EdgeStyle = { casing: stroke(PAPER, 3.4, 0.5, undefined, "round"), body: stroke(0x9fb0c8, 1.5, 0.85, undefined, "round") };
+/** Stage 43 (B1): air and sea routes in two tiers. A TRUNK flight is a stronger, darker blue arc; a LOCAL flight a thin, pale, dashed one (every other segment of its arc). A trunk sea route is a thick solid line
+ *  in the sea colour; a local one thin and dashed. The legend and the layer window draw exactly these. */
+export const AIR_TRUNK_STYLE: EdgeStyle = { casing: stroke(PAPER, 4.6, 0.6, undefined, "round"), body: stroke(0x4f78b4, 2.4, 0.95, undefined, "round") };
+export const AIR_LOCAL_STYLE: EdgeStyle = { body: stroke(0x8ea3c2, 1.3, 0.85, undefined, "round") };
+export const SEA_TRUNK_STYLE: Stroke = stroke(KIND_COLOUR.sea, 3.8, 0.95, undefined, "round"), SEA_LOCAL_STYLE: Stroke = stroke(KIND_COLOUR.sea, 1.8, 0.9, [5, 4], "round");
+/** The tiers: a domestic flight is TRUNK when it was not opened as a local route and carries AIR_TRUNK_VOL a day or more; a sea route (ferry) is TRUNK when SEA_TRUNK_THROUGH go through it a day. */
+export const AIR_TRUNK_VOL = 600, SEA_TRUNK_THROUGH = 300;
+export const airTier = (r: { local?: true; vol: number }): "trunk" | "local" => (!r.local && r.vol >= AIR_TRUNK_VOL ? "trunk" : "local");
+export const seaTier = (e: { through: number }): "trunk" | "local" => (e.through >= SEA_TRUNK_THROUGH ? "trunk" : "local");
 /** The arc of a flight: a quadratic curve from `a` to `b` (both end points exactly), bulging by 18% of the distance (at most 70 km, so a long flight is not a huge loop), always toward the north (toward the east for a flight that runs north-south), so two flights never bulge into each other. Display only. */
 export const AIR_BULGE = 0.18, AIR_BULGE_MAX_KM = 70, AIR_SEGMENTS = 12;
 export function airArc(a: readonly [number, number], b: readonly [number, number], segments = AIR_SEGMENTS): [number, number][] {

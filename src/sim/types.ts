@@ -88,7 +88,7 @@ export interface AirportState {
   build?: { cap: number; runwayM: number; kind: "regional" | "hub"; done: number; what: string }; hist: { y: number; t: string }[];
 }
 /** Stage 8: a regular sea or air route. `b` is a foreign destination id when `intl`, else a city id. */
-export interface HubRoute { id: string; mode: "sea" | "air"; a: string; b: string; intl: boolean; since: number; until?: number; state: "open" | "suspended" | "closed"; vol: number; lo: number }
+export interface HubRoute { id: string; mode: "sea" | "air"; a: string; b: string; intl: boolean; since: number; until?: number; state: "open" | "suspended" | "closed"; vol: number; lo: number; /** Stage 43: opened as a local route (an airport no trunk route reached) */ local?: true }
 export interface HubsState { ports: Record<string, PortState>; airports: Record<string, AirportState>; routes: HubRoute[]; seq: number }
 
 export interface SimState {
@@ -140,6 +140,7 @@ export interface SimState {
   special60?: true;
   /** Stage 42: capital/sub-capital rail trunk duty; only newly-created 1800 games */
   trunk42?: true;
+  s43?: true;                 // Stage 43: a game made with the Stage 43 transport rules (islandlink37 / crossing / planning / hubs)
   resumeMode?: "auto" | "autoReloc" | "idleAuto";
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */

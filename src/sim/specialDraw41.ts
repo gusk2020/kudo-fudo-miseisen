@@ -83,3 +83,44 @@ export function checkLoop(sim: SimState, w: World, nat: NatPreview, back: Vec[],
 export function performLoop(sim: SimState, w: World, nat: NatPreview, back: Vec[], snapKm?: number): LoopResult { const t = checkLoop(sim, w, nat, back, snapKm); return t.ok ? applyLoop(sim, w, nat, back, snapKm) : t; }
 /** For the screen: does the whole route (after what was drawn) pass the capital / palace and the sub-capital? Informative for an extension (the rule is enforced for a new route by where its line must begin and end). */
 export const routeSeats = (sim: SimState, w: World, sym: string) => { const r = specialRoutes(sim)[sym]; return r ? seatsPass(sim, w, routeCells(sim, r)) : null; };
+
+/**
+ * Stage 43 (D): a new special route need not begin at the capital nor end at the sub-capital. One continuous line that PASSES the capital (or the palace) and a sub-capital (either of two) is
+ * enough: the part between them is built as the ordinary capital -> sub-capital line, and the parts before and after are joined on as extensions of the same route, in drawing order -- so the
+ * whole stays ONE stroke (the extension rule refuses a branch), and a line that comes back to where it began closes into a loop. "Passing" means the line comes within `passKm` of the seat
+ * (FREE_PASS_MIN_KM..FREE_PASS_MAX_KM, from the zoom's snapping distance): close enough for a finger, not merely somewhere in the same region.
+ */
+export const FREE_PASS_MIN_KM = 12, FREE_PASS_MAX_KM = 20, FREE_PART_MIN_KM = 8;   // (20 = SEAT_NEAR_KM: the line must come as close to a seat as the finished route is required to)
+export const freePassKm = (snapKm: number) => Math.max(FREE_PASS_MIN_KM, Math.min(FREE_PASS_MAX_KM, snapKm));
+export interface FreeSplit { mid: Vec[]; exts: Vec[][]; sub: number; reason: string }
+const lineKm = (pts: Vec[]) => { let s = 0; for (let i = 1; i < pts.length; i++) s += km(pts[i - 1], pts[i]); return s; };
+/** Where the drawn line passes the capital and the nearest-passed sub-capital; null fields + a reason when it does not pass both. `subs` = the sub-capitals' positions (one or two). */
+export function splitFree(drawn: Vec[], home: Vec, subs: Vec[], passKm: number): FreeSplit {
+  const near = (p: Vec) => { let bi = -1, bd = Infinity; drawn.forEach((q, i) => { const d = km(p, q); if (d < bd) { bd = d; bi = i; } }); return { i: bi, d: bd }; };
+  const no = (reason: string): FreeSplit => ({ mid: [], exts: [], sub: -1, reason });
+  if (drawn.length < 2) return no("線が短すぎます");
+  const c = near(home), s = subs.map((p, k) => ({ ...near(p), k })).filter((x) => x.d <= passKm).sort((a, b) => a.d - b.d)[0];
+  if (c.d > passKm && !s) return no(`首都と副首都の近く(${Math.round(passKm)}km以内)を通っていません`);
+  if (c.d > passKm) return no(`首都の近く(${Math.round(passKm)}km以内)を通っていません`);
+  if (!s) return no(`副首都${subs.length > 1 ? "(どちらか)" : ""}の近く(${Math.round(passKm)}km以内)を通っていません`);
+  if (c.i === s.i) return no("首都と副首都の間の区間がありません");
+  const fwd = c.i < s.i, mid = fwd ? drawn.slice(c.i, s.i + 1) : drawn.slice(s.i, c.i + 1).reverse();
+  // the parts before and after, each drawn OUTWARD from the seat it starts at (an extension begins on the route)
+  const head = drawn.slice(0, Math.min(c.i, s.i) + 1).reverse(), tail = drawn.slice(Math.max(c.i, s.i));
+  const exts = [head, tail].filter((p) => p.length >= 2 && lineKm(p) >= FREE_PART_MIN_KM);
+  return { mid, exts, sub: s.k, reason: "" };
+}
+export interface FreeResult { ok: boolean; reason: string; info: ReturnType<typeof performRoad0>; exts: ExtResult[]; loop: boolean }
+function applyFree(sim: SimState, w: World, nat: NatPreview, exts: Vec[][], snapKm?: number): FreeResult {
+  const gate = canBuildNext(sim), sym = gate.sym; const info = performRoad0(sim, w, nat); if (!info || !sym) return { ok: false, reason: gate.reason || "開通できませんでした", info: null, exts: [], loop: false };
+  const key = sim.routes[info.routeId].special ?? String(sim.routes[info.routeId].number), done: ExtResult[] = [];
+  for (const part of exts) {
+    const p = previewExtension(sim, w, key, part, { snapKm }); if (!p.ok) return { ok: false, reason: `首都・副首都の外側の区間を作れません: ${p.reasons[0]}`, info, exts: done, loop: false };
+    const b = apply(sim, w, p); if (!b.ok) return { ok: false, reason: `首都・副首都の外側の区間を作れません: ${b.reason}`, info, exts: done, loop: false }; done.push(b);
+  }
+  const r = specialRoutes(sim)[key], seats = r ? seatsPass(sim, w, routeCells(sim, r)) : null; if (!seats?.ok) return { ok: false, reason: seats?.reason || "首都と副首都を通っていません", info, exts: done, loop: false };
+  return { ok: true, reason: "", info, exts: done, loop: !!r && routeStroke(sim, r).odd === 0 };
+}
+/** Tried on a copy first; the game is untouched unless the whole line (middle and both outer parts) can be built as one stroke. */
+export function checkFree(sim: SimState, w: World, nat: NatPreview, exts: Vec[][], snapKm?: number): FreeResult { return applyFree(copyOf(sim), w, nat, exts, snapKm); }
+export function performFree(sim: SimState, w: World, nat: NatPreview, exts: Vec[][], snapKm?: number): FreeResult { const t = checkFree(sim, w, nat, exts, snapKm); return t.ok ? applyFree(sim, w, nat, exts, snapKm) : t; }

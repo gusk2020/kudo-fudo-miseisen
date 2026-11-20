@@ -34,6 +34,8 @@ import type { World } from "./world";
 import { worldMemo } from "./worldMemo";
 
 export const CROSSING_TAG = "【海峡連絡】";
+/** Stage 43 (`sim.s43`): the appetite for replacing a ferry by a bridge / tunnel under 空路重視 / 海路重視 (the strategic main-island pairs keep their own place). */
+export const S43_AIR_APPETITE = 0.3, S43_SEA_APPETITE = 0.5;
 /** Stage 37 (C2): the first year a long (over SHORT_LINK_KM of open water) fixed link may be started in an 1800 game. */
 export const LONG_LINK_FROM_1800 = 1950, SHORT_LINK_KM = 3;
 /** At most this many crossing projects of one mode at once; and a pair is not tried again within COOLING_YEARS of an abandoned attempt. */
@@ -204,7 +206,7 @@ export function planCrossings(sim: SimState, w: World, y: number): SimProject[] 
   for (const mode of ["road", "rail"] as Mode[]) {
     if (sim.rules1800 && !(mode === "rail" ? railMainlineOpen(sim, y) : mayScheduleServiceFor(sim, "car", y))) continue;   // Stage 36: in an 1800 game no fixed link before the mainline railways (1850) / the motor roads (1910)
     const maxActive = wk !== undefined ? (sim.pot17 ? MAX_ACTIVE_WATER_17 : MAX_ACTIVE_WATER) : MAX_ACTIVE_PER_MODE;
-    const appetite = (mode === "road" ? dl.hwyBuild : dl.railBuild) * (1 + 0.5 * dl.hsr) * (1 - 0.35 * Math.min(1, dl.seaBias)); if (appetite < 0.15) continue;
+    const st43 = sim.s43 ? stance18(sim) : null, appetite = (mode === "road" ? dl.hwyBuild : dl.railBuild) * (1 + 0.5 * dl.hsr) * (1 - 0.35 * Math.min(1, dl.seaBias)) * (st43 === "air" ? S43_AIR_APPETITE : st43 === "sea" ? S43_SEA_APPETITE : 1); if (appetite < 0.15) continue;   // (Stage 43: an air / sea world replaces its ferries by fixed links far less eagerly)
     let pool: Corridor[] | undefined; const fixed = fixedLinksOf(sim, mode);
     for (let round = 0; round < (wk !== undefined ? (sim.pot17 ? STARTS_PER_YEAR_WATER_17 : STARTS_PER_YEAR_WATER) : 1); round++) {
       if (proj.filter((p) => modeOf(p) === mode && ACTIVE.has(p.status) && !(sim.pop15 && wk !== undefined && p.reason.includes(STRATEGIC_TAG))).length + started.filter((p) => modeOf(p) === mode && !(sim.pop15 && wk !== undefined && p.reason.includes(STRATEGIC_TAG))).length >= maxActive) break;

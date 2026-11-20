@@ -27,7 +27,7 @@ import { terrainGate } from "./land";
 import type { Vec } from "../core/types";
 import { ev } from "./engine";
 import { buildIndex, layPath } from "./network";
-import { hubAppetite18, hubThreshold18 } from "./policy18";
+import { hubAppetite18, hubThreshold18, stance18 } from "./policy18";
 import { goodsPull, paxPull } from "./sites";
 import { modeOf, type AirportState, type HubRoute, type HubsState, type PortState, type SimState } from "./types";
 import { pathfind, type World } from "./world";
@@ -68,6 +68,10 @@ export const AIR_KIND_LABEL = { regional: "地方空港", hub: "国際ハブ空�
 export const RUNWAY_CAP: [number, number][] = [[1200, 2000], [2000, 8000], [2500, 15000], [3000, 25000]];
 export const HUB_CAP = 50000, HUB_GROW = 1.7, HUB_MAX_STEPS = 4, JET_YEAR = 1960;
 export const AIR_LANE_MIN = 300, SEA_LANE_MIN = 250, AIR_INTL_LANE_MIN = 400;
+/** Stage 43 (`sim.s43`): airports keep their distance (S43_AIR_SPACING_KM, a city of S43_AIR_SPACING_POP may have its own at 40 km); a place far from every airport (S43_REMOTE_KM) or on an island without one gets
+ *  an airport once it has S43_REMOTE_POP people (a third of that on an island), the remotest first; an airport no route reaches gets a LOCAL route to its best pair at S43_LOCAL_MIN (S43_LOCAL_MIN_REMOTE for
+ *  an island or a remote airport) instead of the trunk threshold AIR_LANE_MIN. Under 空路重視 or 地方分散 two such airports a year, otherwise one. */
+export const S43_AIR_SPACING_KM = 80, S43_AIR_SPACING_POP = 3e6, S43_REMOTE_KM = 110, S43_REMOTE_POP = 15000, S43_LOCAL_MIN = 120, S43_LOCAL_MIN_REMOTE = 40;
 export const AIR_MAX_LANES = { regional: 8, hub: 40 } as const, AIR_INTL_MAX = { regional: 2, hub: 7 } as const;
 const runwayCap = (m: number) => { let c = RUNWAY_CAP[0][1]; for (const [r, v] of RUNWAY_CAP) if (m >= r) c = v; return c; };
 export const intlCapable = (a: AirportState, y: number) => a.until === undefined && (a.kind === "hub" || (a.runwayM >= 2500 && y >= 1975));
@@ -141,6 +145,32 @@ export function ensureHubs(sim: SimState, w: World, y: number): HubsState | null
 const newAirport = (cell: number, city: string, y: number, runwayM: number): AirportState => ({ city, kind: "regional", since: y, runwayM, cap: runwayCap(runwayM), pax: 0, intl: 0, cargo: 0, load: 0, hi: 0, lo: 0, site: cell, access: [], hist: [{ y, t: `開港(滑走路${runwayM}m)` }] });
 const newRoute = (h: HubsState, mode: "sea" | "air", a: string, b: string, intl: boolean, y: number, vol: number): HubRoute => { const r: HubRoute = { id: `h${++h.seq}`, mode, a, b, intl, since: y, state: "open", vol: Math.round(vol), lo: 0 }; h.routes.push(r); return r; };
 const live = (r: HubRoute) => r.state !== "closed";
+/** Stage 43: is there an open airport on the land mass of this cell? */
+const massHasAirport = (sim: SimState, w: World, h: HubsState, cell: number): boolean => Object.values(h.airports).some((a) => a.until === undefined && w.lm[w.cityById.get(a.city)?.cell ?? -1] === w.lm[cell]);
+/** Stage 43: the threshold of a local air route: lower for an island or a remote airport (either end). */
+function localMin(sim: SimState, w: World, h: HubsState, a: string, b?: string): number {
+  const remote = (id: string) => { const c = w.cityById.get(id); if (!c) return false; const others = Object.values(h.airports).filter((x) => x.until === undefined && x.city !== id).map((x) => x.city); return nearestKm(w, id, others) >= S43_REMOTE_KM || !others.some((o) => w.lm[w.cityById.get(o)?.cell ?? -1] === w.lm[c.cell]); };
+  return remote(a) || (b !== undefined && remote(b)) ? S43_LOCAL_MIN_REMOTE : S43_LOCAL_MIN;
+}
+/** Stage 43: airports for the places no airport reaches (remotest first; an island counts double). */
+function remoteAirports(sim: SimState, w: World, h: HubsState, y: number, airApp: number, airBias: number): number {
+  if (y < 1950 || (sim.rules1800 && !mayScheduleServiceFor(sim, "plane", sim.startYear + Math.floor(sim.month / 12)))) return 0;
+  const open = Object.values(h.airports).filter((a) => a.until === undefined).map((a) => a.city), keen = stance18(sim) === "air" || sim.kaigen?.recon?.focus === "disperse", f = 1 - 0.25 * Math.min(1.5, airBias);
+  const cand: { c: (typeof w.cities)[number]; score: number }[] = [];
+  for (const c of w.cities) {
+    const st = sim.cities[c.id]; if (!st || h.airports[c.id]) continue; const island = !massHasAirport(sim, w, h, c.cell), near = open.length ? nearestKm(w, c.id, open) : Infinity;
+    if (island ? near < 25 || st.pop < S43_REMOTE_POP * f / 3 : near < S43_REMOTE_KM || st.pop < S43_REMOTE_POP * f) continue;
+    cand.push({ c, score: Math.min(3, near / S43_REMOTE_KM) * (island ? 2 : 1) * Math.log10(st.pop) });
+  }
+  cand.sort((p, q) => q.score - p.score || (p.c.id < q.c.id ? -1 : 1)); let n = 0;
+  for (const { c } of cand) {
+    if (n >= (keen ? 2 : 1) || !affordable(sim, 0.15 * costMult(sim, y), airApp)) break;
+    if (open.length && nearestKm(w, c.id, open) < 25) continue;   // (one opened this year may now serve it)
+    const st = sim.cities[c.id], rw = y >= JET_YEAR + 5 ? 2000 : 1200; h.airports[c.id] = newAirport(c.cell, c.id, y, rw); st.airport = y; open.push(c.id);
+    ev(sim, "air", `${airName(w, c.id)}が開港(${AIR_KIND_LABEL.regional}・滑走路${rw}m)`, `人口${Math.round(st.pop / 1000)}千人。最寄りの空港から遠い${massHasAirport(sim, w, h, c.cell) ? "地方" : "島"}の空の玄関`, { city: c.id }); n++;
+  }
+  return n;
+}
 
 /** Stage 8: what a port or airport adds to its city (bounded; see the module note). */
 export function hubBoost(sim: SimState, cityId: string): { industry: number; growth: number } {
@@ -190,10 +220,13 @@ export function reviewHubs(sim: SimState, w: World, tot: HubTotals | undefined, 
     const st = sim.cities[c.id]; if (!st || h.airports[c.id]) continue; const b = dl.airBias, f = (1 - 0.25 * b) * hubThreshold18(sim)[1];
     const due = (st.pop > 400000 * f && y >= 1958 - Math.round(8 * b)) || (st.pop > 200000 * f && y >= 1972 - Math.round(8 * b)) || (st.pop > 100000 * f && y >= 1988 - Math.round(8 * b));
     if (!due || !affordable(sim, 0.25 * costMult(sim, y), airApp)) continue; if (sim.rules1800 && !mayScheduleServiceFor(sim, "plane", sim.startYear + Math.floor(sim.month / 12))) continue;   // (Stage 36: no airport before scheduled flights exist)
-    const near = nearestKm(w, c.id, Object.values(h.airports).filter((a) => a.until === undefined).map((a) => a.city)); if (near < AIR_SPACING_KM && !(st.pop >= AIR_SPACING_POP && near >= 25)) continue;   // a neighbouring city's airport already serves it
+    const near = nearestKm(w, c.id, Object.values(h.airports).filter((a) => a.until === undefined).map((a) => a.city));
+    if (sim.s43) { if (near < S43_AIR_SPACING_KM && !(st.pop >= S43_AIR_SPACING_POP && near >= 40) && !(near >= 25 && !massHasAirport(sim, w, h, c.cell))) continue; }   // Stage 43: big cities do not cluster airports (帯広 and its neighbours each had one); an island without one may have one
+    else if (near < AIR_SPACING_KM && !(st.pop >= AIR_SPACING_POP && near >= 25)) continue;   // a neighbouring city's airport already serves it
     const rw = y >= JET_YEAR + 5 ? 2000 : 1200; h.airports[c.id] = newAirport(c.cell, c.id, y, rw); st.airport = y;
     ev(sim, "air", `${airName(w, c.id)}が開港(${AIR_KIND_LABEL.regional}・滑走路${rw}m)`, `人口${Math.round(st.pop / 1000)}千人に達し、空路の選好${b.toFixed(2)}`, { city: c.id }); n++;
   }
+  if (sim.s43) n += remoteAirports(sim, w, h, y, airApp, dl.airBias);
   const opened = Object.values(h.airports).filter((a) => a.until === undefined);
   for (const a of opened) {
     const t = tot.air.get(a.city) ?? { intl: 0, cargo: 0, dom: 0 }; a.intl = Math.round(t.intl); a.cargo = Math.round(t.cargo); a.pax = Math.round(t.dom + t.intl); a.load = Math.round((a.pax / a.cap) * 1000) / 1000;
@@ -255,17 +288,23 @@ function reviewRoutes(sim: SimState, w: World, h: HubsState, tot: HubTotals, y: 
     if ((cnt.get(a) ?? 0) >= AIR_MAX_LANES[A.kind] || (cnt.get(b) ?? 0) >= AIR_MAX_LANES[B.kind]) continue;
     cnt.set(a, (cnt.get(a) ?? 0) + 1); cnt.set(b, (cnt.get(b) ?? 0) + 1); want.set(`air:${a}:${b}`, { mode: "air", a, b, intl: false, vol: v, min: AIR_LANE_MIN });
   }
+  if (sim.s43) {   // Stage 43: an airport that no route reaches gets its best domestic pair as a LOCAL route (lower threshold): an airport without a flight is no airport
+    const served = new Set<string>(); for (const r of h.routes) if (live(r) && r.mode === "air") { served.add(r.a); served.add(r.b); } for (const v of want.values()) if (v.mode === "air") { served.add(v.a); served.add(v.b); }
+    const best = new Map<string, { b: string; v: number }>();
+    for (const [k, v] of tot.pairs) { const [a, b] = k.split("|"), A = h.airports[a], B = h.airports[b]; if (!A || !B || A.until !== undefined || B.until !== undefined) continue; for (const [x, z] of [[a, b], [b, a]]) if (!served.has(x) && v > (best.get(x)?.v ?? 0)) best.set(x, { b: z, v }); }
+    for (const [x, { b, v }] of best) { if (served.has(x)) continue; const [a2, b2] = x < b ? [x, b] : [b, x]; if (want.has(`air:${a2}:${b2}`) || want.has(`air:${b2}:${a2}`)) continue; want.set(`air:${a2}:${b2}`, { mode: "air", a: a2, b: b2, intl: false, vol: v, min: localMin(sim, w, h, x) }); served.add(x); served.add(b); }
+  }
   const label = (r: { mode: string; a: string; b: string; intl: boolean }) => `${r.mode === "sea" ? portName(w, r.a) : airName(w, r.a)}〜${r.intl ? foreignName(r.b) : airName(w, r.b)}${r.mode === "sea" ? "航路" : "便"}`;
   for (const r of h.routes) {
     if (!live(r)) continue; const k = `${r.mode}:${r.a}:${r.b}`, v = want.get(k); r.vol = Math.round(v?.vol ?? 0); want.delete(k);
-    const min = r.mode === "sea" ? SEA_LANE_MIN : r.intl ? AIR_INTL_LANE_MIN : AIR_LANE_MIN, gone = (r.mode === "sea" ? h.ports[r.a] : h.airports[r.a])?.until !== undefined || (!r.intl && h.airports[r.b]?.until !== undefined);
+    const min = r.mode === "sea" ? SEA_LANE_MIN : r.intl ? AIR_INTL_LANE_MIN : r.local ? localMin(sim, w, h, r.a, r.b) : AIR_LANE_MIN, gone = (r.mode === "sea" ? h.ports[r.a] : h.airports[r.a])?.until !== undefined || (!r.intl && h.airports[r.b]?.until !== undefined);
     if (r.state === "open" && (gone || r.vol < 0.5 * min)) { r.lo++; if (gone || r.lo >= 3) { r.state = "suspended"; r.lo = 0; ev(sim, "lane", `${label(r)}を休止`, gone ? "港・空港の廃止" : `利用${r.vol}が基準の半分を下回る年が3年続いた`, { city: r.a }); n++; } }
     else if (r.state === "suspended") { if (!gone && r.vol >= min) { r.state = "open"; r.lo = 0; ev(sim, "lane", `${label(r)}を再開`, `利用${r.vol}が回復`, { city: r.a }); n++; } else if (++r.lo >= 6 || gone) { r.state = "closed"; r.until = y; ev(sim, "lane", `${label(r)}を廃止`, "休止のまま再開の見込みがない", { city: r.a }); n++; } }
     else r.lo = 0;
   }
   for (const [, v] of [...want.entries()].sort((p, q) => q[1].vol - p[1].vol || (p[0] < q[0] ? -1 : 1))) {
     if (v.vol < v.min) continue; if (v.mode === "air" && sim.rules1800 && !mayScheduleServiceFor(sim, "plane", sim.startYear + Math.floor(sim.month / 12))) continue;   // Stage 36: no scheduled flight before 1920 (experiments only), whatever the shifted airport year says
-    const r = newRoute(h, v.mode, v.a, v.b, v.intl, y, v.vol); ev(sim, "lane", `${label(r)}を開設`, `${v.intl ? "国際" : "国内"}${v.mode === "sea" ? "貨物・旅客" : "旅客"}の需要${Math.round(v.vol)}/日`, { city: v.a }); n++;
+    const r = newRoute(h, v.mode, v.a, v.b, v.intl, y, v.vol); if (v.mode === "air" && !v.intl && v.min < AIR_LANE_MIN) r.local = true; ev(sim, "lane", `${label(r)}を開設`, `${v.intl ? "国際" : "国内"}${v.mode === "sea" ? "貨物・旅客" : "旅客"}の需要${Math.round(v.vol)}/日`, { city: v.a }); n++;
   }
   const closed = h.routes.filter((r) => !live(r)); if (closed.length > 80) { const drop = new Set(closed.slice(0, closed.length - 80).map((r) => r.id)); h.routes = h.routes.filter((r) => !drop.has(r.id)); }
   return n;

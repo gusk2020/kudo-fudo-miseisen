@@ -24,6 +24,9 @@ import type { World } from "./world";
 import { worldMemo } from "./worldMemo";
 
 export const ISLAND_TAG = "【島間接続】", LINK_FROM = 1950, MAX_GAP_KM = 150, SCAN_CELLS = 30;
+/** Stage 43: under an air / sea policy a fixed island link must pay S43_AIRSEA_BAR times the "realistic" bar, at most S43_AIRSEA_MAX_ACTIVE at a time, and an island that already has an airport or a port of its own
+ *  is linked only across a short gap (S43_SERVED_GAP_KM) -- beyond that the airport / port is its link. */
+export const S43_AIRSEA_BAR = 8, S43_AIRSEA_MAX_ACTIVE = 1, S43_SERVED_GAP_KM = 4;
 export type Drive = "ultra" | "aggressive" | "real";
 export interface DriveInfo { drive: Drive; bar: number; perYear: number; maxActive: number; fundMult: number; boom: boolean; dispersed: boolean; synergy: boolean }
 /** One candidate: the nearest shore pair of two land masses. */
@@ -61,6 +64,9 @@ export function driveOf(sim: SimState, y: number): DriveInfo {
   const cyc = cycleOf(sim), boom = dl.growth >= 1.1 || (!!cyc && cyc.phase !== "decline" && cyc.budget >= 1.05), dispersed = sim.kaigen?.recon?.focus === "disperse";
   const synergy = boom && dispersed && drive !== "real" && rr >= 0.95;
   const base = { ultra: { bar: 0.01, perYear: 3, maxActive: 8, fundMult: 1.6 }, aggressive: { bar: 0.04, perYear: 2, maxActive: 4, fundMult: 1 }, real: { bar: 1.2, perYear: 1, maxActive: 2, fundMult: 0.6 } }[drive];
+  // Stage 43 (`sim.s43`): under 空路重視 / 海路重視 the islands are served by air and sea. Fixed links follow what pays, one at a time, and the boom / dispersal multipliers do not multiply them (they used to string
+  // the islands together over the centuries all the same: the owner's 4800-year 空路重視・地方分散 game had bridges and tunnels the whole way from 沖縄 to 奄美). Road / rail / balanced worlds are unchanged.
+  if (sim.s43 && stance18(sim)) return { drive: "real", boom, dispersed, synergy: false, bar: base.bar * S43_AIRSEA_BAR, perYear: 1, maxActive: S43_AIRSEA_MAX_ACTIVE, fundMult: base.fundMult };
   const grow = 0.5 + Math.min(1.5, Math.max(0, (y - LINK_FROM) / 40));   // (technology: a trickle at first, more at once as the decades pass)
   const k = (boom ? 1.4 : 1) * (dispersed && drive !== "real" ? 1.4 : 1) * (synergy ? 2 : 1) * grow;
   return { drive, boom, dispersed, synergy, bar: base.bar / (synergy ? 3 : boom ? 1.5 : 1), perYear: Math.max(1, Math.round(base.perYear * k)), maxActive: Math.round(base.maxActive * k), fundMult: base.fundMult * (synergy ? 1.5 : 1) };
@@ -117,6 +123,7 @@ export function evalLink(sim: SimState, w: World, pr: ShorePair, y: number, d: D
   if (cool.has(pr.a * 100000 + pr.b)) return { ok: false, why: "cooling", pair: pr };
   if (!pr.clear) return { ok: false, why: "over-land", pair: pr };
   { const early = earlyLinkBlock(w, pr, y); if (early) return { ok: false, why: early, pair: pr }; }   // Issue #88: the 1900s do not chain the far islands
+  if (sim.s43 && stance18(sim) && pr.gap > S43_SERVED_GAP_KM && (hubServed(sim, w, pr.a) || hubServed(sim, w, pr.b))) return { ok: false, why: "served-by-air-sea", pair: pr };   // Stage 43: the airport / port is that island's link
   const s = chooseStructure(sim, pr.gap, pr.gap, "road", y); if (!s) return { ok: false, why: "no-structure", pair: pr };
   const popA = massPop(sim, w, pr.a), popB = massPop(sim, w, pr.b), small = Math.min(popA, popB), big = Math.max(popA, popB), roads = (nearNode(w, nodes, pr.ca, 60) ? 1 : 0) + (nearNode(w, nodes, pr.cb, 60) ? 1 : 0);
   if (small + big < 200 && roads < 2) return { ok: false, why: "empty", pair: pr, fac: s.fac, cost: s.cost };   // nobody to serve
@@ -125,6 +132,13 @@ export function evalLink(sim: SimState, w: World, pr: ShorePair, y: number, d: D
   const months = Math.max(24, pr.gap * 0.8), need = s.cost / months, pool = sim.macro.budgetBu * sim.dials.roadShare * sim.dials.austerity * 0.2;
   if (need > 0.6 * d.fundMult * pool) return { ok: false, why: "funds", pair: pr, fac: s.fac, cost: s.cost, score };
   return { ok: true, why: "ok", pair: pr, fac: s.fac, cost: s.cost, score };
+}
+/** Stage 43: does this land mass (the smaller side of a crossing, usually) have an open airport or port of its own? Not the main islands' business: they always have one. */
+function hubServed(sim: SimState, w: World, mass: number): boolean {
+  const h = sim.hubs; if (!h) return false;
+  for (const a of Object.values(h.airports)) if (a.until === undefined) { const c = w.cityById.get(a.city); if (c && w.lm[c.cell] === mass) return true; }
+  for (const p of Object.values(h.ports)) if (p.until === undefined) { const c = w.cityById.get(p.city); if (c && w.lm[c.cell] === mass) return true; }
+  return false;
 }
 function startLink(sim: SimState, w: World, ev0: LinkEval, y: number): boolean {
   const { pair: pr, fac, cost } = ev0, idx = buildIndex(sim, "road");
