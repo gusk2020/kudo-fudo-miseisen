@@ -85,6 +85,7 @@ export function sanitizeSim(raw: unknown): { sim: SimState | null; problems: str
   if (raw.isl22 !== undefined && raw.isl22 !== true) delete raw.isl22;
   if (raw.isl36 !== undefined && raw.isl36 !== true) delete raw.isl36;
   if (raw.s43 !== undefined && raw.s43 !== true) delete raw.s43;   // Stage 43
+  if (raw.north41 !== undefined && raw.north41 !== true) delete raw.north41;   // Stage 42 (Issue #95)
   if (raw.relocFirst !== undefined && !(Number.isInteger(raw.relocFirst) && raw.relocFirst >= (raw.rules1800 === true ? 1900 : 1950) && raw.relocFirst <= 3500)) delete raw.relocFirst;   /* (an 1800-start game's own first boundary is 1900: with the old floor of 1950 it was thrown away on every load and a different schedule made up -- found by tools/compat-check.mjs against the live Stage 38 build) */   // Stage 28 (absent = an older game: it takes its origin from its own history when loaded, adoptRelocSchedule)
   if (raw.relocSkipped !== undefined && !(Array.isArray(raw.relocSkipped) && raw.relocSkipped.every((y: unknown) => Number.isInteger(y)))) delete raw.relocSkipped;   // Stage 35
   if (raw.relocOrigin !== undefined && raw.relocOrigin !== "new" && raw.relocOrigin !== "migrated") delete raw.relocOrigin;   // Stage 29

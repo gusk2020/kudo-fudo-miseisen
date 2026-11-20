@@ -37,7 +37,7 @@ const terrainCache: Record<string, ReturnType<typeof generateTerrain>> = {};
 export function realWorld(islands = false, towns: boolean | { capital?: string; sub?: string } = false, islets: boolean | 1 | 2 | 3 = false, moves: SeatMove[] = []) {
   const tk = islands ? "i" : "p", s = defaultState(); if (islands) s.islands = true;
   const t = terrainCache[tk] ?? (terrainCache[tk] = generateTerrain(s, loadDem()));
-  const prefs = towns ? [towns === true ? "JP-13" : towns.capital ?? "JP-13", towns === true ? "JP-27" : towns.sub ?? "JP-27"] : null, ids = prefs ? townsForSeats(t, prefs) : false;
+  const prefs = towns ? [towns === true ? "JP-13" : towns.capital ?? "JP-13", towns === true ? "JP-27" : towns.sub ?? "JP-27"] : null, ids = prefs ? townsForSeats(t, prefs, process.env.KFM_NORTH_TOWNS === "1") : false;   // (Stage 42: KFM_NORTH_TOWNS=1 adds the towns of 樺太, as a new game in the app has them)
   const key = tk + (ids ? ids.join(",") : "") + (islets ? "+isl" + islets : "") + (moves.length ? JSON.stringify(moves) : ""); if (realCache[key]) return realCache[key];
   return (realCache[key] = { w: buildWorld(t, s.seed, ids, islets, moves), hash: t.hash });
 }

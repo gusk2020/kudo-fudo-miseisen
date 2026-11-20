@@ -1,5 +1,6 @@
 import raw from "../data/japan.json";
 import extraRaw from "../data/islands-extra.json";
+import northRaw from "../data/towns-north.json";
 import townsRaw from "../data/towns.json";
 import { centroid, densify } from "./geom";
 import type { IslandId, Vec } from "./types";
@@ -44,4 +45,7 @@ export const EXTRA = extraRaw as unknown as ExtraData;
 /** Stage 16: real provincial towns (see src/data/towns.json). `pos` is the real-km projection, like a city's. */
 export interface TownDef { id: string; name: string; pos: Vec; kind: "town"; pref: null; island: IslandId; pop: number }
 export const TOWNS: TownDef[] = (townsRaw as unknown as { towns: { id: string; name: string; lon: number; lat: number; island: IslandId; pop: number }[] }).towns.map((t) => ({ id: t.id, name: t.name, pos: lonLatToReal(t.lon, t.lat), kind: "town" as const, pref: null, island: t.island, pop: t.pop }));
+/** Stage 42: the towns of 樺太 (src/data/towns-north.json), kept apart from TOWNS so nothing that reads TOWNS (place names, older worlds) changes. `pos` is already world km. */
+export interface NorthTownDef { id: string; name: string; pos: Vec; kind: "town"; pref: null; island: string; pop: number; snap: boolean; islet: boolean }
+export const NORTH_TOWNS: NorthTownDef[] = (northRaw as unknown as { towns: { id: string; name: string; pos?: Vec; lon?: number; lat?: number; island: string; pop: number; snap?: boolean; islet?: boolean }[] }).towns.map((t) => ({ id: t.id, name: t.name, pos: t.pos ?? lonLatToReal(t.lon!, t.lat!), kind: "town" as const, pref: null, island: t.island, pop: t.pop, snap: !!t.snap, islet: !!t.islet }));
 export const EXTRA_IDS = ["sado", "awaji", "tsushima", "iki", "oki", "karafuto"] as const;   // Stage 36: 樺太(北緯50度以南) is the last, so the numbers of the older extra islands do not move

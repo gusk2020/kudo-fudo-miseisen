@@ -141,6 +141,7 @@ export interface SimState {
   /** Stage 42: capital/sub-capital rail trunk duty; only newly-created 1800 games */
   trunk42?: true;
   s43?: true;                 // Stage 43: a game made with the Stage 43 transport rules (islandlink37 / crossing / planning / hubs)
+  north41?: true;             // Stage 42 (Issue #95): a game made with the northern towns' world rules (an island's first port at its biggest coastal town); new 1800 games only
   resumeMode?: "auto" | "autoReloc" | "idleAuto";
   abolished39?: Record<string, { year: number; pop: number; cell: number; why: string }>;
   /** Stage 37 (B): the year each seat city began its development programme (key role:cityId). */

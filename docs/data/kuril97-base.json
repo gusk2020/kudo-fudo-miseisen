@@ -1,0 +1,542 @@
+[
+ {
+  "cap": "JP-13",
+  "seed": 1,
+  "year": 1900,
+  "national": 57829165,
+  "top5": [
+   [
+    "JP-13",
+    20488784
+   ],
+   [
+    "JP-27",
+    7252354
+   ],
+   [
+    "JP-14",
+    7046440
+   ],
+   [
+    "JP-28",
+    3623647
+   ],
+   [
+    "JP-11",
+    1839367
+   ]
+  ],
+  "otherPrefMedianPop": 295864,
+  "north": {
+   "札幌県": {
+    "pop": 390513,
+    "roadKm": 79,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "函館県": {
+    "pop": 161497,
+    "roadKm": 110,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "根室県": {
+    "pop": 43538,
+    "roadKm": 178,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "樺太県": {
+    "pop": 99063,
+    "roadKm": 256,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   }
+  },
+  "secs": 22
+ },
+ {
+  "cap": "JP-13",
+  "seed": 1,
+  "year": 1950,
+  "national": 215370966,
+  "top5": [
+   [
+    "JP-13",
+    73708628
+   ],
+   [
+    "JP-27",
+    28028476
+   ],
+   [
+    "JP-14",
+    21626688
+   ],
+   [
+    "JP-28",
+    14483382
+   ],
+   [
+    "JP-11",
+    8647911
+   ]
+  ],
+  "otherPrefMedianPop": 1151048,
+  "north": {
+   "札幌県": {
+    "pop": 769764,
+    "roadKm": 79,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "函館県": {
+    "pop": 534179,
+    "roadKm": 110,
+    "railKm": 0,
+    "ports": 1,
+    "airports": 0
+   },
+   "根室県": {
+    "pop": 150772,
+    "roadKm": 178,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "樺太県": {
+    "pop": 178922,
+    "roadKm": 356,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   }
+  },
+  "secs": 32
+ },
+ {
+  "cap": "JP-13",
+  "seed": 1,
+  "year": 2000,
+  "national": 585384731,
+  "top5": [
+   [
+    "JP-13",
+    155198582
+   ],
+   [
+    "JP-27",
+    69687580
+   ],
+   [
+    "JP-14",
+    42894018
+   ],
+   [
+    "JP-28",
+    36494257
+   ],
+   [
+    "JP-23",
+    34574555
+   ]
+  ],
+  "otherPrefMedianPop": 4247681,
+  "north": {
+   "札幌県": {
+    "pop": 10438047,
+    "roadKm": 791,
+    "railKm": 17,
+    "ports": 0,
+    "airports": 1
+   },
+   "函館県": {
+    "pop": 2859572,
+    "roadKm": 170,
+    "railKm": 49,
+    "ports": 1,
+    "airports": 1
+   },
+   "根室県": {
+    "pop": 311967,
+    "roadKm": 178,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 1
+   },
+   "樺太県": {
+    "pop": 445555,
+    "roadKm": 504,
+    "railKm": 0,
+    "ports": 1,
+    "airports": 0
+   }
+  },
+  "secs": 53
+ },
+ {
+  "cap": "JP-13",
+  "seed": 2,
+  "year": 1900,
+  "national": 57802084,
+  "top5": [
+   [
+    "JP-13",
+    19234689
+   ],
+   [
+    "JP-14",
+    7359971
+   ],
+   [
+    "JP-27",
+    7145213
+   ],
+   [
+    "JP-28",
+    4482210
+   ],
+   [
+    "JP-23",
+    2118472
+   ]
+  ],
+  "otherPrefMedianPop": 363182,
+  "north": {
+   "札幌県": {
+    "pop": 342619,
+    "roadKm": 170,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "函館県": {
+    "pop": 161440,
+    "roadKm": 119,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "根室県": {
+    "pop": 28526,
+    "roadKm": 166,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "樺太県": {
+    "pop": 75678,
+    "roadKm": 288,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   }
+  },
+  "secs": 20
+ },
+ {
+  "cap": "JP-13",
+  "seed": 2,
+  "year": 1950,
+  "national": 215512901,
+  "top5": [
+   [
+    "JP-13",
+    74528549
+   ],
+   [
+    "JP-27",
+    25763181
+   ],
+   [
+    "JP-14",
+    23068458
+   ],
+   [
+    "JP-28",
+    15739091
+   ],
+   [
+    "JP-23",
+    10532610
+   ]
+  ],
+  "otherPrefMedianPop": 1147323,
+  "north": {
+   "札幌県": {
+    "pop": 567352,
+    "roadKm": 170,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "函館県": {
+    "pop": 475571,
+    "roadKm": 119,
+    "railKm": 0,
+    "ports": 1,
+    "airports": 0
+   },
+   "根室県": {
+    "pop": 111553,
+    "roadKm": 166,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "樺太県": {
+    "pop": 132779,
+    "roadKm": 307,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   }
+  },
+  "secs": 31
+ },
+ {
+  "cap": "JP-13",
+  "seed": 2,
+  "year": 2000,
+  "national": 584553762,
+  "top5": [
+   [
+    "JP-13",
+    152001514
+   ],
+   [
+    "JP-27",
+    69744532
+   ],
+   [
+    "JP-14",
+    43298899
+   ],
+   [
+    "JP-23",
+    38344638
+   ],
+   [
+    "JP-28",
+    37945311
+   ]
+  ],
+  "otherPrefMedianPop": 5072986,
+  "north": {
+   "札幌県": {
+    "pop": 5683367,
+    "roadKm": 218,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 1
+   },
+   "函館県": {
+    "pop": 2857546,
+    "roadKm": 184,
+    "railKm": 49,
+    "ports": 1,
+    "airports": 1
+   },
+   "根室県": {
+    "pop": 310330,
+    "roadKm": 166,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 1
+   },
+   "樺太県": {
+    "pop": 404517,
+    "roadKm": 358,
+    "railKm": 0,
+    "ports": 1,
+    "airports": 0
+   }
+  },
+  "secs": 49
+ },
+ {
+  "cap": "JP-13",
+  "seed": 3,
+  "year": 1900,
+  "national": 57757851,
+  "top5": [
+   [
+    "JP-13",
+    18473507
+   ],
+   [
+    "JP-27",
+    7811303
+   ],
+   [
+    "JP-14",
+    6885655
+   ],
+   [
+    "JP-28",
+    4444214
+   ],
+   [
+    "JP-23",
+    2258461
+   ]
+  ],
+  "otherPrefMedianPop": 326085,
+  "north": {
+   "札幌県": {
+    "pop": 505898,
+    "roadKm": 71,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "函館県": {
+    "pop": 194971,
+    "roadKm": 72,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "根室県": {
+    "pop": 23400,
+    "roadKm": 159,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "樺太県": {
+    "pop": 96677,
+    "roadKm": 273,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   }
+  },
+  "secs": 18
+ },
+ {
+  "cap": "JP-13",
+  "seed": 3,
+  "year": 1950,
+  "national": 214934406,
+  "top5": [
+   [
+    "JP-13",
+    71179354
+   ],
+   [
+    "JP-27",
+    28746712
+   ],
+   [
+    "JP-14",
+    21370801
+   ],
+   [
+    "JP-28",
+    16222460
+   ],
+   [
+    "JP-23",
+    11349000
+   ]
+  ],
+  "otherPrefMedianPop": 1188459,
+  "north": {
+   "札幌県": {
+    "pop": 1330304,
+    "roadKm": 71,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "函館県": {
+    "pop": 844884,
+    "roadKm": 72,
+    "railKm": 0,
+    "ports": 1,
+    "airports": 0
+   },
+   "根室県": {
+    "pop": 85052,
+    "roadKm": 159,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 0
+   },
+   "樺太県": {
+    "pop": 177452,
+    "roadKm": 449,
+    "railKm": 0,
+    "ports": 1,
+    "airports": 0
+   }
+  },
+  "secs": 28
+ },
+ {
+  "cap": "JP-13",
+  "seed": 3,
+  "year": 2000,
+  "national": 584393586,
+  "top5": [
+   [
+    "JP-13",
+    151652237
+   ],
+   [
+    "JP-27",
+    68900756
+   ],
+   [
+    "JP-14",
+    42151026
+   ],
+   [
+    "JP-23",
+    38664045
+   ],
+   [
+    "JP-28",
+    36826640
+   ]
+  ],
+  "otherPrefMedianPop": 4864843,
+  "north": {
+   "札幌県": {
+    "pop": 14792453,
+    "roadKm": 255,
+    "railKm": 17,
+    "ports": 0,
+    "airports": 1
+   },
+   "函館県": {
+    "pop": 2470449,
+    "roadKm": 250,
+    "railKm": 49,
+    "ports": 1,
+    "airports": 1
+   },
+   "根室県": {
+    "pop": 272825,
+    "roadKm": 159,
+    "railKm": 0,
+    "ports": 0,
+    "airports": 1
+   },
+   "樺太県": {
+    "pop": 425121,
+    "roadKm": 561,
+    "railKm": 0,
+    "ports": 1,
+    "airports": 0
+   }
+  },
+  "secs": 43
+ }
+]
