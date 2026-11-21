@@ -21,6 +21,21 @@ A NEW road (new line, bypass, shortcut) whose new part runs through mountains (�
 - An airport no route reaches gets a LOCAL route to its best pair (threshold 120, or 40 for an island/remote one) instead of the trunk threshold 300; `HubRoute.local`.
 - **Audit (A5)**: internally every airport already had flights in the old rules too (2200: 62 of 62 airports with a route, 245 domestic flights) — the map showed at most 30 (14 nationwide, 8 light). The "airports without flights" were a DRAWING limit, not a missing network. Now drawn by tier with their own budgets (trunk 40/80, local 40/120; light 12/10); `r.roads.airDrawn` reports drawn vs open.
 
+## A3 follow-up — two demand bugs found by the trial check (fixed, new Stage 43 games only)
+The /stage43/ feature check (`tools/stage43-trial-check.mjs`) found 11 of 56 airports without a flight at 2000 and the lifeline rule opening **0** routes. Three causes, all fixed for `sim.s43` games only:
+1. **The lifeline rule counted unopened pairs as served** (`hubs.ts`). Any pair in the wish list, even one below its threshold, and suspended routes made an airport look served. Now only an open domestic flight, or one that opens this year, counts.
+2. **An airport pair's demand was overwritten, not summed** (`demand.ts`, pre-existing). The last city pair counted replaced the rest, so an airport serving many towns showed one town's demand. Older games keep the old behaviour.
+3. **Towns with no land link had no flight demand at all** (`demand.ts`, pre-existing). Examples: 樺太, islands without a ferry. Now such a pair is a flight: about 2 h of access plus the distance at 500 km/h. It counts only where the game's own air-share rule allows flying, so the "no scheduled flights before 1920" rule still holds.
+
+Result, seed 7, 空路重視・地方分散:
+
+| year | airports with a flight | airports | domestic flights | fixed links | tunnels |
+| --- | --- | --- | --- | --- | --- |
+| 2000 | 52 | 52 | 238 | 18 | 6 |
+| 2500 | 56 | 56 | 247 | 55 | 13 |
+
+Before these fixes: 2000 had 50 of 52 with a flight (豊原 and 根室 none since 1951) and 2500 had 56 of 56; there were 230 and 241 domestic flights. With demand counted properly, every airport clears the normal threshold, so the lifeline rule rarely has anything left to do; it stays as the safety net. In the browser game (islets, 日本海側) at 2000: **56 of 56** airports with a flight and 276 domestic flights. The earlier figures were 45 and 198.
+
 ## B — layers, tiers, night
 - Flights: trunk = not opened as local and ≥600/day (thick darker arc), local = the rest (thin pale dashed arc). Sea routes (ferries): trunk ≥300 through/day (thick solid), local (thin dashed). Constants in `style24.ts`.
 - Layer window (real game): folding groups 地形 / 交通 / その他; transport has eight rows (高速道路・一般道路・新幹線/リニア・一般鉄道・空路幹線・空路地方・海路幹線・海路地方), each "checkbox · name · sample" drawn from the map's own style constants; states under 交通. Old settings carry over (a whole-mode switch that was off shows its rows off).
