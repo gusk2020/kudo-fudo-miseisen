@@ -1102,6 +1102,7 @@ export class App {
   rangeSel: string | null = null; rangeListOpen = false;
   buildToolbar() { this.radioShown = false; this.buildToolbarInner(); if (!this.radioShown) closeRadio(); requestAnimationFrame(() => (this.legendEl ? this.placeLegend() : this.legendShown ? this.drawLegendStrip() : undefined)); }
   private buildToolbarInner() {
+    this.foldChip = null;
     $("toolbar").classList.remove("folded"); $("tools-wrap").classList.remove("folded");   // (Stage 43: only the running game's speed panel folds; set again below when it does)
     if (this.sim && this.e22Pick) {   // Stage 22: choosing a 2200 seat on the map (the same tap, hint and 決定 / 取り消し / 戻る as at the start)
       const tb0 = $("toolbar"); tb0.replaceChildren(); const p = this.seatPick, label = { capital: "首都", sub: "副首都", sub2: "副首都(2か所目)", palace: "皇居" }[this.e22Pick];
@@ -1314,13 +1315,15 @@ export class App {
     }
     // Stage 43 (E1): the speed panel folds away. Folded, only a small chip remains at the bottom left, showing the speed (or 停止中) -- one tap opens the panel again. The state is remembered on this phone.
     { const sp0 = this.sim.speed, now = sp0 === 0 ? "⏸ 停止中" : this.turbo ? "▶ 10年⏩" : `▶ ×${sp0}`, busy = this.sim.e2200?.state === "road0" || this.tool !== "view";
-      const chip = h("button", { id: "speed-chip", type: "button", class: "mode" + (this.toolsOpen ? " on" : ""), "aria-expanded": this.toolsOpen ? "true" : "false", "aria-label": this.toolsOpen ? "速度パネルをたたむ" : "速度パネルを開く", onclick: () => this.setToolsOpen(!this.toolsOpen) }, `${now} ${this.toolsOpen ? "▼" : "▲"}`);
-      tb.classList.toggle("folded", this.real && !this.toolsOpen && !busy); $("tools-wrap").classList.toggle("folded", this.real && !this.toolsOpen && !busy);
-      if (this.real) { if (!this.toolsOpen && !busy) { tb.append(chip); return; } tb.append(chip); } }
+      const open = this.toolsOpen || busy, chip = h("button", { id: "speed-chip", type: "button", class: "mode" + (open ? " on" : ""), "aria-expanded": open ? "true" : "false", "aria-label": open ? "速度パネルをたたむ" : "速度パネルを開く", onclick: () => this.setToolsOpen(!this.toolsOpen) }, open ? "▼" : `${now} ▲`);
+      tb.classList.toggle("folded", this.real && !open); $("tools-wrap").classList.toggle("folded", this.real && !open);
+      if (this.real && !open) { tb.append(chip); return; }
+      if (this.real && !busy) this.foldChip = chip; else this.foldChip = null; }   // (open: a small ▼ at the end of the speed row, so the open panel is no taller than before Stage 43 -- as a row of its own it added 46 px over the map on a phone)
     label(`選択中: ${names[this.tool]}`);
     const sp = h("div", { class: "grp" });
     for (const [n, l] of [[0, "停止"], [1, "×1"], [5, "×5"], [20, "×20"]] as [0 | 1 | 5 | 20, string][]) sp.append(this.tbtn(l, this.sim.speed === n && !this.turbo, () => this.setSpeed(n), "speed-" + n));
     sp.append(this.tbtn("10年⏩", this.turbo && this.sim.speed !== 0, () => this.setTurbo(!this.turbo), "speed-turbo"));
+    if (this.foldChip) sp.append(this.foldChip);
     tb.append(sp);
     if (this.sim.e2200?.state === "road0") {   // Stage 22: 国道0号 -- drawn like 国道1号, either way round; opened by its own ceremony
       const d0 = this.cerDraft.kokudo0, nat0 = d0?.prev as NatPreview | undefined, g0 = h("div", { class: "grp", id: "road0-row" });
@@ -1385,7 +1388,7 @@ export class App {
    *  a road / railway / flight / sea switch that was off shows its rows off, and turning one row on turns only that row on. */
   private layerOpen = new Set<string>(["traffic"]);
   /** Stage 43 (E1): is the speed panel open (remembered on this phone; open until first folded) */
-  toolsOpen = true;
+  toolsOpen = true; private foldChip: HTMLElement | null = null;
   setToolsOpen(v: boolean) { this.toolsOpen = v; try { localStorage.setItem(lsKey("toolsOpen"), v ? "1" : "0"); } catch { /* ignore */ } this.buildToolbar(); this.placeLegend?.(); }
   private buildLayers43(body: HTMLElement) {
     body.append(h("h3", {}, "表示レイヤー"));

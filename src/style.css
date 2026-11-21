@@ -47,7 +47,7 @@ button:disabled { opacity:1; background:#3a4450; color:#8a95a0; border-color:#4a
 
 body.real #btn-prev, body.real #btn-next, body.real #btn-undo, body.real #btn-redo { display:none; }
 body.real #dock { z-index: 9; }   /* the observation sheets sit above the map, but the dock stays reachable so you can switch between them */
-body.real #sheet { max-height: 62dvh; }
+body.real #sheet { max-height: 62dvh; min-height: calc(120px + env(safe-area-inset-bottom)); }   /* (Stage 43: a sheet whose content comes later -- 保存 lists the saves first -- was only its padding for a moment, and its × then sat under the dock) */
 #sheet .hist { font-size: 12px; color: #b8cde0; padding: 2px 0 0 10px; }
 #sheet .issue { cursor: default; }
 #sheet button.mini { min-height: 30px; padding: 2px 10px; margin: 4px 0 0 10px; font-size: 12px; }

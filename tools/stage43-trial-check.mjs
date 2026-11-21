@@ -37,6 +37,7 @@ try {
   await kfm(page, "a => { a.setToolsOpen(false); a.buildUI(); return 1; }"); await page.waitForTimeout(300);
   check("speed panel folds to a chip", await page.isVisible("#speed-chip") && !(await page.isVisible("#speed-20")));
   await page.click("#speed-chip"); await page.waitForTimeout(300); check("one tap on the chip opens the speed panel", await page.isVisible("#speed-20"));
+  { const tw = await page.locator("#tools-wrap").boundingBox(); check("the open speed panel is no taller than Stage 42's (126 px on this screen): its fold button sits in the speed row", tw && tw.height <= 130 && await page.isVisible("#speed-chip"), JSON.stringify(tw)); }
   // ---- layers: three folding groups, eight transport rows, each with a sample
   await kfm(page, "a => { a.layerOpen.add('traffic'); a.openSheet('layers'); return 1; }"); await page.waitForTimeout(400);
   const rows = ["lr-hwy", "lr-road", "lr-hsr", "lr-rail", "lr-air-trunk", "lr-air-local", "lr-sea-trunk", "lr-sea-local"];
