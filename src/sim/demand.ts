@@ -150,7 +150,7 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
       const ai = PUL[i], aj = PUL[j], gi = GUL[i], gj = GUL[j];   // Issue #18: seats and sights shift a city's pull on passengers (commerce, tourism) and goods (manufacturing)
       const flow = KFLOW * Math.pow(pi.pop * ai * pj.pop * aj, 0.6) / (1 + Math.pow(tmin, 1.2));
       const air = airShare(sim, w, i, j, s, apMap), land = flow * (1 - air); airFlow += flow * air; landFlow += land;
-      if (air > 0 && sim.hubs) { const a = apMap![i]!, b = apMap![j]!, p = flow * air * RAIL_PAX; airPkm += p * Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); pairs.set(a < b ? `${a}|${b}` : `${b}|${a}`, p); domAir.set(a, (domAir.get(a) ?? 0) + p); domAir.set(b, (domAir.get(b) ?? 0) + p); }
+      if (air > 0 && sim.hubs) { const a = apMap![i]!, b = apMap![j]!, p = flow * air * RAIL_PAX; airPkm += p * Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]); { const pk = a < b ? `${a}|${b}` : `${b}|${a}`; pairs.set(pk, sim.s43 ? (pairs.get(pk) ?? 0) + p : p); }   /* (Stage 43: an airport pair carries the sum of its city pairs; before, the last city pair counted overwrote the rest, so an airport serving many towns showed one town's demand -- kept for older games) */ domAir.set(a, (domAir.get(a) ?? 0) + p); domAir.set(b, (domAir.get(b) ?? 0) + p); }
       if (s < 1) for (let k = k0; R.pn[k] >= 0; k = R.pn[k]) R.pe[k]!.through += land * (1 - s);
       if (s > 0 && Q) for (let k = k0; Q.pn[k] >= 0; k = Q.pn[k]) Q.pe[k]!.through += land * s * RAIL_PAX;
       // freight: industry-to-industry; trucks take it unless the railway is competitive and the era favours it
