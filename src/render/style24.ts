@@ -84,7 +84,7 @@ export const HIGHLIGHT_LAYERS = [{ colour: PAPER, extra: 16, alpha: 0.85 }, { co
 export function allStyleColours(): Set<number> {
   const out = new Set<number>(); const add = (s?: Stroke) => { if (s) out.add(s.colour); };
   for (const kind of Object.keys(KIND_COLOUR) as Kind[]) for (const tier of ["main", "sub", "local"] as Tier[]) for (const state of ["open", "dormant", "planned", "unbuilt", "closed", "lost"] as LineState[]) for (const q of [90, 50, 20, 5]) for (const o of [{}, { old: true, bypass: true, tunnel: true, thin: true }] as StyleOpts[]) { const s = edgeStyle(kind, tier, state, q, o); add(s.casing); add(s.body); add(s.centre); add(s.ties); }
-  add(buildProgressStroke("road")); add(AIR_STYLE.casing); add(AIR_STYLE.body); add(BRIDGE.edge(3)); add(BRIDGE.deck(3)); add(BRIDGE.girder); add(TUNNEL.edge); for (const l of HIGHLIGHT_LAYERS) out.add(l.colour);
+  add(buildProgressStroke("road")); add(AIR_STYLE.casing); add(AIR_STYLE.body); add(AIR_TRUNK_STYLE.casing); add(AIR_TRUNK_STYLE.body); add(AIR_LOCAL_STYLE.body); add(SEA_TRUNK_STYLE); add(SEA_LOCAL_STYLE); add(BRIDGE.edge(3)); add(BRIDGE.deck(3)); add(BRIDGE.girder); add(TUNNEL.edge); for (const l of HIGHLIGHT_LAYERS) out.add(l.colour);
   return out;
 }
 

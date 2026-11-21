@@ -2,6 +2,7 @@ import { modeOf, type SimState } from "../../src/sim/types";
 import type { World } from "../../src/sim/world";
 import { ISLAND_TAG } from "../../src/sim/islandlink37";
 import { corridorCount, isMountainCell } from "../../src/sim/corridor43";
+import { airTier, seaTier } from "../../src/render/style24";
 /** Stage 43 measures (pure; used by the probe and the tests). */
 export function s43Metrics(sim: SimState, w: World) {
   const live = (e: { state: string; built: number }) => e.state === "open" && e.built >= 1;
@@ -31,6 +32,8 @@ export function s43Metrics(sim: SimState, w: World) {
     popFarFromAirportShare: pop ? Math.round((far / pop) * 1000) / 10 : null, ports: ports.length,
     airDomestic: open.filter((r) => r.mode === "air" && !r.intl).length, airIntl: open.filter((r) => r.mode === "air" && r.intl).length, seaDomestic: open.filter((r) => r.mode === "sea" && !r.intl).length, seaIntl: open.filter((r) => r.mode === "sea" && r.intl).length,
     ferries: Object.values(sim.edges).filter((e) => e.facility === "ferry" && live(e)).length,
+    airTrunk: open.filter((r) => r.mode === "air" && !r.intl && airTier(r) === "trunk").length, airLocal: open.filter((r) => r.mode === "air" && !r.intl && airTier(r) === "local").length, airLocalOpened: open.filter((r) => r.local).length,
+    seaTrunk: Object.values(sim.edges).filter((e) => e.facility === "ferry" && live(e) && seaTier(e) === "trunk").length,
     northK: { 札幌県: north("HK-SAP"), 函館県: north("HK-HAK"), 根室県: north("HK-NEM"), 樺太県: north("KRF") }, popM: Math.round(pop / 1e5) / 10,
   };
 }

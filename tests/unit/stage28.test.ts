@@ -42,7 +42,8 @@ describe("Stage 28: 通常地図の線は連続線だけ(点線・破線なし)"
       const e = edgeStyle(k, t, st, 60, o); for (const s of [e.casing, e.body, e.centre, e.ties]) expect(s?.dash, `${k} ${t} ${st}`).toBeUndefined();
     }
     for (const s of [AIR_STYLE.casing, AIR_STYLE.body, TUNNEL.edge]) expect(s?.dash).toBeUndefined();
-    for (const it of legendItems()) { expect(it.svg).not.toContain("dasharray"); expect(it.caption).not.toMatch(/点線|破線|鎖線|ドット/); }
+    // Stage 43 (B1): the owner asked for the LOCAL flights and sea routes to be told apart by the kind of line too, so those two samples (and only those) are dashed; every road and railway stays solid as decided here
+    for (const it of legendItems()) { if (it.ref.what !== "airLocal" && it.ref.what !== "seaLocal") expect(it.svg, it.caption).not.toContain("dasharray"); expect(it.caption).not.toMatch(/点線|破線|鎖線|ドット/); }
   });
   it("計画・未成と廃線・廃道は、道路と鉄道を見分けられ、供用中とも区別できる", () => {
     for (const st of ["planned", "closed"] as LineState[]) { const r = edgeStyle("road", "sub", st, 90), l = edgeStyle("rail", "sub", st, 90); expect(JSON.stringify(r)).not.toBe(JSON.stringify(l)); expect(hex((r.casing ?? r.body).colour)).not.toBe(hex((l.casing ?? l.body).colour)); }

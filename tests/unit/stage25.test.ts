@@ -90,6 +90,7 @@ describe("Stage 25: the 150-year relocation event", () => {
 });
 
 import { readFileSync } from "node:fs";
+import { AIR_LOCAL_STYLE, AIR_TRUNK_STYLE, SEA_LOCAL_STYLE, SEA_TRUNK_STYLE } from "../../src/render/style24";
 import { AIR_STYLE, HIGHLIGHT_COLOUR, KIND_COLOUR, TIER_OF, allStyleColours, edgeStyle, hex, type Kind, type LineState, type Tier } from "../../src/render/style24";
 import { legendItems, svgOfStyle } from "../../src/render/legendSamples";
 
@@ -116,9 +117,12 @@ describe("Stage 25: the colours of the lines, and the legend that must show them
       const r = it.ref; if (!r.kind) continue; const st = edgeStyle(r.kind, r.tier!, r.state!, r.quality!); if (r.also) { expect(it.svg).toContain(svgOfStyle(st, 5)); expect(it.svg).toContain(svgOfStyle(edgeStyle(r.also, r.tier!, r.state!, r.quality!), 11)); continue; } expect(it.svg, it.caption).toContain(svgOfStyle(st));
       expect(it.svg).toContain(`stroke="${hex(st.body.colour)}"`); expect(it.svg).toContain(`stroke-width="${st.body.width}"`); if (st.body.dash) expect(it.svg).toContain(`stroke-dasharray="${st.body.dash.join(" ")}"`);;
     }
-    for (const k of kinds) expect(items.some((i) => (i.ref.kind === k || i.ref.also === k) && i.group === "交通種別"), k).toBe(true);
+    for (const k of kinds.filter((x) => x !== "sea")) expect(items.some((i) => (i.ref.kind === k || i.ref.also === k) && i.group === "交通種別"), k).toBe(true);
+    // Stage 43 (B1): the sea routes and the flights appear in their two tiers, each exactly as the map draws it
+    expect(items.find((i) => i.ref.what === "seaTrunk")!.svg).toContain(`stroke-width="${SEA_TRUNK_STYLE.width}"`); expect(items.find((i) => i.ref.what === "seaLocal")!.svg).toContain(`stroke-dasharray="${SEA_LOCAL_STYLE.dash!.join(" ")}"`);
+    expect(items.find((i) => i.ref.what === "airLocal")!.svg).toContain(hex(AIR_LOCAL_STYLE.body.colour));
     expect(items.filter((i) => i.caption.includes("新幹線") || i.caption.includes("リニア")).length).toBe(1);   // Stage 26: one entry for 新幹線・リニア (they stay two kinds everywhere else)
-    expect(items.some((i) => i.ref.what === "air" && i.svg.includes("<polyline") && i.svg.includes(hex(AIR_STYLE.body.colour)) && i.svg.includes(`stroke-width="${AIR_STYLE.body.width}"`))).toBe(true);   // the legend shows the arc the map draws expect(items.some((i) => i.group.includes("傷み"))).toBe(false);
+    expect(items.some((i) => i.ref.what === "air" && i.svg.includes("<polyline") && i.svg.includes(hex(AIR_TRUNK_STYLE.body.colour)) && i.svg.includes(`stroke-width="${AIR_TRUNK_STYLE.body.width}"`))).toBe(true);   // (Stage 43: the trunk flight; the map no longer draws the single Stage 27 style)   // the legend shows the arc the map draws expect(items.some((i) => i.group.includes("傷み"))).toBe(false);
     for (const t of tiers) expect(items.some((i) => i.ref.tier === t && i.group === "太さ")).toBe(true);
     for (const s of ["open", "planned", "closed"] as LineState[]) expect(items.some((i) => i.ref.state === s && i.group === "状態" && i.ref.also === "rail")).toBe(true);
     expect(items.map((i) => i.caption).some((c) => /破線|点線|鎖線|実線/.test(c))).toBe(false);   // Stage 27: the legend names things, it does not describe the stroke
