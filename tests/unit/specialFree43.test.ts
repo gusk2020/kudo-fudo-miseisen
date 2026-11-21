@@ -27,6 +27,9 @@ describe("Stage 43 (D): free special routes", () => {
     const snap = JSON.stringify(sim), chk = checkFree(sim, w, nat, f.exts, 45); expect(JSON.stringify(sim), "the check does not touch the game").toBe(snap); expect(chk.ok, chk.reason).toBe(true);
     const res = performFree(sim, w, nat, f.exts, 45); expect(res.ok, res.reason).toBe(true); const r = sim.routes[res.info!.routeId];
     expect(routeStroke(sim, r).ok, "one stroke").toBe(true); expect(seatsPass(sim, w, routeCells(sim, r)).ok).toBe(true); expect(checkIntegrity(sim)).toEqual([]);
+    // the finished route really reaches the two outer ends (宇都宮, 神戸), not only the seats
+    const cells = routeCells(sim, r), reach = (n: string) => { const c = city(g, n).pos; return Math.min(...[...cells].map((k) => { const p = w.cellPos(k); return Math.hypot(p[0] - c[0], p[1] - c[1]); })); };
+    console.log("S43D reach km: 宇都宮", reach("宇都宮市").toFixed(1), "神戸", reach("神戸市").toFixed(1)); expect(reach("宇都宮市"), "the route reaches beyond the capital").toBeLessThan(15); expect(reach("神戸市"), "the route reaches beyond the sub-capital").toBeLessThan(15);
   }, 900000);
   it("a closed loop that begins and ends away from the seats is built closed (no ends); one that would run over itself is refused with the one-stroke reason", () => {
     const g = game(), { sim, w } = g; sim.month = 1200; const a = homeCity(w, sim.capital)!, b = subCity(w, sim.subCapital)!, P = (n: string) => city(g, n).pos;
