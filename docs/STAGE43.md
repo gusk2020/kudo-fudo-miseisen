@@ -38,4 +38,38 @@ A new special route need not start at the capital nor end at a sub-capital: a li
 - E3: 均衡 (transport) and 中立 (region) in the simple intervention.
 
 ## Measurements (seed 7, 1800 start, capital 東京, automatic; `tests/unit/s43.probe.test.ts`, data `docs/data/s43-*.json`)
-See the table at the end (filled from the data files).
+OFF = the same code with `sim.s43` removed (= the rules before this change). 空路重視・地方分散 unless noted.
+
+| measure (seed 7) | 2500 OFF | 2500 ON | 4800 OFF | 4800 ON |
+| --- | --- | --- | --- | --- |
+| fixed links (bridges/tunnels to islands, sea crossings) | 130 (3805 km) | 52 (1323 km) | 134 | 60 |
+| of which tunnels | 71 | 15 | 76 | 15 |
+| railway km | 6108 | 3307 | 7217 | 4829 |
+| mountain road edges with 4+ roads side by side | 6 | 1 | 2 | 1 |
+
+Under 道路重視 (shubun) ON keeps 146 fixed links and under 均衡 (heisei) 141 at 2500 — the policies keep their character.
+
+Airports (seed 7, `docs/data/s43-3000-*-v2.json`):
+
+| year 2000 / 2500 / 3000 | ON | OFF |
+| --- | --- | --- |
+| airports | 52 / 55 / 56 | 52 / 70 / 73 |
+| populated islands with an airport (of 7) | 7 / 7 / 7 | 4 / 5 / 7 |
+| towns more than 50 km from an airport | 5 / 1 / 0 | 6 / 2 / 1 |
+| domestic flights (all drawn now, by tier) | 171 / 174 / 293 | 210 / 288 / 467 |
+
+Fewer airports (no clusters) but better coverage: islands are served decades earlier and no town is left far away. Fewer domestic flights follow from fewer airport pairs; every airport has at least one flight.
+
+Other seeds, 2500 (`docs/data/s43-2500-*-seeds11-23.json`): seed 11 ON/OFF airports 54/70, islands served 7/5 of 7, fixed links 51/127, tunnels 12/81, rail 2493/6495 km; seed 23 airports 56/69, islands 7/5, fixed links 51/126, tunnels 10/74, rail 3197/6408 km. Same direction on all three seeds.
+
+Decade mode: 0.65 → 2.76 game-years/s in the browser (×4.2, software GL; simulation unchanged, so results are identical, not just similar).
+
+## Checks
+- Unit: all pass (see PR). E2E: 107 passed + the 5 that needed updating for the new layer window / top line, re-run and passing. Compat (Stage 41 dist → this build): 16/16.
+- Not checked on a Pixel 7a. Not published.
+
+## Known / left open
+- Population grows without limit in long runs in BOTH rule sets (pre-existing, not from Stage 43).
+- Northern Hokkaido grows only through the remote-airport rule and the north towns (#96/#99); no extra development rule was added.
+- 4800-year runs use the earlier 80 km airport spacing (`s43-4800-on-kuuro.json`); the shipped spacing is 60 km (re-measured to 3000).
+- Phone speed gain of the decade mode will be smaller than ×4.2 (drawing is a smaller share on a GPU) — measure on the device.
