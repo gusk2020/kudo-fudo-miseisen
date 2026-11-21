@@ -68,10 +68,10 @@ export const AIR_KIND_LABEL = { regional: "地方空港", hub: "国際ハブ空�
 export const RUNWAY_CAP: [number, number][] = [[1200, 2000], [2000, 8000], [2500, 15000], [3000, 25000]];
 export const HUB_CAP = 50000, HUB_GROW = 1.7, HUB_MAX_STEPS = 4, JET_YEAR = 1960;
 export const AIR_LANE_MIN = 300, SEA_LANE_MIN = 250, AIR_INTL_LANE_MIN = 400;
-/** Stage 43 (`sim.s43`): airports keep their distance (S43_AIR_SPACING_KM, a city of S43_AIR_SPACING_POP may have its own at 40 km); a place far from every airport (S43_REMOTE_KM) or on an island without one gets
+/** Stage 43 (`sim.s43`): airports keep their distance (S43_AIR_SPACING_KM, a city of S43_AIR_SPACING_POP may have its own at S43_AIR_SPACING_BIG_KM); a place far from every airport (S43_REMOTE_KM) or on an island without one gets
  *  an airport once it has S43_REMOTE_POP people (a third of that on an island), the remotest first; an airport no route reaches gets a LOCAL route to its best pair at S43_LOCAL_MIN (S43_LOCAL_MIN_REMOTE for
  *  an island or a remote airport) instead of the trunk threshold AIR_LANE_MIN. Under 空路重視 or 地方分散 two such airports a year, otherwise one. */
-export const S43_AIR_SPACING_KM = 80, S43_AIR_SPACING_POP = 3e6, S43_REMOTE_KM = 110, S43_REMOTE_POP = 15000, S43_LOCAL_MIN = 120, S43_LOCAL_MIN_REMOTE = 40;
+export const S43_AIR_SPACING_KM = 60, S43_AIR_SPACING_POP = 3e6, S43_AIR_SPACING_BIG_KM = 45, S43_REMOTE_KM = 90, S43_REMOTE_POP = 12000, S43_LOCAL_MIN = 120, S43_LOCAL_MIN_REMOTE = 40;   // (measured: 80 km spacing left an 空路重視 world with FEWER airports and flights than before -- 56 vs 81 airports at 4800 -- so the spacing is the old 60 km and only the big-city exception is tightened, 25 -> 45 km)
 export const AIR_MAX_LANES = { regional: 8, hub: 40 } as const, AIR_INTL_MAX = { regional: 2, hub: 7 } as const;
 const runwayCap = (m: number) => { let c = RUNWAY_CAP[0][1]; for (const [r, v] of RUNWAY_CAP) if (m >= r) c = v; return c; };
 export const intlCapable = (a: AirportState, y: number) => a.until === undefined && (a.kind === "hub" || (a.runwayM >= 2500 && y >= 1975));
@@ -228,7 +228,7 @@ export function reviewHubs(sim: SimState, w: World, tot: HubTotals | undefined, 
     const due = (st.pop > 400000 * f && y >= 1958 - Math.round(8 * b)) || (st.pop > 200000 * f && y >= 1972 - Math.round(8 * b)) || (st.pop > 100000 * f && y >= 1988 - Math.round(8 * b));
     if (!due || !affordable(sim, 0.25 * costMult(sim, y), airApp)) continue; if (sim.rules1800 && !mayScheduleServiceFor(sim, "plane", sim.startYear + Math.floor(sim.month / 12))) continue;   // (Stage 36: no airport before scheduled flights exist)
     const near = nearestKm(w, c.id, Object.values(h.airports).filter((a) => a.until === undefined).map((a) => a.city));
-    if (sim.s43) { if (near < S43_AIR_SPACING_KM && !(st.pop >= S43_AIR_SPACING_POP && near >= 40) && !(near >= 25 && !massHasAirport(sim, w, h, c.cell))) continue; }   // Stage 43: big cities do not cluster airports (帯広 and its neighbours each had one); an island without one may have one
+    if (sim.s43) { if (near < S43_AIR_SPACING_KM && !(st.pop >= S43_AIR_SPACING_POP && near >= S43_AIR_SPACING_BIG_KM) && !(near >= 25 && !massHasAirport(sim, w, h, c.cell))) continue; }   // Stage 43: big cities do not cluster airports (帯広 and its neighbours each had one); an island without one may have one
     else if (near < AIR_SPACING_KM && !(st.pop >= AIR_SPACING_POP && near >= 25)) continue;   // a neighbouring city's airport already serves it
     const rw = y >= JET_YEAR + 5 ? 2000 : 1200; h.airports[c.id] = newAirport(c.cell, c.id, y, rw); st.airport = y;
     ev(sim, "air", `${airName(w, c.id)}が開港(${AIR_KIND_LABEL.regional}・滑走路${rw}m)`, `人口${Math.round(st.pop / 1000)}千人に達し、空路の選好${b.toFixed(2)}`, { city: c.id }); n++;

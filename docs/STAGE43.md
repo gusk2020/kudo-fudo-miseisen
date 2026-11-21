@@ -13,11 +13,11 @@ The 1800-start games (Issue #86 era lists) never had `pot17.c18`, so `stance18()
 - Nothing built is removed; a running project keeps going.
 
 ## A2 — mountain corridors (`corridor43.ts`)
-A NEW road (new line, bypass, shortcut) whose new part runs through mountains (≥500 m) counts the separate roads crossing transects (±12 km, every 3 cells) of its mountain stretch; at a median of 3 the corridor is full: no new road (a bypass becomes an improvement). An expressway may be the one more where the corridor has none. Plains are never checked; upgrades/restoration are never blocked.
+A NEW road (new line, bypass, shortcut) whose new part runs through mountains (≥500 m) counts the separate roads crossing transects (±22 km, every 3 cells) of its mountain stretch; at a median of 3 the corridor is full: no new road (a bypass becomes an improvement). An expressway may be the one more where the corridor has none. Plains are never checked; upgrades/restoration are never blocked.
 
 ## A3/A5 — airports and flights (`hubs.ts`)
-- Airport spacing 80 km (a city of 3 M may have its own at 40 km); an island without an airport may have one at 25 km.
-- `remoteAirports`: a place ≥110 km from every airport with 15,000 people (an island without an airport: 5,000) gets one, remotest first, an island counting double; two a year under 空路重視 or 地方分散.
+- Airport spacing 60 km (a city of 3 M may have its own at 45 km); an island without an airport may have one at 25 km. (A first try at 80 km cut airports and flights below the old rules — 56 vs 81 airports at 4800 — so it was loosened.)
+- `remoteAirports`: a place ≥90 km from every airport with 12,000 people (an island without an airport: 5,000) gets one, remotest first, an island counting double; two a year under 空路重視 or 地方分散.
 - An airport no route reaches gets a LOCAL route to its best pair (threshold 120, or 40 for an island/remote one) instead of the trunk threshold 300; `HubRoute.local`.
 - **Audit (A5)**: internally every airport already had flights in the old rules too (2200: 62 of 62 airports with a route, 245 domestic flights) — the map showed at most 30 (14 nationwide, 8 light). The "airports without flights" were a DRAWING limit, not a missing network. Now drawn by tier with their own budgets (trunk 40/80, local 40/120; light 12/10); `r.roads.airDrawn` reports drawn vs open.
 

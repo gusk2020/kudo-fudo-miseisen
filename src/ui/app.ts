@@ -1418,14 +1418,15 @@ export class App {
       row("layer-plans", LAYER_LABELS.plans ?? "建設計画・未成線", L.plans, (v) => this.store.set((s) => { s.layers.plans = v; })),
       h("small", { class: "lnote" }, "空港・港があっても、路線がなければ線は出ません。国際線は地図に描かず、路線帳にあります。"),
     ]);
+    const setLayer = (k: string, v: boolean) => this.store.set((s) => { (s.layers as Record<string, boolean>)[k] = v; if (!s.layersSet?.includes(k)) s.layersSet = [...(s.layersSet ?? []), k]; });
     // その他
     group("other", "その他", [
-      row("layer-cities", LAYER_LABELS.cities ?? "都市", L.cities, (v) => this.store.set((s) => { s.layers.cities = v; })),
-      row("layer-econ", "都市の丸(金の輪=首都)と都市圏", L.econ ?? true, (v) => this.store.set((s) => { s.layers.econ = v; })),
-      row("layer-ports", "港湾", L.ports ?? true, (v) => this.store.set((s) => { s.layers.ports = v; }), svg(`<rect x="22" y="2" width="10" height="10" fill="${hex(PORT_COL2[1])}" stroke="#fff" stroke-width="1.2"/>`)),
-      row("layer-airports", "空港", L.airports ?? true, (v) => this.store.set((s) => { s.layers.airports = v; }), svg(`<polygon points="10.3,5.7 15.8,5.7 15.8,0.2 18.0,0.2 18.0,5.7 22.4,5.7 22.4,7.9 18.0,7.9 18.0,13.4 15.8,13.4 15.8,7.9 10.3,7.9" fill="#ffffff" stroke="#222" stroke-width="0.9"/><polygon points="32.9,5.1 39.4,5.1 39.4,-1.4 42.0,-1.4 42.0,5.1 47.2,5.1 47.2,7.7 42.0,7.7 42.0,14.2 39.4,14.2 39.4,7.7 32.9,7.7" fill="#ffc83a" stroke="#222" stroke-width="1"/>`)),
-      row("layer-signs", LAYER_LABELS.signs ?? "路線番号標識", L.signs, (v) => this.store.set((s) => { s.layers.signs = v; })),
-      row("layer-abandoned", LAYER_LABELS.abandoned ?? "廃線・廃道", L.abandoned ?? true, (v) => this.store.set((s) => { s.layers.abandoned = v; })),
+      row("layer-cities", LAYER_LABELS.cities ?? "都市", L.cities, (v) => setLayer("cities", v)),
+      row("layer-econ", "都市の丸(金の輪=首都)と都市圏", L.econ ?? true, (v) => setLayer("econ", v)),
+      row("layer-ports", "港湾", L.ports ?? true, (v) => setLayer("ports", v), svg(`<rect x="22" y="2" width="10" height="10" fill="${hex(PORT_COL2[1])}" stroke="#fff" stroke-width="1.2"/>`)),
+      row("layer-airports", "空港", L.airports ?? true, (v) => setLayer("airports", v), svg(`<polygon points="10.3,5.7 15.8,5.7 15.8,0.2 18.0,0.2 18.0,5.7 22.4,5.7 22.4,7.9 18.0,7.9 18.0,13.4 15.8,13.4 15.8,7.9 10.3,7.9" fill="#ffffff" stroke="#222" stroke-width="0.9"/><polygon points="32.9,5.1 39.4,5.1 39.4,-1.4 42.0,-1.4 42.0,5.1 47.2,5.1 47.2,7.7 42.0,7.7 42.0,14.2 39.4,14.2 39.4,7.7 32.9,7.7" fill="#ffc83a" stroke="#222" stroke-width="1"/>`)),
+      row("layer-signs", LAYER_LABELS.signs ?? "路線番号標識", L.signs, (v) => setLayer("signs", v)),
+      row("layer-abandoned", LAYER_LABELS.abandoned ?? "廃線・廃道", L.abandoned ?? true, (v) => setLayer("abandoned", v)),
       row("lg-names", "路線名の文字(全路線)", this.names, (v) => { this.names = v; this.saveUi(); this.renderRoads(); }),
       row("layer-lite", "軽量表示(動作が重いとき)", this.lite, (v) => this.setLite(v)),
     ]);
