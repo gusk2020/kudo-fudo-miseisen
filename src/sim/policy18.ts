@@ -10,7 +10,9 @@ import type { SimState } from "./types";
 
 export type Stance18 = "sea" | "air" | null;
 export function stance18(sim: SimState): Stance18 {
-  if (!sim.pot17?.c18 || !sim.kaigen) return null; const e = sim.kaigen.eras[sim.kaigen.eras.length - 1]?.stance; return e === "kairo" ? "sea" : e === "kuuro" ? "air" : null;
+  // Stage 43: the 1800-start games (Issue #86 eras) never had `pot17.c18`, so none of these rules ever applied to them -- an 空路重視 world built its bridges, tunnels and railways like any other
+  // (found measuring the owner's 4800-year playtest scenario). A game made with `sim.s43` takes the stance of the era in force; older games keep exactly what they had.
+  if (!sim.kaigen || !(sim.pot17?.c18 || sim.s43)) return null; const e = sim.kaigen.eras[sim.kaigen.eras.length - 1]?.stance; return e === "kairo" ? "sea" : e === "kuuro" ? "air" : null;
 }
 export const EXC_LOAD = 2, EXC_MAX_KM = 25, EXC_GAP_YEARS = 25, EXC_TAG = "【例外】";
 /** Appetite multipliers for ports and airports: [sea, air]. */

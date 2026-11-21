@@ -84,8 +84,11 @@ test("rail and road layers, road-map background, and the year atlas never change
   // background toggle
   await page.click("#btn-bg"); expect(await app(page, "a => a.r.bg")).toBe("terrain"); await page.click("#btn-bg"); expect(await app(page, "a => a.r.bg")).toBe("roadmap");
   // layers
-  await page.click("#dock-layers"); await page.uncheck("#layer-rail"); await page.waitForTimeout(100);
-  expect(await app(page, "a => a.s.layers.rail")).toBe(false); await page.check("#layer-rail");
+  // Stage 43: the layer window has eight transport rows (each its own switch) in folding groups
+  await page.click("#dock-layers"); await page.uncheck("#lr-rail"); await page.waitForTimeout(100);
+  expect(await app(page, "a => a.hide.has('k:rail')")).toBe(true); await page.check("#lr-rail"); expect(await app(page, "a => a.hide.has('k:rail')")).toBe(false);
+  for (const id of ["lr-hwy", "lr-road", "lr-hsr", "lr-rail", "lr-air-trunk", "lr-air-local", "lr-sea-trunk", "lr-sea-local"]) expect(await page.isVisible("#" + id), id).toBe(true);
+  await page.click("#lhead-other");
   await page.check("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(true); await page.waitForTimeout(200); await page.uncheck("#layer-lite"); expect(await app(page, "a => a.lite")).toBe(false);
   // Stage 26: the atlas has no past-year slider any more (no snapshots); it shows the present
   await page.click("#dock-ledger"); await page.click("#led-graph"); expect(await page.locator("#atlas-slider").count()).toBe(0); expect(await page.isVisible("#atlas-summary")).toBe(true); expect(await app(page, "a => a.viewYear")).toBeUndefined(); expect(month).toBeGreaterThan(0); void hash;
@@ -125,7 +128,7 @@ test("Stage 41 simple intervention: three questions decide the window, the detai
 
 test("Stage 41 night view: dark sheet + lights, on/off any time, light grows with the years, taps still open cities, nothing of the game changes", async ({ page }) => {
   const errs = watchErrors(page); await startReal(page); await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.runner.settle(); });
-  const lum = () => page.evaluate(() => { const c = document.querySelector("#stage canvas") as HTMLCanvasElement; const t = document.createElement("canvas"); t.width = 160; t.height = 240; const g = t.getContext("2d")!; (window as any).__kfm.r.app.renderer.render((window as any).__kfm.r.app.stage); g.drawImage(c, 0, 0, 160, 240); const d = g.getImageData(0, 0, 160, 240).data; let mean = 0, warm = 0; for (let i = 0; i < d.length; i += 4) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; mean += l; if (d[i] > 150 && d[i] > d[i + 2] + 40) warm++; } return { mean: mean / (d.length / 4), warm }; });
+  const lum = () => page.evaluate(() => { const c = document.querySelector("#stage canvas") as HTMLCanvasElement; const t = document.createElement("canvas"); t.width = 160; t.height = 240; const g = t.getContext("2d")!; const R = (window as any).__kfm.r, lv = R.labels.visible; R.labels.visible = false; R.app.renderer.render(R.app.stage); g.drawImage(c, 0, 0, 160, 240); R.labels.visible = lv; R.app.renderer.render(R.app.stage); const d = g.getImageData(0, 0, 160, 240).data; let mean = 0, warm = 0; for (let i = 0; i < d.length; i += 4) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; mean += l; if (d[i] > 90 && d[i + 1] > 90 && d[i + 2] > 85) warm++; } return { mean: mean / (d.length / 4), warm }; });   // (Stage 43: the lights are daylight white now, so a "light" is a bright near-white pixel; the place names, white-haloed, are hidden while measuring)
   expect(await page.isVisible("#btn-night"), "the moon button is on the map").toBe(true); const day = await lum(); const before = JSON.stringify(await app(page, "a => [a.sim.month, a.sim.rngState, Object.keys(a.sim.edges).length]"));
   await page.click("#btn-night"); await page.waitForTimeout(500); expect(await app(page, "a => a.night")).toBe(true); expect(await page.getAttribute("#btn-night", "aria-pressed")).toBe("true");
   const n1 = await lum(); expect(n1.mean, "the map is dark").toBeLessThan(day.mean * 0.5); expect(n1.warm, "there are lights").toBeGreaterThan(5);
@@ -135,9 +138,10 @@ test("Stage 41 night view: dark sheet + lights, on/off any time, light grows wit
   const name = "名古屋市"; const p = await cityPos(page, name); await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 1.6 }), p); await page.waitForTimeout(700); const sc = await screenOf(page, p); await page.mouse.click(sc[0], sc[1]); await page.waitForSelector("#city-card:not([hidden])", { timeout: 4000 }); expect(await page.textContent("#city-card-title")).toContain("名古屋");
   await page.click("#city-card-close"); const afterMonth = JSON.stringify(await app(page, "a => [a.sim.month > 0, Object.keys(a.sim.edges).length > 0]")); expect(afterMonth).toBe("[true,true]"); void before;
   await page.click("#btn-night"); await page.waitForTimeout(600); expect(await app(page, "a => a.night")).toBe(false); await page.evaluate(() => (window as any).__kfm.r.fit((window as any).__kfm.s)); await page.waitForTimeout(600); const off = await lum(); expect(off.mean, "back to the day map").toBeGreaterThan(n1.mean * 1.8);
-  await page.click("#dock-layers"); expect(await page.isVisible("#layer-night")).toBe(true); await page.check("#layer-night"); expect(await app(page, "a => a.night")).toBe(true);
+  expect(await page.isVisible("#night-size"), "Stage 43: the grain slider shows only while the night view is on").toBe(false);
+  await page.click("#dock-layers"); expect(await page.locator("#layer-night").count(), "Stage 43: the night view is no longer in the layer window").toBe(0); await page.evaluate(() => (window as any).__kfm.openSheet(null)); await page.click("#btn-night"); expect(await app(page, "a => a.night")).toBe(true); expect(await page.isVisible("#night-size"), "the slider stands under the moon").toBe(true);
   // Issue #88: the grain-size slider -- small grains are separate points (far fewer lit pixels than the continuous glow), the game is untouched, the setting is remembered
-  { const stat = () => page.evaluate(() => { const a = (window as any).__kfm; a.r.fit(a.s); a.r.night.redraw(a.r.view.zoom); a.r.app.renderer.render(a.r.app.stage); const c = document.querySelector("#stage canvas") as HTMLCanvasElement, t = document.createElement("canvas"); t.width = 412; t.height = 600; const g = t.getContext("2d")!; g.drawImage(c, 0, 0, 412, 600); const d = g.getImageData(0, 0, 412, 600).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 110 && d[i] > d[i + 2] + 30) n++; return { lit: n, dots: a.r.night.dotsDrawn }; });
+  { const stat = () => page.evaluate(() => { const a = (window as any).__kfm; a.r.fit(a.s); a.r.night.redraw(a.r.view.zoom); const lv = a.r.labels.visible; a.r.labels.visible = false; a.r.app.renderer.render(a.r.app.stage); const c = document.querySelector("#stage canvas") as HTMLCanvasElement, t = document.createElement("canvas"); t.width = 412; t.height = 600; const g = t.getContext("2d")!; g.drawImage(c, 0, 0, 412, 600); a.r.labels.visible = lv; a.r.app.renderer.render(a.r.app.stage); const d = g.getImageData(0, 0, 412, 600).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 110 && d[i + 1] > 110 && d[i + 2] > 100) n++; return { lit: n, dots: a.r.night.dotsDrawn }; });   // (Stage 43: white lights; names hidden while measuring)
     await page.waitForSelector("#night-size"); const sig = await app(page, "a => JSON.stringify([a.sim.month, a.sim.rngState, Object.keys(a.sim.edges).length])"); const full = await stat(); expect(full.dots, "100 = the continuous glow, no grains").toBe(0);
     const t0 = Date.now(); await page.locator("#night-size").fill("10"); await page.waitForTimeout(200); const small = await stat(); console.log(`T41 night grains: continuous ${full.lit} lit px; size 10 -> ${small.lit} lit px in ${small.dots} grains; slider redraw+render ${Date.now() - t0} ms`);
     expect(await page.textContent("#night-size-out")).toBe("粒 10"); expect(small.dots).toBeGreaterThan(200); expect(small.lit).toBeGreaterThan(20); if (process.env.KFM_SHOT) { await page.evaluate(() => (window as any).__kfm.openSheet(null)); await page.screenshot({ path: process.env.KFM_SHOT + "/night-grain10.png" }); const tk = await cityPos(page, "東京"); await page.evaluate((q) => (window as any).__kfm.r.setView({ cx: q[0], cy: q[1], zoom: 2.2 }), tk); await page.waitForTimeout(700); await page.screenshot({ path: process.env.KFM_SHOT + "/night-grain10-kanto.png" }); await page.evaluate(() => (window as any).__kfm.openSheet("layers")); await page.waitForSelector("#night-size"); }
@@ -371,7 +375,7 @@ test("皇居: 49府県から選べ、首都と同じ府県でもよく、地図�
 test("凡例の「路線名」は国道だけでなく、鉄道と途中で自動生成された路線にも効き、番号標識とは別に保たれる", async ({ page }) => {
   const errs = watchErrors(page); await startReal(page, "heisei");
   // Stage 10: number signs start OFF after the ceremony; the player switches them on in the layer sheet
-  expect(await app(page, "a => a.s.layers.signs")).toBe(false); await page.evaluate(() => { const a = (window as any).__kfm; a.sheet = "layers"; a.buildSheet(); }); await page.locator("#layer-signs").check();
+  expect(await app(page, "a => a.s.layers.signs")).toBe(false); await page.evaluate(() => { const a = (window as any).__kfm; a.layerOpen.add("other"); a.sheet = "layers"; a.buildSheet(); }); await page.locator("#layer-signs").check();
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.ffYears(40); a.r.setView({ zoom: 1.4 }, true); a.renderRoads(); });
   const stat = () => page.evaluate(() => { const L = (window as any).__kfm.r.roads, vis = L.signs.filter((s: any) => s.c.visible); return { signs: vis.length, names: vis.filter((s: any) => s.nk.visible).length, texts: vis.map((s: any) => s.t.text), nameTexts: vis.filter((s: any) => s.nk.visible).map((s: any) => s.nk.text) }; });
   const off = await stat(); expect(off.signs).toBeGreaterThan(3); expect(off.names).toBe(0); expect(off.texts.every((x: string) => /^\d+$/.test(x))).toBe(true);   // number-only signs, no name text anywhere
@@ -532,8 +536,9 @@ test("Stage 8: 港湾・空港・航路がレイヤーで切り替わり(シミ�
   expect(await app(page, "a => Object.values(a.sim.hubs.airports).some((x) => x.kind === 'hub')")).toBe(true);
   expect(await app(page, "a => a.sim.hubs.routes.filter((r) => r.state === 'open').length")).toBeGreaterThan(10);
   const h0 = await app(page, "a => JSON.stringify(a.sim.hubs).length + ':' + a.sim.month");
-  await page.click("#dock-layers"); for (const k of ["ports", "airports", "lanes"]) { await page.uncheck("#layer-" + k); expect(await app(page, `a => a.s.layers.${k}`)).toBe(false); }
-  for (const k of ["ports", "airports", "lanes"]) await page.check("#layer-" + k);
+  await page.evaluate(() => { (window as any).__kfm.layerOpen.add("other"); }); await page.click("#dock-layers"); for (const k of ["ports", "airports"]) { await page.uncheck("#layer-" + k); expect(await app(page, `a => a.s.layers.${k}`)).toBe(false); }
+  for (const t of ["trunk", "local"]) { await page.uncheck("#lr-air-" + t); expect(await app(page, `a => a.hide.has("air:${t}")`)).toBe(true); }   // (Stage 43: flights are two rows of the transport group)
+  for (const k of ["ports", "airports"]) await page.check("#layer-" + k); for (const t of ["trunk", "local"]) await page.check("#lr-air-" + t);
   expect(await app(page, "a => JSON.stringify(a.sim.hubs).length + ':' + a.sim.month")).toBe(h0);
   await closeSheet(page);
   await page.click("#dock-ledger"); await page.click("#led-graph"); await expect(page.locator("#hubs")).toBeVisible(); await expect(page.locator("#hub-summary")).toContainText("国際ハブ");
@@ -632,7 +637,7 @@ test("Stage 10: 府県は地方ブロックごと(北→南)、元号に復興�
   const tokyo = await cityPos(page, "東京"), osaka = await cityPos(page, "大阪市");
   await clickRoadTool(page); await draw(page, tokyo, osaka); await goCeremony(page); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.layers.signs")).toBe(false); expect(await app(page, "a => !!a.sim.roles && !!a.sim.kaigen.recon")).toBe(true);
-  await page.evaluate(() => { const a = (window as any).__kfm; a.openSheet("layers"); }); await page.click("#layer-signs");
+  await page.evaluate(() => { const a = (window as any).__kfm; a.layerOpen.add("other"); a.openSheet("layers"); }); await page.click("#layer-signs");
   expect(await app(page, "a => a.s.layers.signs")).toBe(true); expect(await app(page, "a => a.s.layersSet")).toContain("signs");
   await page.waitForTimeout(700); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 90000 });
   expect(await app(page, "a => a.s.layers.signs")).toBe(true);
@@ -679,7 +684,7 @@ test("Stage 12: 地図帳に都市の栄枯盛衰(伸びた・縮んだ都市と
   await page.evaluate(() => { const a = (window as any).__kfm; a.sim.speed = 0; a.sim.policy.mode = "auto"; a.ffYears(30); });
   expect(await app(page, "a => a.sim.econ === true && Object.keys(a.sim.city12).length > 40")).toBe(true);
   const h0 = await app(page, "a => a.sim.month + ':' + JSON.stringify(a.sim.city12).length");
-  await page.click("#dock-layers"); await await expect(page.locator("label.layer:has(#layer-econ)")).toContainText("都市圏"); await page.uncheck("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(false); await page.check("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(true);
+  await page.evaluate(() => { (window as any).__kfm.layerOpen.add("other"); }); await page.click("#dock-layers"); await await expect(page.locator("label.layer:has(#layer-econ)")).toContainText("都市圏"); await page.uncheck("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(false); await page.check("#layer-econ"); expect(await app(page, "a => a.s.layers.econ")).toBe(true);
   expect(await app(page, "a => a.sim.month + ':' + JSON.stringify(a.sim.city12).length")).toBe(h0); await closeSheet(page);
   await page.click("#dock-atlas"); await expect(page.locator("#city-eco")).toBeVisible();
   expect(await page.locator("#eco-up .issue").count()).toBe(5); expect(await page.locator("#eco-down .issue").count()).toBe(5);

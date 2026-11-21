@@ -15,7 +15,7 @@ async function newGame(page: Page) {
   if (await page.locator("#wiz-ok").count()) { await kfm(page, "a => a.wizGo(0)"); await page.waitForFunction(() => { const a = (window as any).__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) await page.click("#wiz-ok"); }
   await page.click("#cer-go"); await page.waitForFunction(() => (window as any).__kfm.sim, null, { timeout: 90000 });
 }
-const warm = (page: Page) => page.evaluate(() => { const a = (window as any).__kfm; a.r.fit(a.s); a.updateNight?.(); a.r.app.renderer.render(a.r.app.stage); const c = document.querySelector("#stage canvas") as HTMLCanvasElement, t = document.createElement("canvas"); t.width = 160; t.height = 240; const g = t.getContext("2d")!; g.drawImage(c, 0, 0, 160, 240); const d = g.getImageData(0, 0, 160, 240).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i] > d[i + 2] + 40) n++; return n; });
+const warm = (page: Page) => page.evaluate(() => { const a = (window as any).__kfm; a.r.fit(a.s); a.updateNight?.(); const lv = a.r.labels.visible; a.r.labels.visible = false; a.r.app.renderer.render(a.r.app.stage); const c = document.querySelector("#stage canvas") as HTMLCanvasElement, t = document.createElement("canvas"); t.width = 160; t.height = 240; const g = t.getContext("2d")!; g.drawImage(c, 0, 0, 160, 240); a.r.labels.visible = lv; a.r.app.renderer.render(a.r.app.stage); const d = g.getImageData(0, 0, 160, 240).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 90 && d[i + 1] > 90 && d[i + 2] > 85) n++; return n; });   // (Stage 43: white lights; names hidden while measuring)
 /** the relocation wizard up to the road stage, keeping the seats */
 async function toRoadStage(page: Page, year: number) {
   await kfm(page, `a => { const s = a.sim; a.runner.settle(); s.policy.pending = null; s.kaigen.pending = null; s.kaigen.next = ${year} + 40; s.policy.mode = 'priority'; s.month = (${year} - s.startYear) * 12; s.speed = 20; return 1; }`);
@@ -45,7 +45,7 @@ test("Stage 41 integration: 1800 start -> dark night -> simple intervention -> �
   await page.click("#tool-cer-kokudo0").catch(() => {}); await drawLine(page, "東京", "大阪市"); await page.waitForSelector("#cer-status-kokudo0"); const sA = (await page.textContent("#cer-status-kokudo0"))!; console.log("I41 A号:", sA); expect(sA).toContain("✓"); expect(sA).toContain("A号");
   await page.click("#rw-review"); await page.click("#rw-confirm"); await page.waitForFunction(() => (window as any).__kfm.sim.e2200?.state === "done", null, { timeout: 60000 });
   const sp = (await kfm(page, "a => Object.values(a.sim.routes).filter((r) => r.special).map((r) => [r.special, r.gen, r.active])")) as unknown[]; expect(sp).toEqual([["A", 2000, true]]);
-  expect(await page.textContent("#status")).toContain("現在の方針");
+  expect(await page.textContent("#status")).toContain("方針(初期/現在)");   // (Stage 43: initial and current in one line)
   // save and reload: everything is there, and time still runs
   await page.evaluate(async () => { await (window as any).__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => (window as any).__kfm?.sim, null, { timeout: 120000 });
   expect(await kfm(page, "a => [a.sim.special41, a.sim.simple41.keep, Object.values(a.sim.routes).filter((r) => r.special).map((r) => r.special).join(), a.saveLocked ?? false]")).toEqual([true, true, "A", false]);

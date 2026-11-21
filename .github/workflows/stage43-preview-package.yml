@@ -1,0 +1,51 @@
+name: Stage 43 isolated playtest package (NO DEPLOY)
+# Builds the site as it would be deployed (Stage 41 root and /stage42/ exactly as live, Stage 43 at /stage43/) and runs every guard. Never deploys.
+on:
+  push:
+    branches: [claude/s43-overhaul]
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: 9e0a8c805f29af18e8cf018254832d79573aa5c7, path: published41 }
+      - uses: actions/checkout@v4
+        with: { ref: 2fc9922dc4297238efa32f79dce4247aeedae466, path: stage42 }
+      - uses: actions/checkout@v4
+        with: { path: stage43 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Build the pinned Stage 41 at the root (as live)
+        working-directory: published41
+        env: { BASE_PATH: /kudo-fudo-miseisen/ }
+        run: |
+          npm ci
+          npm run build
+      - name: Build the pinned Stage 42 trial for /stage42/ (as live)
+        working-directory: stage42
+        env: { BASE_PATH: /kudo-fudo-miseisen/stage42/, VITE_SAVE_NS: stage42trial }
+        run: |
+          npm ci
+          npm run build
+      - name: Build Stage 43 for /stage43/ with its own storage names
+        working-directory: stage43
+        env: { BASE_PATH: /kudo-fudo-miseisen/stage43/, VITE_SAVE_NS: stage43trial }
+        run: |
+          npm ci
+          npm run build
+      - name: GUARD - assemble; the live Stage 41 root and /stage42/ must be reproduced byte for byte, nothing else changes
+        env: { STAGE43_SHA: "${{ github.sha }}" }
+        run: stage43/tools/stage43-assemble.sh published41/dist stage42/dist stage43/dist composite
+      - name: GUARD - real-browser isolation of the three saves (41 -> 42 -> 43 on one origin)
+        working-directory: stage43
+        run: |
+          npx playwright install --with-deps chromium
+          node tools/isolation-check3.mjs ../composite
+      - name: GUARD - Stage 43 features in a new 1800 game of the /stage43/ build
+        working-directory: stage43
+        run: node tools/stage43-trial-check.mjs ../composite
+      - uses: actions/upload-artifact@v4
+        with: { name: stage43-isolated-preview-site, path: composite/, retention-days: 14, if-no-files-found: error }

@@ -47,7 +47,7 @@ button:disabled { opacity:1; background:#3a4450; color:#8a95a0; border-color:#4a
 
 body.real #btn-prev, body.real #btn-next, body.real #btn-undo, body.real #btn-redo { display:none; }
 body.real #dock { z-index: 9; }   /* the observation sheets sit above the map, but the dock stays reachable so you can switch between them */
-body.real #sheet { max-height: 62dvh; }
+body.real #sheet { max-height: 62dvh; min-height: calc(120px + env(safe-area-inset-bottom)); }   /* (Stage 43: a sheet whose content comes later -- 保存 lists the saves first -- was only its padding for a moment, and its × then sat under the dock) */
 #sheet .hist { font-size: 12px; color: #b8cde0; padding: 2px 0 0 10px; }
 #sheet .issue { cursor: default; }
 #sheet button.mini { min-height: 30px; padding: 2px 10px; margin: 4px 0 0 10px; font-size: 12px; }
@@ -169,7 +169,32 @@ body #sheet.mini h3 { display: none; }
 #btn-night { position: fixed; right: 8px; top: calc(env(safe-area-inset-top, 0px) + 4px); width: 40px; height: 40px; border-radius: 20px; z-index: 7; font-size: 22px; line-height: 1; padding: 0; background: var(--panel); border: 1px solid #5d7a95; color: #e8eef4; }
 #btn-night.on { background: #1b2748; border-color: #ffd27a; color: #ffd27a; }
 #btn-night[hidden] { display: none; }
+/* Stage 43 (B4): the grain slider under the moon, only while the night view is on: tall and thin, clear of the map's centre */
+#night-panel { position: fixed; right: 6px; top: calc(env(safe-area-inset-top, 0px) + 50px); z-index: 7; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; border-radius: 14px; background: rgba(16, 26, 46, 0.78); border: 1px solid #5d7a95; }
+#night-panel[hidden] { display: none; }
+#night-size { writing-mode: vertical-lr; direction: rtl; width: 28px; height: 150px; margin: 0; accent-color: #f4f1ea; }
+#night-size-out { font-size: 10px; color: #e8eef4; white-space: nowrap; }
 
 /* Issue #86: a candidate that cannot be chosen stays listed, dimmed */
 .blocked, button.era-row:disabled { opacity: 0.55; }
 button.era-row { display: block; width: 100%; text-align: left; margin: 3px 0; }
+
+/* Stage 43 (B3): the layer window in three folding groups; each row = checkbox · name · sample */
+.lgroup { margin: 4px 0; border: 1px solid #3d5470; border-radius: 8px; overflow: hidden; }
+.lhead { display: block; width: 100%; text-align: left; padding: 8px 10px; font-weight: bold; background: rgba(40, 62, 92, 0.6); border: 0; color: inherit; min-height: 40px; }
+.lbody { padding: 2px 6px 6px; }
+label.lrow { display: flex; align-items: center; gap: 6px; min-height: 34px; }
+label.lrow .lname { flex: 1 1 auto; }
+label.lrow .lsample { flex: 0 0 60px; display: inline-flex; justify-content: flex-end; }
+.lnote { display: block; margin: 4px 0 0; opacity: 0.8; }
+
+/* Stage 43 (E2): while a real game runs, no title bar: the information line sits at the top edge (clear of the moon button on the right) */
+body.real.playing #top { display: none; }
+body.real.playing #status { top: calc(env(safe-area-inset-top, 0px) + 2px); left: 4px; right: 50px; text-align: left; }
+body.real.playing #status span { margin: 1px; padding: 2px 8px; font-size: 11.5px; }
+
+/* Stage 43 (E1): the folded speed panel: a small chip at the bottom left, the rest of the bottom free for the map */
+#tools-wrap.folded { right: auto; }
+#toolbar.folded { background: transparent; padding: 0; }
+#speed-chip { min-height: 40px; padding: 4px 12px; border-radius: 20px; font-weight: bold; background: var(--panel); }
+#tools-wrap.folded #speed-chip { box-shadow: 0 1px 4px rgba(0,0,0,0.4); }

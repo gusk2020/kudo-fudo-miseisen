@@ -15,7 +15,7 @@ import { LINE, nameWidth, PROMOTED_NAME_ZOOM, placeNames, type Box, type NameCir
 import { quays, seaPath } from "./seaPath";
 import { isLakeFerry } from "../sim/ferry";
 import type { Vec } from "../core/types";
-import { AIR_STYLE, airArc, BRIDGE, GONE_GREY, HIGHLIGHT_LAYERS, QUALITY_STEPS, RAIL_WIDTH_T, ROAD_WIDTH, TIER_OF, TUNNEL, buildProgressStroke, edgeStyle, shade, type Kind, type LineState, type Stroke } from "./style24";
+import { AIR_LOCAL_STYLE, AIR_TRUNK_STYLE, SEA_LOCAL_STYLE, SEA_TRUNK_STYLE, airTier, seaTier, AIR_STYLE, airArc, BRIDGE, GONE_GREY, HIGHLIGHT_LAYERS, QUALITY_STEPS, RAIL_WIDTH_T, ROAD_WIDTH, TIER_OF, TUNNEL, buildProgressStroke, edgeStyle, shade, type Kind, type LineState, type Stroke } from "./style24";
 
 export interface CerOverlay { pts: Vec[]; path?: Vec[]; ok: boolean; segs?: { pts: Vec[]; ferry: boolean }[]; strokes?: Vec[][]; handles?: boolean; sel?: number | null }   // Stage 9: strokes with their control points (handles) and the selected stroke   // segs: land pieces (solid) and sea crossings (dashed) of a previewed route
 export interface RoadArgs {
@@ -163,16 +163,32 @@ export class RoadLayer {
   private drawHubs(a: RoadArgs, sim: SimState, w: World, zoom: number, year: number | null, px: (n: number) => number, lite: boolean) {
     const at = hubsAt(sim, year ?? Number.POSITIVE_INFINITY), nodes = this.g.nodes, lanes = this.g.lanes, pos = (id: string) => w.cityById.get(id)?.pos;
     const showP = a.layers.ports ?? true, showA = a.layers.airports ?? true, showL = (a.layers.lanes ?? true) && zoom >= 0.1,   /* (Stage 36: the whole-nation view now reaches the northern Kurils, a phone shows it at about 0.115) */ far = zoom < 0.5;
-    if (showL && showA) {
-      const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol).slice(0, lite ? 8 : far ? 14 : 30);
-      for (const r of dom) { const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; const arc = airArc(p, q); for (const sp of [AIR_STYLE.casing!, AIR_STYLE.body]) { line(lanes, arc); lanes.stroke({ width: px(sp.width), color: sp.colour, alpha: sp.alpha, cap: sp.cap, join: "round" }); } }
+    // Stage 43 (B1): domestic flights in two tiers, each with its own switch ("air:trunk" / "air:local") and its own budget of lines for the zoom -- the local ones are no longer all dropped from the
+    // nationwide view (only 14 flights in all used to be drawn there, 8 in the light mode, whatever existed). International flights stay in the simulation and the ledger, not on the map.
+    const hideSet = new Set(a.hide ?? []); this.airDrawn = { trunk: 0, local: 0, open: 0 };
+    if (showL) {
+      const dom = at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").sort((p, q) => q.vol - p.vol); this.airDrawn.open = dom.length;
+      const tiers: ["trunk" | "local", number][] = [["trunk", lite ? 12 : far ? 40 : 80], ["local", lite ? 10 : far ? 40 : 120]];
+      for (const [tier, cap] of tiers) {
+        if (hideSet.has("air:" + tier)) continue; const st = tier === "trunk" ? AIR_TRUNK_STYLE : AIR_LOCAL_STYLE; let n = 0;
+        for (const r of dom) { if (airTier(r) !== tier) continue; if (n >= cap) break; const p = pos(r.a), q = pos(r.b); if (!p || !q) continue; const arc = airArc(p, q); n++;
+          if (tier === "trunk") for (const sp of [st.casing!, st.body]) { line(lanes, arc); lanes.stroke({ width: px(sp.width), color: sp.colour, alpha: sp.alpha, cap: sp.cap, join: "round" }); }
+          else { for (let i = 0; i + 1 < arc.length; i += 2) { lanes.moveTo(arc[i][0], -arc[i][1]).lineTo(arc[i + 1][0], -arc[i + 1][1]); } lanes.stroke({ width: px(st.body.width), color: st.body.colour, alpha: st.body.alpha, cap: "butt" }); }   // a local flight: every other segment of its arc (a dashed arc)
+        }
+        this.airDrawn[tier] = n;
+      }
     }
+    void AIR_STYLE;
     if (zoom < (lite ? 0.5 : 0.22)) return;
     if (showP) for (const p of at.ports) { const big = p.tier >= 3; if (far && !big) continue; const c = pos(p.city); if (!c) continue; const s = px(big ? PORT_SIZE[1] : PORT_SIZE[0]); nodes.rect(c[0] + px(5), -c[1] + px(2), s, s).fill({ color: big ? PORT_COL2[1] : PORT_COL2[0] }).stroke({ width: px(1.2), color: 0xffffff }); }
-    if (showA) for (const x of at.airports) { const hub = x.kind === "hub" && (year === null || !x.build); if (far && !hub) continue; const c = pos(x.city); if (!c) continue; const s = hub && x.site !== w.cityById.get(x.city)?.cell ? w.cellPos(x.site) : c; plane(nodes, s[0], s[1], px(hub ? 2 : 1.2), hub ? 0xffc83a : 0xffffff); }
+    // (Stage 43: a regional airport with flights is shown on the nationwide view too, so a drawn flight ends at an airport)
+    const served = new Set(at.routes.filter((r) => r.mode === "air" && !r.intl && r.state === "open").flatMap((r) => [r.a, r.b]));
+    if (showA) for (const x of at.airports) { const hub = x.kind === "hub" && (year === null || !x.build); if (far && !hub && (lite || !served.has(x.city))) continue; const c = pos(x.city); if (!c) continue; const s = hub && x.site !== w.cityById.get(x.city)?.cell ? w.cellPos(x.site) : c; plane(nodes, s[0], s[1], px(hub ? 2 : 1.2), hub ? 0xffc83a : 0xffffff); }
   }
   /** The city circles of the last drawing (world position, radius in CSS px): the map's tap handler asks which one a finger hit. */
   drawnCircles: { id: string; x: number; y: number; radPx: number; p: number; rel: number; seat: boolean }[] = [];
+  /** Stage 43 (A5): how many domestic flights the last drawing showed, by tier, against how many are open in the game (tests, diagnosis) */
+  airDrawn = { trunk: 0, local: 0, open: 0 };
   set(a: RoadArgs, zoom: number) { this.last = a; const sg = RoadLayer.signature(a, zoom); if (sg === this.sig) return false; this.sig = sg; this.draw(a, zoom); return true; }
   redraw(zoom: number) { if (this.last) { this.sig = ""; this.set(this.last, zoom); } }
   private draw(a: RoadArgs, zoom: number) {
@@ -208,7 +224,7 @@ export class RoadLayer {
         if (rank < minRank && !rail) { if (!(isPlan && zoom >= 0.35 && a.layers.plans)) continue; }   // (Stage 27: every railway the game keeps is drawn at every zoom; only the many local roads thin out as you zoom out)
         if (rail ? !showRail : !showRoads) { if (!isPlan) continue; }
         if (isAband && !showAband) continue;
-        if (e.facility === "ferry" && (isLakeFerry(e) ? hide.has("fac:lake") : hide.has("fac:ferry"))) continue;
+        if (e.facility === "ferry" && (isLakeFerry(e) ? hide.has("fac:lake") : hide.has("fac:ferry") || hide.has("sea:" + seaTier(e)))) continue;   // (Stage 43: "sea:trunk" / "sea:local" each on its own switch)
         if (e.facility === "ferry" && isOcean(e) && !(e.through > 50 || (eff.state === "open" && e.peakThrough >= 1 && zoom >= 1.5))) continue;   // Stage 27: an ocean route is drawn while it carries people (any zoom) or, close in, while it is open and has ever been used; resting, closed and never-used ones (several leave 宮崎 and 大分 along the same coast) are in the ledger, not on the map
         if (e.facility === "ferry" && isIslandRoute(e) && (zoom < (eff.state === "open" ? (e.through > 50 ? 0 : 0.3) : 1))) continue;   // Stage 22/26: the many sea routes thin out far away: a resting one only close in, an island route from a middle zoom, an ocean route nobody uses (many leave 宮崎 and 大分 along the same coast) only from zoom 0.8, a busy one always
         if (hide.size) { const stKey = eff.built < 1 ? "plan" : eff.state; if (hide.has("st:" + stKey) || hide.has("k:" + kindOf(e)) || hide.has("g:" + (g ?? "none") + ":" + (rail ? "rail" : "road")) || (isPlan && hide.has("st:" + (planned.get(e.id) ?? "planned")))) continue; }
@@ -217,7 +233,7 @@ export class RoadLayer {
         if (g && e.nick) nickGrade.set(e.id, g);
         if (e.facility === "ferry") {   // a sea route: a dashed line in the sea colour, never the road's casing and fill
           if (eff.built >= 1 && zoom >= 0.35) for (const q of quays(w, sim.nodes[e.a].cell, sim.nodes[e.b].cell, isLakeFerry(e))) { line(fer, q); fer.stroke({ width: px(1.4), color: GONE_GREY, alpha: 0.8 }); }
-          if (eff.built >= 1) put(fer, pts, { ...edgeStyle("sea", tier, eff.state, eff.q).body, width: rail ? 2.4 : 3 });
+          if (eff.built >= 1) { const base = edgeStyle("sea", tier, eff.state, eff.q).body, t2 = isLakeFerry(e) ? null : seaTier(e); put(fer, pts, t2 ? { ...(t2 === "trunk" ? SEA_TRUNK_STYLE : SEA_LOCAL_STYLE), alpha: base.alpha, colour: base.colour, width: (t2 === "trunk" ? SEA_TRUNK_STYLE.width : SEA_LOCAL_STYLE.width) * (rail ? 0.8 : 1) } : { ...base, width: rail ? 2.4 : 3 }); }   // Stage 43 (B1): a trunk sea route thick and solid, a local one thin and dashed
           continue;
         }
         if (eff.built >= 1 && (eff.state === "open" || eff.state === "dormant")) {   // Stage 27: a resting line is drawn as an open one

@@ -13,13 +13,15 @@ import { ev } from "./engine";
 import type { EraCand } from "./kaigen";
 import type { SimState } from "./types";
 
-export type Transport = "road" | "rail" | "sea" | "air";
+export type Transport = "balanced" | "road" | "rail" | "sea" | "air";
 export type Concentration = "concentrate" | "disperse";
-export type Coast = "japansea" | "pacific";
+export type Coast = "japansea" | "pacific" | "neutral";
 export interface Simple41 { transport?: Transport; city?: Concentration; coast?: Coast; /** keep applying these in the automatic modes */ keep: boolean }
-export const TRANSPORT_LABEL: Record<Transport, string> = { road: "道路", rail: "鉄道", sea: "海路", air: "空路" };
+/** Stage 43 (E3): 均衡 and 中立 are answers too (the policy classes the game shows: 均衡 = no mode stressed, 中立 = neither coast favoured). 均衡 adopts no transport item and, kept, makes the next automatic era change take the balanced stance;
+ *  中立 steers the next era change toward a candidate whose reconstruction policy favours neither coast. */
+export const TRANSPORT_LABEL: Record<Transport, string> = { balanced: "均衡", road: "道路", rail: "鉄道", sea: "海路", air: "空路" };
 export const CITY_LABEL: Record<Concentration, string> = { concentrate: "集中", disperse: "分散" };
-export const COAST_LABEL2: Record<Coast, string> = { japansea: "日本海側", pacific: "太平洋側" };
+export const COAST_LABEL2: Record<Coast, string> = { japansea: "日本海側", pacific: "太平洋側", neutral: "中立" };
 export const SEA_AIR: Record<"sea" | "air", { id: string; label: string; d: Partial<Dials> }> = {
   sea: { id: "s-sea", label: "海路の重視(港・フェリー)", d: { seaBias: 0.15 } },
   air: { id: "s-air", label: "空路の重視(空港・航空)", d: { airBias: 0.15 } },
@@ -32,7 +34,7 @@ export function simpleItems(sim: SimState, a0: Pick<Simple41, "transport" | "cit
   const a = { transport: a0.transport && a0.transport in TRANSPORT_LABEL ? a0.transport : undefined, city: a0.city && a0.city in CITY_LABEL ? a0.city : undefined };   // (a hand-edited save cannot make this throw)
   const env = computeEnv(sim), out: SimpleItem[] = [];
   const add = (id: string) => { const p = policyById(id); out.push({ id, label: p.label, d: p.d, base: p.base(env), block: p.block?.(env, sim.era) ?? null }); };
-  if (a.transport === "road") add(ITEM_OF.road); else if (a.transport === "rail") add(ITEM_OF.rail); else if (a.transport) { const s = SEA_AIR[a.transport]; out.push({ id: s.id, label: s.label, d: s.d, base: ADOPT_BAR, block: null }); }
+  if (a.transport === "balanced") { /* 均衡: no transport item (the world keeps its balance) */ } else if (a.transport === "road") add(ITEM_OF.road); else if (a.transport === "rail") add(ITEM_OF.rail); else if (a.transport) { const s = SEA_AIR[a.transport]; out.push({ id: s.id, label: s.label, d: s.d, base: ADOPT_BAR, block: null }); }
   if (a.city) add(ITEM_OF[a.city]);
   return out;
 }
@@ -48,7 +50,7 @@ export function resolveSimple(sim: SimState, a: Simple41, auto = false): PolicyR
     rec.adopted.push({ id: it.id, label: it.label, priority: strength, effect: Object.entries(d).map(([k, v]) => `${k}${(v as number) > 0 ? "+" : ""}${v}`).join(" "), reason });
     ev(sim, "policy", `【政策採用】かんたん: ${it.label}`, `${reason}。影響(10年間)`, {});
   }
-  if (a.coast) ev(sim, "policy", `${y}年: かんたん介入で${COAST_LABEL2[a.coast]}を重視`, "海岸側の重視は次の改元で候補の選びに効きます(10年ごとの政策としての効果はありません)", {});
+  if (a.coast) ev(sim, "policy", `${y}年: かんたん介入で${a.coast === "neutral" ? "地域は中立(どちらの海岸側も重視しない)" : `${COAST_LABEL2[a.coast]}を重視`}`, "海岸側の重視は次の改元で候補の選びに効きます(10年ごとの政策としての効果はありません)", {});
   pol.history.push(rec); if (pol.history.length > 20) pol.history.shift(); pol.pending = null; void DOMAIN_LABEL;
   return rec;
 }
@@ -63,5 +65,5 @@ export function autoEraIdx(sim: SimState, cands: EraCand[]): number {
 }
 /** Issue #86: an automatic era change in a game whose names and policy are separate keeps the policy in force -- unless the simple mode's kept transport answer says another. */
 export function autoStance(sim: SimState): import("./eras").EraKey | undefined {
-  const s = sim.simple41; if (!sim.kaigen?.era86 || !s?.keep || !s.transport) return undefined; return ({ road: "shubun", rail: "shoka", sea: "kairo", air: "kuuro" } as const)[s.transport];
+  const s = sim.simple41; if (!sim.kaigen?.era86 || !s?.keep || !s.transport) return undefined; return ({ balanced: "heisei", road: "shubun", rail: "shoka", sea: "kairo", air: "kuuro" } as const)[s.transport];
 }

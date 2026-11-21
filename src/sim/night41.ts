@@ -55,7 +55,9 @@ export function nightField(sim: SimState, w: World, year: number): NightField {
   for (let k = 0; k < nx * ny; k++) { const L = w.t.land[k] === 0 ? 0 : v[k] * e; v[k] = 1 - Math.exp(-K_TONE * L); }
   void cell; return out;
 }
-/** warm colour of a light value 0..1 -> [r,g,b] (dim orange -> amber -> pale yellow-white at the core) */
+/** Stage 43 (B4): every light is the same daylight white (昼白色, about 5000 K: a faint cool tint, never orange or yellow); only the brightness follows the light value 0..1.
+ *  (The Stage 41 colours ran from dim orange to pale yellow; the owner asked for one white throughout.) */
+export const NIGHT_WHITE: [number, number, number] = [255, 250, 244];
 export function nightColour(x: number): [number, number, number] {
-  const t = Math.max(0, Math.min(1, x)); return [Math.round(255 * Math.min(1, 0.35 + 1.2 * t)), Math.round(255 * Math.min(1, 0.12 + 1.05 * t * t + 0.35 * t)), Math.round(255 * Math.min(1, 0.02 + 0.85 * t * t * t))];
+  const t = Math.max(0, Math.min(1, x)), k = Math.min(1, 0.3 + 0.95 * t); return [Math.round(NIGHT_WHITE[0] * k), Math.round(NIGHT_WHITE[1] * k), Math.round(NIGHT_WHITE[2] * k)];
 }
