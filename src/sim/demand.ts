@@ -86,6 +86,8 @@ export function weatherFactor(sim: SimState, w: World, mode: "air" | "sea", i: n
   return Math.max(0.5, 1 - (1 - base) * (1 + 0.6 * (exposureLat(w, i) + exposureLat(w, j))) * gain);
 }
 /** Share of a long trip taken by air: both ends need an airport, it grows with distance, and a good railway takes some of it back. */
+/** Stage 43: a trip between towns with no land link at all is a flight: about two hours to and from the airports plus the distance at 500 km/h */
+export const AIR_ONLY_ACCESS_H = 2, AIR_ONLY_KMH = 500;
 export function airShare(sim: SimState, w: World, i: number, j: number, railS: number, ap: (string | null)[] | null = null): number {
   const h = sim.hubs, m = h ? ap ?? airportMap(sim, w) : null, ai = m ? m[i] : null, aj = m ? m[j] : null;
   if (h ? !ai || !aj || ai === aj : sim.cities[w.cities[i].id].airport === undefined || sim.cities[w.cities[j].id].airport === undefined) return 0;
@@ -138,7 +140,12 @@ export function* analyzeGen(sim: SimState, w: World): Generator<void, Analysis> 
     if (hubCity.has(i)) trees.set(i, { R, Q });
     for (let j = i + 1; j < nc; j++) {
       const cn = cityNodes[j]; if (!cn) continue; const k0 = pos.get(cn)!, tr = R.d[k0], tt = Q ? Q.d[k0] : Infinity;
-      if (!isFinite(tr) && !isFinite(tt)) continue;
+      if (!isFinite(tr) && !isFinite(tt)) {   // Stage 43: towns with no road or railway between them (an island, 樺太) still fly when each has an airport -- before, such a pair had no demand at all, so an island airport never got a flight
+        if (sim.s43 && apMap && sim.hubs && !(isTown[i] && isTown[j])) { const a = apMap[i], b = apMap[j], pi = sim.cities[w.cities[i].id], pj = sim.cities[w.cities[j].id];
+          if (a && b && a !== b && pi && pj && airShare(sim, w, i, j, 0, apMap) > 0) { const d = Math.hypot(w.cities[i].pos[0] - w.cities[j].pos[0], w.cities[i].pos[1] - w.cities[j].pos[1]), flow = KFLOW * Math.pow(pi.pop * PUL[i] * pj.pop * PUL[j], 0.6) / (1 + Math.pow(AIR_ONLY_ACCESS_H + d / AIR_ONLY_KMH, 1.2)), p = flow * RAIL_PAX;
+            airFlow += flow; airPkm += p * d; const pk = a < b ? `${a}|${b}` : `${b}|${a}`; pairs.set(pk, (pairs.get(pk) ?? 0) + p); domAir.set(a, (domAir.get(a) ?? 0) + p); domAir.set(b, (domAir.get(b) ?? 0) + p); } }
+        continue;
+      }
       if (isTown[i] && isTown[j] && Math.min(tr, isFinite(tt) ? tt + RAIL_ACCESS_H : Infinity) > TOWN_FAR_H) continue;
       const pi = sim.cities[w.cities[i].id], pj = sim.cities[w.cities[j].id];
       if (!multi) {   // Stage 2 (roads only): the original formula, untouched
