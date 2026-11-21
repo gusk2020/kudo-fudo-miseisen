@@ -1350,7 +1350,7 @@ export class App {
   }
   buildSheet() {
     const sh = $("sheet"), body = $("sheet-body");
-    const mini = this.sheet === "ledger" && !!this.hl && this.ledgerMini, key = this.sheet + ":" + mini + ":" + ui3.ledgerMode + ":" + ui3.numClass, keep = this.sheetKey === key ? sh.scrollTop : 0, sameMenu = this.sheet === "menu" && this.sheetKey === key && !sh.hidden; this.sheetKey = key;   // (Stage 24: the same list is rebuilt after a tap: it stays where the finger left it)
+    const mini = this.sheet === "ledger" && !!this.hl && this.ledgerMini, key = this.sheet + ":" + mini + ":" + ui3.ledgerMode + ":" + ui3.numClass, keep = this.sheetKey === key ? sh.scrollTop : 0, sameMenu = this.sheet === "menu" && this.sheetKey === key && !sh.hidden && this.menuFor === this.sim; this.sheetKey = key;   // (Stage 24: the same list is rebuilt after a tap: it stays where the finger left it)
     sh.hidden = this.sheet === null; sh.classList.toggle("mini", mini); sh.classList.toggle("mini-num", mini && ui3.ledgerMode === "numbers"); if (!sameMenu) body.replaceChildren(); if (!this.sheet) return;   // (Stage 43: the 保存 list is read asynchronously; rebuilding it keeps the shown list until the new one is ready, instead of an empty sheet in between)
     queueMicrotask(() => { if (keep) sh.scrollTop = keep; });
     if (this.sheet === "layers") {
@@ -1548,9 +1548,10 @@ export class App {
   private download(text: string, name: string) { const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "application/json" })), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
   private menuTok = 0;
   /** Stage 26: the menu is built from several awaits; two builds in flight (the clock finishing a checkpoint while the sheet is being opened) used to append their rows twice -- only the latest one is put on the sheet. */
+  private menuFor: object | null = null;
   async buildMenu(body: HTMLElement) {
     const tok = ++this.menuTok, tmp = document.createElement("div"); await this.buildMenuInner(tmp);
-    if (tok === this.menuTok && this.sheet === "menu") body.replaceChildren(...Array.from(tmp.childNodes));
+    if (tok === this.menuTok && this.sheet === "menu") { body.replaceChildren(...Array.from(tmp.childNodes)); this.menuFor = this.sim; }   // (the list shown is kept on a rebuild only while it is THIS game's: after a load it is cleared at once, never showing the previous game)
   }
   private async buildMenuInner(body: HTMLElement) {
     const ops = h("div", { id: "menu-ops" });   // Stage 38 (G): the three operation buttons of this panel -- JSON export (with JSON import), 道路だけやり直す, 最初からやり直す -- are at the TOP now (names, order and actions unchanged)
