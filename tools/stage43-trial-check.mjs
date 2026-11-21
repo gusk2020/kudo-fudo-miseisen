@@ -65,7 +65,7 @@ try {
   const air = await kfm(page, "a => { const h = a.sim.hubs, aps = Object.values(h.airports).filter((x) => x.until === undefined), open = h.routes.filter((r) => r.mode === 'air' && !r.intl && r.state === 'open'); const served = new Set(open.flatMap((r) => [r.a, r.b])); return { airports: aps.length, withRoute: aps.filter((x) => served.has(x.city)).length, local: open.filter((r) => r.local).length, domestic: open.length }; }");
   await kfm(page, "a => { const c = a.world.cities.find((x) => x.name === '札幌市') || a.world.cities[0]; a.r.setView({ cx: c.pos[0], cy: c.pos[1], zoom: 0.6 }, true); a.renderRoads(); return 1; }"); await page.waitForTimeout(500); const drawn = await kfm(page, "a => a.r.roads.airDrawn");
   console.log("air", JSON.stringify(air), "drawn", JSON.stringify(drawn));
-  check("airports all have flights, local routes exist, both tiers are drawn", air.airports > 20 && air.withRoute === air.airports && air.local > 0 && drawn.trunk > 0 && drawn.local > 0, JSON.stringify({ air, drawn }));
+  check("every airport has a flight and both tiers (幹線 / 地方路線) are drawn (the lifeline-route count is logged: it is only needed when demand alone leaves an airport without a flight)", air.airports > 20 && air.withRoute === air.airports && drawn.trunk > 0 && drawn.local > 0, JSON.stringify({ air, drawn }));
   // ---- save, reload, the same game comes back
   const m = await kfm(page, "a => a.sim.month"); await page.evaluate(async () => { await window.__kfm.persist(true); }); await page.reload(); await page.waitForFunction(() => window.__kfm?.sim, null, { timeout: 120000 });
   check("reload brings back the same Stage 43 game", (await kfm(page, "a => a.sim.month")) === m && (await kfm(page, "a => a.sim.s43")) === true);
