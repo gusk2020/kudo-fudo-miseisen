@@ -41,6 +41,12 @@ Before these fixes: 2000 had 50 of 52 with a flight (豊原 and 根室 none sinc
 - Layer window (real game): folding groups 地形 / 交通 / その他; transport has eight rows (高速道路・一般道路・新幹線/リニア・一般鉄道・空路幹線・空路地方・海路幹線・海路地方), each "checkbox · name · sample" drawn from the map's own style constants; states under 交通. Old settings carry over (a whole-mode switch that was off shows its rows off).
 - Night view: off the layer window; the moon button toggles it and a vertical grain slider appears under it only while on. All lights are one daylight white (`NIGHT_WHITE` 255,250,244), brightness only.
 
+## E follow-up — three phone-screen faults found through CI (fixed)
+The phone-size E2E tests `names67`, `mobile67` and `real.spec` Stage 26 failed on several CI runs of this PR and never on the base. Reproduced locally only with the CI browser (Playwright's headless shell) and 6× CPU throttling: Stage 43 failed, Stage 42 passed. Causes:
+1. **The open speed panel grew by a row** (126 → 172 px over the map on a 412×915 screen). The fold button had been added as a row of its own, and the panel then reached the spot where the city card's × sits. The fold button now sits at the end of the speed row: **126 px, exactly as Stage 42**, measured. With this fix the throttled test closes the card with one tap.
+2. **A sheet whose content loads asynchronously (保存) was only its padding for a moment.** Its × then sat under the dock. Sheets now keep a minimum height in the real game.
+3. **Rebuilding the 保存 sheet emptied it before the new list was read.** That made an empty sheet in between. It now keeps the shown list until the new one replaces it.
+
 ## C — decade mode speed
 Measured in the browser (Chromium, software GL, Pixel 7 profile), same game from 1950, 30 s: **0.65 → 2.76 game-years per second (×4.2)**. What changed: while the decade mode runs the stage is drawn only when something visible changes (each decade's redraw, a pan or zoom), and 40 ms instead of 26 ms of simulation per frame. **The simulation itself is unchanged** — the same months in the same order, so results are identical to the normal speeds (no approximation, nothing to label). On a phone the drawing share is smaller than in software GL, so the gain will be smaller: **not measured on a Pixel 7a**. Node profile of the simulation (2100–2130, 313 ms/year): demand analysis 27 %, monthly step 15 %, population update 10 %, crossings/island links ~11 %; the next step if more is needed is the demand analysis.
 

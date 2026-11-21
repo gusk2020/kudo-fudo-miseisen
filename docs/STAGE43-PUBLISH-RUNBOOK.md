@@ -51,6 +51,9 @@ All three share one origin (`gusk2020.github.io`), so the storage names are what
   - `claude/release-pages-8b1de5b`: the previous generation.
 - No save is deleted in any direction. Each version's saves live under its own names and simply stop being reachable while its path is not published.
 
+## Notes
+- `claude/release-pages-stage43trial-002a730` was frozen before the phone-screen fixes and is **not** used; the release branch is the one named after the final PR head.
+
 ## Not verified here
 - Pixel 7a behaviour (touch, speed, heat) of the trial.
 - The real phone's GPU speed for the decade mode.
