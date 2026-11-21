@@ -1,7 +1,7 @@
 /**
  * Stage 43 (A2): mountain corridors do not fill up with parallel roads.
  * The owner's 4800-year game laid road after road side by side over the 群馬〜新潟 mountains. In a game made with `sim.s43`, a NEW road (a new line, a bypass, a shortcut) whose way runs
- * through mountains (MOUNTAIN_M and above) is first checked against what already crosses the same mountains: across the new way, at several points in its mountain stretch, a transect of
+ * through mountains (MOUNTAIN_M and above) is first checked (±22 km: on the 5 km grid two roads need a free cell between them to count as two, so a narrower transect could never see three) against what already crosses the same mountains: across the new way, at several points in its mountain stretch, a transect of
  * ±CORRIDOR_HALF_KM is drawn perpendicular to it and the separate roads it cuts are counted (a run of road cells is one road). If the typical count (median over the points) is already
  * CORRIDOR_MAX, the corridor is full: no new road is laid there (a bypass becomes an improvement of the road that exists instead). An expressway may still be the one more when none of the
  * corridor's roads is one (a road of a different kind is not a duplicate). Plains are never checked, so the busy, many-roaded lowlands stay as they were; upgrading and restoring a road is not
@@ -10,7 +10,7 @@
 import { MTN_RIDGE_MIN, type World } from "./world";
 import { modeOf, type SimState, type Standard } from "./types";
 
-export const CORRIDOR_MAX = 3, CORRIDOR_HALF_KM = 12, CORRIDOR_EVERY = 3, CORRIDOR_MIN_SAMPLES = 2, MOUNTAIN_M = 500;
+export const CORRIDOR_MAX = 3, CORRIDOR_HALF_KM = 22, CORRIDOR_EVERY = 3, CORRIDOR_MIN_SAMPLES = 2, MOUNTAIN_M = 500;
 /** A mountain cell: a drawn range's ridge zone above MOUNTAIN_M, or (worlds without ranges) high ground. */
 export const isMountainCell = (w: World, k: number): boolean => w.elevM(k) >= MOUNTAIN_M || (!!w.t.barrier && w.t.barrier[k] > MTN_RIDGE_MIN && w.elevM(k) >= MOUNTAIN_M * 0.6);   // (the real map has no drawn ranges: height decides; a drawn range counts from lower down)
 const memo = new WeakMap<SimState, { key: string; cells: Map<number, boolean> }>();

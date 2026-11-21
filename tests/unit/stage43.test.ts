@@ -21,7 +21,7 @@ describe("Stage 43", () => {
     const path = pathfind(w, c("前橋市").cell, c("新潟市").cell)!; expect(path.length).toBeGreaterThan(10); expect(path.filter((k) => isMountainCell(w, k)).length, "the 群馬〜新潟 way runs through mountains").toBeGreaterThan(3);
     const add = (dx: number, hg = false) => { const id = `x43-${dx}`, cells = path.map((k) => k + dx); sim.edges[id] = { ...newEdgeDefaults(), id, a: "n?", b: "n?", cells, lengthKm: cells.length * w.cell, surface: "paved", quality: 80, built: 1, open: true, state: "open", standard: hg ? "highgrade" : "standard", maxGradePct: 4, builtMonth: 0, region: "JP-10" } as SimEdge; sim.next.edge++; };
     console.log("S43 corridor before", JSON.stringify(corridorCount(sim, w, path)));
-    for (const dx of [-3, 3, 6]) add(dx);
+    for (const dx of [-4, -2, 2]) add(dx);   // (three roads 10-20 km beside the new way, a free cell between each)
     const after = corridorCount(sim, w, path); console.log("S43 corridor after", JSON.stringify(after)); expect(after.median, "three roads cross the corridor").toBeGreaterThanOrEqual(3);
     expect(corridorFull(sim, w, path, "standard"), "a fourth ordinary road is refused").toBe(true);
     expect(corridorFull(sim, w, path, "highgrade"), "an expressway where the corridor has none is allowed").toBe(after.highgrade);
