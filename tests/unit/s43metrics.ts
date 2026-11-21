@@ -22,14 +22,16 @@ export function s43Metrics(sim: SimState, w: World) {
   const mainMass = [...massArea.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map((x) => x[0]), onIslands = apCity.filter((c) => !mainMass.includes(w.lm[c.cell])).length;
   const d = (p: number[], q: number[]) => Math.hypot(p[0] - q[0], p[1] - q[1]);
   const nn = apCity.map((c) => Math.min(...apCity.filter((o) => o !== c).map((o) => d(c.pos, o.pos)))).filter(Number.isFinite).sort((a, b) => a - b);
-  let pop = 0, far = 0; for (const c of w.cities) { const p = sim.cities[c.id]?.pop ?? 0; if (!p) continue; pop += p; const m = apCity.length ? Math.min(...apCity.map((a) => d(a.pos, c.pos))) : Infinity; if (m > 80) far += p; }
+  let pop = 0, far = 0, far50 = 0, towns50 = 0; for (const c of w.cities) { const p = sim.cities[c.id]?.pop ?? 0; if (!p) continue; pop += p; const m = apCity.length ? Math.min(...apCity.map((a) => d(a.pos, c.pos))) : Infinity; if (m > 80) far += p; if (m > 50) { far50 += p; towns50++; } }
+  const isleMass = new Set<number>(); for (const c of w.cities) if ((sim.cities[c.id]?.pop ?? 0) > 0 && !mainMass.includes(w.lm[c.cell])) isleMass.add(w.lm[c.cell]);
+  const isleServed = [...isleMass].filter((m) => apCity.some((a) => w.lm[a.cell] === m)).length;
   const routes = h?.routes ?? [], open = routes.filter((r) => r.state === "open"), served = new Set(open.filter((r) => r.mode === "air").flatMap((r) => [r.a, r.b]));
   const north = (p: string) => { let s = 0; for (const c of w.cities) if (c.pref === p || (w.prefOf(c.cell) === p)) s += sim.cities[c.id]?.pop ?? 0; return Math.round(s / 1000); };
   return {
     mtnEdges, mtnKm: Math.round(mtnKm), mtnCrowded, mtnMax,
     roadKm: Math.round(roadKm), hwyKm: Math.round(hwyKm), railKm: Math.round(railKm), fixedLinks, fixedRoad, fixedRail, fixedKm: Math.round(fixedKm), bridges, tunnels, islandLinkProjects,
     airports: aps.length, airportsOnIslands: onIslands, airportsWithRoute: aps.filter((a) => served.has(a.city)).length, apNearestKmMedian: nn.length ? Math.round(nn[nn.length >> 1]) : null, apNearestKmP10: nn.length ? Math.round(nn[Math.floor(nn.length * 0.1)]) : null,
-    popFarFromAirportShare: pop ? Math.round((far / pop) * 1000) / 10 : null, ports: ports.length,
+    popFarFromAirportShare: pop ? Math.round((far / pop) * 1000) / 10 : null, popFar50Share: pop ? Math.round((far50 / pop) * 1000) / 10 : null, townsFar50: towns50, islandsPopulated: isleMass.size, islandsWithAirport: isleServed, ports: ports.length,
     airDomestic: open.filter((r) => r.mode === "air" && !r.intl).length, airIntl: open.filter((r) => r.mode === "air" && r.intl).length, seaDomestic: open.filter((r) => r.mode === "sea" && !r.intl).length, seaIntl: open.filter((r) => r.mode === "sea" && r.intl).length,
     ferries: Object.values(sim.edges).filter((e) => e.facility === "ferry" && live(e)).length,
     airTrunk: open.filter((r) => r.mode === "air" && !r.intl && airTier(r) === "trunk").length, airLocal: open.filter((r) => r.mode === "air" && !r.intl && airTier(r) === "local").length, airLocalOpened: open.filter((r) => r.local).length,
