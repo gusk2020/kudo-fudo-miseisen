@@ -9,6 +9,8 @@ const server = http.createServer((req, res) => {
   let rel = decodeURIComponent(u.pathname.slice(BASE.length)); if (rel === "blank-isolation-probe.html") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end("<!doctype html><title>probe</title>"); } if (!rel || rel.endsWith("/")) rel += "index.html"; const f = path.join(DIR, rel);
   if (!f.startsWith(DIR) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end(); } res.writeHead(200, { "Content-Type": types[path.extname(f)] ?? "application/octet-stream" }); fs.createReadStream(f).pipe(res);
 }).listen(PORT);
+/** --origin https://gusk2020.github.io runs the same checks against the LIVE site (after a deployment); default: the local copy served above */
+const ORIGIN = arg("--origin", `http://localhost:${PORT}`);
 const results = []; const check = (name, ok, detail = "") => { results.push({ name, ok: !!ok, detail }); console.log((ok ? "PASS " : "FAIL ") + name + (detail ? "  " + detail : "")); };
 const kfm = (page, f) => page.evaluate(`(() => { const a = window.__kfm; return (${f})(a); })()`);
 const pos = (page, n) => kfm(page, `a => a.world.cities.find((c) => c.name === '${n}').pos`), scr = (page, p) => page.evaluate((q) => window.__kfm.r.worldToScreen(q), p);
@@ -21,7 +23,7 @@ const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, arg
 try {
   const ctx = await b.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, deviceScaleFactor: 1 }); const page = await ctx.newPage(); const errs = []; page.on("pageerror", (e) => errs.push(String(e))); page.on("dialog", (d) => void d.accept()); page.setDefaultTimeout(30000);
   // ---- a new 1800 game: 空路重視 / 地方分散 / 日本海側
-  await page.goto(`http://localhost:${PORT}${TRIAL}?nointro`); await page.waitForFunction(() => window.__kfm?.world, null, { timeout: 120000 });
+  await page.goto(`${ORIGIN}${TRIAL}?nointro`); await page.waitForFunction(() => window.__kfm?.world, null, { timeout: 120000 });
   await kfm(page, "a => a.wizGo(1)"); await page.waitForSelector("#e86-name"); await page.click("#e86-name button:not([disabled])"); await page.click("#e86-stance-kuuro"); await page.click("#e86-focus-disperse"); await page.click("#e86-coast-japansea");
   await kfm(page, "a => a.wizGo(3)"); await page.click("#tool-cer-kokudo1"); await drawPath(page, ["東京", "大阪市"]);
   await kfm(page, "a => a.wizGo(0)"); await page.waitForFunction(() => { const a = window.__kfm; return !a.generating && !!a.terrain; }, null, { timeout: 90000 }); for (let k = 0; k < 4; k++) await page.click("#wiz-ok"); await page.click("#cer-go"); await page.waitForFunction(() => window.__kfm.sim, null, { timeout: 90000 });

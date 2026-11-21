@@ -16,6 +16,8 @@ const server = http.createServer((req, res) => {
   let rel = decodeURIComponent(u.pathname.slice(BASE.length)); if (rel === "blank-isolation-probe.html") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end("<!doctype html><title>probe</title>"); } if (!rel || rel.endsWith("/")) rel += "index.html"; const f = path.join(DIR, rel);
   if (!f.startsWith(DIR) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end(); } res.writeHead(200, { "Content-Type": types[path.extname(f)] ?? "application/octet-stream" }); fs.createReadStream(f).pipe(res);
 }).listen(PORT);
+/** --origin https://gusk2020.github.io runs the same checks against the LIVE site (after a deployment); default: the local copy served above */
+const ORIGIN = arg("--origin", `http://localhost:${PORT}`);
 const results = []; const check = (name, ok, detail = "") => { results.push({ name, ok: !!ok, detail }); console.log((ok ? "PASS " : "FAIL ") + name + (detail ? "  " + detail : "")); };
 const kfm = (page, f) => page.evaluate(`(() => { const a = window.__kfm; return (${f})(a); })()`);
 const ready = (page) => page.waitForFunction(() => window.__kfm?.world, null, { timeout: 120000 });
@@ -37,11 +39,11 @@ const own = (d, s) => ({ idb: d.idb[dbOf(s)] ?? null, ls: Object.fromEntries(Obj
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
 try {
   const ctx = await b.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true });
-  const probe = async () => { const p = await ctx.newPage(); await p.goto(`http://localhost:${PORT}${BASE}blank-isolation-probe.html`); const d = await dump(p); await p.close(); return d; };
+  const probe = async () => { const p = await ctx.newPage(); await p.goto(`${ORIGIN}${BASE}blank-isolation-probe.html`); const d = await dump(p); await p.close(); return d; };
   const after = [];   // after[i] = the origin's storage right after site i saved
   for (let i = 0; i < SITES.length; i++) {
     const s = SITES[i], page = await ctx.newPage(), errs = []; page.on("pageerror", (e) => errs.push(String(e)));
-    await page.goto(`http://localhost:${PORT}${s.path}?nointro`); await ready(page); await page.waitForTimeout(3000);
+    await page.goto(`${ORIGIN}${s.path}?nointro`); await ready(page); await page.waitForTimeout(3000);
     check(`${s.name}: starts WITHOUT a game (does not see the older sites' saves)`, !(await kfm(page, "a => !!a.sim")));
     await page.evaluate(() => { const a = window.__kfm; if (a.wizGo) a.wizGo(3); }); await page.click("#tool-cer-kokudo1");
     const pos = (n) => kfm(page, `a => a.world.cities.find((c) => c.name === '${n}').pos`), scr = (p) => page.evaluate((q) => window.__kfm.r.worldToScreen(q), p);
@@ -64,7 +66,7 @@ try {
   const final0 = await probe();
   for (const s of SITES) {
     const page = await ctx.newPage(), errs = []; page.on("pageerror", (e) => errs.push(String(e)));
-    await page.goto(`http://localhost:${PORT}${s.path}?nointro`); await ready(page); await page.waitForFunction(() => window.__kfm.sim, null, { timeout: 120000 }).catch(() => {});
+    await page.goto(`${ORIGIN}${s.path}?nointro`); await ready(page); await page.waitForFunction(() => window.__kfm.sim, null, { timeout: 120000 }).catch(() => {});
     check(`${s.name}: still loads its own game (month ${s.month})`, await kfm(page, "a => !!a.sim && a.sim.month >= " + s.month + " - 1"));
     check(`${s.name}: no page errors on reload`, errs.length === 0, errs[0] ?? ""); await page.close();
   }

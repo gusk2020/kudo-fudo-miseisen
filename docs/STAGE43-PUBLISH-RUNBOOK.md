@@ -1,5 +1,18 @@
 # Stage 43 trial — independent playtest at /stage43/: checks, publication, recovery
 
+## Status: PUBLISHED 2026-11-21 (Pages run 44899273893, 11:31 UTC)
+- URL: https://gusk2020.github.io/kudo-fudo-miseisen/stage43/ (new game; Pixel 7a not checked).
+- Deployed from the frozen branch `claude/release-pages-stage43trial-40068c5` (head `f53218b` = PR #100 head `40068c5` + the release `pages.yml`).
+- Before deploying, inside the same run: the assembly guard, isolation 24/24 and the Stage 43 feature check 17/17 all passed.
+- Before that: CI on `40068c5` was green (push and pull_request runs), as were the package workflow and same-name save compatibility (16/16, against the exact Stage 41 build that is live).
+- After deploying, checked against the live URLs:
+  - `/`, `/stage42/` and `/stage43/` answer 200;
+  - the 26 Stage 41 / Stage 42 files are byte-identical to the record taken before publishing, and the root's own record files are unchanged;
+  - all 39 files of the site equal `/stage43/deployed-sha256.txt`;
+  - `tools/isolation-check3.mjs --origin https://gusk2020.github.io` gives **24/24** (fresh browser profile, all three paths live);
+  - `tools/stage43-trial-check.mjs --origin https://gusk2020.github.io` gives **17/17**.
+- Rollback, if ever needed: run "Pages" on `claude/release-pages-stage42trial-163f079` (back to Stage 41 + /stage42/ exactly as before).
+
 The Stage 43 trial (PR #100, Draft) is published BESIDE the two sites that are live now, without touching them:
 
 | path | what | built from | storage |
