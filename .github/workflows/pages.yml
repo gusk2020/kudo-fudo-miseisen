@@ -1,24 +1,56 @@
+# This file becomes `.github/workflows/pages.yml` ONLY on the frozen branch `claude/release-pages-stage43trial-<sha>` (see docs/STAGE43-PUBLISH-RUNBOOK.md).
+# It lives under docs/, so GitHub does not run it here. workflow_dispatch only: nothing deploys by itself.
+# Deploys ONE site: Stage 41 at the root and the Stage 42 trial at /stage42/, both byte-identical to what is live now, plus the Stage 43 trial at /stage43/.
 name: Pages
 on:
-  push:
-    branches: [main, claude/stage1-map-generator, claude/stage2-roads, claude/stage2-road-evolution, claude/stage3-foundation, claude/stage4-issue13, claude/stage5-issue15, claude/stage6-issue18, claude/stage7-sim, claude/stage8-issue22, claude/stage9-issue24, claude/stage10-issue26, claude/stage11-issue28, claude/stage12-issue31, claude/stage13-issue33, claude/stage14-issue35, claude/stage17-potential, claude/stage18-sea-air-names, claude/stage19-tabs-map-seats, claude/stage20-islands-seats, claude/stage21-pickers-road, claude/stage22-sea-map-2200, claude/stage22-audit, claude/stage23, claude/stage24, claude/stage25, claude/stage26, claude/stage27, claude/stage28, claude/stage29, claude/stage30a]
   workflow_dispatch:
 permissions: { contents: read, pages: write, id-token: write }
-concurrency: { group: pages, cancel-in-progress: true }
+concurrency: { group: pages, cancel-in-progress: false }
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - uses: actions/checkout@v4
+        with: { ref: 9e0a8c805f29af18e8cf018254832d79573aa5c7, path: published41 }
+      - uses: actions/checkout@v4
+        with: { ref: 2fc9922dc4297238efa32f79dce4247aeedae466, path: stage42 }
+      - uses: actions/checkout@v4
+        with: { path: stage43 }
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-        env: { BASE_PATH: "/kudo-fudo-miseisen/" }
+        with: { node-version: 22 }
+      - name: Build the pinned Stage 41 at the root (as live)
+        working-directory: published41
+        env: { BASE_PATH: /kudo-fudo-miseisen/ }
+        run: |
+          npm ci
+          npm run build
+      - name: Build the pinned Stage 42 trial for /stage42/ (as live)
+        working-directory: stage42
+        env: { BASE_PATH: /kudo-fudo-miseisen/stage42/, VITE_SAVE_NS: stage42trial }
+        run: |
+          npm ci
+          npm run build
+      - name: Build Stage 43 for /stage43/ with its own storage names
+        working-directory: stage43
+        env: { BASE_PATH: /kudo-fudo-miseisen/stage43/, VITE_SAVE_NS: stage43trial }
+        run: |
+          npm ci
+          npm run build
+      - name: GUARD - assemble; the live Stage 41 root and /stage42/ must be reproduced byte for byte, nothing else changes
+        env: { STAGE43_SHA: "${{ github.sha }}" }
+        run: stage43/tools/stage43-assemble.sh published41/dist stage42/dist stage43/dist composite
+      - name: GUARD - real-browser isolation of the three saves (41 -> 42 -> 43 on one origin)
+        working-directory: stage43
+        run: |
+          npx playwright install --with-deps chromium
+          node tools/isolation-check3.mjs ../composite
+      - name: GUARD - Stage 43 features in a new 1800 game of the /stage43/ build
+        working-directory: stage43
+        run: node tools/stage43-trial-check.mjs ../composite
       - uses: actions/upload-pages-artifact@v3
-        with: { path: dist }
+        with: { path: composite }
   deploy:
     needs: build
     runs-on: ubuntu-latest
